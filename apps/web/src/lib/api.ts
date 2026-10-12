@@ -573,7 +573,7 @@ export const api = {
     }),
   updateWorkRefinement: (id: string, body: { expectedRevision: number; proposal: NonNullable<IntakeRecord["refinement"]>["proposal"] }) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement`, { method: "PATCH", body: JSON.stringify(body) }),
-  applyWorkRefinement: (id: string, body: { expectedRevision: number; projectDriverMemberId?: number }) =>
+  applyWorkRefinement: (id: string, body: { expectedRevision: number; activationResolution?: ProjectActivationResolution }) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement/apply`, { method: "POST", body: JSON.stringify(body) }),
   deleteIntake: (id: string) =>
     request<void>(`/intake/${encodeURIComponent(id)}`, { method: "DELETE" }),

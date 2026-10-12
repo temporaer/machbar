@@ -168,7 +168,7 @@ export function registerIntakeRoutes(
   app.post<{ Params: { id: string } }>("/api/intake/:id/refinement/apply", async (request) => {
     const body = parseOrThrow(z.object({
       expectedRevision: z.number().int().positive(),
-      projectDriverMemberId: z.number().int().positive().optional(),
+      activationResolution: projectActivationResolutionSchema.optional(),
     }).strict(), request.body);
     applyWorkRefinement(
       db,
@@ -176,7 +176,7 @@ export function registerIntakeRoutes(
       request.authMember?.id ?? request.activityActor?.id ?? null,
       body.expectedRevision,
       { actorMemberId: request.activityActor?.id ?? null },
-      body.projectDriverMemberId,
+      body.activationResolution,
     );
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });

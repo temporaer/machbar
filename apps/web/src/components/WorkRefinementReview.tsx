@@ -5,8 +5,12 @@ import { api } from "../lib/api";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
-import { MemberChoiceGroup } from "./MemberChoiceGroup";
-import { projectDriverRequirementFromError } from "../lib/projectActivationResolution";
+import {
+  projectActivationPromptFromError,
+  projectActivationResolutionFromPrompt,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 const labels = {
   update_task: "refinementTitle", update_project: "refinementTitle", convert_task_to_project: "refinementConvert", create_child: "refinementCreate",
@@ -63,8 +67,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<"save" | "apply" | "regenerate" | "discard" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
-  const [activationDriverRequirement, setActivationDriverRequirement] = useState<{ projectId: number; title: string } | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const incomingProposalSignature = semanticSignature(serverProposal);
   const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
   const latestObservedRevisionRef = useRef(record.revision);
@@ -73,7 +76,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     proposalDraftRef.current = next;
     if (userEdit) draftGenerationRef.current += 1;
     setProposalDraft(next);
-    if (userEdit) setActivationDriverRequirement(null);
+    if (userEdit) setActivationPrompt(null);
   }, []);
 
   useEffect(() => {
@@ -84,6 +87,8 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
       signature: incomingProposalSignature,
     };
     const previous = serverBaselineRef.current;
+
+    if (incomingProposalSignature !== previous.signature) setActivationPrompt(null);
 
     if (previous.recordId !== record.id) {
       serverBaselineRef.current = incomingBaseline;
@@ -214,13 +219,14 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     try {
       const current = await persistLatestProposal();
       if (!current) return;
+      const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
       onChange(await api.applyWorkRefinement(record.id, {
         expectedRevision: current.revision,
-        ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
+        ...(activationResolution ? { activationResolution } : {}),
       }));
     } catch (cause) {
-      const requirement = projectDriverRequirementFromError(cause);
-      if (requirement) setActivationDriverRequirement(requirement);
+      const prompt = projectActivationPromptFromError(cause, activationPrompt);
+      if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     }
     finally { setBusy(false); setOperation(null); }
@@ -280,8 +286,8 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const activeConversion =
     conversion?.accepted === true &&
     refinement.targetType === "task" &&
-    (sourceStatus === "actionable" || activationDriverRequirement !== null);
-  const requiresDriver = activeConversion && sourceOwnerMemberId === null;
+    (sourceStatus === "actionable" || activationPrompt !== null);
+  const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
   const hasRetryFeedback = answer.trim().length > 0;
   return <main className="page stack">
@@ -309,23 +315,6 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
             {activeConversion && sourceOwnerMemberId !== null ? (
               <p>{strings.aiProjectDriverLabel}: {members.find((member) => member.id === sourceOwnerMemberId)?.name ?? sourceOwnerMemberId}</p>
             ) : null}
-            {requiresDriver ? (
-              <>
-                <p>{strings.aiProjectDriverHint}</p>
-                {activationDriverRequirement ? <p>{activationDriverRequirement.title}</p> : null}
-                <MemberChoiceGroup
-                  label={strings.aiProjectDriverLabel}
-                  idPrefix="refinement-project-driver"
-                  members={members}
-                  value={projectDriverMemberId}
-                  disabled={editorLocked}
-                  onChange={(memberId) => {
-                    if (memberId !== null) setProjectDriverMemberId(memberId);
-                  }}
-                  unassignedLabel={null}
-                />
-              </>
-            ) : null}
           </section>
         ) : null}
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
@@ -350,6 +339,11 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         </select></label> : null}
         {change.kind === "advisory" ? <p>{change.title}</p> : null}
       </article>) : null}
+      {activationPrompt ? <ProjectActivationDecisionFields
+        prompt={activationPrompt}
+        disabled={editorLocked}
+        onChange={setActivationPrompt}
+      /> : null}
       <label className="stack"><span>{proposal.question ? strings.refinementAnswerLabel : strings.refinementFeedbackLabel}</span><textarea disabled={editorLocked} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={proposal.question ?? strings.workRefinementPlaceholder} /></label>
       {error ? <p role="alert" className="error-text">{error}</p> : null}
       <div className="actions">
@@ -357,7 +351,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         {leaveAlone
           ? <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
           : <>
-            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || requiresDriver && projectDriverMemberId === null} onClick={() => void apply()}>{strings.refinementApply}</button>
+            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || activationPrompt !== null && activationResolution === null} onClick={() => void apply()}>{strings.refinementApply}</button>
             <button className="btn" disabled={busy} onClick={() => void save()}>{strings.save}</button>
             <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
           </>}

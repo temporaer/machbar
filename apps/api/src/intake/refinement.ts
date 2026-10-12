@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { IntakeApplyResults, WorkRefinementProposal } from "@machbar/shared";
+import type { IntakeApplyResults, ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -154,7 +154,7 @@ export function applyWorkRefinement(
   viewerId: number | null,
   expectedRevision: number,
   context: MutationContext,
-  projectDriverMemberId?: number,
+  activationResolution?: ProjectActivationResolution,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -244,7 +244,7 @@ export function applyWorkRefinement(
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
           conversions.set(
             task.id,
-            beginCommitmentConversion(txDb, task.id, projectDriverMemberId, false, viewerId, context),
+            beginCommitmentConversion(txDb, task.id, undefined, false, viewerId, context),
           );
           break;
         }
@@ -289,7 +289,7 @@ export function applyWorkRefinement(
       finishCommitmentConversion(txDb, {
         ...conversion,
         projectRevision: current?.revision ?? conversion.projectRevision,
-      }, context);
+      }, context, activationResolution);
     }
     const target = tx.select({
       role: schema.workItems.role,
