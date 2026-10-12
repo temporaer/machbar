@@ -17,6 +17,13 @@ function descendantRevisions(tasks: Task[]): Array<{ taskId: number; revision: n
   ]);
 }
 
+function openActionDescendants(tasks: Task[]): Task[] {
+  return tasks.flatMap((task) => [
+    ...(task.kind === "action" && task.status !== "done" && task.status !== "cancelled" ? [task] : []),
+    ...openActionDescendants(task.children),
+  ]);
+}
+
 /** Focused `task.convertToProject` workflow — the canonical destination regardless of rail/keyboard/detail invocation. */
 export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
@@ -41,16 +48,18 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
       ? strings.convertToProjectNotStandalone
         : null;
   const openChildren = useMemo(
-    () => currentTask.children.filter((child) => child.kind === "action" && child.status !== "done" && child.status !== "cancelled"),
+    () => openActionDescendants(currentTask.children),
     [currentTask.children],
   );
-  const preserveStepRequired = currentTask.externalWait !== null || currentTask.dependencies.length > 0 ||
+  const dependencies = useMemo(() => [
+    ...currentTask.dependencies.map((dependency) => ({ ...dependency, endpoint: "task" as const })),
+    ...currentTask.incomingDependencies.map((dependency) => ({ ...dependency, endpoint: "dependsOnTask" as const })),
+  ], [currentTask.dependencies, currentTask.incomingDependencies]);
+  const preserveStepRequired = currentTask.externalWait !== null || currentTask.revisitAt !== null || dependencies.length > 0 ||
     currentTask.repeatAfterDays !== null || currentTask.allowedDeviationDays !== null ||
     currentTask.reminders.length > 0 || currentTask.scheduledDate !== null ||
     currentTask.notBeforeAt != null || currentTask.notBeforeDate != null ||
     (currentTask.status === "actionable" && openChildren.length === 0);
-  const executionCommitmentPresent = currentTask.status === "actionable" || currentTask.dueDate !== null ||
-    currentTask.scheduledDate !== null || currentTask.reminders.length > 0 || currentTask.repeatAfterDays !== null;
   const activationResolution: ProjectActivationResolution | null = activationPrompt
     ? projectActivationResolutionFromPrompt(activationPrompt)
     : null;
@@ -64,11 +73,11 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
         status,
         ...(preserveStepRequired ? { preservedStepTitle: preservedStepTitle.trim() } : {}),
         dependencyMappings: Object.entries(dependencyTargets).map(([dependencyId, targetTaskId]) => {
-          const dependency = currentTask.dependencies.find((candidate) => candidate.id === Number(dependencyId));
+          const dependency = dependencies.find((candidate) => candidate.id === Number(dependencyId));
           return {
             dependencyId: Number(dependencyId),
             targetTaskId,
-            sourceEndpoint: dependency?.taskId === currentTask.id ? "task" as const : "dependsOnTask" as const,
+            sourceEndpoint: dependency?.endpoint ?? "task",
           };
         }),
         expectedDescendantRevisions: descendantRevisions(currentTask.children),
@@ -112,7 +121,6 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
           <p className="text-muted">{blockReason}</p>
         ) : (
           <>
-            {executionCommitmentPresent ? <p className="text-muted">{strings.convertToProjectCommitmentActive}</p> : null}
             {preserveStepRequired ? (
               <label className="field">
                 <span>{strings.convertToProjectPreservedStep}</span>
@@ -122,9 +130,9 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
                 }} disabled={busy} />
               </label>
             ) : null}
-            {currentTask.dependencies.map((dependency) => (
+            {dependencies.map((dependency) => (
               <label className="field" key={dependency.id}>
-                <span>{strings.convertToProjectDependencyTarget}: {dependency.title ?? String(dependency.dependsOnTaskId)}</span>
+                <span>{dependency.endpoint === "task" ? strings.convertToProjectOutgoingDependency : strings.convertToProjectIncomingDependency}: {dependency.title ?? String(dependency.endpoint === "task" ? dependency.dependsOnTaskId : dependency.taskId)}</span>
                 <select
                   value={dependencyTargets[dependency.id] ?? "preserved"}
                   onChange={(event) => setDependencyTargets((previous) => {

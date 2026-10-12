@@ -259,6 +259,9 @@ describe("task <-> story role conversion", () => {
     const project = (
       await ctx.app.inject({ method: "GET", url: `/api/projects/${root.id}` })
     ).json();
+    expect(project.tasks[2].effectiveContexts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: context.id, name: "Keller" }),
+    ]));
     expect(project.tasks.map((task: { id: number }) => task.id)).toEqual([
       first.id,
       second.id,
@@ -565,6 +568,8 @@ describe("task <-> story role conversion", () => {
       dependsOnTaskId: dependencyTask.id,
     });
     expect(incomingDependency.statusCode).toBe(201);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${dependencyTask.id}` })).json().incomingDependencies)
+      .toEqual([expect.objectContaining({ id: incomingDependency.json().dependencies[0].id, taskId: incomingTask.id, title: "Wartet auf Projekt" })]);
 
     const recurring = (
       await post("/api/tasks", {
@@ -656,6 +661,66 @@ describe("task <-> story role conversion", () => {
     expect(waitProject.tasks.find((child: { title: string }) => child.title === waiting.title).externalWait.waitingFor).toBe("Antwort");
     const reminderStepId = reminderProject.tasks.find((child: { title: string }) => child.title === reminder.title).id;
     expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, reminderStepId)).all()).toHaveLength(1);
+  });
+
+  it("keeps a future revisit and its reminder deferred during conversion", async () => {
+    const source = (await post("/api/tasks", {
+      title: "Später um Regale kümmern",
+      status: "someday",
+      revisitAt: "2030-06-01T09:00:00.000Z",
+      reminders: [{ kind: "absolute", at: "2030-05-31T09:00:00.000Z" }],
+    })).json();
+
+    const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: source.revision,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ id: source.id, status: "backlog", revisitAt: "2030-06-01T09:00:00.000Z" });
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
+    const preserved = project.tasks.find((step: { title: string }) => step.title === source.title);
+    expect(preserved).toMatchObject({
+      status: "actionable",
+      revisitAt: "2030-06-01T09:00:00.000Z",
+      reminders: [expect.objectContaining({ kind: "absolute", at: "2030-05-31T09:00:00.000Z" })],
+    });
+    const today = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2030-05-31" })).json();
+    expect(today.planned.map((task: { id: number }) => task.id)).not.toContain(preserved.id);
+    expect(today.unscheduled.map((task: { id: number }) => task.id)).not.toContain(preserved.id);
+  });
+
+  it("retains a recurrence-derived deadline on its preserved step", async () => {
+    const member = (await post("/api/members", { name: "Recurring driver" })).json();
+    const source = (await post("/api/tasks", {
+      title: "Filter prüfen",
+      status: "actionable",
+      ownerMemberId: member.id,
+      ownerInheritanceMode: "explicit",
+      scheduledDate: "2030-06-01",
+      repeatAfterDays: 7,
+      allowedDeviationDays: 2,
+    })).json();
+    expect(source.dueDate).toBe("2030-06-03");
+
+    const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: source.revision,
+      activationResolution: {
+        expectedProjects: [{ projectId: source.id, revision: source.revision }],
+        drivers: [],
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
+    const preserved = project.tasks.find((step: { title: string }) => step.title === source.title);
+    expect(preserved).toMatchObject({
+      scheduledDate: "2030-06-01",
+      dueDate: "2030-06-03",
+      repeatAfterDays: 7,
+      allowedDeviationDays: 2,
+    });
   });
 
   it("rejects conversion from a stale descendant snapshot without changing the graph", async () => {

@@ -50,11 +50,10 @@ describe("TaskConvertToProjectSheet", () => {
     });
     renderWithProviders(<TaskConvertToProjectSheet task={task} onClose={vi.fn()} />);
 
-    expect(screen.getByText(strings.convertToProjectCommitmentActive)).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText(strings.convertToProjectPreservedStep));
     await userEvent.type(screen.getByLabelText(strings.convertToProjectPreservedStep), "Regale ausmessen");
     await userEvent.selectOptions(
-      screen.getByLabelText(`${strings.convertToProjectDependencyTarget}: Material klären`),
+      screen.getByLabelText(`${strings.convertToProjectOutgoingDependency}: Material klären`),
       "11",
     );
     await userEvent.click(screen.getByRole("button", { name: strings.convertToProjectBacklog }));
@@ -66,6 +65,38 @@ describe("TaskConvertToProjectSheet", () => {
       expectedDescendantRevisions: [{ taskId: 11, revision: 4 }],
       expectedRevision: 8,
     }));
+  });
+
+  it("shows incoming dependencies and allows mapping them to a nested open action", async () => {
+    const nested = makeTask({ id: 13, title: "Montage vorbereiten", revision: 5 });
+    const parent = makeTask({ id: 12, title: "Raum vorbereiten", revision: 4, children: [nested] });
+    const task = makeTask({
+      id: 42,
+      title: "Schreibtisch montieren",
+      incomingDependencies: [{
+        id: 74,
+        taskId: 90,
+        dependsOnTaskId: 42,
+        title: "Kinderzimmer einrichten",
+        resolved: false,
+      }],
+      children: [parent],
+    });
+    renderWithProviders(<TaskConvertToProjectSheet task={task} onClose={vi.fn()} />);
+
+    const dependencySelect = screen.getByLabelText(`${strings.convertToProjectIncomingDependency}: Kinderzimmer einrichten`);
+    expect(dependencySelect).toHaveDisplayValue(strings.convertToProjectPreservedStep);
+    expect(screen.getByRole("option", { name: "Montage vorbereiten" })).toBeInTheDocument();
+    await userEvent.selectOptions(dependencySelect, "13");
+    await userEvent.click(screen.getByRole("button", { name: strings.convertToProjectBacklog }));
+
+    await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(42, expect.objectContaining({
+      dependencyMappings: [{ dependencyId: 74, targetTaskId: 13, sourceEndpoint: "dependsOnTask" }],
+      expectedDescendantRevisions: [
+        { taskId: 12, revision: 4 },
+        { taskId: 13, revision: 5 },
+      ],
+    })));
   });
 
   it("cancels without starting conversion", async () => {

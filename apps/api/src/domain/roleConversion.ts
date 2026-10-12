@@ -18,6 +18,7 @@ import { getProjectOrThrow } from "./storyCrud.js";
 import { getTaskOrThrow, nextPositionForGroup } from "./taskCrud.js";
 import { insertTaskRow } from "./taskRowInsert.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
+import { hasExecutionCommitment } from "./commitmentTransition.js";
 import {
   MutationContext,
   actor,
@@ -174,7 +175,7 @@ export function convertTaskToStoryInTransaction(
       .from(schema.taskRecurrenceOccurrences)
       .where(eq(schema.taskRecurrenceOccurrences.taskId, taskId))
       .all();
-    const hasTaskOnlyObligation = externalWait !== undefined ||
+    const hasTaskOnlyObligation = externalWait !== undefined || task.revisitAt !== null ||
       dependencies.length > 0 || task.repeatAfterDays !== null ||
       task.allowedDeviationDays !== null || task.reminders.length > 0 ||
       recurrenceOccurrences.length > 0 || task.scheduledDate !== null || task.notBeforeAt != null || task.notBeforeDate != null ||
@@ -241,8 +242,13 @@ export function convertTaskToStoryInTransaction(
       task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null;
 
     const executionCommitment = task.status === "actionable" ||
-      task.dueDate !== null || task.scheduledDate !== null || task.reminders.length > 0 ||
-      task.repeatAfterDays !== null || task.allowedDeviationDays !== null;
+      hasExecutionCommitment({
+        kind: task.kind,
+        dueDate: task.dueDate,
+        scheduledDate: task.scheduledDate,
+        revisitAt: task.revisitAt,
+        reminders: task.reminders,
+      }) || task.repeatAfterDays !== null || task.allowedDeviationDays !== null;
     const targetStatus = executionCommitment || input.status === "active" ? "backlog" : input.status;
 
     txDb.update(schema.workItems)
@@ -278,6 +284,12 @@ export function convertTaskToStoryInTransaction(
     let preservedStepId: number | null = null;
     if (preserveAsStep) {
       const reminderNeedsDeadline = task.reminders.some((reminder) => reminder.kind === "deadline_relative");
+      const explicitPhysicalContexts = task.contextInheritanceMode === "explicit"
+        ? txDb.select({ contextId: schema.workItemPhysicalContexts.contextId })
+          .from(schema.workItemPhysicalContexts)
+          .where(eq(schema.workItemPhysicalContexts.workItemId, taskId))
+          .all()
+        : [];
       const preserved = insertTaskRow(txDb, {
         parentId: project.id,
         title: preservedStepTitle,
@@ -287,9 +299,9 @@ export function convertTaskToStoryInTransaction(
         ownerMemberId: task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null,
         ownerInheritanceMode: task.ownerInheritanceMode === "explicit" ? "explicit" : task.ownerInheritanceMode,
         physicalContextInheritanceMode: task.contextInheritanceMode,
-        dueDate: reminderNeedsDeadline ? task.dueDate : null,
+        dueDate: reminderNeedsDeadline || task.repeatAfterDays !== null ? task.dueDate : null,
         scheduledDate: task.scheduledDate,
-        revisitAt: externalWait ? task.revisitAt : null,
+        revisitAt: task.revisitAt,
         notBeforeAt: task.notBeforeAt,
         notBeforeDate: task.notBeforeDate,
         priority: task.priority,
@@ -300,6 +312,14 @@ export function convertTaskToStoryInTransaction(
         position: nextPositionForGroup(txDb, null, project.id),
       });
       preservedStepId = preserved.id;
+      if (explicitPhysicalContexts.length > 0) {
+        txDb.insert(schema.workItemPhysicalContexts).values(
+          explicitPhysicalContexts.map(({ contextId }) => ({
+            workItemId: preserved.id,
+            contextId,
+          })),
+        ).run();
+      }
       txDb.update(schema.taskReminders)
         .set({ taskId: preserved.id, updatedAt: nowIso() })
         .where(eq(schema.taskReminders.taskId, taskId))

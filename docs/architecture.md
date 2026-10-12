@@ -1391,8 +1391,13 @@ above) and re-points `activity_events`/`notification_events`/
 `contribution_events` in place, so activity history, tags, and contexts
 survive the conversion instead of starting fresh. A root standalone task may
 become a story while keeping its descendants and content. Its task-only
-commitments are remapped transactionally to a preserved action step; dependency
-edges can be assigned to a selected retained action. Active commitments and
+commitments are remapped transactionally to a preserved action step; explicit
+physical-context bindings and recurrence-derived deadlines stay on that step.
+The source revisit date continues to mean intentional deferral even when an
+absolute reminder is also present. The conversion sheet can map both outgoing
+dependencies and visible tasks that wait on the source, including to nested
+open action descendants; the graph projection omits incoming edges whose
+dependent item is not visible to the current viewer. Active commitments and
 explicit activation use the shared project-readiness transition, and the
 conversion transaction rolls back if the required driver, path, mapping, or
 revision is missing. Reverse conversion (story → task) remains conservative

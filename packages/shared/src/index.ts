@@ -851,6 +851,8 @@ export interface Task {
   effectiveActorTags: Tag[];
   explicitTags: Tag[];
   excludedTagIds: number[];
+  /** Tasks that are blocked on this task; only viewer-visible dependents are included. */
+  incomingDependencies: Dependency[];
   explicitContexts: PhysicalContext[];
   inheritedContexts: PhysicalContext[];
   effectiveContexts: PhysicalContext[];
