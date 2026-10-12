@@ -276,6 +276,47 @@ describe("fixed-day recurring tasks", () => {
     expect(patched.json().status).toBe("actionable");
   });
 
+  it("completes a deferred recurring occurrence and preserves clarification for the next one", async () => {
+    const task = recurring({ needsClarification: true });
+    const deferred = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/clarification-revisit`,
+      payload: {
+        clarificationRevisitDate: "2999-01-01",
+        expectedRevision: task.revision,
+      },
+    });
+    expect(deferred.statusCode).toBe(200);
+
+    const completed = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/complete`,
+      payload: {
+        completedOn: "2026-08-21",
+        expectedRevision: deferred.json().revision,
+      },
+    });
+
+    expect(completed.statusCode, JSON.stringify(completed.json())).toBe(200);
+    expect(completed.json()).toMatchObject({
+      status: "actionable",
+      scheduledDate: "2026-08-28",
+      dueDate: "2026-08-30",
+      needsClarification: true,
+      clarificationRevisitDate: "2999-01-01",
+    });
+    expect(
+      ctx.handle.db.select().from(schema.taskRecurrenceOccurrences).all(),
+    ).toMatchObject([
+      {
+        taskId: task.id,
+        scheduledDate: "2026-08-20",
+        completedOn: "2026-08-21",
+        result: "hit",
+      },
+    ]);
+  });
+
   it("rejects a replayed completion for an already advanced occurrence", async () => {
     const task = recurring();
     const payload = {

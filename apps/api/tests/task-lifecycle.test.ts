@@ -424,6 +424,50 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(waitingRes.json().cancelledAt).toBeNull();
   });
 
+  it.each([
+    { via: "patch", status: "done" },
+    { via: "command", status: "done" },
+    { via: "patch", status: "cancelled" },
+    { via: "command", status: "cancelled" },
+  ] as const)(
+    "preserves an existing clarification deferral consistently for $via $status transitions",
+    async ({ via, status }) => {
+      const task = await createTask({
+        title: `Deferred ${status} via ${via}`,
+        status: "actionable",
+        needsClarification: true,
+      });
+      const deferred = await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${task.id}/clarification-revisit`,
+        payload: {
+          clarificationRevisitDate: "2999-01-01",
+          expectedRevision: task.revision,
+        },
+      });
+      expect(deferred.statusCode).toBe(200);
+
+      const result = via === "patch"
+        ? await ctx.app.inject({
+            method: "PATCH",
+            url: `/api/tasks/${task.id}`,
+            payload: { status, expectedRevision: deferred.json().revision },
+          })
+        : await ctx.app.inject({
+            method: "POST",
+            url: `/api/tasks/${task.id}/${status === "done" ? "complete" : "cancel"}`,
+            payload: { expectedRevision: deferred.json().revision },
+          });
+
+      expect(result.statusCode, JSON.stringify(result.json())).toBe(200);
+      expect(result.json()).toMatchObject({
+        status,
+        needsClarification: true,
+        clarificationRevisitDate: "2999-01-01",
+      });
+    },
+  );
+
   it("provides an explicit atomic endpoint for direct status transitions", async () => {
     const task = await createTask({ title: "Direkter Status", status: "done" });
     const transitionRes = await ctx.app.inject({
