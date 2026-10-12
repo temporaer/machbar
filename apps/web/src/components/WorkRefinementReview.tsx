@@ -6,6 +6,7 @@ import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
+import { projectDriverRequirementFromError } from "../lib/projectActivationResolution";
 
 const labels = {
   update_task: "refinementTitle", update_project: "refinementTitle", convert_task_to_project: "refinementConvert", create_child: "refinementCreate",
@@ -63,6 +64,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const [operation, setOperation] = useState<"save" | "apply" | "regenerate" | "discard" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
+  const [activationDriverRequirement, setActivationDriverRequirement] = useState<{ projectId: number; title: string } | null>(null);
   const incomingProposalSignature = semanticSignature(serverProposal);
   const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
   const latestObservedRevisionRef = useRef(record.revision);
@@ -71,6 +73,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     proposalDraftRef.current = next;
     if (userEdit) draftGenerationRef.current += 1;
     setProposalDraft(next);
+    if (userEdit) setActivationDriverRequirement(null);
   }, []);
 
   useEffect(() => {
@@ -215,7 +218,11 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         expectedRevision: current.revision,
         ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
       }));
-    } catch (cause) { setError(localizedErrorMessage(cause, strings)); }
+    } catch (cause) {
+      const requirement = projectDriverRequirementFromError(cause);
+      if (requirement) setActivationDriverRequirement(requirement);
+      setError(localizedErrorMessage(cause, strings));
+    }
     finally { setBusy(false); setOperation(null); }
   };
   const regenerate = async () => {
@@ -273,7 +280,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const activeConversion =
     conversion?.accepted === true &&
     refinement.targetType === "task" &&
-    sourceStatus === "actionable";
+    (sourceStatus === "actionable" || activationDriverRequirement !== null);
   const requiresDriver = activeConversion && sourceOwnerMemberId === null;
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
   const hasRetryFeedback = answer.trim().length > 0;
@@ -305,6 +312,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
             {requiresDriver ? (
               <>
                 <p>{strings.aiProjectDriverHint}</p>
+                {activationDriverRequirement ? <p>{activationDriverRequirement.title}</p> : null}
                 <MemberChoiceGroup
                   label={strings.aiProjectDriverLabel}
                   idPrefix="refinement-project-driver"

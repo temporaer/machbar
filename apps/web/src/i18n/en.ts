@@ -884,6 +884,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   refinementConvert: "Convert to a project",
   aiProjectWillBeActive: "Becomes an active project and stays in your active work.",
   aiProjectWillBeBacklog: "Becomes a backlog project.",
+  aiProjectActivationResolvedOnApply: "Machbar checks whether activation is needed from the selected changes.",
   aiProjectDriverLabel: "Who is accountable for this project reaching its outcome?",
   aiProjectDriverHint: "The accountable person coordinates and protects progress; they do not need to execute every step.",
   aiProjectDriverRequired: "Choose an accountable project driver.",

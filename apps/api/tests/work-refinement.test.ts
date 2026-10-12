@@ -282,6 +282,41 @@ describe("AI work refinement proposals", () => {
     expect(child.ownerMemberId).toBeNull();
   });
 
+  it("uses an existing captured-task execution commitment to request a driver during typed conversion", () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Refinement driver", color: "#234567" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Prepare the move", status: "captured" });
+    ctx.handle.db.update(schema.workItems).set({ dueDate: "2030-12-01" }).where(eq(schema.workItems.id, task.id)).run();
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
+      refinementIntent: "structure", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({
+        intent: "structure", summary: "Make the work resumable.", disposition: "changes", question: null,
+        changes: [
+          { kind: "convert_task_to_project", targetId: task.id, rationale: "Separate the commitment from its steps.", accepted: true },
+          { kind: "create_child", parentTaskId: task.id, title: "Confirm the moving date", notes: null, rationale: "This is the first concrete step.", accepted: true },
+        ],
+      }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow(expect.objectContaining({
+      code: "project_commitment_resolution_required",
+    }));
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ kind: "action", status: "captured", dueDate: "2030-12-01", children: [] });
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, driver.id);
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    expect(project).toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all())
+      .toEqual(expect.arrayContaining([expect.objectContaining({ title: "Confirm the moving date" })]));
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
+      .filter((child) => child.title === "Confirm the moving date")).toHaveLength(1);
+  });
+
   it("uses canonical conversion to preserve revisit, reminders, external waits, and dependencies", () => {
     const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
     const prerequisite = createTask(ctx.handle.db, { title: "Get the documents", status: "actionable" });

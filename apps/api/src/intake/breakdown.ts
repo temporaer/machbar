@@ -7,6 +7,7 @@ import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
 import { createChildTask, createTask, updateTask } from "../domain/taskCrud.js";
 import { updateProject } from "../domain/storyCrud.js";
+import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
 import {
   beginCommitmentConversion,
   finishCommitmentConversion,
@@ -85,7 +86,17 @@ export function applyBreakdown(
   const converted = root.kind === "project";
   let conversion: ReturnType<typeof beginCommitmentConversion> | null = null;
   if (converted) {
-    conversion = beginCommitmentConversion(db, task.id, projectDriverMemberId, viewerMemberId, context);
+    const acceptedChildren = draft.workItems.filter((item) => item.enabled && item.key !== root.key);
+    const childAddsExecutionCommitment = acceptedChildren.some((item) => hasExecutionCommitment({
+      kind: item.kind === "reference" ? "reference" : "action",
+      dueDate: item.dueDate,
+      scheduledDate: item.scheduledDate,
+      revisitAt: item.revisitAt ?? item.notBeforeAt,
+      reminders: item.reminders,
+    }));
+    conversion = beginCommitmentConversion(
+      db, task.id, projectDriverMemberId, childAddsExecutionCommitment, viewerMemberId, context,
+    );
     const project = updateProject(db, task.id, {
       title: root.title, notes: root.notes ?? "", expectedRevision: conversion.projectRevision,
     }, context);

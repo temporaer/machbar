@@ -866,6 +866,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   refinementConvert: "In ein Projekt umwandeln",
   aiProjectWillBeActive: "Wird aktives Projekt – bleibt in deiner aktiven Arbeit.",
   aiProjectWillBeBacklog: "Wird Backlog-Projekt.",
+  aiProjectActivationResolvedOnApply: "Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.",
   aiProjectDriverLabel: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?",
   aiProjectDriverHint: "Die verantwortliche Person koordiniert und schützt den Fortschritt; sie muss nicht alle Schritte selbst ausführen.",
   aiProjectDriverRequired: "Wähle eine verantwortliche Person für das Projekt.",

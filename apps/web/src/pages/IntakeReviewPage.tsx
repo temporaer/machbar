@@ -27,6 +27,8 @@ import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
 import { WorkRefinementReview } from "../components/WorkRefinementReview";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
+import { MemberChoiceGroup } from "../components/MemberChoiceGroup";
+import { projectDriverRequirementFromError } from "../lib/projectActivationResolution";
 
 function intakeIssuePath(path: readonly (string | number)[]): string {
   return path.reduce<string>((result, segment) =>
@@ -149,6 +151,7 @@ export function IntakeReviewPage() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [retryHint, setRetryHint] = useState("");
   const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
+  const [activationDriverRequirement, setActivationDriverRequirement] = useState<{ projectId: number; title: string } | null>(null);
   const [changeRequestOpen, setChangeRequestOpen] = useState(false);
   const [changeRequest, setChangeRequest] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
@@ -268,13 +271,6 @@ export function IntakeReviewPage() {
   );
   const latestIssuesRef = useRef(issues);
   latestIssuesRef.current = issues;
-  const breakdownRoot = draft?.workItems.find((item) => item.enabled && item.parentKey === null);
-  const breakdownRequiresDriver =
-    Boolean(record?.breakdown) &&
-    record?.breakdown?.sourceStatus === "actionable" &&
-    record?.breakdown?.sourceOwnerMemberId === null &&
-    breakdownRoot?.kind === "project";
-
   useEffect(() => {
     if (state.data) {
       if (!acceptsIntakeRecord(recordRef.current, state.data)) return;
@@ -394,6 +390,7 @@ export function IntakeReviewPage() {
 
   const updateDraft = (next: IntakeDraft) => {
     if (applyingRef.current) return;
+    setActivationDriverRequirement(null);
     if (JSON.stringify(next) !== failedSnapshotRef.current) {
       failedSnapshotRef.current = null;
       setSaveError(null);
@@ -474,7 +471,7 @@ export function IntakeReviewPage() {
     }
   };
   const applyInitial = async (acceptIncomplete = false) => {
-    if (record.status !== "ready" || !draft || busy || hasInvalidInputs || applyingRef.current || retryInFlightRef.current || (breakdownRequiresDriver && projectDriverMemberId === null)) return;
+    if (record.status !== "ready" || !draft || busy || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
     if (!acceptIncomplete && selectedIssues.length > 0) return;
     if (acceptIncomplete && !canAcceptIncomplete) return;
     applyingRef.current = true;
@@ -519,6 +516,8 @@ export function IntakeReviewPage() {
         conflictPendingRef.current = true;
         state.reload();
       } else {
+        const driverRequirement = projectDriverRequirementFromError(cause);
+        if (driverRequirement) setActivationDriverRequirement(driverRequirement);
         setApplyError(localizedErrorMessage(cause, strings));
         if (record.breakdown) {
           // Failed breakdown transactions release their claim and advance the
@@ -704,12 +703,24 @@ export function IntakeReviewPage() {
           diagnosticHref={diagnosticHref}
           breakdown={Boolean(record.breakdown)}
           existingChildren={record.breakdown?.existingChildren ?? []}
-          sourceStatus={record.breakdown?.sourceStatus ?? "captured"}
-          sourceOwnerMemberId={record.breakdown?.sourceOwnerMemberId ?? null}
-          projectDriverMemberId={projectDriverMemberId}
-          onProjectDriverChange={setProjectDriverMemberId}
         />
       </fieldset>
+      {activationDriverRequirement ? (
+        <section className="card stack" aria-label={strings.aiProjectDriverLabel}>
+          <p>{strings.aiProjectWillBeActive}</p>
+          <strong>{activationDriverRequirement.title}</strong>
+          <p>{strings.aiProjectDriverHint}</p>
+          <MemberChoiceGroup
+            label={strings.aiProjectDriverLabel}
+            idPrefix="intake-activation-driver"
+            members={members}
+            value={projectDriverMemberId}
+            onChange={setProjectDriverMemberId}
+            unassignedLabel={null}
+            disabled={busy || record.status !== "ready"}
+          />
+        </section>
+      ) : null}
       {applyError ? (
         <div className="stack intake-error-group">
           <p role="alert">{applyError}</p>
@@ -772,7 +783,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || hasInvalidInputs || breakdownRequiresDriver && projectDriverMemberId === null}
+              disabled={busy || record.status !== "ready" || hasInvalidInputs}
               onClick={() => void applyInitial(true)}
             >
               {strings.intakeAcceptIncomplete}
@@ -781,7 +792,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs || breakdownRequiresDriver && projectDriverMemberId === null}
+              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs}
               onClick={() => void applyInitial(false)}
             >
               {record.breakdown ? strings.taskBreakdownApply : strings.intakeApplyCount(enabledProposalCount)}

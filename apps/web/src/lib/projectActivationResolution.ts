@@ -71,6 +71,15 @@ export function projectActivationPromptFromError(
   };
 }
 
+/** A compact selector for activation flows that only need the missing driver. */
+export function projectDriverRequirementFromError(
+  error: unknown,
+): Pick<ProjectActivationRequirement, "projectId" | "title"> | null {
+  const prompt = projectActivationPromptFromError(error);
+  const required = prompt?.projects.find((project) => project.required.includes("driver"));
+  return required ? { projectId: required.projectId, title: required.title } : null;
+}
+
 /** Reload current server requirements after a stale write, keeping only
  * decisions that still apply to the current transition. */
 export async function refreshProjectActivationPrompt(

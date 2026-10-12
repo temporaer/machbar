@@ -244,7 +244,7 @@ export function applyWorkRefinement(
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
           conversions.set(
             task.id,
-            beginCommitmentConversion(txDb, task.id, projectDriverMemberId, viewerId, context),
+            beginCommitmentConversion(txDb, task.id, projectDriverMemberId, false, viewerId, context),
           );
           break;
         }

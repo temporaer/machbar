@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { IntakeRecord } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -14,6 +14,10 @@ vi.mock("../lib/api", async (importOriginal) => {
   } };
 });
 const mockedApi = vi.mocked(api, true);
+vi.mock("../lib/identity", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/identity")>();
+  return { ...actual, useIdentity: () => ({ members: [{ id: 1, name: "Mira", color: "#123456", pictureUrl: null }], currentMemberId: 1 }) };
+});
 function record(disposition: "changes" | "clarification" | "leave_alone" = "changes", status: IntakeRecord["status"] = "ready"): IntakeRecord {
   return {
     id: "job", status, revision: 2, createdAt: "now", expiresAt: "later", text: JSON.stringify({ id: 4, title: "Kita-Formular", children: [] }), retryHint: null,
@@ -281,6 +285,41 @@ describe("WorkRefinementReview", () => {
     expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox"));
     expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
+  });
+
+  it("shows a server-required driver for a committed captured-task conversion and retries Apply", async () => {
+    const current = record();
+    current.text = JSON.stringify({
+      id: 4, title: "Prepare the move", status: "captured", ownerMemberId: null,
+      dueDate: "2030-12-01", scheduledDate: null, revisitAt: null, reminders: [], children: [],
+    });
+    current.refinement!.proposal!.changes = [
+      { kind: "convert_task_to_project", targetId: 4, rationale: "Separate the commitment from its steps.", accepted: false },
+      { kind: "create_child", parentTaskId: 4, title: "Confirm the date", notes: null, rationale: "Begin with the next action.", accepted: false },
+    ];
+    const activationError = Object.assign(new Error("This commitment needs a project driver."), {
+      code: "project_commitment_resolution_required",
+      details: {
+        projects: [{ projectId: 4, title: "Prepare the move", ownerMemberId: null, revision: 2, required: ["driver"] }],
+        expectedProjects: [{ projectId: 4, revision: 2 }],
+      },
+    });
+    mockedApi.updateWorkRefinement.mockImplementation(async (_id, body) => ({
+      ...current, revision: 3, refinement: { ...current.refinement!, proposal: body.proposal },
+    } as IntakeRecord));
+    mockedApi.applyWorkRefinement.mockRejectedValueOnce(activationError as never)
+      .mockResolvedValueOnce({ ...current, status: "applied", revision: 4 } as IntakeRecord);
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+
+    await userEvent.click(screen.getAllByRole("checkbox")[0]!);
+    await userEvent.click(screen.getAllByRole("checkbox")[1]!);
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    const driverGroup = await screen.findByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" });
+    expect(within(driverGroup).getByRole("button", { name: "Mira" })).toBeInTheDocument();
+    await userEvent.click(within(driverGroup).getByRole("button", { name: "Mira" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyWorkRefinement).toHaveBeenCalledTimes(2));
+    expect(mockedApi.applyWorkRefinement.mock.calls[1]?.[1]).toMatchObject({ projectDriverMemberId: 1 });
   });
 
   it.each(["captured", "someday"] as const)("does not warn about preserved metadata for a %s conversion", (status) => {

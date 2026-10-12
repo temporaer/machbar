@@ -209,10 +209,48 @@ describe("reviewed task breakdown", () => {
     expect(children.find((child) => child.title === task.title)?.scheduledDate).toBe("2027-01-05");
   });
 
+  it.each(["captured", "someday"] as const)("activates a %s conversion from a dated accepted child only after its driver decision", async (status) => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Breakdown driver", color: "#234567" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Prepare the move", status });
+    const { id, draft } = prepare(task.id, true);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+
+    await expect(apply(id, draft)).rejects.toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: { projects: [expect.objectContaining({ projectId: task.id, required: expect.arrayContaining(["driver"]) })] },
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get())
+      .toMatchObject({ role: "task" });
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({
+      kind: "action", status, children: [],
+    });
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
+
+    // The failed application leaves the same proposal editable. Retrying with
+    // the explicit decision applies the accepted graph exactly once.
+    await apply(id, draft, getIntake(ctx.handle.db, id, null).revision, driver.id);
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    expect(project).toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+    const children = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all();
+    expect(children.filter((child) => child.title === "Compare options")).toHaveLength(1);
+    expect(children.find((child) => child.title === "Compare options")).toMatchObject({
+      status: "active", scheduledDate: "2030-12-01",
+    });
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+  });
+
+  it("leaves a captured conversion untouched when the user cancels before applying it", () => {
+    const task = createTask(ctx.handle.db, { title: "Prepare the move", status: "captured" });
+    const { draft } = prepare(task.id, true);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+    // Reviewing then leaving the proposal is a read-only path.
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ kind: "action", status: "captured", children: [] });
+  });
+
   it("rolls back an actionable conversion when no driver is selected", async () => {
     const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
     const { id, draft } = prepare(task.id, true);
-    await expect(apply(id, draft)).rejects.toMatchObject({ code: "project_driver_required" });
+    await expect(apply(id, draft)).rejects.toMatchObject({ code: "project_commitment_resolution_required" });
     expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
     expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
@@ -240,7 +278,7 @@ describe("reviewed task breakdown", () => {
     const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
     const { id, draft } = prepare(task.id, true);
     draft.workItems = [draft.workItems[0]!];
-    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "project_activation_not_ready" });
+    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "project_commitment_resolution_required" });
     expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
     expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");

@@ -1662,7 +1662,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByRole("link", { name: "Zu Machbar" })).toHaveAttribute("href", "/today");
   });
 
-  it("shows active conversion and requires a driver for an ownerless actionable breakdown", async () => {
+  it("waits for server activation requirements before asking for a driver", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
       breakdown: {
@@ -1684,12 +1684,11 @@ describe("IntakeReviewPage", () => {
       },
     } as never);
     renderPage();
-    expect(await screen.findByText("Wird aktives Projekt – bleibt in deiner aktiven Arbeit.")).toBeInTheDocument();
-    expect(screen.getByText("Die verantwortliche Person koordiniert und schützt den Fortschritt; sie muss nicht alle Schritte selbst ausführen.")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" })).toBeInTheDocument();
+    expect(await screen.findByText("Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" })).not.toBeInTheDocument();
   });
 
-  it("shows backlog conversion for a someday breakdown without requiring a driver", async () => {
+  it("does not require a driver for an uncommitted someday conversion", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
       breakdown: {
@@ -1711,8 +1710,41 @@ describe("IntakeReviewPage", () => {
       },
     } as never);
     renderPage();
-    expect(await screen.findByText("Wird Backlog-Projekt.")).toBeInTheDocument();
+    expect(await screen.findByText("Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.")).toBeInTheDocument();
     expect(screen.queryByText("Wähle eine verantwortliche Person für das Projekt.")).not.toBeInTheDocument();
+  });
+
+  it("shows the server activation requirement and retries breakdown with the selected driver", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      breakdown: {
+        taskId: 27, instruction: "Make steps", sourceStatus: "captured", sourceOwnerMemberId: null,
+        scheduledDate: null, revisitAt: null, notBeforeAt: null, notBeforeDate: null, priority: null, size: null, existingChildren: [],
+      },
+      draft: {
+        ...draft,
+        workItems: [
+          { ...draft.workItems[0]!, key: "existing-task", kind: "project" },
+          { ...draft.workItems[1]!, parentKey: "existing-task", scheduledDate: "2030-12-01" },
+        ],
+      },
+    } as never);
+    const activationError = Object.assign(new Error("This commitment needs a project driver."), {
+      code: "project_commitment_resolution_required",
+      details: {
+        projects: [{ projectId: 27, title: "Schulfest", ownerMemberId: null, revision: 2, required: ["driver"] }],
+        expectedProjects: [{ projectId: 27, revision: 2 }],
+      },
+    });
+    mockedApi.applyIntake.mockRejectedValueOnce(activationError as never).mockResolvedValueOnce({ ...record("applied"), draft: null } as never);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
+    const driverGroup = await screen.findByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" });
+    expect(screen.getByText("Wird aktives Projekt – bleibt in deiner aktiven Arbeit.")).toBeInTheDocument();
+    fireEvent.click(within(driverGroup).getByRole("button", { name: "Mira" }));
+    fireEvent.click(screen.getByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({ projectDriverMemberId: 1 });
   });
 
   it("opens the applied refinement at the resulting project route", async () => {
