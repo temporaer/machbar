@@ -296,6 +296,74 @@ describe("TaskStructureSheet routing", () => {
     }));
   });
 
+  it("shows the latest title and notes after choosing the server versions", async () => {
+    const story = makeProject({ id: 893, revision: 3, title: "Alter Titel", notes: "Alte Notizen" });
+    mockedApi.getProject
+      .mockResolvedValueOnce({ ...story, revision: 4, tasks: [] })
+      .mockResolvedValueOnce({ ...story, title: "Server Titel", notes: "Server Notizen", revision: 5, tasks: [] });
+    mockedApi.convertStoryToTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), {
+        name: "ApiError", code: "stale_write_conflict", details: {},
+      }))
+      .mockResolvedValueOnce(makeTask({ id: story.id }));
+    renderProjectConversion(story);
+
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    await userEvent.clear(within(sheet).getByLabelText("Titel"));
+    await userEvent.type(within(sheet).getByLabelText("Titel"), "Mein Titel");
+    await userEvent.clear(within(sheet).getByLabelText("Notizen"));
+    await userEvent.type(within(sheet).getByLabelText("Notizen"), "Meine Notizen");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
+    await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2));
+
+    await userEvent.click(within(sheet).getAllByRole("button", { name: "Serverfassung verwenden" })[0]);
+    expect(within(sheet).getByLabelText("Titel")).toHaveValue("Server Titel");
+    await userEvent.click(within(sheet).getAllByRole("button", { name: "Serverfassung verwenden" })[0]);
+    expect(within(sheet).getByLabelText("Notizen")).toHaveValue("Server Notizen");
+
+    await userEvent.clear(within(sheet).getByLabelText("Titel"));
+    await userEvent.type(within(sheet).getByLabelText("Titel"), "Späterer Titel");
+    await userEvent.clear(within(sheet).getByLabelText("Notizen"));
+    await userEvent.type(within(sheet).getByLabelText("Notizen"), "Spätere Notizen");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
+
+    await waitFor(() => expect(mockedApi.convertStoryToTask).toHaveBeenLastCalledWith(story.id, {
+      title: "Späterer Titel",
+      notes: "Spätere Notizen",
+      expectedRevision: 5,
+    }));
+  });
+
+  it("keeps refreshed untouched notes when an edited title is cleared", async () => {
+    const story = makeProject({ id: 894, revision: 3, title: "Originaltitel", notes: "Alte Notizen" });
+    mockedApi.getProject
+      .mockResolvedValueOnce({ ...story, revision: 4, tasks: [] })
+      .mockResolvedValueOnce({ ...story, notes: "Neue Servernotizen", revision: 5, tasks: [] });
+    mockedApi.convertStoryToTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), {
+        name: "ApiError", code: "stale_write_conflict", details: {},
+      }))
+      .mockResolvedValueOnce(makeTask({ id: story.id }));
+    renderProjectConversion(story);
+
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    await userEvent.clear(within(sheet).getByLabelText("Titel"));
+    await userEvent.type(within(sheet).getByLabelText("Titel"), "Entwurf");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
+    await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2));
+    expect(within(sheet).getByLabelText("Notizen")).toHaveValue("Neue Servernotizen");
+
+    await userEvent.clear(within(sheet).getByLabelText("Titel"));
+    await userEvent.type(within(sheet).getByLabelText("Titel"), "Originaltitel");
+    expect(within(sheet).getByLabelText("Titel")).toHaveValue("Originaltitel");
+    expect(within(sheet).getByLabelText("Notizen")).toHaveValue("Neue Servernotizen");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
+
+    await waitFor(() => expect(mockedApi.convertStoryToTask).toHaveBeenLastCalledWith(story.id, {
+      expectedRevision: 5,
+    }));
+  });
+
   it("keeps child tasks when converting a project to an action task", async () => {
     const project = makeProject({ id: 82 });
     mockedApi.getProject.mockResolvedValue({

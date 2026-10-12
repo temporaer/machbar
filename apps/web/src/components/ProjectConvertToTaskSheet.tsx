@@ -36,17 +36,19 @@ export function ProjectConvertToTaskSheet({
     reload,
   } = useAsync<ProjectDetail>(() => api.getProject(story.id), [story.id]);
 
+  const currentProject = freshProject ?? project;
+
   useEffect(() => {
-    if (!project) return;
+    if (!currentProject) return;
     if (!titleEdited) {
-      baseline.current.title = project.title;
-      setTitle(project.title);
+      baseline.current.title = currentProject.title;
+      setTitle(currentProject.title);
     }
     if (!notesEdited) {
-      baseline.current.notes = project.notes ?? "";
-      setNotes(project.notes ?? "");
+      baseline.current.notes = currentProject.notes ?? "";
+      setNotes(currentProject.notes ?? "");
     }
-  }, [project, titleEdited, notesEdited]);
+  }, [currentProject, titleEdited, notesEdited]);
 
   useEffect(() => {
     if (freshProject && project && project.revision >= freshProject.revision) {
@@ -54,7 +56,6 @@ export function ProjectConvertToTaskSheet({
     }
   }, [freshProject, project]);
 
-  const currentProject = freshProject ?? project;
   const hasChildren = (currentProject?.tasks.length ?? 0) > 0;
   const hasAcceptanceCriteria = (currentProject?.acceptanceCriteria ?? []).length > 0;
   const canConvert = currentProject !== null && currentProject !== undefined && currentProject.parentId === null && currentProject.status !== "archived" && (currentProject.childStories?.length ?? 0) === 0;

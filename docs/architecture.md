@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 25387)
-Total output lines: 1567
-
 # Machbar — Architecture
 
 ## Commitment-driven project activation
@@ -695,7 +692,321 @@ archived ◄──archive── (backlog | active | completed)
 ### Responsible-person invariant
 
 Every active project must have a responsible person (`ownerMemberId`) and
-either executable progres…5387 tokens truncated…g element keys off that one class (`.story-row-accent-*`, `.story-row-status-badge--*`, `.story-row-primary--*`, and the primary swipe background). An `active` story with a `stuckReason` therefore reads as a warning, not as healthy progress, except `completion_review`, which renders as the distinct `review` accent — ready to complete, not stuck — and `backlog` is deliberately not green.
+either executable progress or an intentional healthy future-waiting path:
+
+- `POST /api/projects/:id/activate` fails with `project_driver_required`
+  unless the project already has a responsible person or one is supplied
+  inline (`{"ownerMemberId": n}`).
+- Activation and reopening also fail when the project has neither a canonical
+  executable candidate nor a healthy blocker path with future attention. Every
+  project response exposes that exact domain evaluation as
+  `activationReadiness`, so focused UI collects only the missing driver or next
+  step instead of approximating readiness from display fields.
+- `PATCH /api/projects/:id` with `ownerMemberId: null` fails with
+  `project_driver_locked` unless the project is in `backlog`. Reassigning to a
+  different member is always allowed. Individual task ownership remains
+  independent.
+- Member deletion fails with `member_active_projects_conflict` while that
+  person still drives an active project. The project must be reassigned or
+  returned to backlog first.
+
+Quick project capture creates backlog work and preserves the selected driver.
+Its handoff may add a first action, but Start remains explicit. Active
+task-to-story conversion is subject to the same invariant; role conversion
+preserves the task identity, compatible metadata, and descendants rather than
+manufacturing readiness.
+
+The conversion sheet creates a backlog project first. Its Activate choice and
+the captured-project handoff's Start button dispatch `story.activate`, so
+`ProjectWorkflowHost` collects a missing driver with the existing member picker.
+Selection assigns the driver and activates atomically when a progress path is
+ready; otherwise the lifecycle continuation guides the user to plan the next
+action without bypassing activation readiness.
+
+Legacy rows migrated from before the invariant may still be `active` without a
+responsible person; the clarification service flags them urgently.
+
+### Stuck detection
+
+`Graph` and the canonical cycle-safe analyzer in
+`apps/api/src/domain/blockers.ts` classify **`active` projects only** (backlog
+stories are not "stuck" — they are simply not started).
+
+| Reason | Condition |
+|--------|-----------|
+| `no_next_action` | No healthy actionable path exists and no more specific blocker diagnosis explains it (including an empty project or open work that is only captured/someday) |
+| `completion_review` | Project has tasks but **zero open** ones — everything is `done`/`cancelled`, so the story is ready to be completed or extended |
+| `waiting_without_followup` | An external blocker path has no Wiedervorlage |
+| `blocked_without_clear_path` | A dependency path ends in captured/someday/non-operational work, a missing task, or a corrupt cycle |
+| *(healthy)* | At least one meaningful path reaches executable work or an intentional external wait with a revisit |
+
+`completion_review` is a distinct classification from the other three
+reasons: a project with no remaining open tasks is **not** stuck — it is
+healthy and simply ready for a completion decision. The backend still reports
+it through `stuckReason` (Review needs to surface it as maintenance work), but
+the frontend's `apps/web/src/lib/projectListFilter.ts` maps it to its own
+`"active-review"` presentation classification (sorted with active work, styled
+with a distinct accent) rather than folding it into `"active-stuck"`.
+`ProjectStuckNotice`/`ProjectStoryRow`/`ProjectAgendaRow` all branch on this
+same distinction to avoid framing "ready to complete" as a blocked project.
+
+A reached external-wait revisit remains a task-level attention signal and
+returns to Today. It does not make an otherwise valid waiting project
+structurally stuck.
+
+Shared tasks without an effective owner are valid actionable work. They do not
+make their project structurally stuck.
+
+Dependency chains are deliberately **not** defects by themselves. A sequence
+such as `Angebot → Termin → Arbeit → Rechnung → Bezahlen` is healthy while
+every unresolved branch leads back to a task that can be done now or to work
+intentionally parked with a future Wiedervorlage. An external wait without a
+future revisit, captured blocker, someday task, or any other branch without a
+progression anchor produces a specific waiting reason or
+`blocked_without_clear_path` and may keep the project stuck. Open tasks in
+completed/archived projects are not valid progression anchors. More specific
+issues remain attached to the terminal blocker so the repair action points at
+the cause rather than every downstream task.
+Once all blockers close, normal next-action or completion-review semantics
+take over.
+
+### Entering successive tasks
+
+`StepComposer` is the shared authored step-entry component used for inline
+successors, task splitting, and the post-conversion project handoff. Inline
+**Nächsten Schritt danach hinzufügen** still creates one actionable sibling at
+the same outline level and makes it depend on its source task;
+`POST /api/tasks/:id/successors` performs creation and dependency insertion in
+one SQLite transaction. It may include the optional plan or deadline collected
+by the shared composer.
+
+Task splitting and project handoff submit every filled row in one request to
+`domain/taskStepBatch.ts`. The domain operation checks the selected parent or
+project revision and the full containing project chain, creates all tasks,
+classifies an Inbox parent with its first child, and runs the Phase 1
+commitment evaluator before commit. Missing driver/progress decisions roll back
+the complete batch; the UI keeps its rows and renders the server requirements
+for an explicit retry. A requested captured-task conversion invokes the
+existing guarded role-conversion implementation inside the same transaction.
+Undated children do not activate Someday/backlog work. Existing outline
+reordering still uses `useOutlineOrganize` and the canonical task move API.
+
+The task row rail exposes **Schritt hinzufügen** and **Verschieben** directly;
+both dispatch existing `task.split` and `task.changeProject` commands. The row
+does not reproduce task creation or movement semantics.
+
+Outline position (likely work order) and dependencies (genuinely blocked
+work) remain distinct: a project's ordinary task list needs neither a
+sequence-entry bulk feature nor automatic dependencies between adjacent
+outline rows, since Today already derives the next useful project action
+from outline order and eligibility.
+
+---
+
+## 8. Review and exhaustive inventory
+
+### Derived Review — `/more/review`
+
+`apps/api/src/domain/reviewItems.ts` is the single deterministic maintenance
+projection. It derives compact project/task diagnoses from the graph and an
+injected calendar date; there is no Review table or workflow status.
+
+Review contains structural decisions: missing project driver or progress path,
+due-without-plan, malformed waiting, broken blocker paths, XL work without
+breakdown, completion review, and age-based reconsideration. It also flags
+semantic contradictions between a project's own dates/status and its child
+tasks: a backlog project already carrying genuinely executable/actionable open
+work (an intentionally scheduled or due child-task date alone is not flagged —
+those task dates are allowed planning signals that Week surfaces); a task
+scheduled or due before its project's Wiedervorlage (`scheduledDate`); a
+project whose deadline precedes its own Wiedervorlage; and a completed/archived
+project that still has open child tasks (a repair signal for legacy/corrupt or
+externally-created data — normal completion no longer creates this state, since
+completion asks the driver to resolve remaining open tasks first). It
+deliberately excludes valid shared tasks, absent optional acceptance criteria,
+Inbox captures, reached follow-ups, and past planning dates already owned by
+Today. More's badge is the exact number of current derived items.
+
+Nullable `projects.reviewed_at` and `tasks.reviewed_at` record only explicit
+"keep active/parked/later" decisions. Opening an item never acknowledges it,
+and acknowledgement advances the entity revision without changing
+`updated_at`. Ordinary edits naturally postpone review because age uses the
+latest meaningful update or acknowledgement. Active and backlog project age
+also considers descendant activity. The fixed calendar-day leases are 14 days
+for active projects, 30 for backlog projects, and 90 for standalone Someday
+tasks. Healthy future waiting suppresses generic active inactivity.
+
+Review decisions execute through `useProjectActions` and `useTaskActions`.
+Expected revisions, optimistic retention, stale conflicts, and refresh remain
+inside those canonical hooks. Focused repair reuses project/task detail,
+`TaskOwnerSheet`, `MemberSelectionSheet`, `StepComposer`, and
+`AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
+available as optional secondary planning tools rather than a separate
+Refinement workflow.
+
+### Klärungsrunde — `/more/cleanup-round`
+
+The Klärungsrunde is an on-demand, advisory planning-clarity pass over semantic
+work-item quality. It does not replace Review/Stuck Detection's mechanical
+workflow hygiene: Review knows owners, dates, waits, blockers, next actions,
+stuck reasons, status, and review age; the Klärungsrunde asks a Home Assistant
+AI Task whether a few sampled items preserve enough intent, outcome, and
+decision structure for a tired human to resume them without reconstructing the
+plan from memory.
+
+- **Sampling** (`apps/api/src/cleanupRound/sampler.ts`) selects, not
+  diagnoses: up to five open tasks (captured/actionable/someday action tasks in
+  no or an open project) and active/backlog projects visible to the viewer,
+  excluding items reviewed in the last seven days and items already in an open
+  round. Weighted randomness favours staleness, notes, children, and vague
+  titles, caps two items per project/parent cluster, and mixes tasks with
+  projects when possible.
+- **Contract** (`packages/shared/src/cleanupRound.ts`): each sampled item is
+  sent as a `CleanupItemContext` with mechanical facts as context only. The AI
+  must not report missing owner/due/scheduled/revisit dates, stale age,
+  blocked state, or graph next-action gaps as findings; those belong to
+  Review/Stuck Detection. It instead looks for unclear intent, hidden
+  decisions, vague outcomes, wrong shape, weak uncertainty-reducing slices,
+  incident follow-up, and admin target ambiguity. A sparse `planningContext`
+  adds only relevant open/waiting/done children, the current next action, and
+  non-empty project acceptance criteria, bounded for the Home Assistant AI
+  Task; empty/default/null fields and the context itself are omitted when
+  there is no useful evidence. This lets the AI avoid duplicating existing
+  plans or completed work without receiving the whole graph. The AI returns
+  one `CleanupTriageResult` per item from closed proposal, resolution surface,
+  inferred work type, and flow vocabularies. Work type and uphill/downhill are
+  reasoning lenses and are never persisted on tasks or projects.
+- **Validation** (`validate.ts`) normalizes strings and enums, trims excessive
+  text, rejects unknown targets, type mismatches, duplicates, and malformed
+  entries as warnings, and keeps raw and validated responses separately. All
+  valid → `ready`; some → `partial`; none → `failed`. Retry re-analyzes only
+  `failed` items, keeps accepted (`ready`) cards and the round summary, and
+  feeds validation issues back into the prompt; a round that still holds
+  accepted cards stays `partial` even when the retry fails. Failed items stay
+  reserved from new rounds while their round is open. The Home Assistant
+  structure only enforces the response envelope; this validator is the strict
+  boundary: the Home Assistant result fields are optional and nullable, so an
+  incomplete entry reaches this validator and becomes one `schema_invalid`
+  warning (the round turns `partial`) instead of failing the whole response.
+- **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
+  operational state (24-hour expiry, purged with intake jobs); a
+  `home_assistant_requests` row belongs to either an intake job or a round.
+- **Resolution**: AI results never mutate work items by themselves; every
+  change needs an explicit user confirmation. “Hinten anstellen” reuses the
+  canonical Review acknowledgement (`reviewedAt`) and is the only action that
+  sets it. “Einschätzung ausblenden” only dismisses the card. The pure mapping
+  in `apps/web/src/lib/cleanupRound.ts` turns each surface into one of:
+  - a **micro-flow** (`CleanupMicroFlow`) for text-shaped surfaces. The card
+    shows the AI suggestion as an editable answer; the button opens
+    `CleanupRoundActionSheet`, which loads the current item and shows the
+    target plus the exact title/text before anything is written. Confirming
+    sends one request to a narrow action endpoint,
+    `POST /api/cleanup-rounds/:id/items/:itemId/actions/<action>`
+    (`apps/api/src/cleanupRound/actions.ts`). In one transaction it checks
+    that the round is open and the card is open and `ready`; that the action
+    fits the card's stored `resolutionSurface` (`rename` ← `rename_item`;
+    `create-task` ← `create_decision_task`/`create_first_slice`/
+    `create_followup`; `add-done-when` ← `edit_done_when`; `clarify-admin` ←
+    `clarify_admin_target`; otherwise `cleanup_round_action_surface_mismatch`,
+    and a missing or unreadable stored result is rejected); and that the
+    target still exists with the card's type. It then calls the canonical domain
+    function and dismisses the card (never `reviewedAt`). Either the item
+    improves and the card disappears, or nothing changes; the page renders the
+    returned round:
+    - `rename` (rename_item): `updateTask` / `updateProject` with the loaded
+      `expectedRevision`, so stale writes are rejected;
+    - `create-task` (decision, first slice, follow-up): `createChildTask`
+      under a task, or `createTask` with `projectId` in a project, with the
+      normal owner/context/tag inheritance;
+    - `add-done-when`: `addCriterion` for a project; for a task, the
+      `appendTaskNotes` notes append of the `Erledigt, wenn: …` block;
+    - `clarify-admin`: a rename to `suggestedTitle` and/or a notes append with
+      the recipient/document details, both previewed and editable; at least
+      one must change, and `expectedRevision` is checked before either write.
+  - an existing `useWorkItemCommands()` workflow where Machbar has no specific
+    change to offer: `task.convertToProject` (choose_shape → project; its sheet
+    is already the confirmation), `task.plan`/`story.defer` (rhythm/revisit,
+    no date prefilled), `task.structure`/`story.structure` (“Öffnen und
+    strukturieren”), and “Öffnen und als Information prüfen” for reference
+    suggestions. There is no canonical action → reference conversion
+    (`makeTaskAction` only promotes references), so Machbar does not add a
+    parallel one.
+  - no extra button, when the surface only reaches the plain item view that
+    the card's own “Öffnen” already covers.
+
+  There is no generic “apply AI result” endpoint: each action endpoint accepts
+  only its own strict payload and reuses the canonical domain function inside
+  the card-resolution transaction. Failed items
+  stay visible as cards with open and hide; a single failed item carries its
+  own retry, while several failed items share one banner retry.
+
+The More entry appears only when the Home Assistant AI Task is ready. Older
+Home Assistant components answer the new request kind with
+`unsupported_request`, so the round fails visibly instead of hanging.
+
+### Alles — `/more/all`
+
+Alles evolves the existing Search implementation. It composes `getProjects()`
+with `searchTasks()` and `SearchFilterBar`; it does not introduce another
+storage or indexing model. With no filters, every non-deleted project is a
+first-class entry and standalone task trees cover all lifecycle/blocker states.
+Project descendants are reached through project detail rather than duplicated
+beside the project. Active search/filtering may return a matching nested task
+directly and searches project title/notes as well as tasks.
+
+### Projects tab — `/projects`
+
+`ProjectsPage` renders the same `ProjectStoryRow` (card variant) for active,
+backlog, completed, and archived projects. Active stories stay primary, backlog
+stories render in their own visible but collapsed-by-default **Später / noch
+nicht aktiv** section, and completed/archived stories remain folded.
+
+- **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail/chip strip instead, never the one-tap default. Backlog activation is also offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
+- **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
+- The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step. `archived` only ever offers `return_to_backlog`; there is no direct `archived → active` shortcut anywhere in the UI.
+- Activation requires a driver plus an executable progress path or intentional
+  healthy future wait. Focused preflight opens `MemberSelectionSheet` or the
+  existing task composer for the missing decision and then uses the canonical
+  project action.
+- Completion is intercepted centrally by `lifecyclePrerequisite()` in
+  `lib/projectWorkflow.ts`, not by special-casing individual buttons: unchecked
+  acceptance criteria open `CompleteWithCriteriaSheet` (the focused checklist,
+  never the structural `StoryCriteriaSheet`/`editOutcome` editor), and — once
+  criteria are satisfied or absent — remaining open child tasks open
+  `CompleteWithOpenTasksSheet`, which lets the driver cancel or move each one
+  (reusing `useTaskActions().requestCancel` and the canonical
+  `task.changeProject` command) before the primary "Projekt abschließen"
+  action becomes enabled. Every entry point still dispatches the same semantic
+  `story.complete` command.
+- Task completion with retained criteria is resolved centrally in
+  `useWorkItemCommands()`: unchecked criteria open the shared
+  `CompleteWithCriteriaSheet`, then dispatch the same `task.toggleDone`
+  command after the criteria are checked. The API independently validates
+  criteria inside the canonical task completion transaction.
+- Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
+
+#### Filtering and ordering the list
+
+`lib/projectListFilter.ts` is a pure `filterAndSortProjects(projects, { query, scope, currentMemberId })`, unit-tested on its own and called once per render by `ProjectsPage`:
+
+- **Search** folds diacritics (`NFD` + combining-mark strip) and lower-cases both sides, then substring-matches the title **and** every `acceptanceCriteria[].text`. The list endpoint already returns criteria (`Graph.load`), so no extra request is needed.
+- **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter. A third state, `work`, shows only the current member's own `scope: "work"` items (household items are excluded); `nextAgendaScope` in `apps/web/src/lib/todayScope.ts` defines the shared Mine → Household → Work cycle order and is reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, and `InboxPage`.
+- **Sort buckets**, in order: active & healthy, active & ready-to-complete
+  (`completion_review`), active & `stuckReason`, active with a future-scheduled
+  next action, active waiting, backlog, completed, archived; ties break on
+  `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is
+  stable across reloads and retentions.
+- Active rows form the primary list. Backlog rows form a visible **Später /
+  noch nicht aktiv** disclosure that starts closed by default. Completed and
+  archived rows keep that same deterministic order inside the folded
+  **Abgeschlossen & archiviert** section. A non-empty search reveals matching
+  terminal rows automatically.
+- Filtering runs **before** sorting, and retained (optimistic) rows are merged into the same input list, so a retained row obeys the current search/scope and can never render twice next to its refetched counterpart.
+- `ProjectsPage` distinguishes *no stories at all* (`noProjects`) from *nothing matches* (`noMatchingProjects`) by testing the unfiltered list first.
+
+#### Status accents and a single progress bar
+
+`statusAccent(story)` collapses status + `stuckReason` into six values — `backlog | active | review | stuck | completed | archived` — and every colour-carrying element keys off that one class (`.story-row-accent-*`, `.story-row-status-badge--*`, `.story-row-primary--*`, and the primary swipe background). An `active` story with a `stuckReason` therefore reads as a warning, not as healthy progress, except `completion_review`, which renders as the distinct `review` accent — ready to complete, not stuck — and `backlog` is deliberately not green.
 
 The four targeted actions render as icon-only 44 px buttons (`.story-row-chip-icon`) with inline, `aria-hidden`/`focusable="false"` SVG glyphs; the German `aria-label` **and** `title` carry the accessible name, so nothing is conveyed by the glyph alone. Workflow transitions stay labelled text chips.
 
