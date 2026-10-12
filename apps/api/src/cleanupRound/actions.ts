@@ -3,7 +3,7 @@ import type { CleanupResolutionSurface } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
-import { addCriterion } from "../domain/storyCapabilities.js";
+import { addCriterion } from "../domain/acceptanceCriteria.js";
 import { appendProjectNotes, getProjectOrThrow, updateProject } from "../domain/storyCrud.js";
 import {
   appendTaskNotes,

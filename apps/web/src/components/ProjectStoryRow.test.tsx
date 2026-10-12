@@ -333,7 +333,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     mockedApi.getProject.mockResolvedValue(allChecked);
 
     await userEvent.click(within(dialog).getByRole("checkbox", { name: "Getränke besorgt" }));
-    expect(mockedApi.checkCriterion).toHaveBeenCalledWith(29, 2, true);
+    expect(mockedApi.checkCriterion).toHaveBeenCalledWith("project", 29, 2, true);
 
     await waitFor(() => expect(completeButton).toBeEnabled());
     await userEvent.click(completeButton);

@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 21857)
+Total output lines: 1722
+
 import type {
   ApiErrorCode,
   CleanupProposalKind,
@@ -577,13 +580,16 @@ const extra = {
   convertProjectToTask: "Zur Aufgabe machen",
   convertProjectToTaskTitle: "Projekt zur Aufgabe machen",
   convertProjectToTaskReady:
-    "Dieses Projekt hat keine Unteraufgaben und keine Zielkriterien. Es kann ohne Strukturverlust in eine Aufgabe umgewandelt werden.",
-  convertProjectToTaskBlocked:
-    "Dieses Projekt kann noch nicht in eine einzelne Aufgabe umgewandelt werden.",
-  convertProjectToTaskHasChildren: "Dieses Projekt hat noch Unteraufgaben.",
-  convertProjectToTaskHasCriteria: "Dieses Projekt hat noch Zielkriterien.",
-  convertProjectToTaskOpenStructure: "Struktur öffnen",
-  convertProjectToTaskEditGoal: "Ziel bearbeiten",
+    "Die Projektidentität bleibt erhalten. Unteraufgaben werden Teilaufgaben; Zielkriterien bleiben prüfbar und gelten beim Abschließen.",
+  convertProjectToTaskChildrenPreserved: (count: number) => `${count} Unteraufgaben bleiben erhalten.`,
+  convertProjectToTaskCriteriaPreserved: (count: number) => `${count} Zielkriterien bleiben bearbeitbar und müssen vor dem Abschließen abgehakt sein.`,
+  convertProjectToTaskFieldConflict: "Dieses Feld wurde zwischenzeitlich geändert. Entscheide, welche Fassung du behalten möchtest",
+  convertProjectToTaskUseLatest: "Serverfassung verwenden",
+  convertProjectToTaskKeepMyEdit: "Meine Änderung beibehalten",
+  convertProjectToTaskUnsupported:
+    "Verschachtelte oder archivierte Projekte können hier nicht direkt umgewandelt werden. Stelle das Projekt zuerst wieder her oder löse seine Einordnung.",
+  convertProjectToTaskPlanningConflict:
+    "Arbeitsplan und Wiedervorlage lassen sich nicht beide auf dieselbe gewöhnliche Aufgabe übertragen. Ändere zuerst die Planung des Projekts.",
   needsClarification: "Zu klären",
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",
@@ -786,149 +792,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   noMembers: "Noch keine Personen angelegt.",
   swipeSettingTitle: "Wischgeste",
   swipeSettingHint:
-    "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt kontextbezogene Aktionen ohne Statuswechsel. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
-  railPlanning: "Planung",
-  railShape: "Art",
-  railStructure: "Struktur",
-  railAddStep: "Schritt hinzufügen",
-  railMove: "Verschieben",
-  railNote: "Notiz",
-  railWaitingFor: "Wartet auf",
-  railUpdate: "Update",
-  railNextStep: "Nächster Schritt",
-  railGoal: "Ziel",
-  availabilitySameDayHint: "Nicht vor:",
-  availabilitySameDayGroup: "Am selben Tag",
-  availabilityInAWhile: "In einer Weile",
-  availabilityTonight: "Heute Abend",
-  availabilityFutureHint: "Oder erst ab einem anderen Zeitpunkt:",
-  availabilityFutureGroup: "Verfügbarkeit",
-  availabilityCustomDate: "Anderes Datum",
-  availabilityCustomTime: "Uhrzeit",
-  clearNotBefore: "Wiedervorlage entfernen",
-  availabilityMorePlanningOptions: "Planung …",
-  structure: "Struktur",
-  structureSplit: "Aufteilen",
-  taskBreakdown: "Mit KI aufteilen…",
-  workRefinement: "Mit KI verbessern…",
-  workRefinementImprove: "Allgemein verbessern",
-  workRefinementNextAction: "Nächsten Schritt finden",
-  workRefinementStructure: "Struktur verbessern",
-  workRefinementHelp: "Die KI prüft Aufgabe und vorhandene Schritte und schlägt nur sinnvolle Änderungen vor. Du kannst den Fokus ergänzen; übernommen wird erst nach deiner Prüfung.",
-  workRefinementPlaceholder: "Worauf soll die KI besonders achten? (optional)",
-  refinementQuestionLabel: "Offene Frage",
-  refinementAnswerLabel: "Deine Antwort",
-  refinementFeedbackLabel: "Änderungswunsch",
-  refinementRegenerate: "Mit Antwort neu prüfen",
-  refinementRegenerateFeedback: "Vorschlag mit Feedback neu erstellen",
-  refinementApply: "Ausgewählte Änderungen übernehmen",
-  refinementLeaveAlone: "Passt so – die Arbeit ist bereits konkret und ausführbar.",
-  refinementDone: "Passt so",
-  refinementOpenOriginal: "Zur ursprünglichen Aufgabe",
-  refinementRequiresConversion: "Dieser Schritt kann nur zusammen mit der Umwandlung in ein Projekt übernommen werden.",
-  refinementMoveDestination: "Einordnen",
-  refinementMoveBeginning: "An den Anfang",
-  refinementMoveAfter: "Nach",
-  refinementMoveEnd: "An das Ende",
-  refinementTitle: "Titel verbessern",
-  refinementConvert: "In ein Projekt umwandeln",
-  aiProjectWillBeActive: "Wird aktives Projekt – bleibt in deiner aktiven Arbeit.",
-  aiProjectWillBeBacklog: "Wird Backlog-Projekt.",
-  aiProjectDriverLabel: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?",
-  aiProjectDriverHint: "Die verantwortliche Person koordiniert und schützt den Fortschritt; sie muss nicht alle Schritte selbst ausführen.",
-  aiProjectDriverRequired: "Wähle eine verantwortliche Person für das Projekt.",
-  aiTaskRemainingAction: "Bleibt Aufgabe und behält ihren aktuellen Status.",
-  aiProjectMetadataWarning: "Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.",
-  aiProjectTimingWarning: "Diese Aufgabe hat eine Wiedervorlage oder Verfügbarkeit. Kläre sie zuerst, bevor du sie in ein Projekt umwandelst.",
-  position: "Position",
-  refinementCreate: "Nächsten Schritt hinzufügen",
-  refinementMove: "Vorhandene Aufgabe verschieben",
-  refinementDependency: "Abhängigkeit ergänzen",
-  refinementWait: "Warteinformation aktualisieren",
-  refinementOutcome: "Projektziel konkretisieren",
-  refinementAdvisory: "Empfehlung manuell prüfen",
-  refinementConflict: "Der Vorschlag wurde inzwischen geändert. Deine lokalen Änderungen bleiben erhalten. Prüfe sie und speichere sie erneut.",
-  taskBreakdownHelp: "Beschreibe die gewünschten Änderungen. Die KI schlägt anhand der Aufgabe und eurer Haushaltsvorgaben kleine, ausführbare Schritte vor. Sie kann nicht im Web recherchieren. Prüfe alles vor dem Übernehmen; bestehende Schritte bleiben erhalten.",
-  taskBreakdownInstructions: "Anweisungen",
-  taskBreakdownPlaceholder: "Erstelle konkrete, ausführbare Schritte für jeweils etwa 20 Minuten.",
-  taskBreakdownGenerate: "Vorschlag vorbereiten",
-  taskBreakdownReview: "Aufteilung prüfen",
-  taskBreakdownExisting: "Bestehende Aufgabe",
-  taskBreakdownReviewHelp: "Der erste Eintrag bearbeitet die ursprüngliche Aufgabe; die anderen sind neue Schritte. Bestehende Schritte bleiben erhalten. Prüfe die ausdrücklich gewählte Projektumwandlung und ihren Verantwortlichen vor dem Übernehmen.",
-  taskBreakdownExistingChildren: "Bestehende Schritte (bleiben erhalten)",
-  intakeMoveUp: "Nach oben",
-  intakeMoveDown: "Nach unten",
-  taskBreakdownApply: "Geprüfte Änderungen übernehmen",
-  structureMove: "Verschieben …",
-  structureConvertToProject: "Zum Projekt machen",
-  structurePlanWork: "Nächste Aufgabe erfassen",
-  structureEditOutcome: "Ergebnis bearbeiten",
-  shapeQuestion: "Was ist das?",
-  shapeTask: "Aufgabe",
-  shapeTaskHint: "Eine konkrete Aufgabe.",
-  shapeProject: "Projekt",
-  shapeProjectHint: "Ein Ergebnis mit mehreren Schritten. Wird zunächst im Backlog geparkt.",
-  shapeReference: "Referenz",
-  shapeReferenceHint: "Nur Information, kein Todo.",
-  shapeReferenceUnavailable: "Die Umwandlung bestehender Aufgaben in Referenzen ist derzeit nicht verfügbar.",
-  insertSuccessorLabel: "Aufgabe danach hinzufügen",
-  /**
-   * Verb-phrased labels for the action-tile grid in Task/Project detail
-   * views (see `ActionTileGrid`) -- covers only the genuinely uncommon
-   * actions that remain in `Weitere Aktionen` once movement/split/convert/
-   * successor creation and lifecycle live in the fixed rail, contextual
-   * avatar clicks, and the successor "+".
-   */
-  actionTileLabels: {
-    "task.structure": "Struktur ändern",
-    "task.priority": "Priorität setzen",
-    "task.recurrence": "Wiederholung einrichten",
-  },
-  swipeCoachHint: (rightAction: string) =>
-    `Wischen: rechts „${rightAction}“, links mehr. Oder ⋯ tippen.`,
-  swipeCoachDismiss: "Wischhinweis schließen",
-  taskGestureHint: (rightAction: string) =>
-    `Nach rechts wischen: „${rightAction}“. Nach links wischen öffnet kontextbezogene Aktionen ohne Statuswechsel. Am Desktop geht das auch über ⋯.`,
-  assign: "Zuweisen",
-  schedule: "Planen",
-  scheduleShortcuts: "Schnell planen",
-  scheduleShortcutLabels: {
-    unscheduled: "Nicht geplant",
-    today: "Heute",
-    tomorrow: "Morgen",
-    nextWeek: "Nächste Woche",
-    weekend: "Wochenende",
-  },
-  reminders: "Erinnerungen",
-  addReminder: "+ Erinnerung",
-  reminderPresetLabels: {
-    tonight: "Heute Abend",
-    tomorrowMorning: "Morgen früh",
-    tomorrowEvening: "Morgen Abend",
-    in1Hour: "In 1 Stunde",
-    in3Hours: "In 3 Stunden",
-  },
-  reminderCustomAbsolute: "Benutzerdefiniert …",
-  reminderRelativePresetLabels: {
-    sameDay: "Am selben Tag",
-    eveningBefore: "Am Vorabend",
-    twoDaysBefore: "2 Tage vorher",
-    oneWeekBefore: "1 Woche vorher",
-  },
-  reminderCustomRelative: "Benutzerdefiniert vor Deadline …",
-  reminderNoDeadline: "keine Deadline",
-  reminderDaysBeforeLabel: (days: number) =>
-    days === 0
-      ? "Am selben Tag"
-      : days % 7 === 0
-        ? days === 7
-          ? "1 Woche vorher"
-          : `${days / 7} Wochen vorher`
-        : days === 1
-          ? "1 Tag vorher"
-          : `${days} Tage vorher`,
-  reminderInHours: (hours: number) => (hours === 1 ? "In 1 Stunde" : `In ${hours} Stunden`),
-  reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 Minute" : `In ${minutes} Minuten`),
+    "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links…1857 tokens truncated…n`),
   reminderRemove: "Erinnerung entfernen",
   reminderRowConfirm: "Bestätigen",
   reminderDaysBeforeFieldLabel: "Tage vorher",
@@ -1043,6 +907,11 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   completeWithCriteriaTitle: "Projekt abschließen",
   completeWithCriteriaHint: "Alle Kriterien müssen abgehakt sein, bevor das Projekt abgeschlossen werden kann.",
   completeProjectAction: "Projekt abschließen",
+  completeTaskAction: "Aufgabe abschließen",
+  taskCriteria: "Erledigt, wenn",
+  taskCriteriaSummary: (checked: number, total: number) => `${checked}/${total} Kriterien`,
+  taskCriteriaCompletionHint: "Alle Kriterien müssen abgehakt sein, bevor die Aufgabe abgeschlossen werden kann.",
+  taskCompleteWithCriteriaTitle: "Aufgabe abschließen",
   completeWithOpenTasksTitle: "Offene Aufgaben klären",
   completeWithOpenTasksHint:
     "Verschiebe oder verwirf jede verbleibende offene Aufgabe, bevor das Projekt abgeschlossen wird.",
@@ -1565,6 +1434,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     project_commitment_resolution_required:
       "Für diesen verbindlichen Plan fehlen noch eine verantwortliche Person oder ein ausführbarer nächster Schritt. Deine Änderungen wurden nicht gespeichert.",
     project_completion_criteria_incomplete:
+      "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
+    task_completion_criteria_incomplete:
       "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
     project_not_found: "Das Projekt wurde nicht gefunden.",
     project_title_required: "Bitte gib einen Projekttitel ein.",

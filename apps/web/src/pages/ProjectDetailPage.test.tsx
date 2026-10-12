@@ -342,7 +342,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
 
     await userEvent.click(await screen.findByRole("checkbox", { name: "Ort steht" }));
-    expect(mockedApi.checkCriterion).toHaveBeenCalledWith(42, 4, true);
+    expect(mockedApi.checkCriterion).toHaveBeenCalledWith("project", 42, 4, true);
 
     const outcome = screen
       .getByRole("heading", { name: /^Ergebnis/, level: 2 })

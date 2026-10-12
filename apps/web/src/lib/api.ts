@@ -660,29 +660,29 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  // --- acceptance criteria (ordered, structured; replaces free-text description) ---
-  addCriterion: (projectId: number, text: string) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria`, {
+  // --- acceptance criteria (shared by projects and converted action tasks) ---
+  addCriterion: (ownerType: "project" | "task", workItemId: number, text: string) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria`, {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
-  updateCriterion: (projectId: number, criterionId: number, text: string) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}`, {
+  updateCriterion: (ownerType: "project" | "task", workItemId: number, criterionId: number, text: string) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${criterionId}`, {
       method: "PATCH",
       body: JSON.stringify({ text }),
     }),
-  checkCriterion: (projectId: number, criterionId: number, checked: boolean) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}/check`, {
+  checkCriterion: (ownerType: "project" | "task", workItemId: number, criterionId: number, checked: boolean) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${criterionId}/check`, {
       method: "POST",
       body: JSON.stringify({ checked }),
     }),
-  reorderCriteria: (projectId: number, orderedCriterionIds: number[]) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/reorder`, {
+  reorderCriteria: (ownerType: "project" | "task", workItemId: number, orderedCriterionIds: number[]) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${ownerType === "project" ? "reorder" : "order"}`, {
       method: "POST",
       body: JSON.stringify({ orderedCriterionIds }),
     }),
-  removeCriterion: (projectId: number, criterionId: number) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}`, {
+  removeCriterion: (ownerType: "project" | "task", workItemId: number, criterionId: number) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${criterionId}`, {
       method: "DELETE",
     }),
 

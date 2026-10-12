@@ -43,6 +43,10 @@ const activityEventKinds = [
   "project_acceptance_criterion_updated",
   "project_acceptance_criterion_checked",
   "project_acceptance_criterion_removed",
+  "task_acceptance_criterion_added",
+  "task_acceptance_criterion_updated",
+  "task_acceptance_criterion_checked",
+  "task_acceptance_criterion_removed",
   "work_item_role_converted",
   "task_kind_changed",
 ] as const satisfies readonly ActivityEventKind[];
@@ -589,11 +593,10 @@ export const workItems = sqliteTable(
 );
 
 /**
- * Structured completion criteria complementing a story's free-form notes.
- * Each row is one checkable "Erledigt, wenn …" line, ordered by `position`
- * within its story. Story-only (task rows never have any), kept as a
- * separate child table rather than inlined since it's list-shaped, not
- * scalar.
+ * Structured completion criteria complementing a work item's free-form
+ * notes. Each row is one checkable "Erledigt, wenn …" line, ordered by
+ * `position`. Project criteria stay attached when a project converts into a
+ * task, where the same completion guard applies.
  */
 export const workItemAcceptanceCriteria = sqliteTable(
   "work_item_acceptance_criteria",

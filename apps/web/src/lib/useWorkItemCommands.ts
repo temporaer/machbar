@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import type { Task } from "@machbar/shared";
 import type { ProjectWithActions } from "./api";
 import type { WorkItemCommand } from "./commands";
 import { lifecyclePrerequisite } from "./projectWorkflow";
@@ -225,6 +226,18 @@ export function useWorkItemCommands() {
     [projectActions, projectWorkflow, resolveStoryPrerequisite],
   );
 
+  const requestTaskCompletion = useCallback((task: Task) => {
+    if (task.status === "captured" || task.status === "done" || task.status === "cancelled") {
+      taskActions.requestToggle(task);
+      return;
+    }
+    if (task.acceptanceCriteria.some((criterion) => !criterion.checked)) {
+      taskWorkflow.open("completeWithCriteria", task.id);
+      return;
+    }
+    taskActions.requestToggle(task);
+  }, [taskActions, taskWorkflow]);
+
   const dispatch = useCallback(
     (command: WorkItemCommand) => {
       const workItemId = commandWorkItemId(command);
@@ -324,7 +337,7 @@ export function useWorkItemCommands() {
             return;
           }
           if (next === "done") {
-            taskActions.requestToggle(command.task);
+            requestTaskCompletion(command.task);
             return;
           }
           if (next === "cancelled") {
@@ -339,7 +352,7 @@ export function useWorkItemCommands() {
           return;
         }
         case "task.toggleDone":
-          taskActions.requestToggle(command.task);
+          requestTaskCompletion(command.task);
           return;
         case "task.toggleAdditionalNextAction": {
           const nextValue = !command.task.additionalNextAction;
@@ -353,7 +366,13 @@ export function useWorkItemCommands() {
         case "task.primaryAction":
           // The configured primary swipe action (someday/cancel/complete);
           // `requestPrimarySwipe` already resolves reopen/clarify first.
-          taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
+          if (
+            primarySwipeAction === "complete" &&
+            command.task.status !== "captured" &&
+            command.task.status !== "done" &&
+            command.task.status !== "cancelled"
+          ) requestTaskCompletion(command.task);
+          else taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
           return;
         case "task.makeAction":
           void taskActions.makeAction(command.task);
@@ -516,6 +535,7 @@ export function useWorkItemCommands() {
       scope,
       resolveStoryPrerequisite,
       continueStoryLifecycle,
+      requestTaskCompletion,
     ],
   );
 

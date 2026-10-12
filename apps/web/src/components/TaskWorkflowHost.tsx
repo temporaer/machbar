@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
@@ -15,6 +16,7 @@ import { TaskTagsSheet } from "./TaskTagsSheet";
 import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
 import { TaskShapeSheet } from "./TaskShapeSheet";
+import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 
@@ -36,6 +38,7 @@ export function TaskWorkflowHost() {
   const strings = useStrings();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
+  const dispatch = useWorkItemCommands();
   const taskId = workflow.current?.taskId ?? null;
   const { data: fetchedTask, reload } = useAsync(
     () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
@@ -126,6 +129,18 @@ export function TaskWorkflowHost() {
       return <TaskContextsSheet task={task} onClose={close} />;
     case "convertToProject":
       return <TaskConvertToProjectSheet task={task} onClose={close} />;
+    case "completeWithCriteria":
+      return (
+        <CompleteWithCriteriaSheet
+          workItem={task}
+          workItemType="task"
+          onClose={close}
+          onComplete={async () => {
+            close();
+            dispatch({ type: "task.toggleDone", task });
+          }}
+        />
+      );
     default:
       return null;
   }

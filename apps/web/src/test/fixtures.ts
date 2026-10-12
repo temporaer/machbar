@@ -104,6 +104,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     executable: status === "actionable",
     nextBlockerAttentionDate: null,
     blockers: [],
+    acceptanceCriteria: [],
     dependencies: [],
     incomingDependencies: [],
     children: [],
@@ -170,7 +171,8 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
 export function makeCriterion(overrides: Partial<AcceptanceCriterion> = {}): AcceptanceCriterion {
   return {
     id: nextId(),
-    projectId: 0,
+    workItemId: overrides.workItemId ?? overrides.projectId ?? 0,
+    ...(overrides.projectId !== undefined ? { projectId: overrides.projectId } : {}),
     text: "Beispielkriterium",
     checked: false,
     position: 0,

@@ -5,9 +5,9 @@ import type { TaskPlanningTarget } from "./commands";
 /**
  * Every focused task workflow reachable through a canonical `task.*`
  * command (see `commands.ts`) except `task.open`/`task.lifecycle`/
- * `task.toggleDone`/`task.primaryAction`, which are either a direct
- * mutation or already routed through `taskDetailContext`/the interaction
- * scope's status-rail state — see `useWorkItemCommands.ts`.
+ * `task.toggleDone`/`task.primaryAction`, which usually mutate directly or
+ * open the task-criteria completion continuation when required — see
+ * `useWorkItemCommands.ts`.
  *
  * This is the single place any of these commands may open a sheet: no rail,
  * keyboard shortcut, detail-value click, or Review repair may reinterpret
@@ -36,14 +36,14 @@ export type TaskWorkflowKind =
   | "priority"
   | "tags"
   | "contexts"
-  | "convertToProject";
+  | "convertToProject"
+  | "completeWithCriteria";
 
 export interface TaskWorkflowState {
   kind: TaskWorkflowKind;
   taskId: number;
   planningTarget?: TaskPlanningTarget;
 }
-
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
   open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;

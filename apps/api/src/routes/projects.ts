@@ -9,7 +9,7 @@ import {
   reorderCriteria,
   setCriterionChecked,
   updateCriterionText,
-} from "../domain/storyCapabilities.js";
+} from "../domain/acceptanceCriteria.js";
 import {
   appendProjectNotes,
   createProject,
