@@ -1007,7 +1007,8 @@ describe("project workflow (HTTP routes)", () => {
   });
 
   it("keeps a project active while execution commitments remain and withdraws them only by explicit choice", async () => {
-    const project = await createProjectRoute({ title: "Geplantes Projekt", status: "active", dueDate: "2026-12-20" });
+    const owner = await createMemberRoute("Planungstreiber");
+    const project = await createProjectRoute({ title: "Geplantes Projekt", ownerMemberId: owner.id });
     const created = await ctx.app.inject({
       method: "POST", url: "/api/tasks", payload: {
         projectId: project.id, title: "Termin vorbereiten", status: "actionable", scheduledDate: "2026-11-01",
@@ -1017,15 +1018,23 @@ describe("project workflow (HTTP routes)", () => {
     });
     expect(created.statusCode).toBe(201);
     const task = created.json();
-    const first = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: { expectedRevision: project.revision } });
-    expect(first.statusCode, JSON.stringify(first.json())).toBe(409);
+    const activeProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    expect(activeProject.status).toBe("active");
+    const withDeadline = await ctx.app.inject({
+      method: "PATCH", url: `/api/projects/${project.id}`,
+      payload: { dueDate: "2026-12-20", expectedRevision: activeProject.revision },
+    });
+    expect(withDeadline.statusCode).toBe(200);
+    const projectRevision = withDeadline.json().revision;
+    const first = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: { expectedRevision: projectRevision } });
+    expect(first.statusCode).toBe(409);
     expect(first.json().error.code).toBe("project_commitments_prevent_parking");
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().scheduledDate).toBe("2026-11-01");
 
     const parked = await ctx.app.inject({
       method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: {
-        expectedRevision: project.revision, revisitAt: "2026-11-15T09:00:00.000Z", withdrawCommitments: true,
+        expectedRevision: projectRevision, revisitAt: "2026-11-15T09:00:00.000Z", withdrawCommitments: true,
         expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
       },
     });
