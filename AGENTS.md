@@ -30,3 +30,31 @@ canonical path cannot express the required semantics.
 Prefer behavioral, invariant, and concurrency tests over tests that freeze an
 internal call graph. Run `npm run architecture` before the normal typecheck,
 tests, and build.
+
+## Running the loop
+
+This repository is set up for an autonomous verify-until-green agent loop.
+
+- Verify everything with a single command: `bash scripts/verify.sh`. It runs the
+  Node checks (`npm run verify`: architecture, shared build, typecheck, tests,
+  build) followed by `python -m pytest`. None of these need a running server.
+- Dependencies are installed once by `scripts/codex-setup.sh` during the
+  network-enabled setup phase; the loop itself runs offline.
+- Definition of Done: all of `scripts/verify.sh` passes AND a PR is open.
+- Always run the verifier before finishing. Do not declare work complete on an
+  unverified or red tree.
+- Iteration cap: if the verifier is still failing after a few focused attempts
+  (about three), stop and ask a human rather than continuing to loop.
+- When review comments arrive, address them, re-run `bash scripts/verify.sh`,
+  and only then re-request review.
+
+### Review rules
+
+For the Codex PR reviewer:
+
+- Enforce [`docs/architecture-rules.md`](docs/architecture-rules.md).
+- Flag parallel or duplicate mutation paths for the same domain operation.
+- Flag speculative abstractions with only a single real consumer.
+- Prefer behavioral and invariant tests over tests that freeze an internal
+  call graph.
+
