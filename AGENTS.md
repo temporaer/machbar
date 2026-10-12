@@ -40,6 +40,8 @@ This repository is set up for an autonomous verify-until-green agent loop.
   build) followed by `python -m pytest`. None of these need a running server.
 - Dependencies are installed once by `scripts/codex-setup.sh` during the
   network-enabled setup phase; the loop itself runs offline.
+- Network/loopback tests are skipped under `CODEX_SANDBOX_NETWORK_DISABLED` and
+  are covered by CI instead; do not try to make them pass in the sandbox.
 - Definition of Done: all of `scripts/verify.sh` passes AND a PR is open.
 - Always run the verifier before finishing. Do not declare work complete on an
   unverified or red tree.
@@ -48,11 +50,10 @@ This repository is set up for an autonomous verify-until-green agent loop.
 - When review comments arrive, address them, re-run `bash scripts/verify.sh`,
   and only then re-request review.
 
-The review-to-fix loop is automated by the
-[`Codex address review feedback`](.github/workflows/codex-address-review.yml)
-workflow; see [`docs/loop-engineering.md`](docs/loop-engineering.md) for how it
-is triggered and the one-time setup it requires (repo secret `OPENAI_API_KEY`
-and enabling Codex auto-review in the Codex cloud UI).
+The review-to-fix loop is handled off the shelf rather than by a repo-owned
+workflow; see [`docs/loop-engineering.md`](docs/loop-engineering.md) for the
+recommended options (Codex cloud auto-review plus `@codex fix it`, this app's
+Agent merge, or a GitHub App such as CodeRabbit or Qodo Merge).
 
 ### Review rules
 

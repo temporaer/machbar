@@ -1,8 +1,8 @@
 # Loop engineering
 
 This repository is wired for an autonomous **verify-until-green** agent loop.
-Two halves make it work: a local/CI verifier, and a repo-level "outer loop" that
-addresses PR review feedback automatically on every future PR.
+Two halves make it work: a local/CI verifier that the project owns, and an
+**off-the-shelf** outer loop that reviews PRs and pushes fixes.
 
 ## Inner loop: the verifier
 
@@ -16,54 +16,35 @@ addresses PR review feedback automatically on every future PR.
   server via `playwright.config.ts` and is deliberately kept out of this loop.
 - `scripts/codex-setup.sh` installs everything the offline loop needs
   (`npm ci`, then the Python test requirements). It is idempotent.
+- Tests that need a real loopback socket (e.g. the MCP OAuth JWKS server) are
+  skipped under `CODEX_SANDBOX_NETWORK_DISABLED=1` and are covered by CI
+  instead. Do not try to make them pass inside the offline sandbox.
 
-## Outer loop: auto-address review feedback
+## Outer loop: review and fix (off-the-shelf)
 
-[`.github/workflows/codex-address-review.yml`](../.github/workflows/codex-address-review.yml)
-is the durable glue that makes the review→fix loop run going forward, without
-anyone re-prompting per PR. It uses the official
-[OpenAI Codex Action](https://github.com/openai/codex-action)
-(`openai/codex-action`, pinned to a release SHA).
+The review -> fix loop is **not** a repository-maintained workflow. Hand-rolling
+a security-sensitive Action to call a model, resolve threads, and push commits
+duplicates products that already do this well and is not worth maintaining.
+Pick one of the following, in rough order of least to most setup:
 
-### What triggers it
+1. **Codex cloud review + `@codex fix it` (recommended).**
+   - Enable Codex **auto-review on every PR** once in the Codex cloud UI. Codex
+     then posts a review on each new PR automatically.
+   - To apply fixes, comment `@codex fix it` on the review (or on a specific
+     review comment). Codex addresses the feedback and pushes to the PR branch.
+   - This needs no repository workflow and no `OPENAI_API_KEY` secret in the
+     repo; auth lives in the Codex cloud connection.
 
-- A submitted pull request review whose state is `changes_requested` or
-  `commented`.
-- An on-demand `@codex` mention in a PR comment (`issue_comment`) or an inline
-  review comment (`pull_request_review_comment`).
+2. **This app's Agent merge.**
+   - For a single PR, enable Agent merge to shepherd it: it addresses review
+     comments, fixes failing CI, and resolves conflicts on that PR. It is a
+     per-PR tool rather than a durable repo-level loop.
 
-### What it does
+3. **A GitHub App for fully automatic review + fix.**
+   - Install an app such as CodeRabbit, Qodo Merge, or Ellipsis if you want
+     automatic review and fix-up on every PR without a per-PR trigger. These
+     are maintained externally and handle the security-sensitive parts for you.
 
-1. Rejects fork PRs (so secrets are never exposed to untrusted code) and checks
-   out the PR head branch.
-2. Collects the PR's reviews and inline review comments for Codex to read.
-3. Installs dependencies, then runs Codex with the `:workspace` permission
-   profile to make the minimal changes that address the feedback.
-4. Runs `bash scripts/verify.sh` before pushing. Only a green result is pushed
-   back to the PR branch. If verification still fails after
-   `MAX_VERIFY_ATTEMPTS` (mirroring the iteration cap in `AGENTS.md`), it stops
-   and leaves a PR comment instead of force-pushing broken code.
-
-Permissions are least-privilege (`contents: write`, `pull-requests: write`
-only), runs are serialized per PR via a concurrency group, and the Codex Action
-additionally enforces that the triggering actor has write access.
-
-### One-time setup (required)
-
-1. **Add the repo secret `OPENAI_API_KEY`** (Settings → Secrets and variables →
-   Actions). The workflow references `${{ secrets.OPENAI_API_KEY }}`; it is never
-   hardcoded. This is the key the Codex Action needs.
-2. **Enable Codex auto-review on every PR in the Codex cloud UI.** That setting
-   is not a repository file. It is what makes Codex *generate* a review on each
-   PR; this workflow is the side that *reacts* to review feedback and pushes
-   verified fixes.
-   - If you want this workflow to also react to the Codex cloud reviewer's bot
-     reviews (not just human reviewers and `@codex` mentions), add that bot to
-     the Codex Action's `allow-bot-users` input.
-
-### How this differs from the app's per-PR Agent merge
-
-The GitHub Copilot app's "Agent merge" is a per-PR toggle that shepherds a
-single pull request. This workflow is repo-level and durable: once the secret
-and cloud setting are in place, the review→fix→verify→push loop runs on every
-future PR with no per-PR action.
+Whichever path you choose, the **inner loop still gates everything**: a fix is
+only good once `bash scripts/verify.sh` is green (see `AGENTS.md` ->
+"Running the loop" for the Definition of Done and iteration cap).
