@@ -9,6 +9,8 @@ export interface ProjectActivationPrompt {
   projects: ProjectActivationRequirement[];
   expectedProjects: Array<{ projectId: number; revision: number }>;
   targetRevision?: number;
+  /** Fingerprint of the capture form fields that produced this server snapshot. */
+  requestFingerprint?: string;
   selectedDrivers: Record<number, number>;
   nextActionTitle: string;
 }

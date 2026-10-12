@@ -154,6 +154,53 @@ describe("CaptureForm", () => {
     expect(onCaptured).toHaveBeenCalledTimes(1);
   });
 
+  it("discards activation requirements when the dated commitment changes", async () => {
+    mockedApi.createTask
+      .mockRejectedValueOnce(new ApiError(
+        409,
+        "Project decisions are required.",
+        "project_commitment_resolution_required",
+        {
+          projects: [{
+            projectId: 42,
+            title: "Keller",
+            revision: 3,
+            ownerMemberId: null,
+            required: ["driver", "progressPath"],
+          }],
+          expectedProjects: [{ projectId: 42, revision: 3 }],
+        },
+      ))
+      .mockResolvedValueOnce(makeTask({ projectId: 42, status: "actionable" }));
+    render(
+      <CaptureForm
+        initialTitle="Material bestellen"
+        initialDueDate="2026-12-01"
+        showDueDate
+        projectId={42}
+        onCancel={vi.fn()}
+        onCaptured={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+    expect(await screen.findByText("Vor dem Start noch entscheiden")).toBeInTheDocument();
+    const date = screen.getByLabelText("Fällig");
+    await userEvent.clear(date);
+    await userEvent.type(date, "05.12.2026");
+    await userEvent.tab();
+
+    expect(screen.queryByText("Vor dem Start noch entscheiden")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      title: "Material bestellen",
+      projectId: 42,
+      dueDate: "2026-12-05",
+    }));
+    expect(mockedApi.createTask.mock.calls[1]?.[0]).not.toHaveProperty("activationResolution");
+  });
+
   it("can cancel a blocked dated capture without submitting a second time", async () => {
     mockedApi.createTask.mockRejectedValueOnce(new ApiError(
       409,

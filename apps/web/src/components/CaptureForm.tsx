@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CreateTaskInput } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
@@ -92,7 +92,9 @@ export function CaptureForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
-  const [projectDestinationOverride, setProjectDestinationOverride] = useState<number | null | undefined>(undefined);
+  const [projectDestinationOverride, setProjectDestinationOverride] = useState<
+    number | null | undefined
+  >(undefined);
   const [openModifier, setOpenModifier] = useState<
     "member" | "context" | "schedule" | "project" | null
   >(null);
@@ -166,10 +168,20 @@ export function CaptureForm({
         : ownerAssignmentPatch(currentMemberId)),
   });
 
+  const needsClarification =
+    effectiveProjectId === null && (parentTaskId ?? null) === null;
+  const requestFingerprint = JSON.stringify(taskInput(needsClarification, notes));
+  const currentActivationPrompt =
+    activationPrompt?.requestFingerprint === requestFingerprint ? activationPrompt : null;
+
+  useEffect(() => {
+    if (activationPrompt && activationPrompt.requestFingerprint !== requestFingerprint) {
+      setActivationPrompt(null);
+    }
+  }, [activationPrompt, requestFingerprint]);
+
   const createTask = async () => {
     if (!capturedTitle || saving) return;
-    const needsClarification =
-      effectiveProjectId === null && (parentTaskId ?? null) === null;
     setSaving(true);
     setError(null);
     try {
@@ -178,15 +190,17 @@ export function CaptureForm({
         taskInput(
           needsClarification,
           preparedNotes,
-          activationPrompt
-            ? projectActivationResolutionFromPrompt(activationPrompt) ?? undefined
+          currentActivationPrompt
+            ? projectActivationResolutionFromPrompt(currentActivationPrompt) ?? undefined
             : undefined,
         ),
       );
       onCaptured({ kind: "task", task, needsClarification });
     } catch (cause) {
-      const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (refreshedPrompt) setActivationPrompt(refreshedPrompt);
+      const refreshedPrompt = projectActivationPromptFromError(cause, currentActivationPrompt);
+      if (refreshedPrompt) {
+        setActivationPrompt({ ...refreshedPrompt, requestFingerprint });
+      }
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -473,9 +487,9 @@ export function CaptureForm({
           />
         </div>
       ) : null}
-      {activationPrompt ? (
+      {currentActivationPrompt ? (
         <ProjectActivationDecisionFields
-          prompt={activationPrompt}
+          prompt={currentActivationPrompt}
           disabled={saving}
           onChange={setActivationPrompt}
         />
@@ -505,7 +519,7 @@ export function CaptureForm({
           className="btn btn-primary"
           aria-label={strings.create}
           disabled={saving || !capturedTitle || !dueDateValid ||
-            (activationPrompt !== null && projectActivationResolutionFromPrompt(activationPrompt) === null)}
+            (currentActivationPrompt !== null && projectActivationResolutionFromPrompt(currentActivationPrompt) === null)}
         >
           {strings.create}
         </button>

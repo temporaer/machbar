@@ -51,6 +51,21 @@ async function openCapture() {
   expect(screen.getByText("Nur Titel reicht")).toBeInTheDocument();
 }
 
+function commitmentResolutionError(
+  projectId: number,
+  title: string,
+  revision: number,
+  required: Array<"driver" | "progressPath"> = ["driver", "progressPath"],
+) {
+  return Object.assign(new Error("Project decisions are required."), {
+    code: "project_commitment_resolution_required",
+    details: {
+      projects: [{ projectId, title, revision, ownerMemberId: null, required }],
+      expectedProjects: [{ projectId, revision }],
+    },
+  });
+}
+
 async function cropCapturedPhoto(index = 0, croppedName = "photo-cropped.jpg") {
   Object.defineProperties(URL, {
     createObjectURL: { configurable: true, value: vi.fn(() => "blob:prepared") },
@@ -191,22 +206,7 @@ describe("QuickAdd", () => {
   it("behält Capture-Entwurf und Serverentscheidungen bis zum erneuten selben Create-Aufruf", async () => {
     mockedApi.getProjects.mockResolvedValue([makeProject({ id: 42, title: "Keller" })]);
     mockedApi.createTask
-      .mockRejectedValueOnce(Object.assign(
-        new Error("Project decisions are required."),
-        {
-          code: "project_commitment_resolution_required",
-          details: {
-            projects: [{
-              projectId: 42,
-              title: "Keller",
-              revision: 3,
-              ownerMemberId: null,
-              required: ["driver", "progressPath"],
-            }],
-            expectedProjects: [{ projectId: 42, revision: 3 }],
-          },
-        },
-      ))
+      .mockRejectedValueOnce(commitmentResolutionError(42, "Keller", 3))
       .mockResolvedValueOnce(makeTask({ id: 92, title: "Maße aufnehmen", projectId: 42 }));
     renderQuickAddInStory(42);
     await openCapture();
@@ -237,6 +237,100 @@ describe("QuickAdd", () => {
     }));
     expect(await screen.findByText("Erfasst: Maße aufnehmen")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveValue("");
+  });
+
+  it("verwirft Entscheidungen für Projekt A nach Wechsel zu Eingang, erhält aber den Capture-Draft", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 12, 12, 0, 0));
+    mockedApi.getProjects.mockResolvedValue([makeProject({ id: 42, title: "Keller A" })]);
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 704,
+      title: "Material",
+      originalFileName: "material.pdf",
+      mimeType: "application/pdf",
+    });
+    mockedApi.createTask
+      .mockRejectedValueOnce(commitmentResolutionError(42, "Keller A", 3))
+      .mockResolvedValueOnce(makeTask({ id: 93, title: "Material bestellen" }));
+    renderQuickAddInStory(42);
+
+    try {
+      await openCapture();
+      await userEvent.upload(
+        screen.getByLabelText("Datei auswählen"),
+        new File(["material"], "material.pdf", { type: "application/pdf" }),
+      );
+      const title = screen.getByPlaceholderText("Was ist zu tun?");
+      await userEvent.type(title, "Material bestellen !15.11");
+      await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+      expect(await screen.findByLabelText("Verantwortlich für „Keller A“")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "+ Projekt" }));
+      await userEvent.click(screen.getByRole("button", { name: "Eingang" }));
+      expect(screen.queryByText("Vor dem Start noch entscheiden")).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+      await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+      expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+        title: "Material bestellen",
+        projectId: null,
+        dueDate: "2026-11-15",
+        notes: "[material.pdf](paperless:704)",
+      }));
+      expect(mockedApi.createTask.mock.calls[1]?.[0]).not.toHaveProperty("activationResolution");
+      expect(await screen.findByText("Erfasst: Material bestellen")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fragt nach Wechsel von Projekt A zu B nur die aktuellen B-Entscheidungen ab", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 12, 12, 0, 0));
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 42, title: "Keller A" }),
+      makeProject({ id: 43, title: "Keller B" }),
+    ]);
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 705,
+      title: "Material",
+      originalFileName: "material.pdf",
+      mimeType: "application/pdf",
+    });
+    mockedApi.createTask
+      .mockRejectedValueOnce(commitmentResolutionError(42, "Keller A", 3))
+      .mockRejectedValueOnce(commitmentResolutionError(43, "Keller B", 7, ["driver"]));
+    renderQuickAddInStory(42);
+
+    try {
+      await openCapture();
+      await userEvent.upload(
+        screen.getByLabelText("Datei auswählen"),
+        new File(["material"], "material.pdf", { type: "application/pdf" }),
+      );
+      const title = screen.getByPlaceholderText("Was ist zu tun?");
+      await userEvent.type(title, "Material bestellen !15.11");
+      await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+      expect(await screen.findByLabelText("Verantwortlich für „Keller A“")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "+ Projekt" }));
+      await userEvent.click(screen.getByRole("button", { name: "Keller B" }));
+      expect(screen.queryByLabelText("Verantwortlich für „Keller A“")).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+      await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+      expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+        title: "Material bestellen",
+        projectId: 43,
+        dueDate: "2026-11-15",
+        notes: "[material.pdf](paperless:705)",
+      }));
+      expect(mockedApi.createTask.mock.calls[1]?.[0]).not.toHaveProperty("activationResolution");
+      expect(await screen.findByLabelText("Verantwortlich für „Keller B“")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Verantwortlich für „Keller A“")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("resolves selected short-syntax entities and strips resolved tokens from capture title", async () => {
