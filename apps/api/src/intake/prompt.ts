@@ -41,7 +41,7 @@ export function buildIntakeInstructions(input: {
   userInstruction?: string | null;
   aiContext?: HouseholdAiContext | null;
   breakdownInstruction?: string;
-  refinement?: { targetType: "task" | "project"; intent: "improve" | "next_action" | "structure"; instruction?: string; context: string; previousProposal?: string; feedback?: string; validationFeedback?: readonly IntakeIssue[]; validationMessage?: string };
+  refinement?: { targetType: "task" | "project"; intent: "improve" | "next_action" | "structure"; instruction?: string; context: string; previousProposal?: string; feedback?: string; validationFeedback?: readonly IntakeIssue[]; validationMessage?: string; today?: string; timezone?: string; currentLocalDateTime?: string };
 }): string {
   if (input.refinement) {
     const aiContextSection = householdAiContextSection(input.aiContext);
@@ -52,6 +52,8 @@ export function buildIntakeInstructions(input: {
       ...(aiContextSection ? [aiContextSection] : []),
       "The existing outline is authoritative. Never recreate existing tasks. Consider open, waiting, completed, and cancelled work, dependencies, external waits, current next action, and project outcome from the supplied context.",
       "Choose only the most useful change: improve wording, add a concrete next action, clarify a decision or prerequisite, improve ordering, or simplify. Distinguish diagnosis, decisions, execution and follow-up. Do not invent facts, owners, deadlines, dates, or certainty. Avoid duplicating completed or planned work.",
+      `Today is ${input.refinement.today ?? input.today} in ${input.refinement.timezone ?? input.timezone ?? "Europe/Berlin"}; current local time is ${input.refinement.currentLocalDateTime ?? input.currentLocalDateTime ?? "not supplied"}.`,
+      "For update_task and create_child, use scheduledDate only for an explicit intended work date, dueDate only for a real deadline, and revisitAt only for a deliberate future review point. Use the supplied household-local date/time context to resolve relative language; do not invent a date or time. For reminders, preserve explicit reminder intent as structured reminder objects: absolute reminders require an ISO datetime with the correct timezone offset, deadline-relative reminders require a number of days before the deadline and a local HH:mm time. Do not turn a date into a reminder unless requested. Do not drop or rewrite existing commitments; omit fields that should remain unchanged. An empty reminders array means explicitly clear reminders and should only be returned when requested.",
       "A captured task may receive a child through ordinary task structure; Machbar's canonical mutation will classify it as an action with steps. Propose convert_task_to_project only when a project is genuinely useful, and keep that role change explicit for review.",
       "Suggest a project completion criterion only when the current outcome is not understandable or observable; do not add generic criteria just because the list is empty. Return accepted=false for every change.",
       "For external waits, improve only the structured expected response and meaningful revisit information. Keep waiting lifecycle in Machbar's external-wait fields; never copy it into ordinary notes.",

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { IntakeRecord } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -225,6 +225,56 @@ describe("WorkRefinementReview", () => {
       proposal: expect.objectContaining({ changes: [expect.objectContaining({ accepted: true })] }),
     })));
     expect(mockedApi.applyWorkRefinement).toHaveBeenCalledWith("job", { expectedRevision: 3 });
+  });
+
+  it("reviews and edits schedule, deadline, revisit and reminder changes before applying", async () => {
+    const current = record();
+    current.text = JSON.stringify({
+      id: 4, revision: 1, title: "Container service", status: "actionable", kind: "action",
+      scheduledDate: null, dueDate: null, revisitAt: null,
+      reminders: [], children: [],
+    });
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Die Arbeit für den Container ist planbar.", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 4, title: "Container service", scheduledDate: "2026-10-13", dueDate: "2026-10-19", revisitAt: "2026-10-12T05:00:00.000Z", reminders: [{ kind: "absolute", at: "2026-10-12T05:00:00.000Z" }], rationale: "Planung und Wiedervorlage konkretisieren.", accepted: true }],
+    };
+    mockedApi.updateWorkRefinement.mockImplementation(async (_id, body) => ({
+      ...current, revision: 3, refinement: { ...current.refinement!, proposal: body.proposal },
+    } as IntakeRecord));
+    mockedApi.applyWorkRefinement.mockResolvedValue({ ...current, status: "applied", revision: 4 } as IntakeRecord);
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+
+    expect(screen.getByText(/Aktuell: Keine → Vorgeschlagen: 2026-10-13/)).toBeInTheDocument();
+    expect(screen.getByText(/Aktuell: Keine → Vorgeschlagen: 2026-10-19/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Aktuell: Keine → Vorgeschlagen: 2026-10-12 07:00/)).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "2026-10-12 · 07:00" })).toBeInTheDocument();
+    expect(screen.getByText("Erinnerungen", { exact: true }).parentElement).toHaveTextContent("Aktuell: Keine → Vorgeschlagen: 2026-10-12 07:00");
+    await userEvent.click(screen.getByRole("button", { name: "Erinnerung entfernen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+
+    await waitFor(() => expect(mockedApi.applyWorkRefinement).toHaveBeenCalled());
+    const updateBody = mockedApi.updateWorkRefinement.mock.calls[0]?.[1];
+    expect(updateBody?.proposal?.changes[0]).toMatchObject({
+      scheduledDate: "2026-10-13", dueDate: "2026-10-19", revisitAt: "2026-10-12T05:00:00.000Z", reminders: [],
+    });
+  });
+
+  it("keeps an invalid household-local revisit draft and blocks applying it", async () => {
+    const current = record();
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Wiedervorlage präzisieren", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 4, title: "Kita-Formular", rationale: "A focused edit." , accepted: true }],
+    };
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Wiedervorlage-Datum"), { target: { value: "2026-03-29" } });
+    fireEvent.change(screen.getByLabelText("Wiedervorlage-Uhrzeit"), { target: { value: "02:30" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Bitte vervollständige oder verwirf");
+
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    expect(mockedApi.updateWorkRefinement).not.toHaveBeenCalled();
+    expect(mockedApi.applyWorkRefinement).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Wiedervorlage-Datum")).toHaveValue("2026-03-29");
+    expect(screen.getByLabelText("Wiedervorlage-Uhrzeit")).toHaveValue("02:30");
   });
 
   it("requires an answer to a clarification before it can be applied", async () => {

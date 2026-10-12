@@ -108,6 +108,10 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "targetId": (True, int),
         "title": (False, vol.Any(str, None)),
         "notes": (False, vol.Any(str, None)),
+        "scheduledDate": (False, vol.Any(str, None)),
+        "dueDate": (False, vol.Any(str, None)),
+        "revisitAt": (False, vol.Any(str, None)),
+        "reminders": (False, vol.Any(None, [_reminder_schema()])),
     },
     "update_project": {
         "targetId": (True, int),
@@ -121,6 +125,10 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "parentTaskId": (True, int),
         "title": (True, str),
         "notes": (False, vol.Any(str, None)),
+        "scheduledDate": (False, vol.Any(str, None)),
+        "dueDate": (False, vol.Any(str, None)),
+        "revisitAt": (False, vol.Any(str, None)),
+        "reminders": (False, vol.Any(None, [_reminder_schema()])),
     },
     "move_task": {
         "targetId": (True, int),
@@ -149,6 +157,10 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
 }
 
 _REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId"}
+_REFINEMENT_PLANNING_NULL_PLACEHOLDERS = {
+    "update_task": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
+    "create_child": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
+}
 _REFINEMENT_ALL_FIELDS = {
     "kind",
     "rationale",
@@ -697,8 +709,30 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
         for field in _REFINEMENT_ALL_FIELDS:
             if normalized.get(field) is None and (
                 field not in allowed or field in _REFINEMENT_OPTIONAL_NULL_FIELDS
+                or field in _REFINEMENT_PLANNING_NULL_PLACEHOLDERS.get(kind, set())
             ):
                 normalized.pop(field, None)
+        reminders = normalized.get("reminders")
+        if isinstance(reminders, list):
+            normalized_reminders = []
+            for raw_reminder in reminders:
+                if not isinstance(raw_reminder, dict):
+                    normalized_reminders.append(raw_reminder)
+                    continue
+                reminder = dict(raw_reminder)
+                reminder_kind = reminder.get("kind")
+                irrelevant = (
+                    {"daysBefore", "time", "timezone"}
+                    if reminder_kind == "absolute"
+                    else {"at"}
+                    if reminder_kind == "deadline_relative"
+                    else set()
+                )
+                for field in irrelevant | {"id"}:
+                    if reminder.get(field, _MISSING) is None:
+                        reminder.pop(field, None)
+                normalized_reminders.append(reminder)
+            normalized["reminders"] = normalized_reminders
         accepted = normalized.get("accepted", _MISSING)
         if accepted is _MISSING or accepted is None or isinstance(accepted, bool):
             normalized["accepted"] = False

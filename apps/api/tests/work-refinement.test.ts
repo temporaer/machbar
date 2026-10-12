@@ -79,6 +79,23 @@ describe("AI work refinement proposals", () => {
     expect(workRefinementProposalSchema.safeParse(normalized).success).toBe(false);
   });
 
+  it("distinguishes provider null placeholders from explicit reminder clearing", () => {
+    const normalized = normalizeWorkRefinementProposalInput({
+      intent: "improve", summary: "Keep existing planning", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 12, scheduledDate: null, dueDate: null, revisitAt: null, reminders: null, rationale: "No planning changes." }],
+    }) as { changes: Array<Record<string, unknown>> };
+    expect(normalized.changes[0]).not.toHaveProperty("scheduledDate");
+    expect(normalized.changes[0]).not.toHaveProperty("dueDate");
+    expect(normalized.changes[0]).not.toHaveProperty("revisitAt");
+    expect(normalized.changes[0]).not.toHaveProperty("reminders");
+    const explicitClear = normalizeWorkRefinementProposalInput({
+      intent: "improve", summary: "Clear reminders", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 12, reminders: [], rationale: "Remove the old reminders." }],
+    }) as { changes: Array<Record<string, unknown>> };
+    expect(explicitClear.changes[0]?.reminders).toEqual([]);
+    expect(workRefinementProposalSchema.safeParse(explicitClear).success).toBe(true);
+  });
+
   it("normalizes the synthetic cellar-staircase provider fixture", () => {
     const fixture = JSON.parse(readFileSync(new URL("../../../packages/shared/fixtures/work-refinement/cellar-staircase-1000000348.json", import.meta.url), "utf8")) as unknown;
     const normalized = normalizeWorkRefinementProposalInput(fixture);
@@ -264,6 +281,124 @@ describe("AI work refinement proposals", () => {
     expect(converted.role).toBe("task");
     expect(converted.status).toBe("active");
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all().map((row) => row.title)).toEqual(["Klären, ob noch die Auswahl oder nur die Montage ansteht"]);
+  });
+
+  it("applies accepted task planning and reminders through canonical mutations", () => {
+    const task = createTask(ctx.handle.db, { title: "Durchsichtigen Plastikbehälter für das Laternenbasteln vorbereiten", status: "captured" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    const tuesdayReminder = "2026-10-12T05:00:00.000Z"; // 07:00 in Europe/Berlin on 2026-10-13.
+    const mondayReminder = "2026-10-18T05:00:00.000Z"; // 07:00 in Europe/Berlin on 2026-10-19.
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
+      refinementIntent: "improve", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({
+        intent: "improve", summary: "Plan the work and its reminders", disposition: "changes", question: null,
+        changes: [
+          { kind: "update_task", targetId: task.id, title: "Durchsichtigen Plastikbehälter am Dienstag zur Kita mitbringen", scheduledDate: "2026-10-13", reminders: [{ kind: "absolute", at: tuesdayReminder }], rationale: "Keep the existing task identity for Tuesday's bring action.", accepted: true },
+          { kind: "create_child", parentTaskId: task.id, title: "Zweiten Plastikbehälter am Montag zur Kita mitbringen", scheduledDate: "2026-10-19", reminders: [{ kind: "absolute", at: mondayReminder }], rationale: "Add the second dated bring action without recurrence.", accepted: true },
+        ],
+      }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
+    const updated = getTaskOrThrow(ctx.handle.db, task.id);
+    const child = updated.children[0]!;
+    expect(updated).toMatchObject({ title: "Durchsichtigen Plastikbehälter am Dienstag zur Kita mitbringen", scheduledDate: "2026-10-13", dueDate: null, status: "actionable" });
+    expect(child).toMatchObject({ title: "Zweiten Plastikbehälter am Montag zur Kita mitbringen", scheduledDate: "2026-10-19", dueDate: null });
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, task.id)).all()).toEqual([expect.objectContaining({ kind: "absolute", at: tuesdayReminder })]);
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, child.id)).all()).toEqual([expect.objectContaining({ kind: "absolute", at: mondayReminder })]);
+  });
+
+  it("preserves omitted planning fields and accepts explicit null and empty-array clears", () => {
+    const task = createTask(ctx.handle.db, {
+      title: "Follow up", status: "actionable", scheduledDate: "2026-10-13", dueDate: "2026-10-19",
+      reminders: [
+        { kind: "absolute", at: "2026-10-11T05:00:00.000Z" },
+        { kind: "deadline_relative", daysBefore: 1, time: "07:00", timezone: "Europe/Berlin" },
+      ],
+    });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: snapshot,
+      refinementTargetType: "task", refinementTargetId: task.id, refinementIntent: "improve", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({ intent: "improve", summary: "Update only the title", disposition: "changes", question: null, changes: [
+        { kind: "update_task", targetId: task.id, title: "Follow up with the office", rationale: "Clarify the action.", accepted: true },
+      ] }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ title: "Follow up with the office", scheduledDate: "2026-10-13", dueDate: "2026-10-19" });
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, task.id)).all()).toHaveLength(2);
+
+    const revisitable = createTask(ctx.handle.db, { title: "Revisit", status: "actionable", revisitAt: "2026-10-12T05:00:00.000Z", reminders: [{ kind: "absolute", at: "2026-10-11T05:00:00.000Z" }] });
+    const revisitSnapshot = buildRefinementSnapshot(ctx.handle.db, "task", revisitable.id, null).snapshot;
+    const clearId = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id: clearId, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: revisitSnapshot,
+      refinementTargetType: "task", refinementTargetId: revisitable.id, refinementIntent: "improve", refinementSnapshotJson: revisitSnapshot,
+      refinementJson: JSON.stringify({ intent: "improve", summary: "Clear revisit information", disposition: "changes", question: null, changes: [
+        { kind: "update_task", targetId: revisitable.id, revisitAt: null, reminders: [], rationale: "Remove the old revisit and reminder.", accepted: true },
+      ] }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+    applyWorkRefinement(ctx.handle.db, clearId, null, 1, {});
+    expect(getTaskOrThrow(ctx.handle.db, revisitable.id)).toMatchObject({ revisitAt: null, scheduledDate: null, dueDate: null, reminders: [] });
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, revisitable.id)).all()).toEqual([]);
+  });
+
+  it("rolls back all accepted changes when a second planning change is invalid", () => {
+    const project = createProject(ctx.handle.db, { title: "Planning target" });
+    const projectRevision = project.revision;
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "project", project.id, null).snapshot;
+    const id = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: snapshot,
+      refinementTargetType: "project", refinementTargetId: project.id, refinementIntent: "structure", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({ intent: "structure", summary: "Two operations", disposition: "changes", question: null, changes: [
+        { kind: "create_child", parentTaskId: project.id, title: "Valid first action", scheduledDate: "2026-10-13", reminders: [{ kind: "absolute", at: "2026-10-12T05:00:00.000Z" }], rationale: "First selected action.", accepted: true },
+        { kind: "create_child", parentTaskId: project.id, title: "Conflicting second action", scheduledDate: "2026-10-19", revisitAt: "2026-10-18T05:00:00.000Z", rationale: "A work date and revisit cannot coexist on an ordinary task.", accepted: true },
+      ] }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+    expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow();
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, project.id)).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, project.id)).get()?.revision).toBe(projectRevision);
+    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
+  });
+
+  it("collects activation decisions for a dated child and retries atomically without duplicate work or reminders", () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Project driver", color: "#456789" }).returning().get();
+    const project = insertTestProject(ctx.handle.db, { title: "Laternenbasteln", status: "backlog" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "project", project.id, null).snapshot;
+    const id = randomUUID();
+    const reminder = { kind: "absolute", at: "2026-10-12T05:00:00.000Z" };
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "project", refinementTargetId: project.id,
+      refinementIntent: "structure", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({ intent: "structure", summary: "Plan the two concrete actions", disposition: "changes", question: null, changes: [
+        { kind: "create_child", parentTaskId: project.id, title: "Behälter am Dienstag mitbringen", scheduledDate: "2026-10-13", reminders: [reminder], rationale: "Bring the container to daycare on Tuesday.", accepted: true },
+      ] }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    let requirements: unknown;
+    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
+    expect(requirements).toMatchObject({ code: "project_commitment_resolution_required" });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, project.id)).all()).toHaveLength(0);
+    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id, "Behälter vorbereiten"));
+    const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, project.id)).get()!;
+    expect(child).toMatchObject({ title: "Behälter am Dienstag mitbringen", status: "active", scheduledDate: "2026-10-13" });
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, child.id)).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, project.id)).all()).toHaveLength(1);
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
   it("activates an actionable conversion with the selected driver without assigning children to that driver", () => {

@@ -167,6 +167,19 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("Keep the title suggestion and adjust the rest.");
   });
 
+  it("guides refinement planning fields with household-local time and presence semantics", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-10-12", timezone: "Europe/Berlin", currentLocalDateTime: "2026-10-12T12:00:00",
+      memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: { targetType: "project", intent: "structure", context: "{}", today: "2026-10-12", timezone: "Europe/Berlin", currentLocalDateTime: "2026-10-12T12:00:00" },
+    });
+    expect(instructions).toContain("Today is 2026-10-12 in Europe/Berlin");
+    expect(instructions).toContain("scheduledDate only for an explicit intended work date");
+    expect(instructions).toContain("absolute reminders require an ISO datetime with the correct timezone offset");
+    expect(instructions).toContain("An empty reminders array means explicitly clear reminders");
+    expect(instructions).toContain("omit fields that should remain unchanged");
+  });
+
   it("omits the household context section from refinement when all configured fields are empty", () => {
     const instructions = buildIntakeInstructions({
       today: "2026-09-28",
