@@ -1018,7 +1018,7 @@ describe("project workflow (HTTP routes)", () => {
     expect(created.statusCode).toBe(201);
     const task = created.json();
     const first = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: { expectedRevision: project.revision } });
-    expect(first.statusCode).toBe(409);
+    expect(first.statusCode, JSON.stringify(first.json())).toBe(409);
     expect(first.json().error.code).toBe("project_commitments_prevent_parking");
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().scheduledDate).toBe("2026-11-01");
