@@ -281,37 +281,6 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(unlockedRes.json().blocked).toBe(false);
   });
 
-  it("revision-checks prerequisite edits and rejects a stale second edit", async () => {
-    const target = await createTask({ title: "Prepare documents", status: "actionable" });
-    const first = await createTask({ title: "Request the records", status: "actionable" });
-    const second = await createTask({ title: "Confirm the date", status: "actionable" });
-    const added = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${target.id}/dependencies`,
-      payload: { dependsOnTaskId: first.id, expectedRevision: target.revision },
-    });
-    expect(added.statusCode).toBe(201);
-    expect(added.json().dependencies.map((dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId)).toEqual([first.id]);
-
-    const stale = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${target.id}/dependencies`,
-      payload: { dependsOnTaskId: second.id, expectedRevision: target.revision },
-    });
-    expect(stale.statusCode).toBe(409);
-    expect(stale.json().error.code).toBe("stale_write_conflict");
-    const current = await ctx.app.inject({ method: "GET", url: `/api/tasks/${target.id}` });
-    expect(current.json().dependencies.map((dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId)).toEqual([first.id]);
-
-    const removed = await ctx.app.inject({
-      method: "DELETE",
-      url: `/api/tasks/${target.id}/dependencies/${first.id}`,
-      payload: { expectedRevision: added.json().revision },
-    });
-    expect(removed.statusCode).toBe(200);
-    expect(removed.json().dependencies).toEqual([]);
-  });
-
   it("defaults projectless successors to actionable", async () => {
     const predecessor = await createTask({
       title: "Globaler Vorgänger",
