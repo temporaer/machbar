@@ -1,35 +1,68 @@
-import { useState } from "react";
-import type { Task } from "@machbar/shared";
+import { useEffect, useMemo, useState } from "react";
+import type { ProjectActivationResolution, Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
+import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { BottomSheet } from "./BottomSheet";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
+
+function descendantRevisions(tasks: Task[]): Array<{ taskId: number; revision: number }> {
+  return tasks.flatMap((child) => [
+    { taskId: child.id, revision: child.revision },
+    ...descendantRevisions(child.children),
+  ]);
+}
+
+function openActionDescendants(tasks: Task[]): Task[] {
+  return tasks.flatMap((task) => [
+    ...(task.kind === "action" && task.status !== "done" && task.status !== "cancelled" ? [task] : []),
+    ...openActionDescendants(task.children),
+  ]);
+}
 
 /** Focused `task.convertToProject` workflow — the canonical destination regardless of rail/keyboard/detail invocation. */
 export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
   const { bump } = useRefresh();
   const dispatch = useWorkItemCommands();
+  const [currentTask, setCurrentTask] = useState(task);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preservedStepTitle, setPreservedStepTitle] = useState(task.title);
+  const [preservedStepTitleEdited, setPreservedStepTitleEdited] = useState(false);
+  const [dependencyTargets, setDependencyTargets] = useState<Record<number, number>>({});
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [project, setProject] = useState<Awaited<ReturnType<typeof api.convertTaskToStory>> | null>(null);
-
-  const unresolvedDependencyCount = task.dependencies.filter((dependency) => !dependency.resolved).length;
+  useEffect(() => {
+    setCurrentTask(task);
+    if (!preservedStepTitleEdited) setPreservedStepTitle(task.title);
+  }, [task, preservedStepTitleEdited]);
   const blockReason =
-    task.status === "done" || task.status === "cancelled"
+    currentTask.status === "done" || currentTask.status === "cancelled"
       ? strings.convertToProjectUnsupportedStatus
-      : task.parentTaskId !== null || task.projectId !== null
+      : currentTask.parentTaskId !== null || currentTask.projectId !== null
       ? strings.convertToProjectNotStandalone
-      : task.externalWait !== null ||
-          unresolvedDependencyCount > 0 ||
-          task.repeatAfterDays !== null ||
-          task.allowedDeviationDays !== null ||
-          task.reminders.length > 0
-        ? strings.convertToProjectTaskOnlyRelations
         : null;
+  const openChildren = useMemo(
+    () => openActionDescendants(currentTask.children),
+    [currentTask.children],
+  );
+  const dependencies = useMemo(() => [
+    ...currentTask.dependencies.map((dependency) => ({ ...dependency, endpoint: "task" as const })),
+    ...currentTask.incomingDependencies.map((dependency) => ({ ...dependency, endpoint: "dependsOnTask" as const })),
+  ], [currentTask.dependencies, currentTask.incomingDependencies]);
+  const preserveStepRequired = currentTask.externalWait !== null || currentTask.revisitAt !== null || dependencies.length > 0 ||
+    currentTask.repeatAfterDays !== null || currentTask.allowedDeviationDays !== null ||
+    currentTask.reminders.length > 0 || currentTask.scheduledDate !== null ||
+    currentTask.notBeforeAt != null || currentTask.notBeforeDate != null ||
+    (currentTask.status === "actionable" && openChildren.length === 0);
+  const activationResolution: ProjectActivationResolution | null = activationPrompt
+    ? projectActivationResolutionFromPrompt(activationPrompt)
+    : null;
 
   const convert = async (status: "active" | "backlog") => {
     if (busy || blockReason) return;
@@ -37,14 +70,35 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
     setError(null);
     try {
       const converted = await api.convertTaskToStory(task.id, {
-        status: "backlog",
-        expectedRevision: task.revision,
+        status,
+        ...(preserveStepRequired ? { preservedStepTitle: preservedStepTitle.trim() } : {}),
+        dependencyMappings: Object.entries(dependencyTargets).map(([dependencyId, targetTaskId]) => {
+          const dependency = dependencies.find((candidate) => candidate.id === Number(dependencyId));
+          return {
+            dependencyId: Number(dependencyId),
+            targetTaskId,
+            sourceEndpoint: dependency?.endpoint ?? "task",
+          };
+        }),
+        expectedDescendantRevisions: descendantRevisions(currentTask.children),
+        ...(activationResolution ? { activationResolution } : {}),
+        expectedRevision: currentTask.revision,
       });
       bump();
       setProject(converted);
       if (status === "active") dispatch({ type: "story.activate", story: converted });
     } catch (cause) {
-      if (isStaleWriteConflict(cause)) bump();
+      const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
+      if (refreshedPrompt) setActivationPrompt(refreshedPrompt);
+      if (isStaleWriteConflict(cause)) {
+        bump();
+        try {
+          const latest = await api.getTask(task.id);
+          setCurrentTask(latest);
+        } catch {
+          // Keep the draft and let the next submission surface the current server error.
+        }
+      }
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setBusy(false);
@@ -57,7 +111,7 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
 
   return (
     <BottomSheet
-      title={`${strings.convertToProject}: ${task.title}`}
+      title={`${strings.convertToProject}: ${currentTask.title}`}
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -66,24 +120,40 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
         {blockReason ? (
           <p className="text-muted">{blockReason}</p>
         ) : (
-          <div className="capture-shape-actions">
-            <button
-              type="button"
-              className="btn btn-primary capture-shape-action"
-              disabled={busy}
-              onClick={() => void convert("backlog")}
-            >
-              {strings.convertToProjectBacklog}
-            </button>
-            <button
-              type="button"
-              className="btn capture-shape-action"
-              disabled={busy}
-              onClick={() => void convert("active")}
-            >
-              {strings.convertToProjectActive}
-            </button>
-          </div>
+          <>
+            {preserveStepRequired ? (
+              <label className="field">
+                <span>{strings.convertToProjectPreservedStep}</span>
+                <input value={preservedStepTitle} onChange={(event) => {
+                  setPreservedStepTitleEdited(true);
+                  setPreservedStepTitle(event.target.value);
+                }} disabled={busy} />
+              </label>
+            ) : null}
+            {dependencies.map((dependency) => (
+              <label className="field" key={dependency.id}>
+                <span>{dependency.endpoint === "task" ? strings.convertToProjectOutgoingDependency : strings.convertToProjectIncomingDependency}: {dependency.title ?? String(dependency.endpoint === "task" ? dependency.dependsOnTaskId : dependency.taskId)}</span>
+                <select
+                  value={dependencyTargets[dependency.id] ?? "preserved"}
+                  onChange={(event) => setDependencyTargets((previous) => {
+                    const next = { ...previous };
+                    if (event.target.value === "preserved") delete next[dependency.id];
+                    else next[dependency.id] = Number(event.target.value);
+                    return next;
+                  })}
+                  disabled={busy}
+                >
+                  <option value="preserved">{strings.convertToProjectPreservedStep}</option>
+                  {openChildren.map((child) => <option key={child.id} value={child.id}>{child.title}</option>)}
+                </select>
+              </label>
+            ))}
+            {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
+            <div className="capture-shape-actions">
+              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
+              <button type="button" className="btn capture-shape-action" disabled={busy || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("active")}>{strings.convertToProjectActive}</button>
+            </div>
+          </>
         )}
         {error ? (
           <div className="task-row-error" role="alert">

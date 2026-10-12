@@ -105,6 +105,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     nextBlockerAttentionDate: null,
     blockers: [],
     dependencies: [],
+    incomingDependencies: [],
     children: [],
     projectTitle: null,
     projectOwnerMemberId: null,

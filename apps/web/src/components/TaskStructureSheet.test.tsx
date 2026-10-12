@@ -345,6 +345,8 @@ describe("TaskStructureSheet routing", () => {
       expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(72, {
         status: "backlog",
         expectedRevision: 1,
+        dependencyMappings: [],
+        expectedDescendantRevisions: [{ taskId: 73, revision: 1 }],
       }),
     );
   });
@@ -396,8 +398,10 @@ describe("TaskStructureSheet routing", () => {
     const picker = await screen.findByRole("dialog");
     expect(within(picker).getByText(strings.commitmentResolutionHint)).toBeInTheDocument();
     expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(72, {
-      status: "backlog",
+      status: "active",
       expectedRevision: 1,
+      dependencyMappings: [],
+      expectedDescendantRevisions: [],
     });
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
 

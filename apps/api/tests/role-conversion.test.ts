@@ -93,12 +93,21 @@ describe("task <-> story role conversion", () => {
     expect(project.tasks.map((task: { id: number }) => task.id)).toEqual([
       firstChild.id,
       secondChild.id,
+      expect.any(Number),
     ]);
+    expect(project.tasks[2]).toMatchObject({
+      title: "Kinderzimmer renovieren",
+      scheduledDate: "2026-09-15",
+      dueDate: null,
+    });
     expect(project.tasks[1]).toMatchObject({
       id: secondChild.id,
       parentTaskId: null,
       children: [expect.objectContaining({ id: grandchild.id })],
     });
+    expect(ctx.handle.db.select().from(schema.activityEvents)
+      .where(eq(schema.activityEvents.entityId, root.id)).all())
+      .toEqual(expect.arrayContaining([expect.objectContaining({ kind: "task_created", entityType: "task" })]));
     expect(
       await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
     ).toMatchObject({ statusCode: 404 });
@@ -142,6 +151,8 @@ describe("task <-> story role conversion", () => {
       await post("/api/tasks", {
         title: "Actionable wird Projekt",
         status: "actionable",
+        ownerMemberId: (await post("/api/members", { name: "Projekt-Treiber" })).json().id,
+        ownerInheritanceMode: "explicit",
       })
     ).json();
     const someday = (
@@ -163,7 +174,7 @@ describe("task <-> story role conversion", () => {
     expect(actionableStory.statusCode).toBe(201);
     expect(actionableStory.json()).toMatchObject({
       id: actionable.id,
-      status: "backlog",
+      status: "active",
       title: "Actionable wird Projekt",
     });
     expect(somedayStory.statusCode).toBe(201);
@@ -224,10 +235,10 @@ describe("task <-> story role conversion", () => {
     expect(converted.statusCode).toBe(201);
     expect(converted.json()).toMatchObject({
       id: root.id,
-      revision: root.revision + 1,
+      revision: root.revision + 2,
       title: "Keller organisieren",
       notes: "Regale und Kisten",
-      status: "backlog",
+      status: "active",
       ownerMemberId: member.id,
       dueDate: "2026-10-10",
       scheduledDate: null,
@@ -248,10 +259,18 @@ describe("task <-> story role conversion", () => {
     const project = (
       await ctx.app.inject({ method: "GET", url: `/api/projects/${root.id}` })
     ).json();
+    expect(project.tasks[2].effectiveContexts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: context.id, name: "Keller" }),
+    ]));
     expect(project.tasks.map((task: { id: number }) => task.id)).toEqual([
       first.id,
       second.id,
+      expect.any(Number),
     ]);
+    expect(project.tasks[2]).toMatchObject({
+      title: "Keller organisieren",
+      scheduledDate: "2026-09-15",
+    });
     expect(project.tasks[0]).toMatchObject({
       id: first.id,
       parentTaskId: null,
@@ -302,58 +321,83 @@ describe("task <-> story role conversion", () => {
       },
     );
 
-    expect(activePromotion.statusCode).toBe(400);
-    expect(activePromotion.json().error.code).toBe("project_driver_required");
+    expect(activePromotion.statusCode).toBe(409);
+    expect(activePromotion.json().error.code).toBe("project_commitment_resolution_required");
     expect(
       await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
     ).toMatchObject({ statusCode: 200 });
   });
 
-  it("rejects an active conversion with a driver but no progress path atomically", async () => {
+  it("rolls back a staged preservation step when activation decisions are missing", async () => {
+    const source = (await post("/api/tasks", {
+      title: "Datiertes Vorhaben",
+      status: "actionable",
+      scheduledDate: "2026-10-20",
+    })).json();
+
+    const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: source.revision,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("project_commitment_resolution_required");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, source.id)).get()).toMatchObject({
+      role: "task", status: "active", scheduledDate: "2026-10-20",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+  });
+
+  it("preserves an active conversion as a child action atomically", async () => {
     const member = (await post("/api/members", { name: "No path owner" })).json();
     const root = (
       await post("/api/tasks", {
         title: "Project-shaped capture",
+        status: "actionable",
         ownerMemberId: member.id,
         ownerInheritanceMode: "explicit",
       })
     ).json();
     const response = await post(
       `/api/tasks/${root.id}/convert-to-story`,
-      { status: "active", expectedRevision: root.revision },
+      {
+        status: "active",
+        expectedRevision: root.revision,
+        activationResolution: {
+          expectedProjects: [{ projectId: root.id, revision: root.revision }],
+          drivers: [],
+        },
+      },
     );
-
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("project_activation_not_ready");
-    expect(
-      await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
-    ).toMatchObject({ statusCode: 200 });
-    expect(
-      ctx.handle.db
-        .select()
-        .from(schema.workItems)
-        .where(eq(schema.workItems.role, "story"))
-        .all(),
-    ).toEqual([]);
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ status: "active", nextAction: { title: "Project-shaped capture" } });
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${root.id}` })).json();
+    expect(project.tasks).toHaveLength(1);
+    expect(project.tasks[0]).toMatchObject({ title: "Project-shaped capture", status: "actionable" });
   });
 
-  it("converts an actionable root with a driver and viable child next action to active", async () => {
+  it("converts a someday root with an actionable child and driver to active", async () => {
     const member = (await post("/api/members", { name: "Active owner" })).json();
     const root = (
       await post("/api/tasks", {
         title: "Keller organisieren",
-        status: "actionable",
+        status: "someday",
         ownerMemberId: member.id,
         ownerInheritanceMode: "explicit",
       })
     ).json();
     await post(`/api/tasks/${root.id}/children`, {
       title: "Regale ausmessen",
+      status: "actionable",
     });
 
     const response = await post(`/api/tasks/${root.id}/convert-to-story`, {
       status: "active",
       expectedRevision: root.revision,
+      activationResolution: {
+        expectedProjects: [{ projectId: root.id, revision: root.revision }],
+        drivers: [],
+      },
     });
 
     expect(response.statusCode).toBe(201);
@@ -368,7 +412,7 @@ describe("task <-> story role conversion", () => {
     const root = (
       await post("/api/tasks", {
         title: "Noch nicht reif",
-        status: "actionable",
+        status: "someday",
       })
     ).json();
 
@@ -491,9 +535,10 @@ describe("task <-> story role conversion", () => {
     expect(row).toEqual({ role: "task", task_kind: "reference" });
   });
 
-  it("rejects task-only relations before converting a task to a story", async () => {
+  it("moves task-only obligations to a preserved child while keeping the project identity", async () => {
+    const member = (await post("/api/members", { name: "Conversion driver" })).json();
     const waiting = (
-      await post("/api/tasks", { title: "Wartet extern", status: "actionable" })
+      await post("/api/tasks", { title: "Wartet extern", status: "actionable", ownerMemberId: member.id, ownerInheritanceMode: "explicit" })
     ).json();
     await ctx.app.inject({
       method: "PUT",
@@ -505,21 +550,33 @@ describe("task <-> story role conversion", () => {
     });
 
     const dependencyTask = (
-      await post("/api/tasks", { title: "Mit Abhängigkeit", status: "actionable" })
+      await post("/api/tasks", { title: "Mit Abhängigkeit", status: "actionable", ownerMemberId: member.id, ownerInheritanceMode: "explicit" })
     ).json();
+    const selectedStep = (await post(`/api/tasks/${dependencyTask.id}/children`, { title: "Ausgewählte Voraussetzung" })).json();
     const blocker = (
       await post("/api/tasks", { title: "Voraussetzung", status: "actionable" })
     ).json();
-    expect(
-      await post(`/api/tasks/${dependencyTask.id}/dependencies`, {
-        dependsOnTaskId: blocker.id,
-      }),
-    ).toMatchObject({ statusCode: 201 });
+    const outgoingDependency = await post(`/api/tasks/${dependencyTask.id}/dependencies`, {
+      dependsOnTaskId: blocker.id,
+    });
+    expect(outgoingDependency.statusCode).toBe(201);
+    const outgoingDependencyId = outgoingDependency.json().dependencies.find(
+      (dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId === blocker.id,
+    ).id;
+    const incomingTask = (await post("/api/tasks", { title: "Wartet auf Projekt", status: "actionable" })).json();
+    const incomingDependency = await post(`/api/tasks/${incomingTask.id}/dependencies`, {
+      dependsOnTaskId: dependencyTask.id,
+    });
+    expect(incomingDependency.statusCode).toBe(201);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${dependencyTask.id}` })).json().incomingDependencies)
+      .toEqual([expect.objectContaining({ id: incomingDependency.json().dependencies[0].id, taskId: incomingTask.id, title: "Wartet auf Projekt" })]);
 
     const recurring = (
       await post("/api/tasks", {
         title: "Wiederholt",
         status: "actionable",
+        ownerMemberId: member.id,
+        ownerInheritanceMode: "explicit",
       })
     ).json();
     ctx.handle.db
@@ -527,10 +584,20 @@ describe("task <-> story role conversion", () => {
       .set({ repeatAfterDays: 7 })
       .where(eq(schema.workItems.id, recurring.id))
       .run();
+    ctx.handle.db.insert(schema.taskRecurrenceOccurrences).values({
+      taskId: recurring.id,
+      scheduledDate: "2026-10-01",
+      deadlineDate: "2026-10-08",
+      completedOn: "2026-10-01",
+      completedAt: "2026-10-01T12:00:00.000Z",
+      result: "hit",
+    }).run();
     const reminder = (
       await post("/api/tasks", {
         title: "Mit Erinnerung",
         status: "actionable",
+        ownerMemberId: member.id,
+        ownerInheritanceMode: "explicit",
       })
     ).json();
     ctx.handle.db
@@ -544,16 +611,159 @@ describe("task <-> story role conversion", () => {
       })
       .run();
 
-    for (const task of [waiting, dependencyTask, blocker, recurring, reminder]) {
-      const response = await post(`/api/tasks/${task.id}/convert-to-story`, {
+    const sources = [waiting, dependencyTask, recurring, reminder];
+    for (const source of sources) {
+      const current = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${source.id}` })).json();
+      const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
         status: "backlog",
+        expectedRevision: current.revision,
+        activationResolution: {
+          expectedProjects: [{ projectId: source.id, revision: current.revision }],
+          drivers: [],
+          ...(source.id === dependencyTask.id
+            ? { nextActionTitle: "Voraussetzung bearbeiten" }
+            : source.id === waiting.id
+              ? { nextActionTitle: "Rückmeldung nachfassen" }
+              : {}),
+        },
+        ...(source.id === dependencyTask.id ? {
+          dependencyMappings: [{
+            dependencyId: outgoingDependencyId,
+            targetTaskId: selectedStep.id,
+            sourceEndpoint: "task",
+          }],
+        } : {}),
       });
-      expect(response.statusCode).toBe(409);
-      expect(response.json().error).toMatchObject({
-        code: "role_conversion_invalid",
-        details: { reason: "task_only_relations" },
-      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject({ id: source.id, status: "active" });
+      const converted = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
+      expect(converted.tasks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ title: source.title, status: "actionable" }),
+      ]));
     }
+
+    const dependencyRow = ctx.handle.db.select().from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.dependsOnTaskId, blocker.id)).get();
+    expect(dependencyRow?.taskId).toBe(selectedStep.id);
+    const incomingRow = ctx.handle.db.select().from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.taskId, incomingTask.id)).get();
+    expect(incomingRow?.dependsOnTaskId).not.toBe(dependencyTask.id);
+    const dependencyProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${dependencyTask.id}` })).json();
+    expect(incomingRow?.dependsOnTaskId).toBe(dependencyProject.tasks.find((child: { title: string }) => child.title === dependencyTask.title).id);
+    const recurringProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${recurring.id}` })).json();
+    const recurringStep = recurringProject.tasks.find((child: { title: string }) => child.title === recurring.title);
+    expect(recurringStep.repeatAfterDays).toBe(7);
+    expect(ctx.handle.db.select().from(schema.taskRecurrenceOccurrences)
+      .where(eq(schema.taskRecurrenceOccurrences.taskId, recurringStep.id)).all()).toHaveLength(1);
+    const reminderProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${reminder.id}` })).json();
+    expect(reminderProject.tasks.find((child: { title: string }) => child.title === reminder.title).reminders).toHaveLength(1);
+    const waitProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${waiting.id}` })).json();
+    expect(waitProject.tasks.find((child: { title: string }) => child.title === waiting.title).externalWait.waitingFor).toBe("Antwort");
+    const reminderStepId = reminderProject.tasks.find((child: { title: string }) => child.title === reminder.title).id;
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, reminderStepId)).all()).toHaveLength(1);
+  });
+
+  it("keeps a future revisit and its reminder deferred during conversion", async () => {
+    const source = (await post("/api/tasks", {
+      title: "Später um Regale kümmern",
+      status: "someday",
+      revisitAt: "2030-06-01T09:00:00.000Z",
+      reminders: [{ kind: "absolute", at: "2030-05-31T09:00:00.000Z" }],
+    })).json();
+
+    const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: source.revision,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ id: source.id, status: "backlog", revisitAt: "2030-06-01T09:00:00.000Z" });
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
+    const preserved = project.tasks.find((step: { title: string }) => step.title === source.title);
+    expect(preserved).toMatchObject({
+      status: "actionable",
+      revisitAt: "2030-06-01T09:00:00.000Z",
+      reminders: [expect.objectContaining({ kind: "absolute", at: "2030-05-31T09:00:00.000Z" })],
+    });
+    const today = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2030-05-31" })).json();
+    expect(today.planned.map((task: { id: number }) => task.id)).not.toContain(preserved.id);
+    expect(today.unscheduled.map((task: { id: number }) => task.id)).not.toContain(preserved.id);
+  });
+
+  it("retains a recurrence-derived deadline on its preserved step", async () => {
+    const member = (await post("/api/members", { name: "Recurring driver" })).json();
+    const source = (await post("/api/tasks", {
+      title: "Filter prüfen",
+      status: "actionable",
+      ownerMemberId: member.id,
+      ownerInheritanceMode: "explicit",
+      scheduledDate: "2030-06-01",
+      repeatAfterDays: 7,
+      allowedDeviationDays: 2,
+    })).json();
+    expect(source.dueDate).toBe("2030-06-03");
+
+    const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: source.revision,
+      activationResolution: {
+        expectedProjects: [{ projectId: source.id, revision: source.revision }],
+        drivers: [],
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
+    const preserved = project.tasks.find((step: { title: string }) => step.title === source.title);
+    expect(preserved).toMatchObject({
+      scheduledDate: "2030-06-01",
+      dueDate: "2030-06-03",
+      repeatAfterDays: 7,
+      allowedDeviationDays: 2,
+    });
+  });
+
+  it("rejects conversion from a stale descendant snapshot without changing the graph", async () => {
+    const root = (await post("/api/tasks", { title: "Outline" })).json();
+    const child = (await post(`/api/tasks/${root.id}/children`, { title: "First step" })).json();
+    const changedChild = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${child.id}`, payload: { title: "Updated step", expectedRevision: child.revision } });
+    expect(changedChild.statusCode).toBe(200);
+
+    const response = await post(`/api/tasks/${root.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: root.revision,
+      expectedDescendantRevisions: [{ taskId: child.id, revision: child.revision }],
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("stale_write_conflict");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` })).json()).toMatchObject({ id: root.id });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json()).toMatchObject({ title: "Updated step" });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, root.id)).get()).toMatchObject({ role: "task", status: "active" });
+  });
+
+  it("rejects a dependency remapping that would create a cycle and rolls back all conversion writes", async () => {
+    const root = (await post("/api/tasks", { title: "Project action", status: "actionable" })).json();
+    const child = (await post(`/api/tasks/${root.id}/children`, { title: "First step" })).json();
+    const external = (await post("/api/tasks", { title: "External prerequisite", status: "actionable" })).json();
+    const sourceEdge = await post(`/api/tasks/${root.id}/dependencies`, { dependsOnTaskId: external.id });
+    await post(`/api/tasks/${external.id}/dependencies`, { dependsOnTaskId: child.id });
+    const dependencyId = sourceEdge.json().dependencies.find(
+      (dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId === external.id,
+    ).id;
+    const before = ctx.handle.db.select().from(schema.taskDependencies).all();
+
+    const response = await post(`/api/tasks/${root.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: (await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` })).json().revision,
+      dependencyMappings: [{ dependencyId, targetTaskId: child.id, sourceEndpoint: "task" }],
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({ code: "role_conversion_invalid", details: { reason: "invalid_dependency_mapping" } });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, root.id)).get()).toMatchObject({ role: "task" });
+    expect(ctx.handle.db.select().from(schema.taskDependencies).all()).toEqual(before);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(3);
   });
 
   it("converts a story back to a task, preserving identity and history, when the story has no children or acceptance criteria", async () => {

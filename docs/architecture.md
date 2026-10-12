@@ -495,10 +495,12 @@ decision. Project dates never become task dates.
   `POST /api/projects/:id/convert-to-task` atomically reclassify a root
   `captured` task as a story (or the reverse), reusing the same numeric id
   (see §9) so activity history, tags, contexts, and notifications survive
-  untouched. Captured roots cannot acquire task-only dependencies, waits,
-  recurrence or new child tasks before classification; reverse
-  conversion is rejected whenever the story has children or acceptance
-  criteria.
+  untouched. Task → project conversion preserves task-only work plans,
+  reminders, external waits, recurrence history and dependencies by moving
+  them to a retained action step, with optional per-dependency assignment to
+  an existing open action. It preserves the project deadline and existing
+  children. Reverse conversion remains conservative until its criteria and
+  child obligations are executable on action tasks.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
   change its description and its own revisit date atomically; resolving it
@@ -1388,14 +1390,19 @@ identity-destroying `promoteTaskToProject`: converting a task to a story
 above) and re-points `activity_events`/`notification_events`/
 `contribution_events` in place, so activity history, tags, and contexts
 survive the conversion instead of starting fresh. A root standalone task may
-become a story while keeping its descendants and compatible metadata; conversion
-only rejects task-specific semantics that a story cannot safely represent
-(direct waits, dependencies, recurrence, reminders, or terminal task statuses)
-with `role_conversion_invalid`. Conversion and commitment stay separate:
-backlog conversion does not require activation readiness, while active
-conversion still runs the normal story activation guards. Reverse conversion
-(story → task) remains conservative: it rejects whenever the story has any
-children or acceptance criteria, rather than silently discarding data. Routes:
+become a story while keeping its descendants and content. Its task-only
+commitments are remapped transactionally to a preserved action step; explicit
+physical-context bindings and recurrence-derived deadlines stay on that step.
+The source revisit date continues to mean intentional deferral even when an
+absolute reminder is also present. The conversion sheet can map both outgoing
+dependencies and visible tasks that wait on the source, including to nested
+open action descendants; the graph projection omits incoming edges whose
+dependent item is not visible to the current viewer. Active commitments and
+explicit activation use the shared project-readiness transition, and the
+conversion transaction rolls back if the required driver, path, mapping, or
+revision is missing. Reverse conversion (story → task) remains conservative
+until retained criteria can be checked by task completion; it must not erase
+children or criteria. Routes:
 `POST /api/tasks/:id/convert-to-story`, `POST /api/projects/:id/convert-to-task`.
 The web workflow is opened by `story.convertToTask`; it preflights those
 project-only structures and routes blocked cases to the existing structure or

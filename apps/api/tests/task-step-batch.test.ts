@@ -273,7 +273,7 @@ describe("atomic task step batches", () => {
     expect(project.json().tasks.map((task: { title: string }) => task.title)).toEqual(["Unterlagen zusammenstellen"]);
   });
 
-  it("keeps the captured task and creates no children when its existing relations block conversion", async () => {
+  it("preserves an external wait when converting a task before adding batch steps", async () => {
     const capture = await createTask({ title: "Versicherung anrufen", status: "actionable" });
     const withWait = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${capture.id}`, payload: { externalWait: { waitingFor: "Versicherung" } } });
     expect(withWait.statusCode).toBe(200);
@@ -289,10 +289,12 @@ describe("atomic task step batches", () => {
         steps: [{ title: "Rückruf vorbereiten" }],
       },
     });
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("role_conversion_invalid");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${capture.id}` })).json()).toMatchObject({
-      status: "captured", kind: "action", children: [],
-    });
+    expect(response.statusCode).toBe(201);
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${capture.id}` })).json();
+    expect(project.tasks.map((task: { title: string }) => task.title)).toEqual([
+      capture.title,
+      "Rückruf vorbereiten",
+    ]);
+    expect(project.tasks[0]).toMatchObject({ status: "actionable", externalWait: { waitingFor: "Versicherung" } });
   });
 });

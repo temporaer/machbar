@@ -247,7 +247,7 @@ describe("cleanup round micro-flow actions", () => {
   });
 
   it("rejects a card whose target changed type", async () => {
-    const haustuer = await task("Haustür");
+    const haustuer = await task("Haustür", { status: "captured" });
     const card = await readyCard({ type: "task", id: haustuer });
     const converted = await ctx.app.inject({ method: "POST", url: `/api/tasks/${haustuer}/convert-to-story`, payload: { status: "backlog" } });
     expect(converted.statusCode, converted.body).toBe(201);

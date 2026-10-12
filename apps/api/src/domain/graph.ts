@@ -509,6 +509,20 @@ export class Graph {
     }
 
     const rawTasksById = new Map(rawTasks.map((t) => [t.id, t]));
+    const incomingDependenciesByTask = new Map<number, Dependency[]>();
+    for (const row of depRows) {
+      const dependent = rawTasksById.get(row.taskId);
+      if (!dependent) continue;
+      const list = incomingDependenciesByTask.get(row.dependsOnTaskId) ?? [];
+      list.push({
+        id: row.id,
+        taskId: row.taskId,
+        dependsOnTaskId: row.dependsOnTaskId,
+        title: dependent.title,
+        resolved: dependent.status === "done" || dependent.status === "cancelled",
+      });
+      incomingDependenciesByTask.set(row.dependsOnTaskId, list);
+    }
     const projectStatuses = new Map(
       rawProjects.map((project) => [project.id, project.status]),
     );
@@ -712,6 +726,7 @@ export class Graph {
           resolved,
         };
       });
+      const incomingDependencies = incomingDependenciesByTask.get(raw.id) ?? [];
       const execution = blockerAnalysis.get(raw.id);
       const externalWait = externalWaitByTask.get(raw.id) ?? null;
       const revisitAt =
@@ -796,6 +811,7 @@ export class Graph {
           execution?.nextBlockerAttentionDate ?? null,
         blockers,
         dependencies,
+        incomingDependencies,
         children: [],
         projectTitle: project?.title ?? null,
         projectOwnerMemberId: project?.ownerMemberId ?? null,
