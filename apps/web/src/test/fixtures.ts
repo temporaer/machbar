@@ -119,7 +119,7 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
   const status = overrides.status ?? "active";
   const hasDriver = (overrides.ownerMemberId ?? null) !== null;
   const hasViableProgressPath = overrides.nextAction?.executable === true;
-  return {
+  const project: ProjectWithActions = {
     id: nextId(),
     revision: 1,
     parentId: null,
@@ -150,6 +150,19 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
       hasHealthyFutureWaiting: false,
     },
     ...overrides,
+  };
+  const readiness = project.activationReadiness;
+  return {
+    ...project,
+    activationReadiness: {
+      ...readiness,
+      requiredDecisions: readiness.requiredDecisions ?? [
+        ...(!readiness.hasDriver ? ["driver" as const] : []),
+        ...(!(readiness.hasViableProgressPath || readiness.hasHealthyFutureWaiting || readiness.hasHealthyFutureRevisit)
+          ? ["progressPath" as const]
+          : []),
+      ],
+    },
   };
 }
 

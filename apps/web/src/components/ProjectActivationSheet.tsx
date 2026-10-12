@@ -12,21 +12,15 @@ import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFiel
 import { BottomSheet } from "./BottomSheet";
 
 function activationPrompt(story: ProjectWithActions): ProjectActivationPrompt {
-  const readiness = story.activationReadiness;
-  const required = readiness.requiredDecisions ?? [
-    ...(!readiness.hasDriver ? ["driver" as const] : []),
-    ...(!(readiness.hasViableProgressPath || readiness.hasHealthyFutureWaiting || readiness.hasHealthyFutureRevisit)
-      ? ["progressPath" as const]
-      : []),
-  ];
+  const required = story.activationReadiness.requiredDecisions ?? [];
   return {
-    projects: [{
+    projects: required.length > 0 ? [{
       projectId: story.id,
       title: story.title,
       revision: story.revision,
       ownerMemberId: story.ownerMemberId,
       required,
-    }],
+    }] : [],
     expectedProjects: [{ projectId: story.id, revision: story.revision }],
     selectedDrivers: {},
     nextActionTitle: "",
@@ -67,7 +61,7 @@ export function ProjectActivationSheet({
       await onActivate(selectedDriver(story, prompt), resolution, targetRevision);
       onClose();
     } catch (cause) {
-      const refreshedPrompt = await refreshProjectActivationPrompt(cause, story.id, prompt);
+      const refreshedPrompt = await refreshProjectActivationPrompt(cause, story.id, prompt, "explicit_activation");
       if (refreshedPrompt) setPrompt(refreshedPrompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {

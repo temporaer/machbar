@@ -14,15 +14,14 @@ import {
   recordContribution,
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
-import { applyProjectActivation } from "./commitmentActivation.js";
-import { projectNeedsProgressPath } from "./commitmentActivation.js";
-import { createCommitmentNextAction } from "./taskCrud.js";
+import {
+  activateProjectFromWorkflow,
+} from "./commitmentActivation.js";
 import type { ProjectActivationResolution } from "@machbar/shared";
 import {
   MutationContext,
   actor,
   assertExpectedRevision,
-  assertProjectActivationReady,
   nowIso,
 } from "./workItemShared.js";
 
@@ -106,14 +105,7 @@ export function activateProject(
     const ownerMemberId = input.ownerMemberId !== undefined
       ? input.ownerMemberId
       : resolutionDriver ?? project.ownerMemberId;
-    if (
-      input.activationResolution?.nextActionTitle &&
-      projectNeedsProgressPath(txDb, id, ownerMemberId)
-    ) {
-      createCommitmentNextAction(txDb, id, input.activationResolution.nextActionTitle, context);
-    }
-    assertProjectActivationReady(txDb, id, ownerMemberId);
-    applyProjectActivation(txDb, project, ownerMemberId!, context);
+    activateProjectFromWorkflow(txDb, id, ownerMemberId, context, input.activationResolution);
     const updated = getProjectOrThrow(txDb, id);
     return updated;
   });
@@ -254,14 +246,7 @@ export function reopenProject(
     const nextOwnerMemberId = ownerMemberId !== undefined
       ? ownerMemberId
       : resolutionDriver ?? project.ownerMemberId;
-    if (
-      activationResolution?.nextActionTitle &&
-      projectNeedsProgressPath(txDb, id, nextOwnerMemberId)
-    ) {
-      createCommitmentNextAction(txDb, id, activationResolution.nextActionTitle, context);
-    }
-    assertProjectActivationReady(txDb, id, nextOwnerMemberId);
-    const activityEventId = applyProjectActivation(txDb, project, nextOwnerMemberId!, context);
+    const activityEventId = activateProjectFromWorkflow(txDb, id, nextOwnerMemberId, context, activationResolution);
     const updated = getProjectOrThrow(txDb, id);
     neutralizeContribution(txDb, {
       activityEventId,

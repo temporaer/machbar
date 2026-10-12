@@ -12,7 +12,6 @@ import { BottomSheet } from "./BottomSheet";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useAsync } from "../lib/useAsync";
-import { hasProjectProgressPath } from "../lib/projectCommitments";
 
 /**
  * The captured-item -> project handoff, reached right after converting an
@@ -50,9 +49,8 @@ export function CapturedProjectHandoff({
   const dispatch = useWorkItemCommands();
   const displayedProject =
     projectActions.retained.get(currentProject.id)?.story ?? currentProject;
-  const canStart =
-    displayedProject.availableActions.includes("activate") &&
-    hasProjectProgressPath(displayedProject);
+  const canStart = displayedProject.availableActions.includes("activate");
+  const activationReady = (displayedProject.activationReadiness.requiredDecisions ?? []).length === 0;
   const { data: projectDetail } = useAsync(() => api.getProject(project.id), [project.id]);
 
   useEffect(() => {
@@ -137,7 +135,9 @@ export function CapturedProjectHandoff({
         ) : null}
         {canStart ? (
           <>
-            <p className="text-muted">{strings.activationReadyHint}</p>
+            <p className="text-muted">
+              {activationReady ? strings.activationReadyHint : strings.commitmentResolutionHint}
+            </p>
             <button
               type="button"
               className="btn btn-primary btn-block"

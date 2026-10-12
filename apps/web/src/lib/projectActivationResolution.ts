@@ -1,13 +1,9 @@
-import type { ProjectActivationResolution } from "@machbar/shared";
-import { api, type ProjectWithActions } from "./api";
-
-export interface ProjectActivationRequirement {
-  projectId: number;
-  title: string;
-  revision: number;
-  ownerMemberId: number | null;
-  required: Array<"driver" | "progressPath">;
-}
+import type {
+  ProjectActivationDecisionSnapshot,
+  ProjectActivationRequirement,
+  ProjectActivationResolution,
+} from "@machbar/shared";
+import { api } from "./api";
 
 export interface ProjectActivationPrompt {
   projects: ProjectActivationRequirement[];
@@ -73,59 +69,35 @@ export function projectActivationPromptFromError(
   };
 }
 
-/** Reload the current ancestor chain after a stale write, keeping only
- * decisions that still apply to the current requirements. */
+/** Reload current server requirements after a stale write, keeping only
+ * decisions that still apply to the current transition. */
 export async function refreshProjectActivationPrompt(
   error: unknown,
   targetProjectId: number,
   previous?: ProjectActivationPrompt | null,
+  intent: "commitment" | "explicit_activation" = "commitment",
 ): Promise<ProjectActivationPrompt | null> {
   const fromError = projectActivationPromptFromError(error, previous);
   if (fromError) return fromError;
   if (!isStructuredApiError(error) || error.code !== "stale_write_conflict") return null;
 
-  let projects: ProjectWithActions[];
+  let snapshot: ProjectActivationDecisionSnapshot | undefined;
   try {
-    projects = await api.getProjects();
+    const project = await api.getProject(targetProjectId);
+    snapshot = intent === "explicit_activation"
+      ? project.directActivationDecisionSnapshot
+      : project.activationDecisionSnapshot;
   } catch {
     return previous ?? null;
   }
-  const byId = new Map(projects.map((project) => [project.id, project]));
-  const chain: ProjectWithActions[] = [];
-  const visited = new Set<number>();
-  let current: ProjectWithActions | undefined = byId.get(targetProjectId);
-  while (current && !visited.has(current.id)) {
-    visited.add(current.id);
-    chain.push(current);
-    current = current.parentId === null ? undefined : byId.get(current.parentId);
-  }
-  const target = chain[0];
-  if (!target || visited.has(current?.id ?? -1)) return null;
-
-  const backlog = chain.filter((project) => project.status === "backlog");
-  const required = backlog.flatMap((project) => {
-    const readiness = project.activationReadiness;
-    const decisions = readiness.requiredDecisions ?? [
-      ...(!readiness.hasDriver ? ["driver" as const] : []),
-      ...(!(readiness.hasViableProgressPath || readiness.hasHealthyFutureWaiting || readiness.hasHealthyFutureRevisit)
-        ? ["progressPath" as const]
-        : []),
-    ];
-    return decisions.length ? [{
-      projectId: project.id,
-      title: project.title,
-      revision: project.revision,
-      ownerMemberId: project.ownerMemberId,
-      required: decisions,
-    }] : [];
-  });
+  if (!snapshot) return previous ?? null;
   const requiredDriverIds = new Set(
-    required.filter((project) => project.required.includes("driver")).map((project) => project.projectId),
+    snapshot.projects.filter((project) => project.required.includes("driver")).map((project) => project.projectId),
   );
   return {
-    projects: required,
-    expectedProjects: backlog.map(({ id, revision }) => ({ projectId: id, revision })),
-    targetRevision: target.revision,
+    projects: snapshot.projects,
+    expectedProjects: snapshot.expectedProjects,
+    targetRevision: snapshot.targetRevision,
     selectedDrivers: Object.fromEntries(
       Object.entries(previous?.selectedDrivers ?? {}).filter(([id]) => requiredDriverIds.has(Number(id))),
     ),

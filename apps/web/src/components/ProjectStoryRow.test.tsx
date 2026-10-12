@@ -661,6 +661,31 @@ describe("ProjectStoryRow – activation preparation", () => {
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
 
+  it("activates directly when server readiness is satisfied by a future revisit", async () => {
+    const story = makeProject({
+      id: 34,
+      title: "Wiedervorlage genügt",
+      status: "backlog",
+      ownerMemberId: 1,
+      activationReadiness: {
+        ready: true,
+        hasDriver: true,
+        hasViableProgressPath: false,
+        hasHealthyFutureWaiting: false,
+        hasHealthyFutureRevisit: true,
+        requiredDecisions: [],
+      },
+    });
+    mockedApi.activateProject.mockResolvedValue({ ...story, status: "active" });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText(story.title);
+
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+
+    await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(34, { expectedRevision: 1 }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("collects a concrete progress path together with a missing driver", async () => {
     const story = {
       ...makeProject({

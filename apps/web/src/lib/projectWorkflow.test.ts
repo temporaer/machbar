@@ -32,3 +32,38 @@ describe("lifecyclePrerequisite — story.complete", () => {
     expect(lifecyclePrerequisite(story, "complete")).toBe("openCriteria");
   });
 });
+
+describe("lifecyclePrerequisite — server activation requirements", () => {
+  it("activates directly when a driver and healthy future revisit satisfy server readiness", () => {
+    const story = makeProject({
+      status: "backlog",
+      ownerMemberId: 1,
+      activationReadiness: {
+        ready: true,
+        hasDriver: true,
+        hasViableProgressPath: false,
+        hasHealthyFutureWaiting: false,
+        hasHealthyFutureRevisit: true,
+        requiredDecisions: [],
+      },
+    });
+    expect(lifecyclePrerequisite(story, "activate")).toBeNull();
+    expect(lifecyclePrerequisite(story, "reopen")).toBeNull();
+  });
+
+  it("opens the shared decision workflow from the server's missing driver and path requirements", () => {
+    const story = makeProject({
+      status: "backlog",
+      ownerMemberId: null,
+      activationReadiness: {
+        ready: false,
+        hasDriver: false,
+        hasViableProgressPath: false,
+        hasHealthyFutureWaiting: false,
+        requiredDecisions: ["driver", "progressPath"],
+      },
+    });
+    expect(lifecyclePrerequisite(story, "activate")).toBe("driver");
+    expect(lifecyclePrerequisite(story, "activate", 7)).toBe("progressPath");
+  });
+});

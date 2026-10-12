@@ -677,6 +677,21 @@ export interface ProjectActivationResolution {
   nextActionTitle?: string;
 }
 
+export interface ProjectActivationRequirement {
+  projectId: number;
+  title: string;
+  revision: number;
+  ownerMemberId: number | null;
+  required: Array<"driver" | "progressPath">;
+}
+
+/** Server-computed requirements and revisions for a commitment decision sheet. */
+export interface ProjectActivationDecisionSnapshot {
+  projects: ProjectActivationRequirement[];
+  expectedProjects: Array<{ projectId: number; revision: number }>;
+  targetRevision: number;
+}
+
 export interface Project {
   id: number;
   revision: number;

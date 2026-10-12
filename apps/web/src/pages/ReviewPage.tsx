@@ -23,7 +23,6 @@ import { ErrorState, EmptyState, LoadingState } from "../components/AsyncStates"
 import { PageHeader } from "../components/PageHeader";
 import { RefinementTools } from "../components/RefinementTools";
 import { ChildPolicyPrompt } from "../components/ChildPolicyPrompt";
-import { hasProjectProgressPath } from "../lib/projectCommitments";
 import "./ReviewPage.css";
 
 interface ReviewReturn {
@@ -354,24 +353,15 @@ export function ReviewPage() {
     }
     return (
       <>
-        {displayed.availableActions.includes("activate") && hasProjectProgressPath(displayed) ? (
+        {displayed.availableActions.includes("activate") ? (
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => {
-              if (displayed.ownerMemberId === null) {
-                navigate(`/projects/${displayed.id}?focus=driver`, {
-                  state: {
-                    reviewReturn: {
-                      issueKey: reviewItemKey(item),
-                      issueIndex: (items ?? []).indexOf(item),
-                    },
-                  },
-                });
-                return;
-              }
-              void projectActions.activate(displayed);
-            }}
+            onClick={() => dispatchWithReturn(
+              { type: "story.activate", story: displayed },
+              item,
+              (items ?? []).indexOf(item),
+            )}
           >
             {strings.reviewStart}
           </button>

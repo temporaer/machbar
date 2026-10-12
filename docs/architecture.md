@@ -2,19 +2,33 @@
 
 ## Commitment-driven project activation
 
-`apps/api/src/domain/taskCrud.ts` promotes an open captured or Someday action to
-actionable when it receives an execution plan, deadline, or execution reminder.
-The same canonical task mutations call
-`apps/api/src/domain/commitmentActivation.ts`, which checks the affected
-project/ancestor chain and starts the backlog projects transactionally. A
-project deadline uses this path as well, but never counts as its own progress
-path. Missing drivers or a concrete next action return structured decisions
-without writing the task, date, driver, or step. The focused editors preserve
-their drafts and retry the same API operation with the selected decisions.
+`apps/api/src/domain/commitmentTransition.ts` owns the pure, UI-independent
+decision for commitment and activation transitions. It receives an explicit
+snapshot (including the source and effective target state, project/ancestor
+chain, drivers, readiness, and date boundary), an intent, and explicit user
+decisions. It returns a concrete plan, missing decisions, or a conflict; it
+does not read the database, clock, or transport.
+
+`apps/api/src/domain/commitmentActivation.ts` adapts transaction-current
+project/task state and `projectReadiness.ts` into that snapshot, then applies
+the resulting activation and optional user-authored next action in the same
+transaction. Task/project CRUD and explicit activate/reopen lifecycle commands
+share this evaluation and write executor. HTTP, MCP, and Intake continue to
+enter through those canonical mutations. When decisions are missing, the
+server returns their requirements and revisions. Focused editors preserve
+their drafts and retry; the web only presents requirements and collects the
+decisions.
+
+Open captured or Someday actions become actionable only when they receive an
+execution commitment: a plan, deadline, or execution reminder. A project
+deadline can trigger project activation, but is never itself a progress path.
+Missing drivers or a concrete next action return structured decisions before
+the source mutation is committed.
 
 Revisit dates remain reconsideration, not execution commitments. Adding a
-reminder while a revisit is present does not promote the task. Project
-activation does not bypass task blockers or future-date agenda eligibility.
+reminder while a revisit is present does not promote the task. Healthy waits
+and future revisits retain their readiness meaning. Project activation does
+not bypass task blockers or future-date agenda eligibility.
 
 ## Reviewed task breakdown
 

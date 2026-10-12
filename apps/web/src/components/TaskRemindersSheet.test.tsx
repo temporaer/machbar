@@ -87,12 +87,16 @@ describe("TaskRemindersSheet", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Morgen früh" }));
     fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
     await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
-    expect(screen.getByText(/Morgen früh/)).toBeInTheDocument();
+    const firstPatch = mockedApi.updateTask.mock.calls[0]?.[1] as { reminders: unknown[] };
+    expect(firstPatch.reminders).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
     expect(mockedApi.updateTask.mock.calls[0]?.[1]).toMatchObject({ expectedRevision: 3 });
     expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({ expectedRevision: 4 });
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({
+      reminders: firstPatch.reminders,
+    });
   });
 
   it("only offers deadline-relative presets when the task currently has a deadline", async () => {

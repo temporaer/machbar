@@ -1,6 +1,5 @@
 import type { Project, ProjectStatus } from "@machbar/shared";
 import type { ProjectWithActions, ProjectWorkflowAction } from "./api";
-import { hasProjectProgressPath } from "./projectCommitments";
 import type { Strings } from "./strings";
 
 /**
@@ -121,18 +120,6 @@ export function secondaryWorkflowActions(
 }
 
 /**
- * Activating a story requires a driver (backend invariant). When the story
- * has none yet, the UI must collect one first and activate atomically in the
- * same call instead of letting the request fail.
- */
-export function needsDriverBeforeAction(story: Project, action: ProjectWorkflowAction): boolean {
-  return (
-    (action === "activate" || action === "reopen") &&
-    story.ownerMemberId === null
-  );
-}
-
-/**
  * A story's driver may only be cleared while it sits in the backlog — see
  * `updateProject` in `apps/api/src/domain/storyCrud.ts`. Everything else
  * (active/completed/archived) can be reassigned but never unassigned.
@@ -176,15 +163,10 @@ export function lifecyclePrerequisite(
     // ever creating that inconsistency.
     return "openTasks";
   }
-  if (
-    (action === "activate" || action === "reopen") &&
-    ownerMemberId === undefined &&
-    needsDriverBeforeAction(story, action)
-  ) {
-    return "driver";
-  }
-  if ((action === "activate" || action === "reopen") && !hasProjectProgressPath(story)) {
-    return "progressPath";
+  if (action === "activate" || action === "reopen") {
+    const required = new Set(story.activationReadiness.requiredDecisions ?? []);
+    if (required.has("driver") && ownerMemberId == null) return "driver";
+    if (required.has("progressPath")) return "progressPath";
   }
   return null;
 }
