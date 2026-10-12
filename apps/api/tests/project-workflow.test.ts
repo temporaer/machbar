@@ -1086,10 +1086,10 @@ describe("project workflow (HTTP routes)", () => {
       expect(after).toMatchObject({
         id: task.id,
         status: terminalAction === "complete" ? "done" : "cancelled",
-        scheduledDate: "2026-11-04",
-        repeatAfterDays: terminalAction === "cancel" ? 30 : null,
-        dueDate: terminalAction === "complete" ? "2026-12-12" : null,
-        allowedDeviationDays: terminalAction === "cancel" ? 2 : null,
+        scheduledDate: task.scheduledDate,
+        repeatAfterDays: task.repeatAfterDays,
+        dueDate: task.dueDate,
+        allowedDeviationDays: task.allowedDeviationDays,
         reminders: completedTask.reminders,
         revision: completedTask.revision,
       });
