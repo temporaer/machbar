@@ -325,6 +325,7 @@ const base = {
   planningSaveFollowUp: "Rückmeldung speichern",
   planningFollowUpPrerequisitesNote: "Beim Beenden des externen Wartens bleiben Aufgaben-Voraussetzungen erhalten.",
   planningFollowUpSavedDraftRemaining: "Rückmeldung gespeichert. Speichere die übrigen Planungsänderungen, um sie zu übernehmen.",
+  planningFinishReminderFirst: "Speichere oder brich die offene Erinnerung ab, bevor du diese Änderung übernimmst.",
   prerequisitesTitle: "Voraussetzungen",
   prerequisitesExplanation: "Eine Voraussetzung ist eine andere Machbar-Aufgabe, die zuerst erledigt werden muss. Externes Warten ist davon getrennt.",
   prerequisitesEmpty: "Keine Aufgaben-Voraussetzungen.",

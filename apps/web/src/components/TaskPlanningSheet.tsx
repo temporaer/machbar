@@ -611,6 +611,10 @@ export function TaskPlanningSheet({
 
   const changeDependency = async (dependsOnTaskId: number, remove: boolean) => {
     if (dependencyBusy !== null || planningConflicts.length > 0) return;
+    if (reminderDraftPending) {
+      setDependencyError(strings.planningFinishReminderFirst);
+      return;
+    }
     setDependencyBusy(dependsOnTaskId);
     setDependencyError(null);
     try {
@@ -639,6 +643,10 @@ export function TaskPlanningSheet({
 
   const saveWaitFollowUp = async () => {
     if (!hasExistingWait || followUpSaving || planningConflicts.length > 0) return;
+    if (reminderDraftPending) {
+      setWaitingError(strings.planningFinishReminderFirst);
+      return;
+    }
     if (!followUpOutcome.trim()) {
       setWaitingError(strings.planningFollowUpOutcomeRequired);
       return;

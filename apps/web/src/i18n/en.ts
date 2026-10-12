@@ -347,6 +347,7 @@ const en = {
   planningSaveFollowUp: "Save follow-up",
   planningFollowUpPrerequisitesNote: "Ending this external wait keeps any task prerequisites in place.",
   planningFollowUpSavedDraftRemaining: "Follow-up saved. Save the remaining planning changes to apply them.",
+  planningFinishReminderFirst: "Save or cancel the open reminder before applying this change.",
   prerequisitesTitle: "Prerequisites",
   prerequisitesExplanation: "A prerequisite is another Machbar task that must be finished first. An external wait is separate.",
   prerequisitesEmpty: "No task prerequisites.",

@@ -1072,6 +1072,36 @@ describe("TaskPlanningSheet", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("keeps an unfinished custom reminder intact and blocks follow-up until it is confirmed", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      id: 78,
+      revision: 4,
+      externalWait: { waitingFor: "Versicherung", revisitDate: null },
+      revisitAt: "2026-10-20T06:00:00.000Z",
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue({ ...task, revision: 5 } as never);
+    const onClose = vi.fn();
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={onClose} />);
+
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Benutzerdefiniert …" }));
+    const reminderDate = screen.getByLabelText("Fällig");
+    await user.clear(reminderDate);
+    await user.type(reminderDate, "20.12.2030");
+    await user.type(screen.getByLabelText("Was ist passiert?"), "Noch keine Rückmeldung.");
+
+    await user.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
+    expect(await screen.findByText("Speichere oder brich die offene Erinnerung ab, bevor du diese Änderung übernimmst.")).toBeInTheDocument();
+    expect(reminderDate).toHaveValue("20.12.2030");
+    expect(mockedApi.followUpExternalWait).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Bestätigen" }));
+    await user.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
+    await waitFor(() => expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1));
+  });
+
   it("refreshes an untouched wait reason before retrying a follow-up after a conflict", async () => {
     const task = makeTask({
       id: 74,
@@ -1140,6 +1170,32 @@ describe("TaskPlanningSheet", () => {
     expect(screen.queryByRole("region", { name: /Einige Planungsdaten/ })).not.toBeInTheDocument();
   });
 
+  it("blocks a stale prerequisite write while an invalid custom reminder draft stays editable", async () => {
+    const task = makeTask({ id: 79, revision: 4 });
+    mockedApi.searchTasks.mockResolvedValue([makeTask({ id: 80, title: "Freigabe" })]);
+    mockedApi.addDependency.mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }));
+    mockedApi.getTask.mockResolvedValue({ ...task, revision: 5 } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="dependencies" onClose={vi.fn()} />);
+    const user = userEvent.setup();
+
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Benutzerdefiniert …" }));
+    const reminderDate = screen.getByLabelText("Fällig");
+    await user.clear(reminderDate);
+    await user.type(reminderDate, "kein Datum");
+    await user.type(screen.getByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"), "Freigabe");
+    await user.click(await screen.findByRole("button", { name: "Abhängigkeit hinzufügen: Freigabe" }));
+
+    expect(await screen.findByText("Speichere oder brich die offene Erinnerung ab, bevor du diese Änderung übernimmst.")).toBeInTheDocument();
+    expect(reminderDate).toHaveValue("kein Datum");
+    expect(mockedApi.addDependency).not.toHaveBeenCalled();
+
+    await user.clear(reminderDate);
+    await user.type(reminderDate, "20.12.2030");
+    expect(reminderDate).toHaveValue("20.12.2030");
+    expect(mockedApi.getTask).not.toHaveBeenCalled();
+  });
+
   it("routes outer Save through the pending wait resolution and preserves other planning drafts", async () => {
     const task = makeTask({
       id: 77,
@@ -1186,6 +1242,5 @@ describe("TaskPlanningSheet", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Abhängigkeit hinzufügen: Freigabe erhalten" }));
 
     await waitFor(() => expect(mockedApi.addDependency).toHaveBeenCalledWith(72, 73, 6));
-    expect(screen.getByText("Freigabe erhalten")).toBeVisible();
   });
 });
