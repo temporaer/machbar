@@ -470,7 +470,7 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
     }
     const proposal = unacceptedWorkRefinementProposal(parsed.data);
     try {
-      assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false, db);
+      assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false);
     } catch (error) {
       db.update(schema.intakeJobs).set({
         status: "analysis_failed",

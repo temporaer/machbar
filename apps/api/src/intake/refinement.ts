@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { IntakeApplyResults, WorkRefinementProposal } from "@machbar/shared";
+import type { IntakeApplyResults, ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -25,7 +25,7 @@ function idsFromSnapshot(snapshot: unknown, result = new Map<number, number>()):
   return result;
 }
 
-export function assertRefinementContext(proposal: WorkRefinementProposal, targetType: "task" | "project", targetId: number, snapshot: unknown, acceptedOnly = false, db?: Db): void {
+export function assertRefinementContext(proposal: WorkRefinementProposal, targetType: "task" | "project", targetId: number, snapshot: unknown, acceptedOnly = false): void {
   const nodes = new Map<number, Record<string, unknown>>();
   const collect = (value: unknown, role?: "task" | "project") => {
     if (!value || typeof value !== "object") return;
@@ -51,8 +51,7 @@ export function assertRefinementContext(proposal: WorkRefinementProposal, target
       case "update_project": if (node(change.targetId)._role !== "project") throw AppError.badRequest("intake_plan_invalid", "A project edit references a task."); break;
       case "convert_task_to_project": {
         const item = node(change.targetId);
-        const hasRecurrenceHistory = db?.select({ id: schema.taskRecurrenceOccurrences.id }).from(schema.taskRecurrenceOccurrences).where(eq(schema.taskRecurrenceOccurrences.taskId, change.targetId)).get() !== undefined;
-        if (change.targetId !== targetId || item._role !== "task" || item.kind === "reference" || item.parentTaskId != null || item.projectId != null || !["captured", "actionable", "someday"].includes(String(item.status)) || item.externalWait != null || (Array.isArray(item.dependencies) && item.dependencies.length > 0) || (Array.isArray(item.reminders) && item.reminders.length > 0) || item.repeatAfterDays != null || hasRecurrenceHistory) {
+        if (change.targetId !== targetId || item._role !== "task" || item.kind === "reference" || item.parentTaskId != null || item.projectId != null || !["captured", "actionable", "someday"].includes(String(item.status))) {
           throw AppError.badRequest("intake_plan_invalid", "The proposed project conversion violates known task structure restrictions.");
         }
         break;
@@ -61,11 +60,8 @@ export function assertRefinementContext(proposal: WorkRefinementProposal, target
         const parent = node(change.parentTaskId);
         const isProject = parent._role === "project" || (parent._role === "task" && convertTargets.has(change.parentTaskId));
         if (parent._role === "project" && ["completed", "archived"].includes(String(parent.status))) throw AppError.badRequest("intake_plan_invalid", "New work cannot be proposed under a completed or archived project.");
-        if (parent._role === "task" && parent.status === "captured" && !convertTargets.has(change.parentTaskId)) {
-          throw AppError.badRequest("intake_plan_invalid", "Adding a step to a captured task requires accepting its project conversion.");
-        }
-        if (parent._role === "task" && parent.repeatAfterDays != null) throw AppError.badRequest("intake_plan_invalid", "Recurring tasks cannot receive child steps.");
-        if (!isProject && (parent._role !== "task" || parent.kind === "reference" || ["captured", "done", "cancelled"].includes(String(parent.status)))) {
+        if (!isProject && parent._role === "task" && parent.repeatAfterDays != null) throw AppError.badRequest("intake_plan_invalid", "Recurring tasks cannot receive child steps unless the accepted proposal first converts the task into a project.");
+        if (!isProject && (parent._role !== "task" || parent.kind === "reference" || ["done", "cancelled"].includes(String(parent.status)))) {
           throw AppError.badRequest("intake_plan_invalid", "The proposed child action has a structurally incompatible parent.");
         }
         break;
@@ -146,7 +142,7 @@ export function updateWorkRefinement(db: Db, id: string, viewerId: number | null
   if (!(["ready", "analysis_failed"].includes(job.status)) || job.revision !== expectedRevision || (job.status === "analysis_failed" && !job.refinementJson)) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before saving.");
   const proposal = workRefinementProposalSchema.parse(value);
   if (proposal.intent !== job.refinementIntent) throw AppError.badRequest("intake_draft_invalid", "The refinement intent cannot be changed.");
-  assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false, db);
+  assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false);
   const result = db.update(schema.intakeJobs).set({ refinementJson: JSON.stringify(proposal), status: "ready", errorJson: null, revision: job.revision + 1, updatedAt: nowIso() })
     .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, expectedRevision), eq(schema.intakeJobs.status, job.status))).run();
   if (result.changes !== 1) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before saving.");
@@ -158,7 +154,7 @@ export function applyWorkRefinement(
   viewerId: number | null,
   expectedRevision: number,
   context: MutationContext,
-  projectDriverMemberId?: number,
+  activationResolution?: ProjectActivationResolution,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -167,12 +163,11 @@ export function applyWorkRefinement(
     if (job.status !== "ready" || job.revision !== expectedRevision || !job.refinementJson) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before applying.");
     const proposal = workRefinementProposalSchema.parse(JSON.parse(job.refinementJson));
     const { allowed, snapshot } = assertFresh(txDb, job, viewerId);
-    assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, snapshot, true, txDb);
+    assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, snapshot, true);
     const changes = proposal.changes.filter((change) => change.accepted);
     if (changes.some((change) => change.kind === "advisory")) throw AppError.badRequest("intake_draft_invalid", "Advisory recommendations require manual resolution.");
     // Validate the selected set as a whole before making any domain mutation.
-    // In particular, a captured-task child depends on its explicit conversion.
-    assertRefinementContext({ ...proposal, changes }, job.refinementTargetType, job.refinementTargetId!, snapshot, true, txDb);
+    assertRefinementContext({ ...proposal, changes }, job.refinementTargetType, job.refinementTargetId!, snapshot, true);
     const priority: Record<string, number> = { convert_task_to_project: 0, update_task: 1, update_project: 1, create_child: 2, move_task: 3, add_dependency: 4, update_wait: 5, update_project_outcome: 6, advisory: 7 };
     const orderedChanges = [...changes].sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99));
     const changedRoleIds = new Set<number>();
@@ -249,7 +244,7 @@ export function applyWorkRefinement(
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
           conversions.set(
             task.id,
-            beginCommitmentConversion(txDb, task.id, projectDriverMemberId, viewerId, context),
+            beginCommitmentConversion(txDb, task.id, undefined, false, viewerId, context),
           );
           break;
         }
@@ -294,7 +289,7 @@ export function applyWorkRefinement(
       finishCommitmentConversion(txDb, {
         ...conversion,
         projectRevision: current?.revision ?? conversion.projectRevision,
-      }, context);
+      }, context, activationResolution);
     }
     const target = tx.select({
       role: schema.workItems.role,

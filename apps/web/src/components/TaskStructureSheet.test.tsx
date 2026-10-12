@@ -17,8 +17,8 @@ import { de as strings } from "../i18n/de";
 /**
  * Coverage for the fixed row rail's `Struktur` sheet
  * (`TaskStructureSheet.tsx`): it never renders its own workflow, it only
- * dispatches `task.split`/`task.changeProject`/`task.convertToProject`,
- * and `TaskWorkflowHost` opens the correct destination sheet for each —
+ * dispatches the canonical AI clarification, split, move, and conversion
+ * commands, and the workflow hosts open the correct destination sheet for each —
  * including the `task.convertToProject` conversion flow's behaviour, which
  * used to be reachable from the task detail's own `Weitere Aktionen` list
  * (see `TaskDetailSheet.test.tsx`) before movement/conversion moved to this
@@ -41,6 +41,7 @@ vi.mock("../lib/api", () => ({
     updateProject: vi.fn(),
     convertStoryToTask: vi.fn(),
     startWorkRefinement: vi.fn(),
+    startTaskBreakdown: vi.fn(),
   },
 }));
 
@@ -139,7 +140,7 @@ describe("TaskStructureSheet routing", () => {
     ).toBeInTheDocument();
   });
 
-  it("routes AI refinement from the structure sheet through the shared workflow", async () => {
+  it("routes AI clarification from the structure sheet through the shared workflow", async () => {
     const task = makeTask({ id: 88, title: "Backup-Konzept verbessern", revision: 4 });
     mockedApi.getTask.mockResolvedValue(task);
     mockedApi.startWorkRefinement.mockResolvedValue({ id: "refinement-job" });
@@ -147,11 +148,44 @@ describe("TaskStructureSheet routing", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
     await userEvent.click(await screen.findByRole("button", { name: strings.workRefinement }));
-    await userEvent.click(await screen.findByRole("button", { name: strings.taskBreakdownGenerate }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.workRefinementGenerate }));
 
     await waitFor(() => expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("task", 88, {
       expectedRevision: 4, intent: "improve",
     }));
+    expect(mockedApi.startTaskBreakdown).not.toHaveBeenCalled();
+  });
+
+  it("uses the same AI clarification entry for smaller steps and passes optional focus", async () => {
+    const task = makeTask({ id: 89, title: "Umzug vorbereiten", revision: 6 });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.startTaskBreakdown.mockResolvedValue({ id: "breakdown-job" });
+    renderStructure(task.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.workRefinement }));
+    const sheet = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(sheet).getByLabelText(strings.workRefinementIntentLabel), "smaller_steps");
+    await userEvent.type(within(sheet).getByLabelText(strings.workRefinementInstructionLabel), "Nur Vorbereitung");
+    await userEvent.click(within(sheet).getByRole("button", { name: strings.workRefinementGenerate }));
+
+    await waitFor(() => expect(mockedApi.startTaskBreakdown).toHaveBeenCalledWith(89, {
+      expectedRevision: 6,
+      instruction: "Nur Vorbereitung",
+    }));
+    expect(mockedApi.startWorkRefinement).not.toHaveBeenCalled();
+  });
+
+  it("does not offer the task-only smaller-steps intent for projects", async () => {
+    const project = makeProject({ id: 90, title: "Keller planen" });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.workRefinement }));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: strings.workRefinementSmallerSteps })).not.toBeInTheDocument();
   });
 
   it("converts a clean project with its edited title and notes", async () => {
@@ -703,12 +737,12 @@ describe("TaskStructureSheet routing", () => {
     { repeatAfterDays: 7 },
     { status: "captured" as const, parentTaskId: 61 },
     { status: "captured" as const, projectId: 2 },
-  ])("hides AI breakdown when no proposal can be applied: %j", async (overrides) => {
+  ])("hides smaller-steps intent when no breakdown can be applied: %j", async (overrides) => {
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 77, ...overrides }));
     renderStructure(77);
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
-    await screen.findByRole("dialog");
-    expect(screen.queryByRole("button", { name: strings.taskBreakdown })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: strings.workRefinement }));
+    expect(screen.queryByRole("option", { name: strings.workRefinementSmallerSteps })).not.toBeInTheDocument();
   });
 
   it("hides split and conversion for a reference task but still offers move", async () => {

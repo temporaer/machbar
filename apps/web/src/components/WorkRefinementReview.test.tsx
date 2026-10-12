@@ -14,6 +14,10 @@ vi.mock("../lib/api", async (importOriginal) => {
   } };
 });
 const mockedApi = vi.mocked(api, true);
+vi.mock("../lib/identity", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/identity")>();
+  return { ...actual, useIdentity: () => ({ members: [{ id: 1, name: "Mira", color: "#123456", pictureUrl: null }], currentMemberId: 1 }) };
+});
 function record(disposition: "changes" | "clarification" | "leave_alone" = "changes", status: IntakeRecord["status"] = "ready"): IntakeRecord {
   return {
     id: "job", status, revision: 2, createdAt: "now", expiresAt: "later", text: JSON.stringify({ id: 4, title: "Kita-Formular", children: [] }), retryHint: null,
@@ -248,7 +252,7 @@ describe("WorkRefinementReview", () => {
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 
-  it("requires accepting the conversion before a captured-task child and explains the dependency", () => {
+  it("allows a captured-task child without converting the task into a project", () => {
     const current = record();
     current.text = JSON.stringify({ id: 4, title: "Haustür", status: "captured", kind: "action", children: [] });
     current.refinement!.proposal!.changes = [
@@ -256,11 +260,11 @@ describe("WorkRefinementReview", () => {
       { kind: "convert_task_to_project", targetId: 4, rationale: "Ermöglicht Schritte.", accepted: false },
     ];
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-    expect(screen.getByText("Dieser Schritt kann nur zusammen mit der Umwandlung in ein Projekt übernommen werden.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeDisabled();
+    expect(screen.queryByText("Dieser Schritt kann nur zusammen mit der Umwandlung in ein Projekt übernommen werden.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeEnabled();
   });
 
-  it("warns about task-only metadata while an actionable conversion is selected", async () => {
+  it("does not warn that canonical conversion loses preserved task metadata", async () => {
     const current = record();
     current.text = JSON.stringify({
       id: 4,
@@ -278,12 +282,50 @@ describe("WorkRefinementReview", () => {
       accepted: true,
     }];
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-    expect(screen.getByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).toBeInTheDocument();
+    expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox"));
     expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
   });
 
-  it.each(["captured", "someday"] as const)("warns about task-only metadata for a %s conversion", (status) => {
+  it("collects a server-required next action for a typed conversion and retries Apply", async () => {
+    const current = record();
+    current.text = JSON.stringify({
+      id: 4, title: "Haustür montieren", status: "actionable", ownerMemberId: 1,
+      dueDate: null, scheduledDate: null, revisitAt: null, reminders: [], children: [],
+    });
+    current.refinement!.proposal!.changes = [
+      { kind: "convert_task_to_project", targetId: 4, rationale: "Make the next action visible.", accepted: false },
+    ];
+    const activationError = Object.assign(new Error("This commitment needs a viable next action."), {
+      code: "project_commitment_resolution_required",
+      details: {
+        projects: [{ projectId: 4, title: "Haustür montieren", ownerMemberId: 1, revision: 2, required: ["progressPath"] }],
+        expectedProjects: [{ projectId: 4, revision: 2 }],
+      },
+    });
+    mockedApi.updateWorkRefinement.mockImplementation(async (_id, body) => ({
+      ...current, revision: 3, refinement: { ...current.refinement!, proposal: body.proposal },
+    } as IntakeRecord));
+    mockedApi.applyWorkRefinement.mockRejectedValueOnce(activationError as never)
+      .mockResolvedValueOnce({ ...current, status: "applied", revision: 4 } as IntakeRecord);
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    const nextAction = await screen.findByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?");
+    await userEvent.type(nextAction, "Montage-Termin abstimmen");
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyWorkRefinement).toHaveBeenCalledTimes(2));
+    expect(mockedApi.applyWorkRefinement.mock.calls[1]?.[1]).toMatchObject({
+      activationResolution: {
+        expectedProjects: [{ projectId: 4, revision: 2 }],
+        drivers: [],
+        nextActionTitle: "Montage-Termin abstimmen",
+      },
+    });
+  });
+
+  it.each(["captured", "someday"] as const)("does not warn about preserved metadata for a %s conversion", (status) => {
     const current = record();
     current.text = JSON.stringify({
       id: 4,
@@ -301,7 +343,7 @@ describe("WorkRefinementReview", () => {
       accepted: true,
     }];
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-    expect(screen.getByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).toBeInTheDocument();
+    expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
   });
 
   it("shows the concise leave-alone confirmation and original-item link", () => {

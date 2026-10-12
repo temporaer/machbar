@@ -16,11 +16,9 @@ import type { TaskPlanningTarget } from "./commands";
  * one of the focused sheets below and switches on `kind`.
  *
  * `availability` and `plan` both open the canonical unified planning sheet,
- * with different initial focus. `structure` opens
- * `TaskStructureSheet` (Aufteilen/
- * Verschieben …/Zum Projekt machen), which itself only ever dispatches
- * `task.split`/`task.changeProject`/`task.convertToProject` rather than
- * rendering a sheet of its own.
+ * with different initial focus. `structure` opens `TaskStructureSheet` (AI
+ * clarification, Aufteilen, Verschieben …/Zum Projekt machen), which itself
+ * dispatches semantic commands rather than rendering another sheet.
  */
 export type TaskWorkflowKind =
   | "plan"
@@ -30,7 +28,6 @@ export type TaskWorkflowKind =
   | "structure"
   | "waitingLifecycle"
   | "split"
-  | "breakdown"
   | "refinement"
   | "assignOwner"
   | "changeProject"

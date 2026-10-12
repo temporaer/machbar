@@ -45,7 +45,7 @@ describe("intake AI instructions", () => {
         previousProposal: '{"summary":"Earlier idea","changes":[{"title":"First suggestion","accepted":false}]}',
         feedback: "Keep the first suggestion but replace the third",
         validationFeedback: [{ path: ["changes", 0], code: "schema_invalid", message: "Use a valid target." }],
-        validationMessage: "A captured task needs an accepted project conversion before adding children.",
+        validationMessage: "A captured task can receive a child through the canonical task-with-steps transition.",
       },
     });
     expect(instructions).toContain("complete replacement proposal, never a patch");
@@ -54,7 +54,8 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("First suggestion");
     expect(instructions).toContain("Keep the first suggestion but replace the third");
     expect(instructions).toContain("changes[0] | schema_invalid | Use a valid target.");
-    expect(instructions).toContain("A captured task needs an accepted project conversion");
+    expect(instructions).toContain("A captured task can receive a child through the canonical task-with-steps transition");
+    expect(instructions).toContain("A captured task may receive a child through ordinary task structure");
   });
   it("shares quality guidance and adds bounded editing semantics for task breakdown", () => {
     const input = { today: "2026-10-10", memberNames: ["Alex"], hasText: true, attachmentCount: 0,
@@ -68,6 +69,9 @@ describe("intake AI instructions", () => {
       expect(prompt).toContain("no web research capability");
       expect(prompt).toContain("Prefer 20-minute steps");
     }
+    expect(breakdown).toContain("A captured task can keep root kind action when adding child steps");
+    expect(breakdown).toContain("keeps its existing commitments on the preserved action step");
+    expect(breakdown).not.toContain("Task-only waits, dependencies, recurrence, and reminders can block conversion");
     expect(breakdown).toContain('key "existing-task"');
     expect(breakdown).toContain("must not be emitted as new items");
     expect(breakdown).toContain("Make this a project");

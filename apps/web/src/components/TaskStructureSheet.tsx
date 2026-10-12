@@ -1,18 +1,13 @@
 import type { Task } from "@machbar/shared";
-import { canBreakDownTask } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { BottomSheet } from "./BottomSheet";
 
 /**
  * Focused `task.structure` workflow — the fixed row rail's `Struktur`
- * button. Exactly the structural operations that reshape where a task
- * sits: split it into steps, move it (project and/or parent, in one
- * `MoveTaskSheet` "Verschieben …" step), or promote it into its own
- * project. Each tile only ever dispatches the underlying semantic command
- * (`task.split`/`task.changeProject`/`task.convertToProject`);
- * `useWorkItemCommands()` decides which sheet that opens next, so this
- * sheet never renders one of its own.
+ * button. It offers AI clarification, splitting, moving, and role conversion.
+ * Each tile dispatches its semantic command; `useWorkItemCommands()` decides
+ * which workflow opens next, so this sheet never renders one of its own.
  */
 export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
@@ -21,12 +16,6 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
   return (
     <BottomSheet title={`${strings.structure}: ${task.title}`} onClose={onClose}>
       <div className="stack">
-        {canBreakDownTask(task) ? (
-          <button type="button" className="btn"
-            onClick={() => dispatch({ type: "task.breakdown", taskId: task.id })}>
-            {strings.taskBreakdown}
-          </button>
-        ) : null}
         {task.kind !== "reference" ? (
           <button type="button" className="btn" onClick={() => dispatch({ type: "task.refine", taskId: task.id })}>
             {strings.workRefinement}

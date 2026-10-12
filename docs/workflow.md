@@ -16,23 +16,24 @@ activity is unavailable, the response labels the evidence limitation instead
 of treating `updatedAt` as proof of progress. The endpoint does not mutate work
 or infer why work changed.
 
-## Break down a task
+## Clarify work with AI
 
-Choose **Struktur → Mit KI aufteilen…** on an open action task to get a useful
-default proposal. You can add an optional focus, for example: “Make steps I can
-finish in 20 minutes; turn this into a project and add a step to compare
-options.”
+Choose **Struktur → Mit KI klären…** on a task or project. The default is
+**Allgemein verbessern**; you can also find the next action or improve the
+structure. Eligible tasks can be split into smaller steps through the same
+sheet. Instructions are optional, for example: “Focus on preparation and keep
+each step under 20 minutes.”
 
 The paired Home Assistant AI Task prepares an editable proposal, following the
 same actionability, sizing, and project-outcome guidance as other AI workflows,
 including your household preferences. It cannot research the web; it can add
 research as work for you to do.
 
-Review the original task's title and notes, choose whether it stays a task or
-becomes a project, and edit or exclude suggested steps before choosing
-**Geprüfte Änderungen übernehmen**. Existing steps are preserved. Conversion
-uses the usual restrictions and creates a backlog project. Captured Inbox tasks
-must become projects before receiving steps.
+Review the proposed differences, edit or exclude individual changes, and
+choose **Geprüfte Änderungen übernehmen**. For smaller-step proposals, the
+original task remains the root and existing steps are preserved. Any proposed
+project conversion is explicit and uses the usual restrictions; captured Inbox
+tasks are converted only when accepted new steps require it.
 
 Nothing changes during generation or when discarding a proposal. Apply is
 atomic. If the original task or its steps changed meanwhile, use **Änderungen
@@ -482,15 +483,15 @@ contextual capture sheet, and `s`/`a`/`n` jump from the active task to its
 existing planning, assignment, or notes flow. Structural commands are shown only
 inside outlines where structural editing is valid.
 
-## AI-assisted work refinement
+## AI-assisted clarification
 
-Tasks and projects offer **Mit KI verbessern…** from their structure workflow.
-The default intention looks for the single most useful improvement; the same
-sheet can instead find a next action or inspect project structure. Instructions
-are optional. Machbar sends only the selected task/project outline and relevant
-status, dependency, waiting, owner, date, next-action and completion context to
-the configured Home Assistant AI Task. It does not send unrelated household
-work.
+Tasks and projects offer one **Mit KI klären…** action from their structure
+workflow. The default looks for the single most useful improvement; the same
+sheet can instead find a next action or improve structure. Eligible tasks also
+offer a smaller-steps proposal. Instructions are optional. Machbar sends only
+the selected task/project outline and relevant status, dependency, waiting,
+owner, date, next-action and completion context to the configured Home Assistant
+AI Task. It does not send unrelated household work.
 
 AI results are typed proposals attached to the existing intake job. They can
 ask a focused clarification question, recommend no change, propose edits and
@@ -498,9 +499,11 @@ new actions, or surface advisory changes that require manual resolution.
 Nothing changes until the person reviews and accepts specific executable
 changes. Apply checks that the captured outline is still current and uses the
 canonical task/project domain operations in one database transaction. AI does
-not schedule work or perform project lifecycle transitions. Existing
-breakdown remains a specialized action; its original task identity and
-children are preserved.
+not schedule work or perform project lifecycle transitions. Smaller-step and
+typed-refinement proposals retain their separate data contracts and focused
+review editors, while sharing the same launch flow, intake job lifecycle and
+canonical domain rules. The original task identity and existing children are
+preserved.
 
 ## Sharing
 

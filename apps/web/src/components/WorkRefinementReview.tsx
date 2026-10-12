@@ -5,7 +5,12 @@ import { api } from "../lib/api";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
-import { MemberChoiceGroup } from "./MemberChoiceGroup";
+import {
+  projectActivationPromptFromError,
+  projectActivationResolutionFromPrompt,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 const labels = {
   update_task: "refinementTitle", update_project: "refinementTitle", convert_task_to_project: "refinementConvert", create_child: "refinementCreate",
@@ -62,7 +67,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<"save" | "apply" | "regenerate" | "discard" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const incomingProposalSignature = semanticSignature(serverProposal);
   const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
   const latestObservedRevisionRef = useRef(record.revision);
@@ -71,6 +76,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     proposalDraftRef.current = next;
     if (userEdit) draftGenerationRef.current += 1;
     setProposalDraft(next);
+    if (userEdit) setActivationPrompt(null);
   }, []);
 
   useEffect(() => {
@@ -81,6 +87,8 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
       signature: incomingProposalSignature,
     };
     const previous = serverBaselineRef.current;
+
+    if (incomingProposalSignature !== previous.signature) setActivationPrompt(null);
 
     if (previous.recordId !== record.id) {
       serverBaselineRef.current = incomingBaseline;
@@ -211,11 +219,16 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     try {
       const current = await persistLatestProposal();
       if (!current) return;
+      const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
       onChange(await api.applyWorkRefinement(record.id, {
         expectedRevision: current.revision,
-        ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
+        ...(activationResolution ? { activationResolution } : {}),
       }));
-    } catch (cause) { setError(localizedErrorMessage(cause, strings)); }
+    } catch (cause) {
+      const prompt = projectActivationPromptFromError(cause, activationPrompt);
+      if (prompt) setActivationPrompt(prompt);
+      setError(localizedErrorMessage(cause, strings));
+    }
     finally { setBusy(false); setOperation(null); }
   };
   const regenerate = async () => {
@@ -253,23 +266,6 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     };
     if (record.text) walk(JSON.parse(record.text));
   } catch { /* a legacy intake's text need not be JSON */ }
-  const invalidSelection = proposal.changes.some((change) => {
-    if (!change.accepted || change.kind !== "create_child") return false;
-    const parent = contextLabels.get(change.parentTaskId);
-    if (!parent) return false;
-    let context: Record<string, unknown> | null = null;
-    try { context = record.text ? JSON.parse(record.text) as Record<string, unknown> : null; } catch { /* no context */ }
-    const find = (value: unknown): Record<string, unknown> | null => {
-      if (!value || typeof value !== "object") return null;
-      const item = value as Record<string, unknown>;
-      if (item.id === change.parentTaskId) return item;
-      for (const key of ["children", "tasks", "projects"]) if (Array.isArray(item[key])) for (const child of item[key] as unknown[]) { const found = find(child); if (found) return found; }
-      return null;
-    };
-    const parentNode = find(context);
-    if (parentNode?.status !== "captured") return false;
-    return !proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId && candidate.accepted);
-  });
   const moveSiblings = (change: Extract<WorkRefinementChange, { kind: "move_task" }>) => [...contextLabels.entries()]
     .filter(([id, value]) => id !== change.targetId && value.parentTaskId === change.parentTaskId && value.projectId === change.projectId)
     .sort((a, b) => a[1].position - b[1].position);
@@ -290,16 +286,8 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const activeConversion =
     conversion?.accepted === true &&
     refinement.targetType === "task" &&
-    sourceStatus === "actionable";
-  const requiresDriver = activeConversion && sourceOwnerMemberId === null;
-  const hasUnsupportedTiming = activeConversion && (
-    source?.revisitAt != null || source?.notBeforeAt != null || source?.notBeforeDate != null
-  );
-  const acceptedTaskConversion =
-    conversion?.accepted === true && refinement.targetType === "task";
-  const hasTaskOnlyMetadata = acceptedTaskConversion && (
-    source?.priority != null || source?.size != null
-  );
+    (sourceStatus === "actionable" || activationPrompt !== null);
+  const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
   const hasRetryFeedback = answer.trim().length > 0;
   return <main className="page stack">
@@ -327,35 +315,11 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
             {activeConversion && sourceOwnerMemberId !== null ? (
               <p>{strings.aiProjectDriverLabel}: {members.find((member) => member.id === sourceOwnerMemberId)?.name ?? sourceOwnerMemberId}</p>
             ) : null}
-            {requiresDriver ? (
-              <>
-                <p>{strings.aiProjectDriverHint}</p>
-                <MemberChoiceGroup
-                  label={strings.aiProjectDriverLabel}
-                  idPrefix="refinement-project-driver"
-                  members={members}
-                  value={projectDriverMemberId}
-                  disabled={editorLocked}
-                  onChange={(memberId) => {
-                    if (memberId !== null) setProjectDriverMemberId(memberId);
-                  }}
-                  unassignedLabel={null}
-                />
-              </>
-            ) : null}
-            {hasUnsupportedTiming ? <p role="alert">{strings.aiProjectTimingWarning}</p> : null}
-            {hasTaskOnlyMetadata ? <p role="status">{strings.aiProjectMetadataWarning}</p> : null}
           </section>
         ) : null}
-        {change.kind === "create_child" && proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId) ? <p className="muted">{strings.refinementRequiresConversion}</p> : null}
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
           const checked = event.target.checked;
-          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => ({
-            ...candidate,
-            accepted: candidateIndex === index ? checked
-              : !checked && change.kind === "convert_task_to_project" && candidate.kind === "create_child" && candidate.parentTaskId === change.targetId ? false
-              : candidate.accepted,
-          })) as WorkRefinementChange[] });
+          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, accepted: checked } : candidate) as WorkRefinementChange[] });
         }} /><strong>{label(change)}</strong></label>
         {Object.entries(change).filter(([key, value]) => ["targetId", "taskId", "parentTaskId", "projectId", "dependsOnTaskId"].includes(key) && typeof value === "number").map(([key, value]) => {
           const context = contextLabels.get(value as number);
@@ -375,6 +339,11 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         </select></label> : null}
         {change.kind === "advisory" ? <p>{change.title}</p> : null}
       </article>) : null}
+      {activationPrompt ? <ProjectActivationDecisionFields
+        prompt={activationPrompt}
+        disabled={editorLocked}
+        onChange={setActivationPrompt}
+      /> : null}
       <label className="stack"><span>{proposal.question ? strings.refinementAnswerLabel : strings.refinementFeedbackLabel}</span><textarea disabled={editorLocked} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={proposal.question ?? strings.workRefinementPlaceholder} /></label>
       {error ? <p role="alert" className="error-text">{error}</p> : null}
       <div className="actions">
@@ -382,7 +351,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         {leaveAlone
           ? <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
           : <>
-            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || invalidSelection || hasUnsupportedTiming || requiresDriver && projectDriverMemberId === null} onClick={() => void apply()}>{strings.refinementApply}</button>
+            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || activationPrompt !== null && activationResolution === null} onClick={() => void apply()}>{strings.refinementApply}</button>
             <button className="btn" disabled={busy} onClick={() => void save()}>{strings.save}</button>
             <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
           </>}

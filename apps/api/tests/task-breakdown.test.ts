@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import type { IntakeDraft, IntakeDraftWorkItem } from "@machbar/shared";
+import type { IntakeDraft, IntakeDraftWorkItem, ProjectActivationResolution } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { createChildTask, createTask, getTaskOrThrow, updateTask } from "../src/domain/taskCrud.js";
-import { createProject } from "../src/domain/storyCrud.js";
+import { createProject, updateProject } from "../src/domain/storyCrud.js";
 import { applyIntake } from "../src/intake/apply.js";
 import { assertBreakdownDraft, breakdownSnapshot, breakdownTask } from "../src/intake/breakdown.js";
 import { getIntake, onIntakeAnalyzed } from "../src/intake/jobs.js";
@@ -45,12 +45,13 @@ describe("reviewed task breakdown", () => {
     return { id, draft };
   }
 
-  const apply = (id: string, draft: IntakeDraft, revision = 1, projectDriverMemberId?: number) =>
+  const apply = (id: string, draft: IntakeDraft, revision = 1, projectDriverMemberId?: number, activationResolution?: ProjectActivationResolution) =>
     applyIntake(ctx.handle.db, { dataDir: ctx.dataDir } as never, undefined,
       new HomeAssistantRequestSignal(), id, {
         expectedRevision: revision,
         draft,
         ...(projectDriverMemberId !== undefined ? { projectDriverMemberId } : {}),
+        ...(activationResolution ? { activationResolution } : {}),
       }, {}, null);
 
   it("applies the enabled root instead of an excluded duplicate", async () => {
@@ -98,6 +99,107 @@ describe("reviewed task breakdown", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe("Kita-Formular im Sekretariat abgeben");
     expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("captured");
     expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
+  });
+
+  it("adds reviewed child steps to a captured task without changing its identity or role", async () => {
+    const task = createTask(ctx.handle.db, { title: "Kita-Formular" });
+    const { id, draft } = prepare(task.id);
+    await apply(id, draft);
+    const updated = getTaskOrThrow(ctx.handle.db, task.id);
+    expect(updated.id).toBe(task.id);
+    expect(updated.kind).toBe("action");
+    expect(updated.status).toBe("actionable");
+    expect(updated.children.map((child) => child.title)).toEqual(["Compare options", "Book the chosen option"]);
+  });
+
+  it("keeps uncommitted steps on a someday task parked, matching ordinary step entry", async () => {
+    const task = createTask(ctx.handle.db, { title: "Dachboden sortieren", status: "someday" });
+    const { id, draft } = prepare(task.id);
+    await apply(id, draft);
+
+    const updated = getTaskOrThrow(ctx.handle.db, task.id);
+    expect(updated.status).toBe("someday");
+    expect(updated.children.map((child) => child.status)).toEqual(["someday", "someday"]);
+  });
+
+  it("lets canonical task creation promote a planned step without activating its parked parent", async () => {
+    const task = createTask(ctx.handle.db, { title: "Dachboden sortieren", status: "someday" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[1]!.scheduledDate = "2027-02-10";
+    await apply(id, draft);
+
+    const updated = getTaskOrThrow(ctx.handle.db, task.id);
+    expect(updated.status).toBe("someday");
+    expect(updated.children.find((child) => child.title === "Compare options")).toMatchObject({
+      status: "actionable",
+      scheduledDate: "2027-02-10",
+    });
+    expect(updated.children.find((child) => child.title === "Book the chosen option")?.status).toBe("someday");
+  });
+
+  it("retries planned steps in an existing backlog project using decisions for every affected ancestor", async () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
+    const outer = createProject(ctx.handle.db, { title: "Home" });
+    const inner = createProject(ctx.handle.db, { title: "Garden", parentId: outer.id });
+    const task = createTask(ctx.handle.db, { title: "Prepare the garden", projectId: inner.id, status: "actionable" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+
+    let error: { code: string; details: { projects: Array<{ projectId: number; revision: number; required: string[] }>; expectedProjects: Array<{ projectId: number; revision: number }> } } | undefined;
+    try {
+      await apply(id, draft);
+    } catch (cause) {
+      error = cause as typeof error;
+    }
+    expect(error).toMatchObject({ code: "project_commitment_resolution_required" });
+    expect(error!.details.projects.map((project) => project.projectId)).toEqual([inner.id, outer.id]);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get()?.status).toBe("backlog");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get()?.status).toBe("backlog");
+
+    const resolution: ProjectActivationResolution = {
+      expectedProjects: error!.details.expectedProjects,
+      drivers: error!.details.projects.filter((project) => project.required.includes("driver"))
+        .map((project) => ({ projectId: project.projectId, ownerMemberId: driver.id })),
+    };
+    const currentJob = getIntake(ctx.handle.db, id, null);
+    await apply(id, draft, currentJob.revision, undefined, resolution);
+
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(2);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get())
+      .toMatchObject({ status: "active", ownerMemberId: driver.id });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get())
+      .toMatchObject({ status: "active", ownerMemberId: driver.id });
+  });
+
+  it("rejects stale ancestor decisions without creating steps, leaving fresh requirements available", async () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
+    const outer = createProject(ctx.handle.db, { title: "Home" });
+    const inner = createProject(ctx.handle.db, { title: "Garden", parentId: outer.id });
+    const task = createTask(ctx.handle.db, { title: "Prepare the garden", projectId: inner.id, status: "actionable" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+
+    let firstError: { details: { projects: Array<{ projectId: number; revision: number; required: string[] }>; expectedProjects: Array<{ projectId: number; revision: number }> } } | undefined;
+    try { await apply(id, draft); } catch (cause) { firstError = cause as typeof firstError; }
+    const resolution: ProjectActivationResolution = {
+      expectedProjects: firstError!.details.expectedProjects,
+      drivers: firstError!.details.projects.filter((project) => project.required.includes("driver"))
+        .map((project) => ({ projectId: project.projectId, ownerMemberId: driver.id })),
+    };
+    const currentJob = getIntake(ctx.handle.db, id, null);
+    updateProject(ctx.handle.db, outer.id, { notes: "Changed while reviewing", expectedRevision: outer.revision });
+
+    let staleError: { code: string; details: { reason?: string; projects?: unknown[] } } | undefined;
+    try { await apply(id, draft, currentJob.revision, undefined, resolution); } catch (cause) { staleError = cause as typeof staleError; }
+    expect(staleError).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: { reason: "project_snapshot_stale", projects: expect.any(Array) },
+    });
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get()?.status).toBe("backlog");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get())
+      .toMatchObject({ status: "backlog", notes: "Changed while reviewing" });
   });
 
   it.each(["recurring", "captured-child", "captured-in-project"])("rejects %s targets before creating an AI job", async (target) => {
@@ -173,17 +275,55 @@ describe("reviewed task breakdown", () => {
     expect(children.find((child) => child.title === task.title)?.scheduledDate).toBe("2027-01-05");
   });
 
+  it.each(["captured", "someday"] as const)("activates a %s conversion from a dated accepted child only after its driver decision", async (status) => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Breakdown driver", color: "#234567" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Prepare the move", status });
+    const { id, draft } = prepare(task.id, true);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+
+    await expect(apply(id, draft)).rejects.toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: { projects: [expect.objectContaining({ projectId: task.id, required: expect.arrayContaining(["driver"]) })] },
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get())
+      .toMatchObject({ role: "task" });
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({
+      kind: "action", status, children: [],
+    });
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
+
+    // The failed application leaves the same proposal editable. Retrying with
+    // the explicit decision applies the accepted graph exactly once.
+    await apply(id, draft, getIntake(ctx.handle.db, id, null).revision, driver.id);
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    expect(project).toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+    const children = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all();
+    expect(children.filter((child) => child.title === "Compare options")).toHaveLength(1);
+    expect(children.find((child) => child.title === "Compare options")).toMatchObject({
+      status: "active", scheduledDate: "2030-12-01",
+    });
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+  });
+
+  it("leaves a captured conversion untouched when the user cancels before applying it", () => {
+    const task = createTask(ctx.handle.db, { title: "Prepare the move", status: "captured" });
+    const { draft } = prepare(task.id, true);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+    // Reviewing then leaving the proposal is a read-only path.
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ kind: "action", status: "captured", children: [] });
+  });
+
   it("rolls back an actionable conversion when no driver is selected", async () => {
     const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
     const { id, draft } = prepare(task.id, true);
-    await expect(apply(id, draft)).rejects.toMatchObject({ code: "project_driver_required" });
+    await expect(apply(id, draft)).rejects.toMatchObject({ code: "project_commitment_resolution_required" });
     expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
     expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
   });
 
-  it("rejects actionable conversion while revisit timing still exists", async () => {
+  it("preserves an actionable task's revisit on the identity-preserved action step during conversion", async () => {
     const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
     const task = createTask(ctx.handle.db, {
       title: "Plan the holiday",
@@ -191,9 +331,12 @@ describe("reviewed task breakdown", () => {
       revisitAt: "2027-01-05T08:00:00.000Z",
     });
     const { id, draft } = prepare(task.id, true);
-    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "role_conversion_invalid" });
-    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
-    expect(getTaskOrThrow(ctx.handle.db, task.id).revisitAt).toBe("2027-01-05T08:00:00.000Z");
+    await apply(id, draft, 1, driver.id);
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    const preserved = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
+      .find((child) => child.title === task.title);
+    expect(project.role).toBe("story");
+    expect(preserved?.revisitAt).toBe("2027-01-05T08:00:00.000Z");
   });
 
   it("rolls back actionable conversion when accepted steps provide no viable progress path", async () => {
@@ -201,23 +344,25 @@ describe("reviewed task breakdown", () => {
     const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
     const { id, draft } = prepare(task.id, true);
     draft.workItems = [draft.workItems[0]!];
-    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "project_activation_not_ready" });
+    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "project_commitment_resolution_required" });
     expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
     expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
   });
 
-  it("rolls back a title edit if a captured task cannot accept children and leaves its proposal editable", async () => {
+  it("rolls back an invalid captured-task breakdown and keeps the proposal editable for retry", async () => {
     const task = createTask(ctx.handle.db, { title: "Holiday" });
     const { id, draft } = prepare(task.id);
     draft.workItems[0]!.title = "Updated holiday";
+    draft.workItems[1]!.parentKey = "missing-parent";
     await expect(apply(id, draft)).rejects.toMatchObject({ code: "intake_draft_invalid" });
     expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe("Holiday");
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
-    draft.workItems[0]!.kind = "project";
+    draft.workItems[1]!.parentKey = "existing-task";
     await apply(id, draft, getIntake(ctx.handle.db, id, null).revision);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ title: "Updated holiday", status: "actionable", kind: "action" });
   });
 
   it("rejects a proposal when an existing child was edited or another child was added", async () => {
