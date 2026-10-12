@@ -113,7 +113,7 @@ export const homeAssistantSyncTaskSchema = z
     }
   });
 
-const projectActivationResolutionSchema = z.object({
+export const projectActivationResolutionSchema = z.object({
   expectedProjects: z.array(z.object({
     projectId: z.number().int().positive(),
     revision: z.number().int().positive(),

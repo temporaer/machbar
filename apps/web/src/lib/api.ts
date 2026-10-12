@@ -559,6 +559,7 @@ export const api = {
       acceptIncomplete?: boolean;
       timezone?: string;
       projectDriverMemberId?: number;
+      activationResolution?: ProjectActivationResolution;
     },
   ) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/apply`, {

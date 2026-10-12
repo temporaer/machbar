@@ -1739,12 +1739,16 @@ describe("IntakeReviewPage", () => {
     mockedApi.applyIntake.mockRejectedValueOnce(activationError as never).mockResolvedValueOnce({ ...record("applied"), draft: null } as never);
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
-    const driverGroup = await screen.findByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" });
-    expect(screen.getByText("Wird aktives Projekt – bleibt in deiner aktiven Arbeit.")).toBeInTheDocument();
-    fireEvent.click(within(driverGroup).getByRole("button", { name: "Mira" }));
+    expect(await screen.findByRole("heading", { name: "Vor dem Start noch entscheiden" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Verantwortlich für „Schulfest“"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
-    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({ projectDriverMemberId: 1 });
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({
+      activationResolution: {
+        expectedProjects: [{ projectId: 27, revision: 2 }],
+        drivers: [{ projectId: 27, ownerMemberId: 1 }],
+      },
+    });
   });
 
   it("opens the applied refinement at the resulting project route", async () => {

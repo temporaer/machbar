@@ -27,8 +27,14 @@ import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
 import { WorkRefinementReview } from "../components/WorkRefinementReview";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
+import { ProjectActivationDecisionFields } from "../components/ProjectActivationDecisionFields";
 import { MemberChoiceGroup } from "../components/MemberChoiceGroup";
-import { projectDriverRequirementFromError } from "../lib/projectActivationResolution";
+import {
+  projectActivationPromptFromError,
+  projectActivationResolutionFromPrompt,
+  projectDriverRequirementFromError,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
 
 function intakeIssuePath(path: readonly (string | number)[]): string {
   return path.reduce<string>((result, segment) =>
@@ -151,6 +157,7 @@ export function IntakeReviewPage() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [retryHint, setRetryHint] = useState("");
   const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [activationDriverRequirement, setActivationDriverRequirement] = useState<{ projectId: number; title: string } | null>(null);
   const [changeRequestOpen, setChangeRequestOpen] = useState(false);
   const [changeRequest, setChangeRequest] = useState("");
@@ -390,6 +397,7 @@ export function IntakeReviewPage() {
 
   const updateDraft = (next: IntakeDraft) => {
     if (applyingRef.current) return;
+    setActivationPrompt(null);
     setActivationDriverRequirement(null);
     if (JSON.stringify(next) !== failedSnapshotRef.current) {
       failedSnapshotRef.current = null;
@@ -489,6 +497,10 @@ export function IntakeReviewPage() {
       const latestDraft = latestDraftRef.current;
       const expectedRevision = revisionRef.current;
       if (!latestDraft || expectedRevision === null) return;
+      const activationResolution = activationPrompt
+        ? projectActivationResolutionFromPrompt(activationPrompt)
+        : null;
+      if (record.breakdown && activationPrompt && !activationResolution) return;
       if (acceptIncomplete) {
         const latestPreview = prepareIncompleteIntakeDraft(latestDraft, validationOptions);
         if (
@@ -504,6 +516,7 @@ export function IntakeReviewPage() {
         draft: latestDraft,
         timezone,
         ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
+        ...(activationResolution ? { activationResolution } : {}),
         ...(acceptIncomplete ? { acceptIncomplete: true } : {}),
       });
       recordRef.current = nextRecord;
@@ -516,8 +529,13 @@ export function IntakeReviewPage() {
         conflictPendingRef.current = true;
         state.reload();
       } else {
-        const driverRequirement = projectDriverRequirementFromError(cause);
-        if (driverRequirement) setActivationDriverRequirement(driverRequirement);
+        if (record.breakdown) {
+          const nextActivationPrompt = projectActivationPromptFromError(cause, activationPrompt);
+          if (nextActivationPrompt) setActivationPrompt(nextActivationPrompt);
+        } else {
+          const driverRequirement = projectDriverRequirementFromError(cause);
+          if (driverRequirement) setActivationDriverRequirement(driverRequirement);
+        }
         setApplyError(localizedErrorMessage(cause, strings));
         if (record.breakdown) {
           // Failed breakdown transactions release their claim and advance the
@@ -705,6 +723,13 @@ export function IntakeReviewPage() {
           existingChildren={record.breakdown?.existingChildren ?? []}
         />
       </fieldset>
+      {activationPrompt ? (
+        <ProjectActivationDecisionFields
+          prompt={activationPrompt}
+          disabled={busy || record.status !== "ready"}
+          onChange={setActivationPrompt}
+        />
+      ) : null}
       {activationDriverRequirement ? (
         <section className="card stack" aria-label={strings.aiProjectDriverLabel}>
           <p>{strings.aiProjectWillBeActive}</p>
@@ -792,7 +817,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs}
+              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs || Boolean(record.breakdown && activationPrompt && !projectActivationResolutionFromPrompt(activationPrompt))}
               onClick={() => void applyInitial(false)}
             >
               {record.breakdown ? strings.taskBreakdownApply : strings.intakeApplyCount(enabledProposalCount)}

@@ -7,6 +7,7 @@ import { updateProject } from "../domain/storyCrud.js";
 import { convertTaskToStory } from "../domain/roleConversion.js";
 import { getTaskOrThrow } from "../domain/taskCrud.js";
 import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
+import type { ProjectActivationResolution } from "@machbar/shared";
 import type { MutationContext } from "../domain/workItemShared.js";
 
 export interface CommitmentConversion {
@@ -86,6 +87,7 @@ export function finishCommitmentConversion(
   db: Db,
   conversion: CommitmentConversion,
   context: MutationContext,
+  activationResolution?: ProjectActivationResolution,
 ) {
   if (!conversion.requiresActivation) {
     return;
@@ -96,5 +98,5 @@ export function finishCommitmentConversion(
   // Use the canonical commitment transition so missing-driver/progress-path
   // decisions include the server's current requirements and roll back the
   // entire conversion when they are unresolved.
-  activateCommittedProjectChain(db, conversion.projectId, context);
+  activateCommittedProjectChain(db, conversion.projectId, context, activationResolution);
 }

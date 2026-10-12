@@ -18,7 +18,7 @@ import {
 } from "../intake/jobs.js";
 import { applyIntake } from "../intake/apply.js";
 import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
-import { intakeDraftStructureSchema, isValidIanaTimezone } from "../schemas.js";
+import { intakeDraftStructureSchema, isValidIanaTimezone, projectActivationResolutionSchema } from "../schemas.js";
 import { z } from "zod";
 import { normalizeIntakeDraftInput } from "@machbar/shared";
 import { breakdownSourceText, breakdownTask } from "../intake/breakdown.js";
@@ -188,6 +188,7 @@ export function registerIntakeRoutes(
       acceptIncomplete: z.boolean().optional(),
       timezone: z.string().min(1).max(255).refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name.").optional(),
       projectDriverMemberId: z.number().int().positive().optional(),
+      activationResolution: projectActivationResolutionSchema.optional(),
     }).strict(), request.body);
     await applyIntake(db, env, paperless, signal, request.params.id, body, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null, request.log);
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));

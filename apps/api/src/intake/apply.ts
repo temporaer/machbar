@@ -7,6 +7,7 @@ import {
   type IntakeDraft,
   type IntakeApplyResults,
   type IntakeErrorInfo,
+  type ProjectActivationResolution,
 } from "@machbar/shared";
 import {
   intakeSelectedDraftIssues,
@@ -80,7 +81,7 @@ export async function applyIntake(
   paperless: PaperlessClient | undefined,
   signal: HomeAssistantRequestSignal,
   id: string,
-  input: { expectedRevision: number; draft?: IntakeDraft; acceptIncomplete?: boolean; timezone?: string; projectDriverMemberId?: number },
+  input: { expectedRevision: number; draft?: IntakeDraft; acceptIncomplete?: boolean; timezone?: string; projectDriverMemberId?: number; activationResolution?: ProjectActivationResolution },
   context: MutationContext,
   viewerMemberId: number | null,
   logger?: Pick<FastifyBaseLogger, "error">,
@@ -227,7 +228,15 @@ export async function applyIntake(
     if (jobNow.status !== "applying") throw AppError.conflict("intake_state_conflict", "The intake apply claim was lost.");
     if (jobNow.revision !== claim.claimRevision || jobNow.applyClaimToken !== claim.claimToken) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     if (jobNow.breakdownTaskId !== null) {
-      results = applyBreakdown(tx as unknown as Db, jobNow, draft, context, viewerMemberId, input.projectDriverMemberId);
+      results = applyBreakdown(
+        tx as unknown as Db,
+        jobNow,
+        draft,
+        context,
+        viewerMemberId,
+        input.projectDriverMemberId,
+        input.activationResolution,
+      );
       tx.update(schema.intakeJobs).set({
         status: "applied", applyResultsJson: JSON.stringify(results),
         applyClaimToken: null, applyClaimExpiresAt: null, errorJson: null,

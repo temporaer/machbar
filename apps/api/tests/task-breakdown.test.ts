@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import type { IntakeDraft, IntakeDraftWorkItem } from "@machbar/shared";
+import type { IntakeDraft, IntakeDraftWorkItem, ProjectActivationResolution } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { createChildTask, createTask, getTaskOrThrow, updateTask } from "../src/domain/taskCrud.js";
-import { createProject } from "../src/domain/storyCrud.js";
+import { createProject, updateProject } from "../src/domain/storyCrud.js";
 import { applyIntake } from "../src/intake/apply.js";
 import { assertBreakdownDraft, breakdownSnapshot, breakdownTask } from "../src/intake/breakdown.js";
 import { getIntake, onIntakeAnalyzed } from "../src/intake/jobs.js";
@@ -45,12 +45,13 @@ describe("reviewed task breakdown", () => {
     return { id, draft };
   }
 
-  const apply = (id: string, draft: IntakeDraft, revision = 1, projectDriverMemberId?: number) =>
+  const apply = (id: string, draft: IntakeDraft, revision = 1, projectDriverMemberId?: number, activationResolution?: ProjectActivationResolution) =>
     applyIntake(ctx.handle.db, { dataDir: ctx.dataDir } as never, undefined,
       new HomeAssistantRequestSignal(), id, {
         expectedRevision: revision,
         draft,
         ...(projectDriverMemberId !== undefined ? { projectDriverMemberId } : {}),
+        ...(activationResolution ? { activationResolution } : {}),
       }, {}, null);
 
   it("applies the enabled root instead of an excluded duplicate", async () => {
@@ -134,6 +135,71 @@ describe("reviewed task breakdown", () => {
       scheduledDate: "2027-02-10",
     });
     expect(updated.children.find((child) => child.title === "Book the chosen option")?.status).toBe("someday");
+  });
+
+  it("retries planned steps in an existing backlog project using decisions for every affected ancestor", async () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
+    const outer = createProject(ctx.handle.db, { title: "Home" });
+    const inner = createProject(ctx.handle.db, { title: "Garden", parentId: outer.id });
+    const task = createTask(ctx.handle.db, { title: "Prepare the garden", projectId: inner.id, status: "actionable" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+
+    let error: { code: string; details: { projects: Array<{ projectId: number; revision: number; required: string[] }>; expectedProjects: Array<{ projectId: number; revision: number }> } } | undefined;
+    try {
+      await apply(id, draft);
+    } catch (cause) {
+      error = cause as typeof error;
+    }
+    expect(error).toMatchObject({ code: "project_commitment_resolution_required" });
+    expect(error!.details.projects.map((project) => project.projectId)).toEqual([inner.id, outer.id]);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get()?.status).toBe("backlog");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get()?.status).toBe("backlog");
+
+    const resolution: ProjectActivationResolution = {
+      expectedProjects: error!.details.expectedProjects,
+      drivers: error!.details.projects.filter((project) => project.required.includes("driver"))
+        .map((project) => ({ projectId: project.projectId, ownerMemberId: driver.id })),
+    };
+    const currentJob = getIntake(ctx.handle.db, id, null);
+    await apply(id, draft, currentJob.revision, undefined, resolution);
+
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(2);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get())
+      .toMatchObject({ status: "active", ownerMemberId: driver.id });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get())
+      .toMatchObject({ status: "active", ownerMemberId: driver.id });
+  });
+
+  it("rejects stale ancestor decisions without creating steps, leaving fresh requirements available", async () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
+    const outer = createProject(ctx.handle.db, { title: "Home" });
+    const inner = createProject(ctx.handle.db, { title: "Garden", parentId: outer.id });
+    const task = createTask(ctx.handle.db, { title: "Prepare the garden", projectId: inner.id, status: "actionable" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[1]!.scheduledDate = "2030-12-01";
+
+    let firstError: { details: { projects: Array<{ projectId: number; revision: number; required: string[] }>; expectedProjects: Array<{ projectId: number; revision: number }> } } | undefined;
+    try { await apply(id, draft); } catch (cause) { firstError = cause as typeof firstError; }
+    const resolution: ProjectActivationResolution = {
+      expectedProjects: firstError!.details.expectedProjects,
+      drivers: firstError!.details.projects.filter((project) => project.required.includes("driver"))
+        .map((project) => ({ projectId: project.projectId, ownerMemberId: driver.id })),
+    };
+    const currentJob = getIntake(ctx.handle.db, id, null);
+    updateProject(ctx.handle.db, outer.id, { notes: "Changed while reviewing", expectedRevision: outer.revision });
+
+    let staleError: { code: string; details: { reason?: string; projects?: unknown[] } } | undefined;
+    try { await apply(id, draft, currentJob.revision, undefined, resolution); } catch (cause) { staleError = cause as typeof staleError; }
+    expect(staleError).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: { reason: "project_snapshot_stale", projects: expect.any(Array) },
+    });
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get()?.status).toBe("backlog");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get())
+      .toMatchObject({ status: "backlog", notes: "Changed while reviewing" });
   });
 
   it.each(["recurring", "captured-child", "captured-in-project"])("rejects %s targets before creating an AI job", async (target) => {
