@@ -641,9 +641,10 @@ captured ──► actionable ──► done
 `needs_clarification` flag is independent: a task can remain active, scheduled,
 or waiting while it is explicitly queued for another clarification pass.
 Clarifying a flagged active task clears only the flag; clarifying a captured
-task also promotes it to actionable. Future `revisit_at` dates defer the
-clarification queue without changing status, and the flag alone does not hide
-scheduled or due tasks from Today/Week.
+task also promotes it to actionable. The separate `clarification_revisit_date`
+defers only the clarification queue; ordinary `revisit_at`, scheduled work,
+reminders, external waits, and lifecycle are unchanged. Agenda eligibility for
+a re-clarified task follows the same execution-commitment rules as other work.
 Project and child creation can start as already clarified actionable work.
 Captured tasks stay visible in project trees but are excluded from Heute,
 next-action selection, and blocker classification.

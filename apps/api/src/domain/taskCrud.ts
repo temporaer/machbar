@@ -856,6 +856,7 @@ export interface UpdateTaskInput {
   notes?: string;
   status?: TaskStatus;
   needsClarification?: boolean;
+  clarificationRevisitDate?: string | null;
   discussionRequested?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: InheritanceMode;
@@ -1157,6 +1158,36 @@ export function updateTask(
         ? true
         : input.needsClarification;
       changedFields.push("needsClarification");
+    }
+    const nextNeedsClarification = nextStatus === "captured"
+      ? true
+      : input.needsClarification ?? (
+          currentTask.status === "captured" && nextStatus === "actionable"
+            ? false
+            : currentTask.needsClarification
+        );
+    const clearsClarificationDeferral =
+      input.needsClarification === true ||
+      input.needsClarification === false ||
+      (currentTask.status === "captured" && nextStatus === "actionable" && input.needsClarification === undefined);
+    const nextClarificationRevisitDate = input.clarificationRevisitDate !== undefined
+      ? input.clarificationRevisitDate
+      : clearsClarificationDeferral
+        ? null
+        : currentTask.clarificationRevisitDate;
+    if (
+      nextClarificationRevisitDate !== null &&
+      (!nextNeedsClarification || nextStatus === "done" || nextStatus === "cancelled")
+    ) {
+      throw AppError.conflict(
+        "clarification_revisit_invalid",
+        "Only open work marked for clarification can have a clarification revisit date.",
+        { taskId: id },
+      );
+    }
+    if (nextClarificationRevisitDate !== currentTask.clarificationRevisitDate) {
+      patch.clarificationRevisitDate = nextClarificationRevisitDate;
+      changedFields.push("clarificationRevisitDate");
     }
     if (
       input.discussionRequested !== undefined &&

@@ -17,6 +17,7 @@ import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
 import { TaskShapeSheet } from "./TaskShapeSheet";
 import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
+import { TaskClarificationSheet } from "./TaskClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 
@@ -67,6 +68,8 @@ export function TaskWorkflowHost() {
       );
     case "availability":
       return <TaskPlanningSheet task={task} onClose={close} initialTarget="availability" />;
+    case "deferClarification":
+      return <TaskClarificationSheet task={task} onClose={close} />;
     case "shape":
       return <TaskShapeSheet task={task} onClose={close} />;
     case "structure":

@@ -674,6 +674,10 @@ When the person ends the reflection, provide a concise human-readable summary an
   discussionMarked: "Marked for discussion",
   clarifyAgain: "Clarify again",
   clarifyLater: "Clarify later",
+  clarificationRevisitTitle: "Defer clarification",
+  clarificationRevisitNote: "The task keeps its current plan. Only the clarification reminder moves to the selected date.",
+  clarificationRevisitDate: "Return to Inbox on",
+  clarificationRevisitFutureError: "Choose a future date.",
   morePreferences: "Preferences",
   moreHousehold: "Household",
   aiContextTitle: "AI context",
@@ -1655,6 +1659,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     task_not_found: "The task could not be found.",
     task_schedule_before_available:
       "A task cannot be planned before its availability date.",
+    clarification_revisit_invalid:
+      "Only open tasks that need clarification can have a clarification revisit date.",
     task_availability_date_required:
       "The local date for this availability time is missing.",
     task_parent_self: "A task cannot be its own parent.",

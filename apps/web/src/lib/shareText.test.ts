@@ -13,6 +13,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     kind: "action",
     status: "actionable",
     needsClarification: false,
+    clarificationRevisitDate: null,
     discussionRequested: false,
     ownerMemberId: null,
     ownerInheritanceMode: "inherit",

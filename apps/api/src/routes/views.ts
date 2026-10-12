@@ -17,7 +17,7 @@ import {
   contextAvailabilityForHousehold,
   contextAvailabilityForMember,
 } from "../integrations/homeAssistant.js";
-import { DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
+import { calendarDateForInstant, DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
 
 function householdTimezone(db: Db): string {
   return (
@@ -214,6 +214,10 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     // owner instead of vanishing everywhere.
     const graph = Graph.load(db, undefined, viewerMemberId);
     const selection = createAgendaSelection(graph, { memberId, scope });
+    const householdToday = calendarDateForInstant(
+      new Date().toISOString(),
+      householdTimezone(db),
+    ) ?? new Date().toISOString().slice(0, 10);
     const projectStatusById = new Map(
       [...graph.projectsById.values()].map((project) => [
         project.id,
@@ -226,9 +230,12 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
         (task) =>
           task.kind === "action" &&
           (task.status === "captured" || task.needsClarification) &&
+          task.status !== "done" &&
+          task.status !== "cancelled" &&
           // "Später klären" is an explicit revisit, not a sheet dismissal.
           // It hides the item from this clarification queue until that time,
           // while leaving its lifecycle/agenda commitments untouched.
+          !(task.clarificationRevisitDate && task.clarificationRevisitDate > householdToday) &&
           !(task.revisitAt && Date.parse(task.revisitAt) > Date.now()) &&
           isTaskInWorkingSystem(task, projectStatusById) &&
           selection.matchesScope(task) &&

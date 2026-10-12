@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ACTIVITY_ACTOR_HEADER,
   calendarDateForInstant,
   DEFAULT_HOUSEHOLD_TIMEZONE,
 } from "@machbar/shared";
@@ -176,6 +177,55 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     });
 
     expect(await bucketsContaining("Machbar ohne Termin")).toEqual(["unscheduled"]);
+  });
+
+  it("keeps reminder-only commitments in Today after re-clarification and honors work ownership", async () => {
+    const ownerResponse = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Mira" },
+    });
+    const owner = ownerResponse.json();
+    const created = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Erinnerungsaufgabe erneut klären",
+        status: "actionable",
+        scope: "work",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+        reminders: [{ kind: "absolute", at: "2999-12-01T09:00:00.000Z" }],
+      },
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(owner.id) },
+    });
+    expect(created.statusCode, JSON.stringify(created.json())).toBe(201);
+    const task = created.json();
+    const url = `/api/agenda/today?scope=work&memberId=${owner.id}`;
+    const before = await ctx.app.inject({ method: "GET", url, headers: { [ACTIVITY_ACTOR_HEADER]: String(owner.id) } });
+    expect(JSON.stringify(before.json())).toContain(task.title);
+
+    const requested = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { needsClarification: true, expectedRevision: task.revision },
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(owner.id) },
+    });
+    expect(requested.statusCode).toBe(200);
+    const after = await ctx.app.inject({ method: "GET", url, headers: { [ACTIVITY_ACTOR_HEADER]: String(owner.id) } });
+    expect(JSON.stringify(after.json())).toContain(task.title);
+
+    const otherMember = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Ben" },
+    });
+    const hiddenFromOtherOwner = await ctx.app.inject({
+      method: "GET",
+      url: `/api/agenda/today?scope=work&memberId=${otherMember.json().id}`,
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(otherMember.json().id) },
+    });
+    expect(JSON.stringify(hiddenFromOtherOwner.json())).not.toContain(task.title);
   });
 
   it("does not duplicate an unscheduled child already visible under a selected parent", async () => {
@@ -493,7 +543,21 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
       title: "Kontext: Wiedervorlage",
       revisitAt: `${yesterday}T18:00:00.000Z`,
     });
-    await createTask({ title: "Kontext: ohne Empfehlung" });
+    await createTask({
+      title: "Kontext: ohne Empfehlung",
+      needsClarification: true,
+      reminders: [{ kind: "absolute", at: "2999-12-01T09:00:00.000Z" }],
+    });
+    const blocker = await createTask({
+      title: "Kontext: ungeklärter Blocker",
+      status: "captured",
+    });
+    const blockedReminder = await createTask({
+      title: "Kontext: blockierte Erinnerung",
+      needsClarification: true,
+      reminders: [{ kind: "absolute", at: "2999-12-02T09:00:00.000Z" }],
+    });
+    await addDependency(blockedReminder.id, blocker.id);
 
     const agenda = buildAgenda(Graph.load(ctx.handle.db, today), {
       today,
@@ -507,6 +571,15 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(titlesOf(agenda.revisit)).toContain("Kontext: Wiedervorlage");
     expect([...agenda.shared, ...agenda.unscheduled].map((item) => item.title))
       .not.toContain("Kontext: ohne Empfehlung");
+    expect([
+      ...agenda.overdue,
+      ...agenda.dueToday,
+      ...agenda.dueSoon,
+      ...agenda.planned,
+      ...agenda.revisit,
+      ...agenda.shared,
+      ...agenda.unscheduled,
+    ].map((item) => item.title)).not.toContain("Kontext: blockierte Erinnerung");
     const placements = [
       ...agenda.overdue,
       ...agenda.dueToday,

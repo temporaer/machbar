@@ -325,6 +325,11 @@ export const updateTaskSchema = z.object({
   completedOn: isoDate.optional(),
 });
 
+export const deferTaskClarificationSchema = z.object({
+  clarificationRevisitDate: isoDate,
+  expectedRevision: z.number().int().positive(),
+});
+
 export const transitionTaskStatusSchema = z.object({
   status: z.enum(taskStatuses),
   completedOn: isoDate.optional(),

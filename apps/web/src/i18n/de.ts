@@ -662,6 +662,10 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   discussionMarked: "Für Besprechung vorgemerkt",
   clarifyAgain: "Erneut klären",
   clarifyLater: "Später klären",
+  clarificationRevisitTitle: "Klärung zurückstellen",
+  clarificationRevisitNote: "Die Aufgabe bleibt wie geplant. Nur die Erinnerung an die Klärung wird auf den gewählten Tag verschoben.",
+  clarificationRevisitDate: "Erneut in den Eingang aufnehmen am",
+  clarificationRevisitFutureError: "Wähle einen zukünftigen Tag.",
   morePreferences: "Einstellungen",
   moreHousehold: "Haushalt",
   aiContextTitle: "KI-Kontext",
@@ -1659,6 +1663,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     task_not_found: "Die Aufgabe wurde nicht gefunden.",
     task_schedule_before_available:
       "Eine Aufgabe kann nicht vor ihrem Ab-Datum eingeplant werden.",
+    clarification_revisit_invalid:
+      "Nur offene Aufgaben mit Klärungsbedarf können zur späteren Klärung zurückgestellt werden.",
     task_availability_date_required:
       "Zur Verfügbarkeit fehlt das zugehörige lokale Datum.",
     task_parent_self:

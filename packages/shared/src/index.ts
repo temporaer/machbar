@@ -219,6 +219,7 @@ export type ApiErrorCode =
   | "task_not_found"
   | "task_schedule_before_available"
   | "task_availability_date_required"
+  | "clarification_revisit_invalid"
   | "task_parent_self"
   | "task_promotion_invalid"
   | "task_step_batch_invalid"
@@ -834,6 +835,8 @@ export interface Task {
    * material. See TaskKind. */
   kind: TaskKind;
   needsClarification: boolean;
+  /** Date on which a deferred clarification request re-enters the Inbox. */
+  clarificationRevisitDate: string | null;
   /** Shared, persistent nomination for a future conversation. */
   discussionRequested: boolean;
   ownerMemberId: number | null;

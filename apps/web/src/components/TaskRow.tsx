@@ -322,6 +322,7 @@ export function TaskRow({
   const runRailCommand = (
     command:
       | "task.availability"
+      | "task.deferClarification"
       | "task.plan"
       | "task.shape"
       | "task.split"
@@ -740,7 +741,7 @@ export function TaskRow({
             }] : []),
             ...(task.needsClarification && !isReference ? [{
               label: strings.clarifyLater,
-              onSelect: () => runRailCommand("task.availability"),
+              onSelect: () => runRailCommand("task.deferClarification"),
             }] : []),
             {
               label: task.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,

@@ -221,10 +221,29 @@ function useTaskActionsState() {
         revision: task.revision + 1,
         status: task.status === "captured" ? "actionable" : task.status,
         needsClarification: false,
+        clarificationRevisitDate: null,
         updatedAt: new Date().toISOString(),
       };
       return runTransition(task, optimistic, () =>
         api.clarifyTask(task.id, task.revision),
+      );
+    },
+    [runTransition],
+  );
+
+  const deferClarification = useCallback(
+    (task: Task, date: string, throwOnError = false) => {
+      const optimistic: Task = {
+        ...task,
+        revision: task.revision + 1,
+        clarificationRevisitDate: date,
+        updatedAt: new Date().toISOString(),
+      };
+      return runTransition(
+        task,
+        optimistic,
+        () => api.deferTaskClarification(task.id, date, task.revision),
+        throwOnError,
       );
     },
     [runTransition],
@@ -515,6 +534,7 @@ function useTaskActionsState() {
     requestPrimarySwipe,
     setStatus,
     clarify,
+    deferClarification,
     makeAction,
     update,
     assignOwner,

@@ -520,6 +520,7 @@ export const workItems = sqliteTable(
     needsClarification: integer("needs_clarification", { mode: "boolean" })
       .notNull()
       .default(false),
+    clarificationRevisitDate: text("clarification_revisit_date"),
     discussionRequested: integer("discussion_requested", { mode: "boolean" })
       .notNull()
       .default(false),

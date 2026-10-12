@@ -106,10 +106,10 @@ describe("revisit migration", () => {
       const journal = JSON.parse(
         readFileSync(path.join(drizzleDir, "meta", "_journal.json"), "utf8"),
       ) as { entries: Array<{ idx: number; tag: string }> };
-      expect(journal.entries).toHaveLength(23);
+      expect(journal.entries).toHaveLength(24);
       expect(journal.entries.at(-1)).toEqual({
-        idx: 22,
-        tag: "0022_discussion_requested",
+        idx: 23,
+        tag: "0023_clarification_revisit_date",
         version: "6",
         when: expect.any(Number),
         breakpoints: true,
@@ -151,7 +151,7 @@ describe("revisit migration", () => {
         handle.sqlite
           .prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations")
           .get(),
-      ).toEqual({ count: 23 });
+      ).toEqual({ count: 24 });
     } finally {
       handle.close();
     }

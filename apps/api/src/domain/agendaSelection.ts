@@ -1,6 +1,7 @@
 import type { ContextAvailability, ProjectStatus } from "@machbar/shared";
 import type { Graph, TaskRecord } from "./graph.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
+import { hasExecutionCommitment } from "./commitmentTransition.js";
 
 export type AgendaScope = "mine" | "all" | "work";
 export type AgendaLaneSelection =
@@ -108,8 +109,13 @@ export function createAgendaSelection(
     isOpenTask(task) &&
     task.status === "actionable" &&
     (!task.needsClarification ||
-      task.scheduledDate !== null ||
-      task.dueDate !== null ||
+      hasExecutionCommitment({
+        kind: task.kind,
+        dueDate: task.dueDate,
+        scheduledDate: task.scheduledDate,
+        revisitAt: task.revisitAt,
+        reminders: task.reminders,
+      }) ||
       (task.externalWait !== null && task.revisitAt !== null)) &&
     isOperationalTask(task) &&
     matchesOwner(task) &&

@@ -115,10 +115,11 @@ premature planning.
 The clarification need is independent of lifecycle: an active, scheduled, or
 waiting task can be marked **Erneut klären** without losing its commitment.
 Resolving the flag is explicit; opening a task or editing its notes does not
-resolve it. **Später klären** uses the existing availability editor to set a
-revisit point and suppresses the task from Eingang until then. A clarification
-flag by itself does not suppress otherwise eligible scheduled or due work from
-the agenda.
+resolve it. **Später klären** sets a separate clarification revisit date and
+suppresses the task from Eingang until then. It leaves the execution schedule,
+reminders, lifecycle, and external-wait follow-up unchanged. A clarification
+flag by itself does not suppress work with an existing execution commitment
+from the agenda.
 
 When an existing task title already contains a likely date, person, tag, place,
 or simple waiting phrase, the relevant focused editor can offer up to three

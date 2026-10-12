@@ -429,6 +429,7 @@ export function TaskDetailSheet() {
       | "task.lifecycle"
       | "task.assignOwner"
       | "task.availability"
+      | "task.deferClarification"
       | "task.plan"
       | "task.reminders"
       | "task.waitingLifecycle"
@@ -636,7 +637,7 @@ export function TaskDetailSheet() {
                 type="button"
                 className="btn btn-sm"
                 disabled={taskMutationPending}
-                onClick={() => runCommand("task.availability")}
+                onClick={() => runCommand("task.deferClarification")}
               >
                 {strings.clarifyLater}
               </button>

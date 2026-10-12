@@ -899,6 +899,11 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deferTaskClarification: (id: number, clarificationRevisitDate: string, expectedRevision: number) =>
+    request<Task>(`/tasks/${id}/clarification-revisit`, {
+      method: "POST",
+      body: JSON.stringify({ clarificationRevisitDate, expectedRevision }),
+    }),
   convertTaskToStory: (id: number, input: ConvertTaskToStoryInput) =>
     request<ProjectWithActions>(`/tasks/${id}/convert-to-story`, {
       method: "POST",

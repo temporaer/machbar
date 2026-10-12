@@ -29,6 +29,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.open":
     case "task.plan":
     case "task.availability":
+    case "task.deferClarification":
     case "task.shape":
     case "task.structure":
     case "task.reminders":
@@ -95,6 +96,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.open":
     case "task.plan":
     case "task.availability":
+    case "task.deferClarification":
     case "task.shape":
     case "task.structure":
     case "task.reminders":
@@ -262,6 +264,9 @@ export function useWorkItemCommands() {
         case "task.availability":
           taskWorkflow.open("availability", command.taskId, "availability");
           return;
+        case "task.deferClarification":
+          taskWorkflow.open("deferClarification", command.taskId);
+          return;
         case "task.shape":
           taskWorkflow.open("shape", command.taskId);
           return;
@@ -391,7 +396,7 @@ export function useWorkItemCommands() {
           return taskActions.update(
             command.task,
             { needsClarification: command.requested },
-            { needsClarification: command.requested },
+            { needsClarification: command.requested, clarificationRevisitDate: null },
             true,
           );
         case "workItem.schedule":

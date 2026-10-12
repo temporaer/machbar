@@ -162,6 +162,13 @@
       "when": 1791820085983,
       "tag": "0022_discussion_requested",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791832059469,
+      "tag": "0023_clarification_revisit_date",
+      "breakpoints": true
     }
   ]
 }

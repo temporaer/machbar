@@ -106,6 +106,7 @@ interface RawTask {
   status: TaskStatus;
   kind: TaskKind;
   needsClarification: boolean;
+  clarificationRevisitDate: string | null;
   discussionRequested: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
@@ -371,6 +372,7 @@ export class Graph {
         status: taskStatusFromStored(row.status as StoredWorkItemStatus),
         kind: (row.taskKind as TaskKind | null) ?? "action",
         needsClarification: row.needsClarification,
+        clarificationRevisitDate: row.clarificationRevisitDate,
         discussionRequested: row.discussionRequested,
         ownerMemberId: row.ownerMemberId,
         ownerInheritanceMode: row.ownerInheritanceMode as InheritanceMode,
@@ -778,6 +780,7 @@ export class Graph {
         status: raw.status,
         kind: raw.kind,
         needsClarification: raw.needsClarification,
+        clarificationRevisitDate: raw.clarificationRevisitDate,
         discussionRequested: raw.discussionRequested,
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
