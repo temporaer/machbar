@@ -1,29 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import type { Task } from "@machbar/shared";
 import type { ProjectDetail } from "../lib/api";
 import { makeProject, makeTask } from "../test/fixtures";
 import { LocaleProvider } from "../lib/locale";
 import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
-
-const retained = new Map<number, Task>();
-const dispatch = vi.fn();
-const requestCancel = vi.fn();
-
-vi.mock("../lib/useTaskActions", () => ({
-  useTaskActions: () => ({
-    retained,
-    pendingTask: null,
-    pendingAction: null,
-    requestCancel,
-    resolvePolicy: vi.fn(),
-    cancelPrompt: vi.fn(),
-  }),
-}));
-
-vi.mock("../lib/useWorkItemCommands", () => ({
-  useWorkItemCommands: () => ({ dispatch }),
-}));
 
 function renderSheet(tasks: Task[]) {
   const story: ProjectDetail = { ...makeProject({ id: 1, title: "Reise" }), tasks };
@@ -39,12 +21,6 @@ function renderSheet(tasks: Task[]) {
 }
 
 describe("CompleteWithOpenTasksSheet", () => {
-  beforeEach(() => {
-    retained.clear();
-    dispatch.mockClear();
-    requestCancel.mockClear();
-  });
-
   it("does not leave reconciliation work for a project containing only References", () => {
     renderSheet([
       makeTask({
@@ -58,7 +34,7 @@ describe("CompleteWithOpenTasksSheet", () => {
     expect(
       screen.getByText("Keine offenen Aufgaben mehr — bereit zum Abschließen."),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Verschieben" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "In Eingang verschieben" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Projekt abschließen" })).toBeEnabled();
   });
 
@@ -118,17 +94,35 @@ describe("CompleteWithOpenTasksSheet", () => {
       }),
     ]);
 
-    expect(screen.getAllByRole("button", { name: "Verschieben" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "In Eingang verschieben" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Verwerfen" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /Unterkunft/ })).not.toBeInTheDocument();
   });
 
-  it("prefers a retained optimistic Action over the fetched Action", () => {
-    const fetched = makeTask({ id: 2, title: "Alter Titel" });
-    retained.set(2, makeTask({ id: 2, title: "Optimistischer Titel" }));
-    renderSheet([fetched]);
+  it("does not persist task choices until project completion is submitted", async () => {
+    const onComplete = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    const task = makeTask({ id: 2, title: "Hotel buchen" });
+    const story: ProjectDetail = { ...makeProject({ id: 1, title: "Reise" }), tasks: [task] };
+    render(<LocaleProvider initialLocale="de"><CompleteWithOpenTasksSheet story={story} onClose={onClose} onComplete={onComplete} /></LocaleProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Verwerfen" }));
+    expect(onComplete).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Projekt abschließen" }));
+    expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
+      expectedRevision: story.revision,
+      expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
+      descendantResolutions: [{ taskId: task.id, action: "cancel", expectedRevision: task.revision }],
+    }));
+  });
 
-    expect(screen.getByText("Optimistischer Titel")).toBeInTheDocument();
-    expect(screen.queryByText("Alter Titel")).not.toBeInTheDocument();
+  it("cancelling after a choice leaves completion unapplied", async () => {
+    const onComplete = vi.fn();
+    const onClose = vi.fn();
+    const story: ProjectDetail = { ...makeProject({ id: 2, title: "Umzug" }), tasks: [makeTask({ id: 22, title: "Kisten packen" })] };
+    render(<LocaleProvider initialLocale="de"><CompleteWithOpenTasksSheet story={story} onClose={onClose} onComplete={onComplete} /></LocaleProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "In Eingang verschieben" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Schließen" }).at(-1)!);
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

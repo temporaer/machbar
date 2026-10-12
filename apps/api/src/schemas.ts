@@ -170,6 +170,8 @@ export const projectLifecycleSchema = z.object({
 export const returnProjectToBacklogSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
   revisitAt: isoDateTime.nullable().optional(),
+  withdrawCommitments: z.boolean().optional(),
+  expectedTaskRevisions: z.array(z.object({ taskId: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
 });
 
 export const acknowledgeReviewSchema = projectLifecycleSchema;
@@ -357,6 +359,18 @@ export const completeTaskSchema = z.object({
     .optional(),
   completedOn: isoDate.optional(),
   expectedRevision: z.number().int().positive().optional(),
+  criteriaToCheck: z.array(z.number().int().positive()).optional(),
+});
+
+export const completeProjectSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
+  criteriaToCheck: z.array(z.number().int().positive()).optional(),
+  expectedTaskRevisions: z.array(z.object({ taskId: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
+  descendantResolutions: z.array(z.object({
+    taskId: z.number().int().positive(),
+    action: z.enum(["cancel", "move_to_inbox"]),
+    expectedRevision: z.number().int().positive(),
+  }).strict()).optional(),
 });
 
 export const cancelTaskSchema = z.object({

@@ -107,6 +107,42 @@ export function assertAcceptanceCriteriaChecked(
   }
 }
 
+/**
+ * Applies the criteria a person checked as part of the same completion
+ * transaction. Validation happens before any row changes; the owner revision
+ * is advanced by the enclosing completion transition, not once per checkbox.
+ */
+export function checkCriteriaForCompletion(
+  db: Db,
+  workItemId: number,
+  selectedCriterionIds: readonly number[] = [],
+  context?: MutationContext,
+): void {
+  const owner = getCriterionOwnerOrThrow(db, workItemId);
+  const criteria = db.select().from(schema.workItemAcceptanceCriteria)
+    .where(eq(schema.workItemAcceptanceCriteria.workItemId, workItemId)).all();
+  const selected = new Set(selectedCriterionIds);
+  const unknown = selectedCriterionIds.filter((id) => !criteria.some((criterion) => criterion.id === id));
+  if (unknown.length > 0) {
+    throw AppError.badRequest("completion_criteria_invalid", "A selected completion criterion does not belong to this work item.", { workItemId, criterionIds: unknown });
+  }
+  const missing = criteria.filter((criterion) => !criterion.checked && !selected.has(criterion.id)).map((criterion) => criterion.id);
+  if (missing.length > 0) {
+    throw AppError.conflict(
+      owner.role === "story" ? "project_completion_criteria_incomplete" : "task_completion_criteria_incomplete",
+      `Every completion criterion must be checked before completing this ${owner.role === "story" ? "project" : "task"}.`,
+      { [owner.role === "story" ? "projectId" : "taskId"]: workItemId, criteriaCount: criteria.length, incompleteCriterionIds: missing },
+    );
+  }
+  for (const criterion of criteria) {
+    if (criterion.checked || !selected.has(criterion.id)) continue;
+    db.update(schema.workItemAcceptanceCriteria)
+      .set({ checked: true, updatedAt: nowIso() })
+      .where(eq(schema.workItemAcceptanceCriteria.id, criterion.id)).run();
+    recordCriterionActivity(db, owner, "checked", context, { checked: true, duringCompletion: true });
+  }
+}
+
 /** Appends a new criterion at the end of the work item's ordered list. */
 export function addCriterion(
   db: Db,

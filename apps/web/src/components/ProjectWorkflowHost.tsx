@@ -1,4 +1,4 @@
-import { api } from "../lib/api";
+import { api, type ProjectDetail } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
@@ -11,12 +11,15 @@ import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
 import { ProjectConvertToTaskSheet } from "./ProjectConvertToTaskSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
-import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
 import { WorkRefinementSheet } from "./WorkRefinementSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
 import { ProjectActivationSheet } from "./ProjectActivationSheet";
+
+function flattenTaskRevisions(tasks: ProjectDetail["tasks"]): Array<{ taskId: number; revision: number }> {
+  return tasks.flatMap((task) => [{ taskId: task.id, revision: task.revision }, ...flattenTaskRevisions(task.children)]);
+}
 
 /**
  * Project counterpart of `TaskWorkflowHost.tsx` — the single place that
@@ -31,7 +34,7 @@ export function ProjectWorkflowHost() {
   const { members } = useIdentity();
   const projectActions = useProjectActions();
   const projectId = workflow.current?.projectId ?? null;
-  const { data: fetchedProject } = useAsync(
+  const { data: fetchedProject, reload } = useAsync(
     () => (projectId !== null ? api.getProject(projectId) : Promise.resolve(null)),
     [projectId],
   );
@@ -47,11 +50,17 @@ export function ProjectWorkflowHost() {
         <ProjectDeferSheet
           story={story}
           onClose={close}
+          onRefresh={reload}
           onSave={async (patch) => {
-            if (story.status === "active") {
-              await projectActions.returnToBacklog(story, patch.revisitAt);
+            if (story.status === "active" || story.status === "archived") {
+              await projectActions.returnToBacklog(
+                fetchedProject ?? story,
+                patch.revisitAt,
+                patch.withdrawCommitments,
+                fetchedProject ? flattenTaskRevisions(fetchedProject.tasks) : [],
+              );
             } else {
-              await projectActions.schedule(story, patch);
+              await projectActions.schedule(story, { revisitAt: patch.revisitAt });
             }
           }}
         />
@@ -80,27 +89,15 @@ export function ProjectWorkflowHost() {
       return <StoryCriteriaSheet story={story} onClose={close} />;
     case "convertToTask":
       return <ProjectConvertToTaskSheet story={story} onClose={close} />;
-    case "completeWithCriteria":
-      return (
-        <CompleteWithCriteriaSheet
-          workItem={story}
-          workItemType="project"
-          onClose={close}
-          onComplete={async () => {
-            await projectActions.runAction(story, "complete");
-          }}
-        />
-      );
-    case "completeWithOpenTasks":
-      // Needs the full task list, which only the fetched `ProjectDetail`
-      // carries -- the optimistic `retained` projection does not.
+    case "completeWithDecisions":
       if (!fetchedProject) return null;
       return (
         <CompleteWithOpenTasksSheet
           story={fetchedProject}
           onClose={close}
-          onComplete={async () => {
-            await projectActions.runAction(story, "complete");
+          onRefresh={reload}
+          onComplete={async (input) => {
+            await projectActions.runAction(fetchedProject, "complete", undefined, undefined, true, undefined, input);
           }}
         />
       );

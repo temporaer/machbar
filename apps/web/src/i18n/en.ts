@@ -755,6 +755,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     noDate: "No date",
   },
   projectDeferQuestion: "Defer until when?",
+  withdrawProjectCommitments: "Withdraw plans, deadlines, recurrence and reminders for this project",
   projectDeferWithoutRevisit: "Without revisit",
   projectDeferShortcutLabels: {
     tomorrow: "Tomorrow",
@@ -1059,8 +1060,11 @@ When the person ends the reflection, provide a concise human-readable summary an
   taskCompleteWithCriteriaTitle: "Complete task",
   completeWithOpenTasksTitle: "Resolve open tasks",
   completeWithOpenTasksHint:
-    "Move or cancel every remaining open task before completing the project.",
+    "Choose what to do with each open task branch.",
+  completeWithOpenTasksBranchHint:
+    "The choice also applies to open subtasks in that branch.",
   completeWithOpenTasksResolved: "No open tasks left — ready to complete.",
+  moveTaskToInbox: "Move to Inbox",
   cancelTask: "Cancel",
   projectDeadlineTitle: "Project deadline",
   taskSummary: "Tasks",
@@ -1571,6 +1575,14 @@ When the person ends the reflection, provide a concise human-readable summary an
       "Add an executable next step or a healthy waiting path before starting.",
     project_commitment_resolution_required:
       "This commitment still needs a project lead or an executable next step. Your changes were not saved.",
+    project_commitments_prevent_parking:
+      "This project still has commitments. In the defer sheet, explicitly choose whether to withdraw them.",
+    project_completion_resolution_required:
+      "Choose whether to cancel or move each open task branch before completing the project.",
+    project_completion_resolution_invalid:
+      "The open-task selection no longer matches this project. Reload and review your choices.",
+    completion_criteria_invalid:
+      "A selected criterion does not belong to this item.",
     project_completion_criteria_incomplete:
       "Check, edit, or remove every open criterion before completing.",
     task_completion_criteria_incomplete:

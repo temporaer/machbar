@@ -71,13 +71,14 @@ describe("ProjectDeferSheet", () => {
           "02:30",
           "Europe/Berlin",
         ),
+        withdrawCommitments: false,
       }),
     );
 
     vi.clearAllMocks();
     fireEvent.click(screen.getByRole("button", { name: "Ohne Wiedervorlage" }));
     await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith({ revisitAt: null }),
+      expect(onSave).toHaveBeenCalledWith({ revisitAt: null, withdrawCommitments: false }),
     );
   });
 

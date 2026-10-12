@@ -347,6 +347,14 @@ export type WeekAgendaResponse = Omit<WeekAgenda, "days" | "unplanned"> & {
 export interface ProjectWorkflowInput {
   expectedRevision: number;
   revisitAt?: string | null;
+  withdrawCommitments?: boolean;
+  expectedTaskRevisions?: Array<{ taskId: number; revision: number }>;
+  criteriaToCheck?: number[];
+  descendantResolutions?: Array<{
+    taskId: number;
+    action: "cancel" | "move_to_inbox";
+    expectedRevision: number;
+  }>;
 }
 
 export interface ActivateProjectInput extends ProjectWorkflowInput {
@@ -948,6 +956,7 @@ export const api = {
     descendantsPolicy: TaskDescendantsPolicy = "leave_open",
     completedOn?: string,
     expectedRevision?: number,
+    criteriaToCheck?: number[],
   ) =>
     request<Task>(`/tasks/${id}/complete`, {
       method: "POST",
@@ -955,6 +964,7 @@ export const api = {
         ...(descendantsPolicy ? { descendantsPolicy } : {}),
         ...(completedOn ? { completedOn } : {}),
         ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+        ...(criteriaToCheck !== undefined ? { criteriaToCheck } : {}),
       }),
     }),
   cancelTask: (

@@ -344,6 +344,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.completedOn,
         body.expectedRevision,
+        body.criteriaToCheck,
       );
       return taskOrThrow(db, id, viewerMemberId(request));
     },

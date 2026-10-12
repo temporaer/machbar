@@ -87,7 +87,7 @@ function useTaskActionsState() {
   );
 
   const complete = useCallback(
-    (task: Task, policy?: ChildPolicy) => {
+    (task: Task, policy?: ChildPolicy, criteriaToCheck?: number[], throwOnError = false) => {
       const now = new Date().toISOString();
       const completedOn = toIsoCalendarDate(new Date());
       // Whichever policy closes the open descendants (matching or the mixed
@@ -137,7 +137,8 @@ function useTaskActionsState() {
           policy ?? "leave_open",
           task.repeatAfterDays !== null ? completedOn : undefined,
           task.revision,
-        ),
+          ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
+        ), throwOnError,
       );
     },
     [runTransition],

@@ -682,6 +682,22 @@ archived ◄──archive── (backlog | active | completed)
   remaining criterion must be checked first. Project criteria remain attached
   through Project → Task conversion and use the same editor/check API after
   conversion.
+- `completeProject()` accepts revision-bound criterion checks and open-task
+  branch dispositions as one decision set. It validates that set before using
+  the canonical task cancel/move commands and completing the project inside
+  the enclosing transaction. Missing choices, stale descendants, or failed
+  criteria roll the whole operation back; the focused sheet does not persist
+  choices before confirmation.
+- `completeTask()` applies any completion-time criterion checks in the same
+  transaction as the existing task lifecycle transition. With no missing
+  criteria, ordinary completion remains a direct action. Task criteria
+  retained through project conversion continue to be enforced by the same
+  completion guard.
+- Returning a project to backlog does not silently withdraw execution
+  commitments. The command checks project deadlines and descendant plans,
+  recurrence and reminders. When explicitly requested, it revision-checks the
+  descendant tasks and clears those commitments atomically with parking while
+  preserving wait and revisit information.
 - `archived` only exposes `return_to_backlog`; there is no `archived → active`
   transition. Reactivating an archived project always goes through backlog
   first.

@@ -135,9 +135,9 @@ export function TaskWorkflowHost() {
           workItem={task}
           workItemType="task"
           onClose={close}
-          onComplete={async () => {
-            close();
-            dispatch({ type: "task.toggleDone", task });
+          onRefresh={reload}
+          onComplete={async (criteriaToCheck, childPolicy) => {
+            await taskActions.complete(task, childPolicy, criteriaToCheck, true);
           }}
         />
       );

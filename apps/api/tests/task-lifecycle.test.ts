@@ -473,6 +473,55 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(stillOpen.json().status).toBe("actionable");
   });
 
+  it("checks retained task criteria atomically with completion", async () => {
+    const task = await createTask({ title: "Criteria completion", status: "actionable" });
+    const criterion = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/criteria`, payload: { text: "Result geprüft" } });
+    const incomplete = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision } });
+    expect(incomplete.statusCode).toBe(409);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ status: "actionable", acceptanceCriteria: [{ checked: false }] });
+
+    const completed = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision, criteriaToCheck: [criterion.json().acceptanceCriteria[0].id] } });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [{ checked: true }] });
+  });
+
+  it("commits task criteria and the selected open-descendant policy together", async () => {
+    const parent = await createTask({ title: "Konvertierte Aufgabe", status: "actionable" });
+    const childResponse = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/children`, payload: { title: "Offene Teilaufgabe", status: "actionable" },
+    });
+    const child = childResponse.json();
+    const criterionResponse = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/criteria`, payload: { text: "Ergebnis ist abgenommen" },
+    });
+    const criterion = criterionResponse.json().acceptanceCriteria[0];
+    const current = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json();
+
+    const missingPolicy = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/complete`,
+      payload: { expectedRevision: current.revision, criteriaToCheck: [criterion.id] },
+    });
+    expect(missingPolicy.statusCode).toBe(409);
+    expect(missingPolicy.json().error.code).toBe("descendants_policy_required");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json()).toMatchObject({
+      status: "actionable",
+      acceptanceCriteria: [{ checked: false }],
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("actionable");
+
+    const completed = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/complete`,
+      payload: {
+        expectedRevision: current.revision,
+        criteriaToCheck: [criterion.id],
+        descendantsPolicy: "complete_children",
+      },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [{ checked: true }] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("done");
+  });
+
   it("leaves children untouched when completing with leave_open", async () => {
     const parent = await createTask({ title: "Elternaufgabe 2", status: "actionable" });
     const childRes = await ctx.app.inject({
