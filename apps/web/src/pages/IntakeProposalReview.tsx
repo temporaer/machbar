@@ -29,7 +29,6 @@ export function IntakeProposalReview({
   sourceOwnerMemberId,
   projectDriverMemberId,
   onProjectDriverChange,
-  sourceHasTaskOnlyMetadata = false,
 }: {
   draft: IntakeDraft;
   members: Member[];
@@ -50,7 +49,6 @@ export function IntakeProposalReview({
   sourceOwnerMemberId?: number | null;
   projectDriverMemberId?: number | null;
   onProjectDriverChange?: (memberId: number) => void;
-  sourceHasTaskOnlyMetadata?: boolean;
 }) {
   const strings = useStrings();
   const workItemDepth = workItemDepths(draft.workItems);
@@ -94,7 +92,6 @@ export function IntakeProposalReview({
         {breakdown && conversionSelected ? (
           <section className="card stack" aria-label={strings.aiProjectDriverLabel}>
             <strong>{actionableConversion ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog}</strong>
-            {sourceHasTaskOnlyMetadata ? <p role="status">{strings.aiProjectMetadataWarning}</p> : null}
             {actionableConversion && sourceOwnerMemberId !== null ? (
               <p>{strings.aiProjectDriverLabel}: {members.find((member) => member.id === sourceOwnerMemberId)?.name ?? sourceOwnerMemberId}</p>
             ) : null}

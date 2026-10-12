@@ -248,7 +248,7 @@ describe("WorkRefinementReview", () => {
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 
-  it("requires accepting the conversion before a captured-task child and explains the dependency", () => {
+  it("allows a captured-task child without converting the task into a project", () => {
     const current = record();
     current.text = JSON.stringify({ id: 4, title: "Haustür", status: "captured", kind: "action", children: [] });
     current.refinement!.proposal!.changes = [
@@ -256,11 +256,11 @@ describe("WorkRefinementReview", () => {
       { kind: "convert_task_to_project", targetId: 4, rationale: "Ermöglicht Schritte.", accepted: false },
     ];
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-    expect(screen.getByText("Dieser Schritt kann nur zusammen mit der Umwandlung in ein Projekt übernommen werden.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeDisabled();
+    expect(screen.queryByText("Dieser Schritt kann nur zusammen mit der Umwandlung in ein Projekt übernommen werden.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeEnabled();
   });
 
-  it("warns about task-only metadata while an actionable conversion is selected", async () => {
+  it("does not warn that canonical conversion loses preserved task metadata", async () => {
     const current = record();
     current.text = JSON.stringify({
       id: 4,
@@ -278,12 +278,12 @@ describe("WorkRefinementReview", () => {
       accepted: true,
     }];
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-    expect(screen.getByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).toBeInTheDocument();
+    expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox"));
     expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
   });
 
-  it.each(["captured", "someday"] as const)("warns about task-only metadata for a %s conversion", (status) => {
+  it.each(["captured", "someday"] as const)("does not warn about preserved metadata for a %s conversion", (status) => {
     const current = record();
     current.text = JSON.stringify({
       id: 4,
@@ -301,7 +301,7 @@ describe("WorkRefinementReview", () => {
       accepted: true,
     }];
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-    expect(screen.getByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).toBeInTheDocument();
+    expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
   });
 
   it("shows the concise leave-alone confirmation and original-item link", () => {

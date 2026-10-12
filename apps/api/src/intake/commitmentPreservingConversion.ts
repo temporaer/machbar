@@ -28,16 +28,6 @@ export function beginCommitmentConversion(
   context: MutationContext,
 ): CommitmentConversion {
   const task = getTaskOrThrow(db, taskId);
-  if (
-    task.status === "actionable" &&
-    (task.revisitAt != null || task.notBeforeAt != null || task.notBeforeDate != null)
-  ) {
-    throw AppError.conflict(
-      "role_conversion_invalid",
-      "Resolve the task's revisit or availability before converting it with AI.",
-      { taskId, reason: "non_representable_timing" },
-    );
-  }
   if (task.parentTaskId !== null || task.projectId !== null) {
     throw AppError.conflict(
       "role_conversion_invalid",

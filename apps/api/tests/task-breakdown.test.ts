@@ -100,6 +100,17 @@ describe("reviewed task breakdown", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
   });
 
+  it("adds reviewed child steps to a captured task without changing its identity or role", async () => {
+    const task = createTask(ctx.handle.db, { title: "Kita-Formular" });
+    const { id, draft } = prepare(task.id);
+    await apply(id, draft);
+    const updated = getTaskOrThrow(ctx.handle.db, task.id);
+    expect(updated.id).toBe(task.id);
+    expect(updated.kind).toBe("action");
+    expect(updated.status).toBe("actionable");
+    expect(updated.children.map((child) => child.title)).toEqual(["Compare options", "Book the chosen option"]);
+  });
+
   it("keeps uncommitted steps on a someday task parked, matching ordinary step entry", async () => {
     const task = createTask(ctx.handle.db, { title: "Dachboden sortieren", status: "someday" });
     const { id, draft } = prepare(task.id);
@@ -208,7 +219,7 @@ describe("reviewed task breakdown", () => {
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
   });
 
-  it("rejects actionable conversion while revisit timing still exists", async () => {
+  it("preserves an actionable task's revisit on the identity-preserved action step during conversion", async () => {
     const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
     const task = createTask(ctx.handle.db, {
       title: "Plan the holiday",
@@ -216,9 +227,12 @@ describe("reviewed task breakdown", () => {
       revisitAt: "2027-01-05T08:00:00.000Z",
     });
     const { id, draft } = prepare(task.id, true);
-    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "role_conversion_invalid" });
-    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
-    expect(getTaskOrThrow(ctx.handle.db, task.id).revisitAt).toBe("2027-01-05T08:00:00.000Z");
+    await apply(id, draft, 1, driver.id);
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    const preserved = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
+      .find((child) => child.title === task.title);
+    expect(project.role).toBe("story");
+    expect(preserved?.revisitAt).toBe("2027-01-05T08:00:00.000Z");
   });
 
   it("rolls back actionable conversion when accepted steps provide no viable progress path", async () => {
@@ -232,17 +246,19 @@ describe("reviewed task breakdown", () => {
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
   });
 
-  it("rolls back a title edit if a captured task cannot accept children and leaves its proposal editable", async () => {
+  it("rolls back an invalid captured-task breakdown and keeps the proposal editable for retry", async () => {
     const task = createTask(ctx.handle.db, { title: "Holiday" });
     const { id, draft } = prepare(task.id);
     draft.workItems[0]!.title = "Updated holiday";
+    draft.workItems[1]!.parentKey = "missing-parent";
     await expect(apply(id, draft)).rejects.toMatchObject({ code: "intake_draft_invalid" });
     expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe("Holiday");
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
-    draft.workItems[0]!.kind = "project";
+    draft.workItems[1]!.parentKey = "existing-task";
     await apply(id, draft, getIntake(ctx.handle.db, id, null).revision);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ title: "Updated holiday", status: "actionable", kind: "action" });
   });
 
   it("rejects a proposal when an existing child was edited or another child was added", async () => {

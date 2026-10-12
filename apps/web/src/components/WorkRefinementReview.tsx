@@ -253,23 +253,6 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     };
     if (record.text) walk(JSON.parse(record.text));
   } catch { /* a legacy intake's text need not be JSON */ }
-  const invalidSelection = proposal.changes.some((change) => {
-    if (!change.accepted || change.kind !== "create_child") return false;
-    const parent = contextLabels.get(change.parentTaskId);
-    if (!parent) return false;
-    let context: Record<string, unknown> | null = null;
-    try { context = record.text ? JSON.parse(record.text) as Record<string, unknown> : null; } catch { /* no context */ }
-    const find = (value: unknown): Record<string, unknown> | null => {
-      if (!value || typeof value !== "object") return null;
-      const item = value as Record<string, unknown>;
-      if (item.id === change.parentTaskId) return item;
-      for (const key of ["children", "tasks", "projects"]) if (Array.isArray(item[key])) for (const child of item[key] as unknown[]) { const found = find(child); if (found) return found; }
-      return null;
-    };
-    const parentNode = find(context);
-    if (parentNode?.status !== "captured") return false;
-    return !proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId && candidate.accepted);
-  });
   const moveSiblings = (change: Extract<WorkRefinementChange, { kind: "move_task" }>) => [...contextLabels.entries()]
     .filter(([id, value]) => id !== change.targetId && value.parentTaskId === change.parentTaskId && value.projectId === change.projectId)
     .sort((a, b) => a[1].position - b[1].position);
@@ -292,14 +275,6 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     refinement.targetType === "task" &&
     sourceStatus === "actionable";
   const requiresDriver = activeConversion && sourceOwnerMemberId === null;
-  const hasUnsupportedTiming = activeConversion && (
-    source?.revisitAt != null || source?.notBeforeAt != null || source?.notBeforeDate != null
-  );
-  const acceptedTaskConversion =
-    conversion?.accepted === true && refinement.targetType === "task";
-  const hasTaskOnlyMetadata = acceptedTaskConversion && (
-    source?.priority != null || source?.size != null
-  );
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
   const hasRetryFeedback = answer.trim().length > 0;
   return <main className="page stack">
@@ -343,19 +318,11 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
                 />
               </>
             ) : null}
-            {hasUnsupportedTiming ? <p role="alert">{strings.aiProjectTimingWarning}</p> : null}
-            {hasTaskOnlyMetadata ? <p role="status">{strings.aiProjectMetadataWarning}</p> : null}
           </section>
         ) : null}
-        {change.kind === "create_child" && proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId) ? <p className="muted">{strings.refinementRequiresConversion}</p> : null}
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
           const checked = event.target.checked;
-          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => ({
-            ...candidate,
-            accepted: candidateIndex === index ? checked
-              : !checked && change.kind === "convert_task_to_project" && candidate.kind === "create_child" && candidate.parentTaskId === change.targetId ? false
-              : candidate.accepted,
-          })) as WorkRefinementChange[] });
+          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, accepted: checked } : candidate) as WorkRefinementChange[] });
         }} /><strong>{label(change)}</strong></label>
         {Object.entries(change).filter(([key, value]) => ["targetId", "taskId", "parentTaskId", "projectId", "dependsOnTaskId"].includes(key) && typeof value === "number").map(([key, value]) => {
           const context = contextLabels.get(value as number);
@@ -382,7 +349,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         {leaveAlone
           ? <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
           : <>
-            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || invalidSelection || hasUnsupportedTiming || requiresDriver && projectDriverMemberId === null} onClick={() => void apply()}>{strings.refinementApply}</button>
+            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || requiresDriver && projectDriverMemberId === null} onClick={() => void apply()}>{strings.refinementApply}</button>
             <button className="btn" disabled={busy} onClick={() => void save()}>{strings.save}</button>
             <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
           </>}

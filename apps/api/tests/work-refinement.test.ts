@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { createChildTask, createTask, getTaskOrThrow } from "../src/domain/taskCrud.js";
 import { createProject } from "../src/domain/storyCrud.js";
-import { addDependency } from "../src/domain/taskCapabilities.js";
+import { addDependency, upsertExternalWait } from "../src/domain/taskCapabilities.js";
 import * as schema from "../src/db/schema.js";
 import { onIntakeAnalyzed, getIntake } from "../src/intake/jobs.js";
 import { applyWorkRefinement, updateWorkRefinement } from "../src/intake/refinement.js";
@@ -231,7 +231,7 @@ describe("AI work refinement proposals", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe("Send the signed form");
   });
 
-  it("requires and applies an explicit legal conversion before refining a captured task", () => {
+  it("adds a child to a captured task through canonical first-child classification", () => {
     const task = createTask(ctx.handle.db, { title: "Neue Haustür", status: "captured" });
     const id = randomUUID();
     const snapshot = JSON.stringify({ id: task.id, revision: task.revision, title: task.title, status: "captured", kind: "action", parentTaskId: null, projectId: null, externalWait: null, dependencies: [], repeatAfterDays: null, reminders: [], children: [] });
@@ -240,7 +240,6 @@ describe("AI work refinement proposals", () => {
       intent: "structure", summary: "Mache das Vorhaben zu einem Projekt.", disposition: "changes", question: null,
       changes: [
         { kind: "create_child", parentTaskId: task.id, title: "Klären, ob noch die Auswahl oder nur die Montage ansteht", notes: null, rationale: "Die Entscheidung bestimmt den nächsten Arbeitsweg." },
-        { kind: "convert_task_to_project", targetId: task.id, rationale: "Das Vorhaben umfasst mehrere Schritte." },
       ],
     });
     const ready = getIntake(ctx.handle.db, id, null);
@@ -250,7 +249,8 @@ describe("AI work refinement proposals", () => {
     updateWorkRefinement(ctx.handle.db, id, null, ready.revision, proposal);
     applyWorkRefinement(ctx.handle.db, id, null, ready.revision + 1, {});
     const converted = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
-    expect(converted.role).toBe("story");
+    expect(converted.role).toBe("task");
+    expect(converted.status).toBe("active");
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all().map((row) => row.title)).toEqual(["Klären, ob noch die Auswahl oder nur die Montage ansteht"]);
   });
 
@@ -282,18 +282,83 @@ describe("AI work refinement proposals", () => {
     expect(child.ownerMemberId).toBeNull();
   });
 
-  it("rejects a selected captured-task child when its conversion is excluded", () => {
+  it("uses canonical conversion to preserve revisit, reminders, external waits, and dependencies", () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+    const prerequisite = createTask(ctx.handle.db, { title: "Get the documents", status: "actionable" });
+    const task = createTask(ctx.handle.db, {
+      title: "Insurance follow-up", status: "actionable", revisitAt: "2027-04-03T09:00:00.000Z",
+      reminders: [{ kind: "absolute", at: "2027-04-02T09:00:00.000Z" }],
+    });
+    upsertExternalWait(ctx.handle.db, task.id, { waitingFor: "Insurance response", revisitAt: "2027-04-03T09:00:00.000Z" });
+    addDependency(ctx.handle.db, task.id, prerequisite.id);
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    const proposal = {
+      intent: "structure", summary: "Clarify the follow-up plan", disposition: "changes", question: null,
+      changes: [
+        { kind: "convert_task_to_project", targetId: task.id, rationale: "A project is useful for the response and follow-up.", accepted: true },
+        { kind: "create_child", parentTaskId: task.id, title: "Check the response against the policy", notes: null, rationale: "This advances the work once the response arrives.", accepted: true },
+      ],
+    };
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
+      refinementIntent: "structure", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify(proposal), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, driver.id);
+    const preserved = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
+      .find((child) => child.title === task.title)!;
+    expect(preserved.revisitAt).toBe("2027-04-03T09:00:00.000Z");
+    expect(ctx.handle.db.select().from(schema.taskExternalWaits).where(eq(schema.taskExternalWaits.taskId, preserved.id)).get()?.waitingFor).toBe("Insurance response");
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, preserved.id)).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.taskDependencies).where(eq(schema.taskDependencies.taskId, preserved.id)).get()?.dependsOnTaskId).toBe(prerequisite.id);
+  });
+
+  it("preserves supported recurrence configuration and occurrence history through AI conversion", () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Monthly maintenance", status: "actionable" });
+    ctx.handle.db.update(schema.workItems).set({ repeatAfterDays: 30, allowedDeviationDays: 3 })
+      .where(eq(schema.workItems.id, task.id)).run();
+    const occurrence = ctx.handle.db.insert(schema.taskRecurrenceOccurrences).values({
+      taskId: task.id, scheduledDate: "2026-09-01", deadlineDate: "2026-09-04",
+      completedOn: "2026-09-01", completedAt: "2026-09-01T12:00:00.000Z", result: "hit",
+    }).returning().get();
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
+      refinementIntent: "structure", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({ intent: "structure", summary: "Separate the ongoing upkeep", disposition: "changes", question: null, changes: [
+        { kind: "convert_task_to_project", targetId: task.id, rationale: "The work also has a finite improvement outcome.", accepted: true },
+        { kind: "create_child", parentTaskId: task.id, title: "Review the current setup", notes: null, rationale: "Identify the first improvement.", accepted: true },
+      ] }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, driver.id);
+    const preserved = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
+      .find((child) => child.title === task.title)!;
+    expect(preserved).toMatchObject({ repeatAfterDays: 30, allowedDeviationDays: 3 });
+    expect(ctx.handle.db.select().from(schema.taskRecurrenceOccurrences).where(eq(schema.taskRecurrenceOccurrences.id, occurrence.id)).get()?.taskId).toBe(preserved.id);
+  });
+
+  it("allows excluding an optional project conversion while keeping a selected captured-task child", () => {
     const task = createTask(ctx.handle.db, { title: "Neue Haustür", status: "captured" });
     const id = randomUUID();
     const snapshot = JSON.stringify({ id: task.id, revision: task.revision, title: task.title, status: "captured", kind: "action", parentTaskId: null, projectId: null, externalWait: null, dependencies: [], repeatAfterDays: null, reminders: [], children: [] });
-    const proposal = { intent: "structure", summary: "Ein Schritt braucht eine Projektstruktur.", disposition: "changes", question: null, changes: [
+    const proposal = { intent: "structure", summary: "Ein erster Schritt.", disposition: "changes", question: null, changes: [
       { kind: "create_child", parentTaskId: task.id, title: "Montage klären", rationale: "Ein nächster Schritt.", accepted: true },
       { kind: "convert_task_to_project", targetId: task.id, rationale: "Ermöglicht Unteraufgaben.", accepted: false },
     ] };
     ctx.handle.db.insert(schema.intakeJobs).values({ id, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: snapshot, refinementTargetType: "task", refinementTargetId: task.id, refinementIntent: "structure", refinementSnapshotJson: snapshot, refinementJson: JSON.stringify(proposal), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString() }).run();
-    expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow(/requires accepting/i);
-    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("captured");
-    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
+    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children.map((child) => child.title)).toEqual(["Montage klären"]);
   });
 
   it("rejects dependencies that introduce a cycle before applying any change", () => {

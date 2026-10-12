@@ -708,10 +708,6 @@ export function IntakeReviewPage() {
           sourceOwnerMemberId={record.breakdown?.sourceOwnerMemberId ?? null}
           projectDriverMemberId={projectDriverMemberId}
           onProjectDriverChange={setProjectDriverMemberId}
-          sourceHasTaskOnlyMetadata={
-            record.breakdown?.priority !== null ||
-            record.breakdown?.size !== null
-          }
         />
       </fieldset>
       {applyError ? (

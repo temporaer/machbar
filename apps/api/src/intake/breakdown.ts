@@ -55,10 +55,9 @@ export function assertBreakdownDraft(draft: IntakeDraft, source?: ReturnType<typ
     || draft.calendarEvents.some((item) => item.enabled) || draft.retainSourceInPaperless) {
     throw AppError.badRequest("intake_draft_invalid", "Keep the existing root and up to 30 immediate action steps; calendar events, references, and nested projects are not supported in a breakdown.");
   }
-  const additions = enabled.filter((item) => item !== root);
-  if (source?.status === "captured" && additions.length > 0 && root.kind !== "project") {
-    throw AppError.badRequest("intake_draft_invalid", "A captured task must be explicitly converted to a project before it can receive steps.");
-  }
+  // Captured actions can receive their first child through the canonical child
+  // mutation, which classifies the parent as an action with steps. Project
+  // conversion remains an explicit, separate choice in the reviewed draft.
   // The existing item's metadata is preserved. Expose only its title, notes,
   // and role in review rather than silently accepting edits to ignored fields.
   if (root.ownerMemberId !== null || root.dueDate !== null || root.scheduledDate !== null
