@@ -105,6 +105,9 @@ describe("task <-> story role conversion", () => {
       parentTaskId: null,
       children: [expect.objectContaining({ id: grandchild.id })],
     });
+    expect(ctx.handle.db.select().from(schema.activityEvents)
+      .where(eq(schema.activityEvents.entityId, root.id)).all())
+      .toEqual(expect.arrayContaining([expect.objectContaining({ kind: "task_created", entityType: "task" })]));
     expect(
       await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
     ).toMatchObject({ statusCode: 404 });

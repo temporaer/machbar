@@ -397,15 +397,6 @@ export function convertTaskToStoryInTransaction(
         throw error;
       }
     }
-    txDb.update(schema.activityEvents)
-      .set({ entityType: "project" })
-      .where(
-        and(
-          eq(schema.activityEvents.entityType, "task"),
-          eq(schema.activityEvents.entityId, taskId),
-        ),
-      )
-      .run();
     txDb.update(schema.notificationEvents)
       .set({ entityType: "project" })
       .where(
