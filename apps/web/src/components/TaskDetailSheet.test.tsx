@@ -1132,9 +1132,7 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
-        revisitAt: null,
         scheduledDate: null,
-        dueDate: null,
         expectedRevision: 1,
       }),
     );
@@ -1200,8 +1198,6 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
-        revisitAt: null,
-        scheduledDate: "2026-09-10",
         dueDate: "2026-09-13",
         expectedRevision: 1,
       }),
@@ -1281,9 +1277,6 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(61, {
-        revisitAt: null,
-        scheduledDate: "2026-09-10",
-        dueDate: "2026-09-12",
         repeatAfterDays: null,
         allowedDeviationDays: null,
         expectedRevision: 1,

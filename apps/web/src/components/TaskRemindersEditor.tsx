@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useState } from "react";
 import type { TaskReminderInput } from "@machbar/shared";
 import { calendarDateForInstant, householdCalendarDateTimeToRevisitAt, localTimeForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -35,23 +35,31 @@ function toDraft(reminders: TaskReminderInput[]): DraftReminder[] {
 type EditorState =
   | { mode: "closed" }
   | { mode: "choosing" }
-  | { mode: "customAbsolute"; key: string | null; date: string; time: string }
+  | { mode: "customAbsolute"; key: string | null; date: string; time: string; dateValid: boolean }
   | { mode: "customRelative"; key: string | null; daysBefore: number; time: string; timezone: string };
 
-/** Draft-only reminder controls used by the single task-planning workflow. */
-export function TaskRemindersEditor({
-  reminders,
-  dueDate,
-  onChange,
-  disabled = false,
-  autoOpen = false,
-}: {
+export interface TaskRemindersEditorHandle {
+  getCommitValue(): TaskReminderInput[] | null;
+}
+
+interface TaskRemindersEditorProps {
   reminders: TaskReminderInput[];
   dueDate: string | null;
   onChange: (reminders: TaskReminderInput[]) => void;
+  onPendingChange?: (pending: boolean) => void;
   disabled?: boolean;
   autoOpen?: boolean;
-}) {
+}
+
+/** Draft-only reminder controls used by the single task-planning workflow. */
+export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRemindersEditorProps>(({
+  reminders,
+  dueDate,
+  onChange,
+  onPendingChange,
+  disabled = false,
+  autoOpen = false,
+}, ref) => {
   const strings = useStrings();
   const { locale } = useLocale();
   const { timezone: householdTimezone } = useHouseholdTimezone();
@@ -59,6 +67,16 @@ export function TaskRemindersEditor({
   const [editor, setEditor] = useState<EditorState>(() =>
     autoOpen && reminders.length === 0 ? { mode: "choosing" } : { mode: "closed" },
   );
+
+  const updateEditor = (next: EditorState) => {
+    setEditor(next);
+    onPendingChange?.(next.mode === "customAbsolute" || next.mode === "customRelative");
+  };
+  const setAbsoluteDateValidity = useCallback((dateValid: boolean) => {
+    setEditor((current) => current.mode === "customAbsolute"
+      ? { ...current, dateValid }
+      : current);
+  }, []);
 
   const replaceDraft = (next: DraftReminder[]) => {
     setDraft(next);
@@ -69,7 +87,7 @@ export function TaskRemindersEditor({
     replaceDraft(draft.filter((entry) => entry.key !== key));
   };
 
-  const upsertReminder = (key: string | null, reminder: TaskReminderInput) => {
+  const withReminder = (key: string | null, reminder: TaskReminderInput) => {
     const next = key === null
       ? [...draft, { key: `new-${nextDraftKey++}`, reminder }]
       : draft.map((entry) => {
@@ -77,8 +95,12 @@ export function TaskRemindersEditor({
           const existingId = entry.reminder.id;
           return { ...entry, reminder: existingId !== undefined ? { ...reminder, id: existingId } : reminder };
         });
-    replaceDraft(next);
-    setEditor({ mode: "closed" });
+    return next;
+  };
+
+  const upsertReminder = (key: string | null, reminder: TaskReminderInput) => {
+    replaceDraft(withReminder(key, reminder));
+    updateEditor({ mode: "closed" });
   };
 
   const addAbsolutePreset = (preset: AbsoluteReminderPreset) => {
@@ -89,24 +111,56 @@ export function TaskRemindersEditor({
     upsertReminder(null, relativePresetReminderInput(preset, householdTimezone));
   };
 
+  const pendingReminder = (): { key: string | null; reminder: TaskReminderInput } | null => {
+    if (editor.mode === "customAbsolute") {
+      if (!editor.date.trim() || !editor.dateValid) return null;
+      const at = householdCalendarDateTimeToRevisitAt(editor.date, editor.time, householdTimezone);
+      return at ? { key: editor.key, reminder: { kind: "absolute", at } } : null;
+    }
+    if (editor.mode === "customRelative") {
+      if (!Number.isInteger(editor.daysBefore) || editor.daysBefore < 0) return null;
+      return {
+        key: editor.key,
+        reminder: {
+          kind: "deadline_relative",
+          daysBefore: editor.daysBefore,
+          time: editor.time,
+          timezone: editor.timezone,
+        },
+      };
+    }
+    return null;
+  };
+
+  const getCommitValue = (): TaskReminderInput[] | null => {
+    const pending = pendingReminder();
+    if (editor.mode === "customAbsolute" || editor.mode === "customRelative") {
+      return pending ? withReminder(pending.key, pending.reminder).map((entry) => entry.reminder) : null;
+    }
+    return draft.map((entry) => entry.reminder);
+  };
+
+  useImperativeHandle(ref, () => ({ getCommitValue }), [editor, draft, householdTimezone]);
+
   const openCustomAbsolute = (entry?: DraftReminder) => {
     const reminder = entry?.reminder;
     const at = reminder && reminder.kind === "absolute" ? reminder.at : null;
     const initial = at ? new Date(at) : new Date();
-    setEditor({
+    updateEditor({
       mode: "customAbsolute",
       key: entry?.key ?? null,
       date: at
         ? calendarDateForInstant(at, householdTimezone) ?? toIsoCalendarDate(initial)
         : calendarDateForInstant(initial.toISOString(), householdTimezone) ?? toIsoCalendarDate(initial),
       time: at ? localTimeForInstant(at, householdTimezone) ?? "19:00" : "19:00",
+      dateValid: true,
     });
   };
 
   const openCustomRelative = (entry?: DraftReminder) => {
     const reminder = entry?.reminder;
     const isRelative = reminder?.kind === "deadline_relative";
-    setEditor({
+    updateEditor({
       mode: "customRelative",
       key: entry?.key ?? null,
       daysBefore: isRelative ? reminder.daysBefore : 2,
@@ -116,17 +170,8 @@ export function TaskRemindersEditor({
   };
 
   const confirmEditor = () => {
-    if (editor.mode === "customAbsolute") {
-      const at = householdCalendarDateTimeToRevisitAt(editor.date, editor.time, householdTimezone);
-      if (at) upsertReminder(editor.key, { kind: "absolute", at });
-    } else if (editor.mode === "customRelative") {
-      upsertReminder(editor.key, {
-        kind: "deadline_relative",
-        daysBefore: editor.daysBefore,
-        time: editor.time,
-        timezone: editor.timezone,
-      });
-    }
+    const pending = pendingReminder();
+    if (pending) upsertReminder(pending.key, pending.reminder);
   };
 
   const orderedDraft = sortRemindersForDisplay(draft.map((entry) => entry.reminder), dueDate)
@@ -146,13 +191,14 @@ export function TaskRemindersEditor({
             <HumanDateInput
               id={`reminder-date-${rowKey}`}
               value={editor.date}
-              onChange={(date) => setEditor({ ...editor, date: date ?? editor.date })}
+              onChange={(date) => updateEditor({ ...editor, date: date ?? "" })}
+              onValidityChange={setAbsoluteDateValidity}
               disabled={disabled}
             />
             <ClockTimePicker
               id={`reminder-time-${rowKey}`}
               value={editor.time}
-              onChange={(time) => setEditor({ ...editor, time })}
+              onChange={(time) => updateEditor({ ...editor, time })}
               disabled={disabled}
             />
           </>
@@ -168,13 +214,13 @@ export function TaskRemindersEditor({
               className="reminder-days-before-input"
               value={editor.daysBefore}
               disabled={disabled}
-              onChange={(event) => setEditor({ ...editor, daysBefore: Math.max(0, Number(event.target.value) || 0) })}
+              onChange={(event) => updateEditor({ ...editor, daysBefore: Math.max(0, Number(event.target.value) || 0) })}
             />
             <span className="reminder-editor-unit">{strings.reminderDaysBeforeFieldLabel}</span>
             <ClockTimePicker
               id={`reminder-relative-time-${rowKey}`}
               value={editor.time}
-              onChange={(time) => setEditor({ ...editor, time })}
+              onChange={(time) => updateEditor({ ...editor, time })}
               disabled={disabled}
             />
           </>
@@ -183,7 +229,7 @@ export function TaskRemindersEditor({
           type="button"
           className="btn btn-sm btn-primary reminder-row-confirm"
           aria-label={strings.reminderRowConfirm}
-          disabled={disabled}
+          disabled={disabled || pendingReminder() === null}
           onClick={confirmEditor}
         >✓</button>
       </li>
@@ -237,10 +283,12 @@ export function TaskRemindersEditor({
           ) : null}
         </div>
       ) : editor.mode === "closed" ? (
-        <button type="button" className="btn btn-sm btn-ghost task-detail-add-property" disabled={disabled} onClick={() => setEditor({ mode: "choosing" })}>
+        <button type="button" className="btn btn-sm btn-ghost task-detail-add-property" disabled={disabled} onClick={() => updateEditor({ mode: "choosing" })}>
           {strings.addReminder}
         </button>
       ) : null}
     </div>
   );
-}
+});
+
+TaskRemindersEditor.displayName = "TaskRemindersEditor";

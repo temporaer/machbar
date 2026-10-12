@@ -1280,7 +1280,10 @@ the prior completion, and the initial inclusive deadline from that first date
 plus the allowed deviation. Turning recurrence on is an execution commitment,
 so it uses the same explicit project activation requirements as other planning
 commitments. A future first date remains outside Today until it becomes
-eligible.
+eligible. A stale-write retry rebases untouched fields onto the current task
+snapshot; when the same field changed both locally and on the server, the user
+chooses which value to retain before retrying. An open custom-reminder editor
+is included in the outer planning save and invalid dates block that commit.
 
 ### Paperless-backed Markdown attachments
 

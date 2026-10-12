@@ -786,4 +786,169 @@ describe("TaskPlanningSheet", () => {
       },
     });
   });
+
+  it("keeps a concurrent schedule and deadline when retrying a reminder-only edit", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      id: 313,
+      revision: 3,
+      scheduledDate: "2026-10-15",
+      dueDate: "2026-10-22",
+      reminders: [],
+    });
+    const latest = {
+      ...task,
+      revision: 4,
+      scheduledDate: "2026-10-16",
+      dueDate: "2026-10-23",
+    };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 5, reminders: [{ id: 88, kind: "absolute", at: "2026-10-13T08:00:00.000Z" }] } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="reminders" onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Morgen früh" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(screen.getByLabelText("Geplant für")).toHaveValue("16.10.2026");
+    expect(screen.getByLabelText("Deadline")).toHaveValue("23.10.2026");
+
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    const retry = mockedApi.updateTask.mock.calls[1]?.[1] as Record<string, unknown>;
+    expect(retry).toMatchObject({ expectedRevision: 4, reminders: [{ kind: "absolute", at: expect.any(String) }] });
+    expect(retry).not.toHaveProperty("scheduledDate");
+    expect(retry).not.toHaveProperty("dueDate");
+    expect(retry).not.toHaveProperty("revisitAt");
+  });
+
+  it("keeps concurrently changed reminders when retrying a recurrence-only edit", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      id: 314,
+      revision: 5,
+      scheduledDate: "2026-10-15",
+      reminders: [],
+    });
+    const latest = {
+      ...task,
+      revision: 6,
+      reminders: [{ id: 89, kind: "absolute" as const, at: "2026-10-13T08:00:00.000Z" }],
+    };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 7, repeatAfterDays: 14, allowedDeviationDays: 0, dueDate: "2026-10-15" } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="recurrence" onClose={vi.fn()} />);
+
+    await user.click(within(card("Geplant für")).getByRole("checkbox", { name: "Wiederholung" }));
+    const interval = within(card("Geplant für")).getByLabelText("Wiederholen nach Tagen");
+    await user.clear(interval);
+    await user.type(interval, "14");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(within(card("Erinnerungen")).getByRole("button", { name: "Morgen früh · 08:00" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    const retry = mockedApi.updateTask.mock.calls[1]?.[1] as Record<string, unknown>;
+    expect(retry).toMatchObject({ expectedRevision: 6, repeatAfterDays: 14, allowedDeviationDays: 0 });
+    expect(retry).not.toHaveProperty("reminders");
+  });
+
+  it("requires an explicit choice before retrying a concurrently edited planning field", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 315, revision: 1, scheduledDate: "2026-10-15" });
+    const latest = { ...task, revision: 2, scheduledDate: "2026-10-17" };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 3, scheduledDate: "2026-10-16" } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+
+    const plannedDate = screen.getByLabelText("Geplant für");
+    fireEvent.change(plannedDate, { target: { value: "16.10.2026" } });
+    fireEvent.blur(plannedDate);
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(screen.getByText("Aktuell gespeichert:")).toBeInTheDocument();
+    expect(screen.getByText("Dein Entwurf:")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Meine Änderung beibehalten" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({
+      expectedRevision: 2,
+      scheduledDate: "2026-10-16",
+    });
+  });
+
+  it("commits an open custom reminder with the outer planning save", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 316, scheduledDate: "2026-10-15" });
+    mockedApi.updateTask.mockResolvedValue({ ...task, reminders: [{ id: 90, kind: "absolute", at: "2026-10-20T17:00:00.000Z" }] } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="reminders" onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
+    const reminderDate = screen.getByLabelText("Fällig");
+    await user.clear(reminderDate);
+    await user.type(reminderDate, "20.10.2026");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
+    const patch = mockedApi.updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(patch.reminders).toEqual([{ kind: "absolute", at: expect.any(String) }]);
+    expect(new Date((patch.reminders as Array<{ at: string }>)[0]!.at).toISOString()).toContain("2026-10-20");
+  });
+
+  it("commits an edited existing custom reminder with the outer save and preserves its identity", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      id: 317,
+      scheduledDate: "2026-10-15",
+      reminders: [{ id: 91, kind: "deadline_relative", daysBefore: 2, time: "09:00", timezone: "Europe/Berlin" }],
+    });
+    mockedApi.updateTask.mockResolvedValue({ ...task } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="reminders" onClose={vi.fn()} />);
+
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: /2 Tage vorher/ }));
+    const days = screen.getByLabelText("Tage vorher");
+    await user.clear(days);
+    await user.type(days, "4");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).toMatchObject({
+      reminders: [{ id: 91, kind: "deadline_relative", daysBefore: 4 }],
+    });
+  });
+
+  it("blocks an invalid open custom reminder date and keeps the editor draft visible", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 318, scheduledDate: "2026-10-15" });
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="reminders" onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
+    const reminderDate = screen.getByLabelText("Fällig");
+    await user.clear(reminderDate);
+    await user.type(reminderDate, "kein Datum");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(await within(card("Erinnerungen")).findByText("Datum nicht erkannt")).toBeInTheDocument();
+    expect(reminderDate).toHaveValue("kein Datum");
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("cancels an open custom reminder without writing any planning changes", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <TaskPlanningSheet task={makeTask({ id: 319, scheduledDate: "2026-10-15" })} initialTarget="reminders" onClose={vi.fn()} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
+    await user.type(screen.getByLabelText("Fällig"), "20.10.2026");
+    await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
 });

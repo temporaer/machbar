@@ -321,6 +321,11 @@ const base = {
     "Nach dem Beenden des Wartens können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
   planningWaitingConflictWithoutWait:
     "Ohne externes Warten können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
+  planningConcurrentChanges: "Einige Planungsdaten wurden zwischenzeitlich geändert. Bitte entscheide, welche Werte gelten sollen, bevor du erneut speicherst.",
+  planningConflictCurrent: "Aktuell gespeichert",
+  planningConflictDraft: "Dein Entwurf",
+  planningConflictKeepMine: "Meine Änderung beibehalten",
+  planningConflictUseCurrent: "Aktuellen Wert übernehmen",
   remove: "Entfernen",
   removePlanningDate: "Planungsdatum entfernen",
   removeRevisitDate: "Wiedervorlage entfernen",

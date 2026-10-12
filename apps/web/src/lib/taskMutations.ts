@@ -1,4 +1,4 @@
-import type { InheritanceMode } from "@machbar/shared";
+import type { InheritanceMode, Task } from "@machbar/shared";
 import { api } from "./api";
 import type { UpdateTaskInput } from "./api";
 
@@ -44,15 +44,15 @@ export function updateTask(
 
 /** Refresh only the optimistic revision after a stale-write response. Callers
  * keep their local edit draft and can offer an explicit retry in the same UI. */
-export async function refreshTaskRevisionAfterConflict(
+export async function refreshTaskAfterConflict(
   error: unknown,
   taskId: number,
-): Promise<number | null> {
+): Promise<Task | null> {
   if (!(error instanceof Error) || (error as Error & { code?: unknown }).code !== "stale_write_conflict") {
     return null;
   }
   try {
-    return (await api.getTask(taskId)).revision;
+    return await api.getTask(taskId);
   } catch {
     return null;
   }
