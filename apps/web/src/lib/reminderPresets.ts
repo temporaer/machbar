@@ -7,8 +7,8 @@ import { Temporal } from "@js-temporal/polyfill";
 import type { TaskReminderInput } from "@machbar/shared";
 
 /**
- * Centralised reminder preset constants shared by `TaskRemindersSheet` and
- * its tests, so both read the same source of truth instead of the sheet
+ * Centralised reminder preset constants shared by task planning and its
+ * tests, so the draft editor reads the same source of truth instead of
  * embedding magic offsets inline.
  *
  * Absolute presets resolve to a concrete ISO instant the moment they are

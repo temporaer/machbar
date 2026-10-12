@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),
+    getProject: vi.fn(),
     updateTask: vi.fn(),
   },
 }));
@@ -639,5 +640,150 @@ describe("TaskPlanningSheet", () => {
     await user.type(waitingInput, "Werkstatt");
     expect(within(card("Wartet auf")).queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Speichern" })).not.toBeDisabled();
+  });
+
+  it("opens reminders directly in planning and commits recurrence, first date, and reminders together", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 310, status: "someday", scheduledDate: null, reminders: [] });
+    mockedApi.updateTask.mockResolvedValue({
+      ...task,
+      status: "actionable",
+      scheduledDate: "2026-12-01",
+      repeatAfterDays: 14,
+      allowedDeviationDays: 2,
+      dueDate: "2026-12-03",
+      revision: task.revision + 1,
+    } as never);
+    const onClose = vi.fn();
+    const scrollIntoView = stubScrollIntoView(function () {});
+    renderWithProviders(
+      <TaskPlanningSheet task={task} initialTarget="reminders" onClose={onClose} />,
+    );
+
+    expect(card("Erinnerungen")).toHaveClass("task-planning-card-active");
+    expect(scrollIntoView).toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Morgen früh" }));
+    await user.click(within(card("Geplant für")).getByRole("checkbox", { name: "Wiederholung" }));
+
+    const firstDate = within(card("Geplant für")).getByLabelText("Geplant für");
+    fireEvent.change(firstDate, { target: { value: "01.12.2026" } });
+    fireEvent.blur(firstDate);
+    const interval = within(card("Geplant für")).getByLabelText("Wiederholen nach Tagen");
+    await user.clear(interval);
+    await user.type(interval, "14");
+    const deviation = within(card("Geplant für")).getByLabelText("Erlaubte Abweichung in Tagen");
+    await user.clear(deviation);
+    await user.type(deviation, "2");
+
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, expect.objectContaining({
+      scheduledDate: "2026-12-01",
+      repeatAfterDays: 14,
+      allowedDeviationDays: 2,
+      reminders: [{ kind: "absolute", at: expect.any(String) }],
+      expectedRevision: task.revision,
+    }));
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).not.toHaveProperty("dueDate");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("requires the first scheduled date before recurrence can be saved and cancellation persists nothing", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    renderWithProviders(
+      <TaskPlanningSheet task={makeTask({ scheduledDate: null })} initialTarget="recurrence" onClose={onClose} />,
+    );
+
+    const recurrence = within(card("Geplant für")).getByRole("checkbox", { name: "Wiederholung" });
+    expect(card("Geplant für")).toHaveClass("task-planning-card-active");
+    await user.click(recurrence);
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    expect(within(card("Geplant für")).getByRole("alert")).toHaveTextContent("Lege zuerst einen geplanten Termin fest.");
+    await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps recurrence and reminder drafts across a stale task revision retry", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 311, revision: 4, status: "someday", scheduledDate: null, reminders: [] });
+    mockedApi.getTask.mockResolvedValue({ ...task, revision: 5 } as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...task, revision: 6, status: "actionable" } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="recurrence" onClose={vi.fn()} />);
+
+    await user.click(within(card("Geplant für")).getByRole("checkbox", { name: "Wiederholung" }));
+    const firstDate = within(card("Geplant für")).getByLabelText("Geplant für");
+    fireEvent.change(firstDate, { target: { value: "01.12.2026" } });
+    fireEvent.blur(firstDate);
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Morgen früh" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(within(card("Geplant für")).getByLabelText("Wiederholen nach Tagen")).toHaveValue(7);
+    expect(within(card("Erinnerungen")).getByRole("button", { name: "Erinnerung entfernen" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).toMatchObject({ expectedRevision: 4 });
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({
+      expectedRevision: 5,
+      scheduledDate: "2026-12-01",
+      repeatAfterDays: 7,
+      reminders: [{ kind: "absolute", at: expect.any(String) }],
+    });
+  });
+
+  it("recollects activation decisions when a planning draft changes and retries the full draft", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 312, revision: 2, status: "someday", projectId: 45, scheduledDate: null, reminders: [] });
+    const missingDriver = () => Object.assign(new Error("decision required"), {
+      code: "project_commitment_resolution_required",
+      details: {
+        projects: [{ projectId: 45, title: "Heizung", revision: 8, ownerMemberId: null, required: ["driver"] }],
+        expectedProjects: [{ projectId: 45, revision: 8 }],
+        targetRevision: 8,
+      },
+    });
+    mockedApi.getMembers.mockResolvedValue([{ id: 9, name: "Rae" }] as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(missingDriver())
+      .mockRejectedValueOnce(missingDriver())
+      .mockResolvedValueOnce({ ...task, status: "actionable", revision: 3 } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="recurrence" onClose={vi.fn()} />);
+
+    await user.click(within(card("Geplant für")).getByRole("checkbox", { name: "Wiederholung" }));
+    const firstDate = within(card("Geplant für")).getByLabelText("Geplant für");
+    fireEvent.change(firstDate, { target: { value: "01.12.2026" } });
+    fireEvent.blur(firstDate);
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    const driver = await screen.findByLabelText("Verantwortlich für „Heizung“");
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    await user.selectOptions(driver, "9");
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
+    const interval = within(card("Geplant für")).getByLabelText("Wiederholen nach Tagen");
+    await user.clear(interval);
+    await user.type(interval, "14");
+    expect(screen.queryByLabelText("Verantwortlich für „Heizung“")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).not.toHaveProperty("activationResolution");
+
+    await user.selectOptions(await screen.findByLabelText("Verantwortlich für „Heizung“"), "9");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(3));
+    const finalPatch = mockedApi.updateTask.mock.calls[2]?.[1] as Record<string, unknown>;
+    expect(finalPatch).toMatchObject({
+      scheduledDate: "2026-12-01",
+      repeatAfterDays: 14,
+      allowedDeviationDays: 0,
+      activationResolution: {
+        expectedProjects: [{ projectId: 45, revision: 8 }],
+        drivers: [{ projectId: 45, ownerMemberId: 9 }],
+      },
+    });
   });
 });

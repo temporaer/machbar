@@ -101,7 +101,7 @@ export type WorkItemCommand =
   | { type: "navigate.waiting" }
   | { type: "navigate.more" };
 
-export type TaskPlanningTarget = "scheduled" | "waiting" | "availability" | "deadline";
+export type TaskPlanningTarget = "scheduled" | "waiting" | "availability" | "deadline" | "reminders" | "recurrence";
 
 /**
  * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command

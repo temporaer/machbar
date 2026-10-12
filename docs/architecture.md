@@ -1109,7 +1109,7 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `CompleteWithOpenTasksSheet` | Focused `story.complete` continuation when criteria are satisfied/absent but open child tasks remain: lets the driver cancel or move each task (reusing `useTaskActions().requestCancel` and `task.changeProject`) and commits the same completion transition once no open tasks remain |
 | `ProjectDeferSheet` | Canonical backlog-project Wiedervorlage (`scheduledDate`) editor |
 | `ProjectDeadlineSheet` | Project deadline (`dueDate`) only |
-| `TaskPlanningSheet` | Owns the shared scheduled/waiting/revisit/deadline draft; delegates one revision-safe atomic update, pending state, errors, and refresh to `useTaskActions` |
+| `TaskPlanningSheet` | Owns the shared scheduled/recurrence/reminders/waiting/revisit/deadline draft; composes the draft-only `TaskRemindersEditor` and delegates one revision-safe atomic update, pending state, errors, and refresh to `useTaskActions` |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |
 
 Assignment surfaces read members from `useIdentity`, so tests mounting them
@@ -1271,6 +1271,16 @@ Ending a wait in the shared draft does not silently discard a scheduled date or
 revisit. The API applies the existing lifecycle rules in the same transaction,
 and the UI blocks invalid date combinations before commit while preserving the
 draft for correction.
+
+Task reminders and recurrence use this same planning draft and commit. The
+reusable `TaskRemindersEditor` only edits reminder inputs; it does not write to
+the API. Recurrence interval and its first scheduled date are collected
+together. The canonical task update derives each subsequent occurrence from
+the prior completion, and the initial inclusive deadline from that first date
+plus the allowed deviation. Turning recurrence on is an execution commitment,
+so it uses the same explicit project activation requirements as other planning
+commitments. A future first date remains outside Today until it becomes
+eligible.
 
 ### Paperless-backed Markdown attachments
 

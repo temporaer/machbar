@@ -1065,6 +1065,7 @@ export function updateTask(
     const addsExecutionCommitment =
       (input.dueDate !== undefined && input.dueDate !== currentTask.dueDate && input.dueDate !== null) ||
       (input.scheduledDate !== undefined && input.scheduledDate !== currentTask.scheduledDate && input.scheduledDate !== null) ||
+      (input.repeatAfterDays !== undefined && input.repeatAfterDays !== null && currentTask.repeatAfterDays === null) ||
       (input.reminders !== undefined && currentTask.reminders.length === 0 && input.reminders.length > 0 && effectiveRevisitAt === null);
     const requestedTargetStatus = nextStatus ?? currentTask.status;
     const taskTransition = evaluateCommitmentTransition({

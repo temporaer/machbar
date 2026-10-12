@@ -1255,7 +1255,7 @@ describe("TaskDetailSheet", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows an active recurrence as a value that opens the recurrence workflow", async () => {
+  it("shows an active recurrence as a value that opens task planning", async () => {
     const task = makeTask({
       id: 61,
       title: "Filter wechseln",
@@ -1277,9 +1277,13 @@ describe("TaskDetailSheet", () => {
     expect(await screen.findByLabelText("Wiederholen nach Tagen")).toHaveValue(7);
     expect(screen.getByLabelText("Erlaubte Abweichung in Tagen")).toHaveValue(2);
 
-    await userEvent.click(screen.getByRole("checkbox", { name: "Aktiv" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Wiederholung" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(61, {
+        revisitAt: null,
+        scheduledDate: "2026-09-10",
+        dueDate: "2026-09-12",
         repeatAfterDays: null,
         allowedDeviationDays: null,
         expectedRevision: 1,

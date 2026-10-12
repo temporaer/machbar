@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Task } from "@machbar/shared";
+import type { Task, TaskReminderInput } from "@machbar/shared";
 import { calendarDateForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
@@ -36,6 +36,7 @@ import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
+import { TaskRemindersEditor } from "./TaskRemindersEditor";
 import {
   refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
@@ -72,6 +73,8 @@ export function TaskPlanningSheet({
   const availabilityCardRef = useRef<HTMLElement>(null);
   const waitingCardRef = useRef<HTMLElement>(null);
   const deadlineCardRef = useRef<HTMLElement>(null);
+  const reminderCardRef = useRef<HTMLElement>(null);
+  const recurrenceCardRef = useRef<HTMLDivElement>(null);
   const planningFormRef = useRef<HTMLFormElement>(null);
   const [pendingScrollTarget, setPendingScrollTarget] =
     useState<PendingScrollTarget>(null);
@@ -85,13 +88,16 @@ export function TaskPlanningSheet({
   const [availabilityEdited, setAvailabilityEdited] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
-  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [repeatAfterDays, setRepeatAfterDays] = useState<number | null>(task.repeatAfterDays);
+  const [allowedDeviationDays, setAllowedDeviationDays] = useState<number | null>(task.allowedDeviationDays);
+  const [reminders, setReminders] = useState<TaskReminderInput[]>(() => task.reminders);
+  const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
   const [expectedTaskRevision, setExpectedTaskRevision] = useState(task.revision);
   const hasExistingWait = task.externalWait !== null;
   const canAddWaiting =
     task.kind === "action" &&
     task.status === "actionable" &&
-    task.repeatAfterDays === null;
+    repeatAfterDays === null;
   const initialWaitingFor = task.externalWait?.waitingFor ?? "";
   const [waitingOpen, setWaitingOpen] = useState(
     hasExistingWait ||
@@ -164,9 +170,13 @@ export function TaskPlanningSheet({
         ? scheduledCardRef.current
         : pendingTarget === "waiting"
           ? waitingCardRef.current
-        : pendingTarget === "availability"
-          ? availabilityCardRef.current
-          : deadlineCardRef.current;
+          : pendingTarget === "availability"
+            ? availabilityCardRef.current
+            : pendingTarget === "deadline"
+              ? deadlineCardRef.current
+              : pendingTarget === "reminders"
+                ? reminderCardRef.current
+                : recurrenceCardRef.current;
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
@@ -213,6 +223,24 @@ export function TaskPlanningSheet({
     task.title,
     Object.values(acceptedHints).flatMap((hint) => (hint ? [hint.removalSpan] : [])),
   );
+  const draftFingerprint = JSON.stringify({
+    scheduledDate,
+    dueDate,
+    notBeforeDate,
+    notBeforeTime,
+    availabilityEdited,
+    waitingFor,
+    waitingEnded,
+    repeatAfterDays,
+    allowedDeviationDays,
+    reminders,
+    cleanedTitle,
+  });
+  const activationPrompt = activationState?.fingerprint === draftFingerprint
+    ? activationState.prompt
+    : null;
+  const activationDecisionReady = activationPrompt === null ||
+    projectActivationResolutionFromPrompt(activationPrompt) !== null;
   const nextAvailability = notBeforeDate
     ? taskAvailabilityForLocalDate(
         notBeforeDate,
@@ -237,23 +265,40 @@ export function TaskPlanningSheet({
     (hasExistingWait &&
       !waitingEnded &&
       waitingFor.trim() !== initialWaitingFor.trim());
+  const recurrenceEnabled = repeatAfterDays !== null && allowedDeviationDays !== null;
+  const recurrenceChanged =
+    repeatAfterDays !== task.repeatAfterDays ||
+    allowedDeviationDays !== task.allowedDeviationDays;
+  const remindersChanged = JSON.stringify(reminders) !== JSON.stringify(task.reminders);
+  const recurrenceDeadline = recurrenceEnabled && scheduledDate
+    ? addIsoCalendarDays(scheduledDate, allowedDeviationDays)
+    : null;
+  const recurrenceInvalid = recurrenceEnabled && (
+    !scheduledDate ||
+    !Number.isInteger(repeatAfterDays) || repeatAfterDays! < 1 ||
+    !Number.isInteger(allowedDeviationDays) || allowedDeviationDays! < 0
+  );
   const householdToday =
     calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
     toIsoCalendarDate(new Date());
   const revisitAtForCommit = availabilityEdited
     ? nextAvailability?.notBeforeAt ?? null
     : task.revisitAt;
-  const canMutuallyExclude = !waitingDraftActive && task.repeatAfterDays === null;
+  const canMutuallyExclude = !waitingDraftActive && repeatAfterDays === null;
   const dateConflict =
     canMutuallyExclude && Boolean(scheduledDate) && Boolean(notBeforeDate);
   const dirty =
     waitingChanged ||
     revisitAtForCommit !== task.revisitAt ||
     (scheduledDate || null) !== task.scheduledDate ||
-    (dueDate || null) !== task.dueDate ||
+    (recurrenceEnabled
+      ? recurrenceDeadline !== task.dueDate
+      : (dueDate || null) !== task.dueDate) ||
+    recurrenceChanged ||
+    remindersChanged ||
     cleanedTitle !== task.title;
   const allValid =
-    validity.scheduled && validity.availability && validity.deadline;
+    validity.scheduled && validity.availability && validity.deadline && !recurrenceInvalid;
   const matchesAvailability = (instant: string | null) =>
     Boolean(
       timezoneLoaded &&
@@ -460,7 +505,9 @@ export function TaskPlanningSheet({
       const patch = {
         revisitAt: revisitAtForCommit,
         scheduledDate: scheduledDate || null,
-        dueDate: dueDate || null,
+        ...(recurrenceEnabled ? {} : { dueDate: dueDate || null }),
+        ...(recurrenceChanged ? { repeatAfterDays, allowedDeviationDays } : {}),
+        ...(remindersChanged ? { reminders } : {}),
         ...(externalWait !== undefined ? { externalWait } : {}),
         ...(cleanedTitle !== task.title ? { title: cleanedTitle } : {}),
       };
@@ -472,8 +519,11 @@ export function TaskPlanningSheet({
         return;
       }
       const apiPatch = activationResolution ? { ...patch, activationResolution } : patch;
+      const { reminders: _draftReminders, ...optimisticPatchBase } = patch;
       const optimisticPatch = {
-        ...patch,
+        ...optimisticPatchBase,
+        ...(remindersChanged ? { reminders: task.reminders } : {}),
+        ...(recurrenceEnabled && recurrenceDeadline !== null ? { dueDate: recurrenceDeadline } : {}),
         ...(externalWait !== undefined
           ? {
               externalWait:
@@ -494,11 +544,12 @@ export function TaskPlanningSheet({
       const refreshedRevision = await refreshTaskRevisionAfterConflict(cause, task.id);
       if (refreshedRevision !== null) {
         setExpectedTaskRevision(refreshedRevision);
+        setActivationState(null);
       }
       const prompt = refreshedRevision !== null || task.projectId === null
         ? null
         : await refreshProjectActivationPrompt(cause, task.projectId, activationPrompt);
-      if (prompt) setActivationPrompt(prompt);
+      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt });
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -529,7 +580,7 @@ export function TaskPlanningSheet({
       >
         <section
           ref={scheduledCardRef}
-          className={cardClass(activeTarget === "scheduled")}
+          className={cardClass(activeTarget === "scheduled" || activeTarget === "recurrence")}
           {...cardEvents("scheduled")}
         >
           <div className="task-planning-card-header">
@@ -571,6 +622,66 @@ export function TaskPlanningSheet({
             disabled={saving}
             onSelect={(key) => acceptHint("scheduledDate", scheduleHints, key)}
           />
+          <div
+            ref={recurrenceCardRef}
+            className="task-planning-recurrence"
+            onPointerDownCapture={() => setActiveTarget("recurrence")}
+            onFocusCapture={() => setActiveTarget("recurrence")}
+          >
+            <label className="recurrence-toggle">
+              <input
+                type="checkbox"
+                checked={recurrenceEnabled}
+                disabled={saving || hasExistingWait || waitingDraftActive}
+                onChange={(event) => {
+                  setRepeatAfterDays(event.target.checked ? 7 : null);
+                  setAllowedDeviationDays(event.target.checked ? 0 : null);
+                }}
+              />
+              <span>{strings.recurrence}</span>
+            </label>
+            {recurrenceEnabled ? (
+              <>
+                <p className="text-muted">{strings.recurrenceHint}</p>
+                <div className="recurrence-number-grid">
+                  <label className="field">
+                    <span>{strings.repeatAfterDays}</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      step={1}
+                      value={repeatAfterDays}
+                      disabled={saving}
+                      onChange={(event) => setRepeatAfterDays(Number(event.target.value))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{strings.allowedDeviationDays}</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      value={allowedDeviationDays}
+                      disabled={saving}
+                      onChange={(event) => setAllowedDeviationDays(Number(event.target.value))}
+                    />
+                  </label>
+                </div>
+                {recurrenceInvalid ? (
+                  <p className="human-date-error" role="alert">{strings.recurrenceScheduleRequired}</p>
+                ) : null}
+                {recurrenceDeadline ? (
+                  <p className="recurrence-preview">
+                    {strings.recurrenceDeadlinePreview(
+                      formatExactLocalDate(recurrenceDeadline, locale) ?? recurrenceDeadline,
+                    )}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+          </div>
           {scheduledNotice ? (
             <p className="task-planning-replacement-note" role="status">
               {scheduledNotice}
@@ -859,7 +970,7 @@ export function TaskPlanningSheet({
                 <p>{strings.planningDeadlineExplanation}</p>
               ) : null}
             </div>
-            {dueDate ? (
+            {dueDate && !recurrenceEnabled ? (
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
@@ -871,7 +982,13 @@ export function TaskPlanningSheet({
               </button>
             ) : null}
           </div>
-          {!deadlineOpen ? (
+          {recurrenceEnabled ? (
+            <p className="recurrence-derived-hint">
+              {recurrenceDeadline
+                ? strings.recurrenceDeadlinePreview(formatExactLocalDate(recurrenceDeadline, locale) ?? recurrenceDeadline)
+                : strings.recurrenceScheduleRequired}
+            </p>
+          ) : !deadlineOpen ? (
             <button
               type="button"
               className="btn btn-sm btn-ghost task-planning-add-deadline"
@@ -905,8 +1022,29 @@ export function TaskPlanningSheet({
           )}
         </section>
 
+        <section
+          ref={reminderCardRef}
+          className={cardClass(activeTarget === "reminders")}
+          {...cardEvents("reminders")}
+        >
+          <div className="task-planning-card-header">
+            <div><h3>{strings.reminders}</h3></div>
+          </div>
+          <TaskRemindersEditor
+            reminders={reminders}
+            dueDate={recurrenceEnabled ? recurrenceDeadline : dueDate || null}
+            onChange={setReminders}
+            disabled={saving}
+            autoOpen={initialTarget === "reminders"}
+          />
+        </section>
+
         {activationPrompt ? (
-          <ProjectActivationDecisionFields prompt={activationPrompt} disabled={saving} onChange={setActivationPrompt} />
+          <ProjectActivationDecisionFields
+            prompt={activationPrompt}
+            disabled={saving}
+            onChange={(prompt) => setActivationState({ fingerprint: draftFingerprint, prompt })}
+          />
         ) : null}
 
         {error ? (
@@ -928,6 +1066,8 @@ export function TaskPlanningSheet({
               !allValid ||
               invalidRevisitSelection ||
               dateConflict ||
+              recurrenceInvalid ||
+              !activationDecisionReady ||
               !dirty
             }
           >
