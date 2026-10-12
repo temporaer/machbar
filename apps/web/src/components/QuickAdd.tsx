@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
@@ -9,11 +8,11 @@ import {
   uploadPaperlessFile,
   type UploadedPaperlessAttachment,
 } from "../lib/paperlessAttachments";
-import { IconActionGlyph } from "./IconActionButton";
 import { ImageCropSheet } from "./ImageCropSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { useOptionalInteractionScope } from "../lib/interactionScope";
 import { IntakeComposer } from "./IntakeComposer";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -33,7 +32,6 @@ export function QuickAdd({
   defaultScope?: "work";
 }) {
   const strings = useStrings();
-  const navigate = useNavigate();
   // Contextual capture target: whichever `InteractionScopeProvider` this
   // `QuickAdd` instance is mounted inside of (a project/story outline
   // declares `captureTarget: {kind:"story", storyId}`; every compiled
@@ -43,12 +41,16 @@ export function QuickAdd({
   // already sat inside a scope whose `captureTarget` said exactly the
   // same thing those props did.
   const scope = useOptionalInteractionScope();
+  const dispatch = useWorkItemCommands();
   const projectId =
     scope?.captureTarget.kind === "story" ? scope.captureTarget.storyId : null;
   const [open, setOpen] = useState(autoOpen);
-  const [captureStep, setCaptureStep] = useState<"choose" | "form" | "intake">(
-    autoOpen ? "form" : "choose",
-  );
+  const [captureStep, setCaptureStep] = useState<"form" | "intake">("form");
+  const [captureFormKey, setCaptureFormKey] = useState(0);
+  const [latestCapture, setLatestCapture] = useState<{
+    id: number;
+    title: string;
+  } | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [cropTarget, setCropTarget] = useState<{
     file: File;
@@ -61,7 +63,7 @@ export function QuickAdd({
     useRef<Promise<UploadedPaperlessAttachment> | null>(null);
   const { bump } = useRefresh();
   const openCapture = useCallback(() => {
-    setCaptureStep("choose");
+    setCaptureStep("form");
     setOpen(true);
   }, []);
 
@@ -80,7 +82,7 @@ export function QuickAdd({
 
   const close = (captured = false) => {
     setOpen(false);
-    setCaptureStep("choose");
+    setCaptureStep("form");
     setPendingFile(null);
     setCropTarget(null);
     setCameraOpen(false);
@@ -127,58 +129,39 @@ export function QuickAdd({
       </button>
       {open ? (
         <BottomSheet title={strings.quickAdd} onClose={close} labelledBy="quick-add-title">
-          {captureStep === "choose" ? (
-            <div className="stack quick-capture-choices">
-              <input
-                ref={cameraRef}
-                className="visually-hidden"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                aria-label={strings.takePhoto}
-                onChange={selectMaterial}
-              />
-              <input
-                ref={fileRef}
-                className="visually-hidden"
-                type="file"
-                aria-label={strings.chooseFile}
-                onChange={selectMaterial}
-              />
+          <input
+            ref={cameraRef}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            aria-label={strings.takePhoto}
+            onChange={selectMaterial}
+          />
+          <input
+            ref={fileRef}
+            className="visually-hidden"
+            type="file"
+            aria-label={captureStep === "form" ? strings.chooseFile : strings.captureFile}
+            onChange={selectMaterial}
+          />
+          {latestCapture ? (
+            <div className="quick-add-captured" role="status" aria-live="polite">
+              <span>{strings.captureSaved(latestCapture.title)}</span>
               <button
                 type="button"
-                className="btn btn-primary btn-block quick-capture-choice"
-                onClick={() => setCaptureStep("form")}
+                className="btn btn-sm"
+                onClick={() => {
+                  const taskId = latestCapture.id;
+                  close(true);
+                  dispatch({ type: "task.open", taskId });
+                }}
               >
-                <span aria-hidden="true">+</span>
-                <strong>{strings.captureTask}</strong>
-              </button>
-              <button
-                type="button"
-                className="btn btn-block quick-capture-choice"
-                onClick={() => setCameraOpen(true)}
-              >
-                <span aria-hidden="true"><IconActionGlyph kind="camera" /></span>
-                <strong>{strings.capturePhoto}</strong>
-              </button>
-              <button
-                type="button"
-                className="btn btn-block quick-capture-choice"
-                onClick={() => fileRef.current?.click()}
-              >
-                <span aria-hidden="true"><IconActionGlyph kind="upload" /></span>
-                <strong>{strings.captureFile}</strong>
-              </button>
-              <button
-                type="button"
-                className="btn btn-block quick-capture-choice"
-                onClick={() => setCaptureStep("intake")}
-              >
-                <span aria-hidden="true">✦</span>
-                <strong>{strings.intakeProcess}</strong>
+                {strings.openCapturedItem}
               </button>
             </div>
-          ) : captureStep === "intake" ? (
+          ) : null}
+          {captureStep === "intake" ? (
             <IntakeComposer
               initialFile={pendingFile}
               {...(defaultScope ? { defaultScope } : {})}
@@ -192,15 +175,19 @@ export function QuickAdd({
                   }
                 },
               })}
-              onCancel={close}
+              onCancel={() => setCaptureStep("form")}
             />
-          ) : (
+          ) : null}
+          <div hidden={captureStep !== "form"}>
             <CaptureForm
+              key={captureFormKey}
               projectId={projectId}
               parentTaskId={null}
-              pendingFiles={pendingFile ? [pendingFile] : []}
+              pendingFiles={captureStep === "form" && pendingFile ? [pendingFile] : []}
               onCropPendingFile={(file) => setCropTarget({ file })}
-              {...(pendingFile ? { prepareNotes: prepareMaterialNotes } : {})}
+              {...(captureStep === "form" && pendingFile
+                ? { prepareNotes: prepareMaterialNotes }
+                : {})}
               {...(pendingFile
                 ? {
                     secondaryAction: {
@@ -209,19 +196,31 @@ export function QuickAdd({
                     },
                   }
                 : {})}
+              {...(captureStep === "form"
+                ? {
+                    secondaryAction: {
+                      label: strings.intakeProcess,
+                      onClick: () => setCaptureStep("intake"),
+                    },
+                    captureActions: {
+                      photoLabel: strings.capturePhoto,
+                      fileLabel: strings.captureFile,
+                      onPhoto: () => setCameraOpen(true),
+                      onFile: () => fileRef.current?.click(),
+                    },
+                  }
+                : {})}
               {...(defaultScope ? { defaultScope } : {})}
               onCancel={close}
               onCaptured={(result) => {
                 bump();
-                close(true);
-                if (projectId === null) {
-                  navigate(`/inbox?focus=${result.task.id}`);
-                  return;
-                }
-                scope?.setOpenRail(result.task.id);
+                setLatestCapture({ id: result.task.id, title: result.task.title });
+                setPendingFile(null);
+                uploadedAttachmentRef.current = null;
+                setCaptureFormKey((current) => current + 1);
               }}
             />
-          )}
+          </div>
         </BottomSheet>
       ) : null}
       {cropTarget ? (

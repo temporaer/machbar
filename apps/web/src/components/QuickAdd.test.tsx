@@ -48,7 +48,6 @@ const originalRevokeObjectUrl = Object.getOwnPropertyDescriptor(
 
 async function openCapture() {
   await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
-  await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));
   expect(screen.getByText("Nur Titel reicht")).toBeInTheDocument();
 }
 
@@ -142,7 +141,8 @@ describe("QuickAdd", () => {
         ownerInheritanceMode: "explicit",
       }),
     );
-    expect(screen.queryByText("In Eingang abgelegt")).not.toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Erfasst: Milch kaufen");
+    expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveValue("");
     expect(screen.queryByRole("button", { name: "Machbar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Projekt" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Später klären" })).not.toBeInTheDocument();
@@ -150,9 +150,12 @@ describe("QuickAdd", () => {
   });
 
   it("bewahrt den Projektkontext für schnelle Aufgaben", async () => {
+    mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Projekt Reise" })]);
     mockedApi.createTask.mockResolvedValue(makeTask({ title: "Angebot senden", projectId: 7 }));
     renderQuickAddInStory(7);
     await openCapture();
+
+    expect(screen.getByText("Ziel: Projekt Reise")).toBeInTheDocument();
 
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
@@ -165,6 +168,75 @@ describe("QuickAdd", () => {
         }),
       ),
     );
+  });
+
+  it("allows a contextual capture to change its destination to the inbox", async () => {
+    mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Projekt Reise" })]);
+    mockedApi.createTask.mockResolvedValue(makeTask({ title: "Rechnung prüfen", projectId: null }));
+    renderQuickAddInStory(7);
+    await openCapture();
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Rechnung prüfen");
+    await userEvent.click(screen.getByRole("button", { name: "+ Projekt" }));
+    await userEvent.click(screen.getByRole("button", { name: "Eingang" }));
+    expect(screen.getByText("Ziel: Eingang")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: null, status: "captured" }),
+      ),
+    );
+  });
+
+  it("behält Capture-Entwurf und Serverentscheidungen bis zum erneuten selben Create-Aufruf", async () => {
+    mockedApi.getProjects.mockResolvedValue([makeProject({ id: 42, title: "Keller" })]);
+    mockedApi.createTask
+      .mockRejectedValueOnce(Object.assign(
+        new Error("Project decisions are required."),
+        {
+          code: "project_commitment_resolution_required",
+          details: {
+            projects: [{
+              projectId: 42,
+              title: "Keller",
+              revision: 3,
+              ownerMemberId: null,
+              required: ["driver", "progressPath"],
+            }],
+            expectedProjects: [{ projectId: 42, revision: 3 }],
+          },
+        },
+      ))
+      .mockResolvedValueOnce(makeTask({ id: 92, title: "Maße aufnehmen", projectId: 42 }));
+    renderQuickAddInStory(42);
+    await openCapture();
+    const title = screen.getByPlaceholderText("Was ist zu tun?");
+    await userEvent.type(title, "Maße aufnehmen");
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    expect(await screen.findByText("Vor dem Start noch entscheiden")).toBeInTheDocument();
+    expect(title).toHaveValue("Maße aufnehmen");
+    expect(mockedApi.createTask).toHaveBeenCalledTimes(1);
+
+    await userEvent.selectOptions(screen.getByLabelText("Verantwortlich für „Keller“"), "1");
+    await userEvent.type(
+      screen.getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"),
+      "Maße prüfen",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      title: "Maße aufnehmen",
+      projectId: 42,
+      activationResolution: {
+        expectedProjects: [{ projectId: 42, revision: 3 }],
+        drivers: [{ projectId: 42, ownerMemberId: 1 }],
+        nextActionTitle: "Maße prüfen",
+      },
+    }));
+    expect(await screen.findByText("Erfasst: Maße aufnehmen")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveValue("");
   });
 
   it("resolves selected short-syntax entities and strips resolved tokens from capture title", async () => {
@@ -479,6 +551,9 @@ describe("QuickAdd", () => {
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
     expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("none");
+    expect(screen.getByText("Erfasst: Details")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Öffnen" }));
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("67");
   });
 
   it("öffnet die Erfassung per 'c'-Tastenkürzel im aktuellen Projektkontext", async () => {
@@ -486,7 +561,6 @@ describe("QuickAdd", () => {
     renderQuickAddInStory(7);
 
     await userEvent.keyboard("c");
-    await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
@@ -512,5 +586,25 @@ describe("QuickAdd", () => {
     await userEvent.keyboard("c");
 
     expect(screen.queryByText("Nur Titel reicht")).not.toBeInTheDocument();
+  });
+
+  it("öffnet sofort das Titel-Feld und hält Medienaktionen als Nebenwege bereit", async () => {
+    renderWithProviders(<QuickAdd />);
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+
+    expect(screen.getByPlaceholderText("Was ist zu tun?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Foto erfassen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Datei erfassen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verarbeiten" })).toBeInTheDocument();
+  });
+
+  it("erhält den Capture-Entwurf beim Wechsel zu Verarbeiten und zurück", async () => {
+    renderWithProviders(<QuickAdd />);
+    await openCapture();
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Entwurf behalten");
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+
+    expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveValue("Entwurf behalten");
   });
 });

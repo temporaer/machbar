@@ -2612,6 +2612,28 @@ details[open] > .disclosure-summary::after {
   width: 100%;
 }
 
+.capture-destination {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.quick-add-captured {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft, var(--color-surface));
+}
+
+.quick-add-captured > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .capture-shape-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
