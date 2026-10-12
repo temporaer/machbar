@@ -86,6 +86,7 @@ export function TaskPlanningSheet({
   const planningFormRef = useRef<HTMLFormElement>(null);
   const reminderEditorRef = useRef<TaskRemindersEditorHandle>(null);
   const [baselineTask, setBaselineTask] = useState(task);
+  const [reminderEditorRevision, setReminderEditorRevision] = useState(0);
   const [planningConflicts, setPlanningConflicts] = useState<PlanningConflict[]>([]);
   const [reminderDraftPending, setReminderDraftPending] = useState(false);
   const [pendingScrollTarget, setPendingScrollTarget] =
@@ -633,7 +634,7 @@ export function TaskPlanningSheet({
         setExpectedTaskRevision(latestTask.revision);
         setBaselineTask(latestTask);
         if (!scheduledChanged) setScheduledDate(latestTask.scheduledDate ?? "");
-        if (!deadlineChanged && !recurrenceEnabled) setDueDate(latestTask.dueDate ?? "");
+        if (!deadlineChanged) setDueDate(latestTask.dueDate ?? "");
         if (!recurrenceChanged) {
           setRepeatAfterDays(latestTask.repeatAfterDays);
           setAllowedDeviationDays(latestTask.allowedDeviationDays);
@@ -690,6 +691,7 @@ export function TaskPlanningSheet({
         case "reminders":
           setReminders(baselineTask.reminders);
           setReminderDraftPending(false);
+          setReminderEditorRevision((revision) => revision + 1);
           break;
         case "externalWait":
           setWaitingFor(baselineTask.externalWait?.waitingFor ?? "");
@@ -1202,7 +1204,7 @@ export function TaskPlanningSheet({
             <div><h3>{strings.reminders}</h3></div>
           </div>
           <TaskRemindersEditor
-            key={baselineTask.revision}
+            key={`${baselineTask.revision}-${reminderEditorRevision}`}
             ref={reminderEditorRef}
             reminders={reminders}
             dueDate={recurrenceEnabled ? recurrenceDeadline : dueDate || null}

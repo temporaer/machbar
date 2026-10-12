@@ -857,6 +857,96 @@ describe("TaskPlanningSheet", () => {
     expect(retry).not.toHaveProperty("reminders");
   });
 
+  it("uses current reminders after resolving a reminder conflict, even with another local edit", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      id: 316,
+      revision: 2,
+      scheduledDate: "2026-10-15",
+      reminders: [],
+    });
+    const latest = {
+      ...task,
+      revision: 3,
+      reminders: [{
+        id: 90,
+        kind: "deadline_relative" as const,
+        daysBefore: 4,
+        time: "15:00",
+        timezone: "Europe/Berlin",
+      }],
+    };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 4, scheduledDate: "2026-10-16" } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="reminders" onClose={vi.fn()} />);
+
+    const plannedDate = screen.getByLabelText("Geplant für");
+    fireEvent.change(plannedDate, { target: { value: "16.10.2026" } });
+    fireEvent.blur(plannedDate);
+    await user.click(screen.getByRole("button", { name: "Morgen früh" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(screen.getByText(/4 Tage vorher · 15:00/)).toBeInTheDocument();
+
+    const reminderConflict = (await screen.findByText(/Planungsdaten wurden zwischenzeitlich geändert/)).closest("section") as HTMLElement;
+    await user.click(within(reminderConflict).getByRole("button", { name: "Aktuellen Wert übernehmen" }));
+    expect(screen.getByRole("button", { name: /4 Tage vorher · 15:00/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Morgen früh · 08:00" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    const retry = mockedApi.updateTask.mock.calls[1]?.[1] as Record<string, unknown>;
+    expect(retry).toMatchObject({ expectedRevision: 3, scheduledDate: "2026-10-16" });
+    expect(retry).not.toHaveProperty("reminders");
+  });
+
+  it("rebases an untouched deadline when another member disables recurrence", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      id: 317,
+      revision: 7,
+      scheduledDate: "2026-10-15",
+      dueDate: "2026-10-17",
+      repeatAfterDays: 14,
+      allowedDeviationDays: 2,
+      reminders: [],
+    });
+    const latest = {
+      ...task,
+      revision: 8,
+      repeatAfterDays: null,
+      allowedDeviationDays: null,
+      dueDate: "2026-10-20",
+    };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 9, reminders: [{ id: 91, kind: "absolute", at: "2026-10-13T08:00:00.000Z" }] } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="reminders" onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Morgen früh" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+
+    expect(within(card("Geplant für")).getByRole("checkbox", { name: "Wiederholung" })).not.toBeChecked();
+    expect(within(card("Deadline")).getByLabelText("Deadline")).toHaveValue("20.10.2026");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+
+    const retry = mockedApi.updateTask.mock.calls[1]?.[1] as Record<string, unknown>;
+    expect(retry).toMatchObject({
+      expectedRevision: 8,
+      reminders: [{ kind: "absolute", at: expect.any(String) }],
+    });
+    expect(retry).not.toHaveProperty("scheduledDate");
+    expect(retry).not.toHaveProperty("dueDate");
+    expect(retry).not.toHaveProperty("repeatAfterDays");
+    expect(retry).not.toHaveProperty("allowedDeviationDays");
+  });
+
   it("requires an explicit choice before retrying a concurrently edited planning field", async () => {
     const user = userEvent.setup();
     const task = makeTask({ id: 315, revision: 1, scheduledDate: "2026-10-15" });
