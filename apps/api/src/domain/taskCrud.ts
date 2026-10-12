@@ -524,8 +524,25 @@ export function createTask(
   input: CreateTaskInput,
   context?: MutationContext,
 ) {
-  return db.transaction((tx) => {
-    const txDb = tx as unknown as Db;
+  return db.transaction((tx) =>
+    createTaskInTransaction(tx as unknown as Db, input, context),
+  );
+}
+
+/** Shared transactional implementation used by single and batch step creation. */
+export function createTaskInTransaction(
+  txDb: Db,
+  input: CreateTaskInput,
+  context?: MutationContext,
+  options: { activateCommitment?: boolean } = {},
+) {
+    // A parentTaskId supplied through the general create contract is the same
+    // structural mutation as POST /children. Route it through the canonical
+    // child implementation so Inbox classification and parked-parent rules
+    // cannot depend on which transport created the child.
+    if (input.parentTaskId != null) {
+      return createChildTaskInTransaction(txDb, input.parentTaskId, input, context, options);
+    }
     const projectId = input.projectId ?? null;
     const hadNextAction =
       projectId !== null ? projectHasNextAction(txDb, projectId) : true;
@@ -570,7 +587,7 @@ export function createTask(
         personalEligible: true,
       });
     }
-    if (task.projectId !== null && hasExecutionCommitment({
+    if (options.activateCommitment !== false && task.projectId !== null && hasExecutionCommitment({
       kind: task.kind,
       dueDate: task.dueDate,
       scheduledDate: task.scheduledDate,
@@ -580,7 +597,6 @@ export function createTask(
       activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution, commitmentSubjectForTask(task, true));
     }
     return task;
-  });
 }
 
 export function createChildTask(
@@ -589,17 +605,49 @@ export function createChildTask(
   input: Omit<CreateTaskInput, "parentTaskId" | "projectId">,
   context?: MutationContext,
 ) {
-  return db.transaction((tx) => {
-    const txDb = tx as unknown as Db;
+  return db.transaction((tx) =>
+    createChildTaskInTransaction(tx as unknown as Db, parentTaskId, input, context),
+  );
+}
+
+/** Shared child-create implementation. Inbox parents are classified in the
+ * same transaction as their first child so no partially clarified outline is
+ * ever committed. */
+export function createChildTaskInTransaction(
+  txDb: Db,
+  parentTaskId: number,
+  input: CreateTaskInput,
+  context?: MutationContext,
+  options: { activateCommitment?: boolean } = {},
+) {
     const parent = getTaskOrThrow(txDb, parentTaskId);
-    if (parent.kind === "action" && parent.status === "captured") {
-      throw AppError.conflict(
-        "task_promotion_invalid",
-        "Promote the captured item to a project before adding steps.",
-        { taskId: parentTaskId, reason: "captured_child_forbidden" },
-      );
-    }
     assertParentAcceptsChildren(txDb, parentTaskId);
+    const actionChildAlreadyExists = txDb.select({ id: schema.workItems.id }).from(schema.workItems)
+      .where(and(
+        eq(schema.workItems.role, "task"),
+        eq(schema.workItems.parentId, parentTaskId),
+        eq(schema.workItems.taskKind, "action"),
+      ))
+      .get() !== undefined;
+    const createsFirstActionChild = input.kind !== "reference" && !actionChildAlreadyExists;
+    const classifiesCapturedParent = parent.kind === "action" && parent.status === "captured" && createsFirstActionChild;
+    if (classifiesCapturedParent) {
+      txDb.update(schema.workItems).set({
+        status: "active",
+        needsClarification: false,
+        revision: sql`${schema.workItems.revision} + 1`,
+        updatedAt: nowIso(),
+      }).where(eq(schema.workItems.id, parentTaskId)).run();
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_status_changed",
+        entityType: "task",
+        entityTitle: parent.title,
+        taskId: parentTaskId,
+        projectId: parent.projectId,
+        metadata: { previousStatus: "captured", nextStatus: "actionable", changedFields: ["status", "needsClarification"] },
+      });
+    }
     const hadNextAction =
       parent.projectId === null
         ? true
@@ -620,7 +668,14 @@ export function createChildTask(
       )
       .all()
       .some((child) => child.status !== "done" && child.status !== "cancelled");
-    const task = insertTask(txDb, { ...input, parentTaskId });
+    const defaultChildStatus = parent.status === "someday" ? "someday" : "actionable";
+    const task = insertTask(txDb, input.kind === "reference"
+      ? { ...input, parentTaskId }
+      : {
+          ...input,
+          status: input.status ?? defaultChildStatus,
+          parentTaskId,
+        });
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_created",
@@ -675,7 +730,7 @@ export function createChildTask(
         personalEligible: true,
       });
     }
-    if (task.projectId !== null && hasExecutionCommitment({
+    if (options.activateCommitment !== false && task.projectId !== null && hasExecutionCommitment({
       kind: task.kind,
       dueDate: task.dueDate,
       scheduledDate: task.scheduledDate,
@@ -685,7 +740,6 @@ export function createChildTask(
       activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution, commitmentSubjectForTask(task, true));
     }
     return task;
-  });
 }
 
 /** Creates one sibling immediately downstream of an existing task. */

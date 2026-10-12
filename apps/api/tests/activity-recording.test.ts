@@ -213,7 +213,7 @@ describe("atomic activity recording", () => {
     expect(added[0]).toMatchObject({
       kind: "task_status_changed",
       metadata: {
-        previousStatus: "captured",
+        previousStatus: "actionable",
         nextStatus: "done",
         affectedCount: 3,
       },

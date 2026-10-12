@@ -44,6 +44,7 @@ import {
   convertTaskToStorySchema,
   tagRefSchema,
   taskLifecycleSchema,
+  taskStepBatchSchema,
   transitionTaskStatusSchema,
   updateTaskSchema,
   upsertExternalWaitSchema,
@@ -51,6 +52,7 @@ import {
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
+import { createTaskStepBatchForTask } from "../domain/taskStepBatch.js";
 
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
@@ -153,6 +155,30 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       return taskOrThrow(db, task.id, viewerMemberId(request));
     },
   );
+
+  app.post<{ Params: { id: string } }>("/api/tasks/:id/children/batch", async (request, reply) => {
+    const parentId = parseId(request.params.id);
+    const body = parseOrThrow(taskStepBatchSchema, request.body);
+    const result = createTaskStepBatchForTask(db, parentId, {
+      ...body,
+      ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
+    }, { actorMemberId: request.activityActor?.id ?? null });
+    const graph = Graph.load(db, undefined, viewerMemberId(request));
+    reply.status(201);
+    const parent = result.convertedProjectId === null
+      ? taskOrThrow(db, parentId, viewerMemberId(request))
+      : undefined;
+    return {
+      tasks: result.tasks.map((task) => taskOrThrow(db, task.id, viewerMemberId(request))),
+      ...(parent ? {
+        parent,
+        projectSnapshot: parent.projectId === null ? null : graph.projectWithComputed(parent.projectId),
+      } : {}),
+      ...(result.convertedProjectId !== null
+        ? { convertedProject: graph.projectWithComputed(result.convertedProjectId) }
+        : {}),
+    };
+  });
 
   app.post<{ Params: { id: string } }>(
     "/api/tasks/:id/successors",

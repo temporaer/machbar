@@ -387,7 +387,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
   });
 
-  it("reveals contextual planning/structure/note actions on the opposite swipe direction", async () => {
+  it("reveals direct planning, step-entry, and move actions on the opposite swipe direction", async () => {
     const task = makeTask({ id: 7, title: "Projektplan", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Projektplan");
@@ -396,8 +396,8 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(within(rail).getByRole("button", { name: "Planung" })).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Notiz" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Schritt hinzufügen" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Verschieben" })).toBeInTheDocument();
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
@@ -413,7 +413,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(screen.getByRole("button", { name: "Planung" })).toBeInTheDocument();
   });
 
-  it("renders exactly the fixed planning/structure/note rail, never configurable per row", async () => {
+  it("renders the fixed planning/step/move rail, never configurable per row", async () => {
     const task = makeTask({ id: 10, title: "Kompakte Aktionen", status: "actionable", projectId: 2 });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Kompakte Aktionen");
@@ -421,7 +421,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
-    for (const name of ["Planung", "Struktur", "Notiz"]) {
+    for (const name of ["Planung", "Schritt hinzufügen", "Verschieben"]) {
       const button = within(rail).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
@@ -436,7 +436,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(screen.queryByRole("group", { name: "Mehr …" })).not.toBeInTheDocument();
   });
 
-  it("uses waiting-for, update, and planning actions for tasks with an external wait", async () => {
+  it("keeps waiting lifecycle available alongside direct step and move actions", async () => {
     const task = makeTask({
       id: 103,
       title: "Auf Antwort warten",
@@ -450,19 +450,19 @@ describe("TaskRow – primary swipe direction mapping", () => {
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(
       within(rail).getAllByRole("button").map((button) => button.textContent),
-    ).toEqual(["Wartet auf", "Update", "Planung"]);
+    ).toEqual(["Wartet auf", "Schritt hinzufügen", "Verschieben"]);
     expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
     expect(within(rail).queryByRole("button", { name: "Irgendwann" })).not.toBeInTheDocument();
   });
 
-  it("uses Planung/Art/Struktur for captured tasks without lifecycle labels", async () => {
+  it("offers direct step and move actions for captured tasks", async () => {
     const task = makeTask({ id: 101, title: "Unklarer Eingang", status: "captured" });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Unklarer Eingang");
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
-    for (const name of ["Planung", "Art", "Struktur"]) {
+    for (const name of ["Schritt hinzufügen", "Verschieben", "Planung"]) {
       expect(within(rail).getByRole("button", { name })).toBeInTheDocument();
     }
     expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();

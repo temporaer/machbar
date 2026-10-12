@@ -41,6 +41,8 @@ import {
 import { parseOrThrow } from "../validation.js";
 import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
 import { projectActivationDecisionSnapshot } from "../domain/commitmentActivation.js";
+import { createTaskStepBatchForProject } from "../domain/taskStepBatch.js";
+import { taskStepBatchSchema } from "../schemas.js";
 
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
@@ -103,6 +105,22 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       externalRefs: listExternalWorkItemRefs(db, project.id),
       tasks: (graph.rootsByProject.get(id) ?? []).map(attachRefs),
     };
+  });
+
+  app.post<{ Params: { id: string } }>("/api/projects/:id/tasks/batch", async (request, reply) => {
+    const id = parseId(request.params.id);
+    const body = parseOrThrow(taskStepBatchSchema, request.body);
+    const result = createTaskStepBatchForProject(db, id, {
+      ...body,
+      ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
+    }, { actorMemberId: request.activityActor?.id ?? null });
+    const graph = Graph.load(db, undefined, viewerMemberId(request));
+    reply.status(201);
+    return { tasks: result.tasks.map((task) => task.id).map((taskId) => {
+      const task = graph.tasksById.get(taskId);
+      if (!task) throw AppError.notFound("task_not_found", "The task was not found.", { taskId });
+      return { ...task, ancestors: graph.taskAncestorsFor(taskId), externalRefs: listExternalWorkItemRefs(db, taskId) };
+    }), project: graph.projectWithComputed(id) };
   });
 
   app.post("/api/projects", async (request, reply) => {

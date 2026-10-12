@@ -57,7 +57,7 @@ describe("capture query views", () => {
     expect(ids).not.toContain(topLevel.id);
   });
 
-  it("/api/inbox returns a clarification-only forest without leaked or duplicate descendants", async () => {
+  it("/api/inbox returns remaining captured items after child creation classifies their parents", async () => {
     const project = createProject(ctx.handle.db, {
       title: "Baum-Projekt",
       status: "active",
@@ -91,12 +91,10 @@ describe("capture query views", () => {
     }>;
 
     expect(tasks.map((task) => task.id)).toEqual(
-      expect.arrayContaining([capturedParent.id, capturedGrandchild.id]),
+      expect.arrayContaining([capturedChild.id, capturedGrandchild.id]),
     );
-    expect(tasks.map((task) => task.id)).not.toContain(capturedChild.id);
-    expect(tasks.find((task) => task.id === capturedParent.id)?.children).toEqual([
-      expect.objectContaining({ id: capturedChild.id }),
-    ]);
+    expect(tasks.map((task) => task.id)).not.toContain(capturedParent.id);
+    expect(tasks.find((task) => task.id === capturedChild.id)?.children).toEqual([]);
     expect(
       tasks.flatMap((task) => task.children).some((task) => task.id === clarifiedChild.id),
     ).toBe(false);

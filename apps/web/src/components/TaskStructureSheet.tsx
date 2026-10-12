@@ -2,7 +2,6 @@ import type { Task } from "@machbar/shared";
 import { canBreakDownTask } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { isCapturedInboxItem } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 
 /**
@@ -18,13 +17,6 @@ import { BottomSheet } from "./BottomSheet";
 export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
-  // An unclassified captured inbox item has no children/steps yet, so
-  // splitting it is meaningless (the API rejects adding children to a
-  // captured item). Moving/refiling it, however, is the intended
-  // clarification path — `task.changeProject` files it into a project (and
-  // optionally a parent task) and atomically classifies it out of
-  // `captured` in the same request, so that tile stays visible.
-  const hideSplit = task.kind === "reference" || isCapturedInboxItem(task);
 
   return (
     <BottomSheet title={`${strings.structure}: ${task.title}`} onClose={onClose}>
@@ -40,7 +32,7 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
             {strings.workRefinement}
           </button>
         ) : null}
-        {!hideSplit ? (
+        {task.kind !== "reference" ? (
           <button
             type="button"
             className="btn"

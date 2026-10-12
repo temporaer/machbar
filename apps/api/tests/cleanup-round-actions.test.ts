@@ -183,11 +183,11 @@ describe("cleanup round micro-flow actions", () => {
   });
 
   it("keeps the card when the canonical creation rejects the change", async () => {
-    const captured = await task("Keller", { status: "captured" });
-    const card = await readyCard({ type: "task", id: captured }, "create_first_slice");
+    const recurring = await task("Wöchentliches Aufräumen", { repeatAfterDays: 7, allowedDeviationDays: 0, scheduledDate: "2026-10-12" });
+    const card = await readyCard({ type: "task", id: recurring }, "create_first_slice");
     const response = await act(card, "create-task", { title: "Ecke sortieren", purpose: "firstSlice" });
     expect(response.statusCode).toBe(409);
-    expect(children(captured)).toHaveLength(0);
+    expect(children(recurring)).toHaveLength(0);
     expect(cardStatus(card)).toBe("ready");
   });
 

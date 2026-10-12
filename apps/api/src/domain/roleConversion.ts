@@ -62,8 +62,19 @@ export function convertTaskToStory(
   input: ConvertTaskToStoryInput,
   context?: MutationContext,
 ) {
-  return db.transaction((tx) => {
-    const txDb = tx as unknown as Db;
+  return db.transaction((tx) =>
+    convertTaskToStoryInTransaction(tx as unknown as Db, taskId, input, context),
+  );
+}
+
+/** The existing guarded conversion, available to compound domain operations
+ * that must commit conversion and its follow-up steps atomically. */
+export function convertTaskToStoryInTransaction(
+  txDb: Db,
+  taskId: number,
+  input: ConvertTaskToStoryInput,
+  context?: MutationContext,
+) {
     const task = getTaskOrThrow(txDb, taskId);
     assertExpectedRevision("task", taskId, task.revision, input.expectedRevision);
     const reject = (
@@ -112,12 +123,12 @@ export function convertTaskToStory(
       );
     }
     const hasTaskOnlyRelation =
-      tx
+      txDb
         .select({ taskId: schema.taskExternalWaits.taskId })
         .from(schema.taskExternalWaits)
         .where(eq(schema.taskExternalWaits.taskId, taskId))
         .get() !== undefined ||
-      tx
+      txDb
         .select({ id: schema.taskDependencies.id })
         .from(schema.taskDependencies)
         .where(
@@ -127,7 +138,7 @@ export function convertTaskToStory(
           ),
         )
         .get() !== undefined ||
-      tx
+      txDb
         .select({ id: schema.taskRecurrenceOccurrences.id })
         .from(schema.taskRecurrenceOccurrences)
         .where(eq(schema.taskRecurrenceOccurrences.taskId, taskId))
@@ -145,7 +156,7 @@ export function convertTaskToStory(
     const ownerMemberId =
       task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null;
 
-    tx.update(schema.workItems)
+    txDb.update(schema.workItems)
       .set({
         role: "story",
         taskKind: null,
@@ -177,7 +188,7 @@ export function convertTaskToStory(
     if (input.status === "active") {
       assertProjectActivationReady(txDb, project.id, ownerMemberId);
     }
-    tx.update(schema.activityEvents)
+    txDb.update(schema.activityEvents)
       .set({ entityType: "project" })
       .where(
         and(
@@ -186,7 +197,7 @@ export function convertTaskToStory(
         ),
       )
       .run();
-    tx.update(schema.notificationEvents)
+    txDb.update(schema.notificationEvents)
       .set({ entityType: "project" })
       .where(
         and(
@@ -195,7 +206,7 @@ export function convertTaskToStory(
         ),
       )
       .run();
-    tx.update(schema.contributionEvents)
+    txDb.update(schema.contributionEvents)
       .set({ entityType: "project" })
       .where(
         and(
@@ -223,7 +234,6 @@ export function convertTaskToStory(
       personalEligible: true,
     });
     return project;
-  });
 }
 
 export interface ConvertStoryToTaskInput {

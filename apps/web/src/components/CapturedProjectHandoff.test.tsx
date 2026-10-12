@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     createTask: vi.fn(),
+    createTaskStepBatchForProject: vi.fn(),
     getProject: vi.fn(),
     activateProject: vi.fn(),
   },
@@ -24,29 +25,31 @@ describe("CapturedProjectHandoff", () => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.createTask.mockResolvedValue(makeTask());
+    mockedApi.createTaskStepBatchForProject.mockResolvedValue({ tasks: [] });
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({ id: 42, status: "backlog", ownerMemberId: 1 }),
       tasks: [],
     });
   });
 
-  it("creates a next action through the always-available step composer", async () => {
+  it("creates project steps through the shared atomic composer", async () => {
     const project = makeProject({ id: 42, title: "Küche" });
     renderWithProviders(
       <CapturedProjectHandoff project={project} onDone={vi.fn()} />,
     );
 
     await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Material bestellen");
+    await userEvent.keyboard("{Enter}");
+    await userEvent.type(screen.getAllByPlaceholderText("Schritt …")[1]!, "Termin abstimmen");
     await userEvent.click(
       screen.getByRole("button", { name: "Nächsten Schritt hinzufügen" }),
     );
 
     await waitFor(() =>
-      expect(mockedApi.createTask).toHaveBeenCalledWith({
-        title: "Material bestellen",
-        projectId: 42,
-        status: "actionable",
-        createdByMemberId: null,
+      expect(mockedApi.createTaskStepBatchForProject).toHaveBeenCalledWith(42, {
+        steps: [{ title: "Material bestellen" }, { title: "Termin abstimmen" }],
+        expectedRevision: 1,
+        expectedProjectRevisions: [{ projectId: 42, revision: 1 }],
       }),
     );
   });
@@ -54,7 +57,7 @@ describe("CapturedProjectHandoff", () => {
   it("shows an added step in the visible list right away", async () => {
     const project = makeProject({ id: 42, title: "Küche" });
     const created = makeTask({ id: 99, projectId: 42, title: "Material bestellen" });
-    mockedApi.createTask.mockResolvedValue(created);
+    mockedApi.createTaskStepBatchForProject.mockResolvedValue({ tasks: [created] } as never);
     mockedApi.getProject.mockResolvedValueOnce({
       ...makeProject({ id: 42, status: "backlog", ownerMemberId: 1 }),
       tasks: [],

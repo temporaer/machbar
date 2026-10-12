@@ -323,6 +323,8 @@ export function TaskRow({
       | "task.availability"
       | "task.plan"
       | "task.shape"
+      | "task.split"
+      | "task.changeProject"
       | "task.structure"
       | "task.waitingLifecycle"
       | "task.open",
@@ -711,20 +713,20 @@ export function TaskRow({
                 ]
               : task.status === "captured"
                 ? [
+                    { label: strings.railAddStep, onSelect: () => runRailCommand("task.split") },
+                    { label: strings.railMove, onSelect: () => runRailCommand("task.changeProject") },
                     { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
-                    { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
-                    { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
                   ]
                 : task.externalWait
                   ? [
                       { label: strings.railWaitingFor, onSelect: () => runRailCommand("task.waitingLifecycle") },
-                      { label: strings.railUpdate, onSelect: () => runRailCommand("task.open", "notes") },
-                      { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
+                      { label: strings.railAddStep, onSelect: () => runRailCommand("task.split") },
+                      { label: strings.railMove, onSelect: () => runRailCommand("task.changeProject") },
                     ]
                   : [
                       { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
-                      { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
-                      { label: strings.railNote, onSelect: () => runRailCommand("task.open", "notes") },
+                      { label: strings.railAddStep, onSelect: () => runRailCommand("task.split") },
+                      { label: strings.railMove, onSelect: () => runRailCommand("task.changeProject") },
                     ]
           }
         />

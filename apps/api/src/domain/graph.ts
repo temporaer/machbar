@@ -1010,7 +1010,7 @@ export class Graph {
       seen.add(parentId);
       const parent = this.projectsById.get(parentId);
       if (!parent) break;
-      ancestors.unshift({ id: parent.id, role: "story", title: parent.title });
+      ancestors.unshift({ id: parent.id, role: "story", title: parent.title, revision: parent.revision });
       parentId = parent.parentId;
     }
     return ancestors;
@@ -1034,13 +1034,13 @@ export class Graph {
       const parent = this.tasksById.get(current.parentTaskId);
       if (!parent) break;
       seenTasks.add(parent.id);
-      taskAncestors.unshift({ id: parent.id, role: "task", title: parent.title });
+      taskAncestors.unshift({ id: parent.id, role: "task", title: parent.title, revision: parent.revision });
       current = parent;
     }
     const rootProjectId = current?.projectId ?? null;
     const project = rootProjectId !== null ? this.projectsById.get(rootProjectId) : undefined;
     const projectAncestors: WorkItemAncestor[] = project
-      ? [...this.ancestorsFor(project.id), { id: project.id, role: "story", title: project.title }]
+      ? [...this.ancestorsFor(project.id), { id: project.id, role: "story", title: project.title, revision: project.revision }]
       : [];
     return [...projectAncestors, ...taskAncestors];
   }

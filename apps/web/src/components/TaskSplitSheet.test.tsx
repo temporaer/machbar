@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
-import { makeTask } from "../test/fixtures";
+import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { IdentityProvider } from "../lib/identity";
 import { LocaleProvider } from "../lib/locale";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
@@ -17,12 +17,15 @@ import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { ThemeProvider } from "../lib/theme";
 import { TaskSplitSheet } from "./TaskSplitSheet";
+import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getTags: vi.fn(),
-    createChildTask: vi.fn(),
+    createTaskStepBatchForTask: vi.fn(),
+    getTask: vi.fn(),
+    getProject: vi.fn(),
     moveTask: vi.fn(),
   },
 }));
@@ -34,12 +37,14 @@ describe("TaskSplitSheet", () => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 7, revision: 1 }));
+    mockedApi.createTaskStepBatchForTask.mockResolvedValue({ tasks: [] });
   });
 
-  it("creates one child task per filled row, always keeping one empty trailing row", async () => {
-    mockedApi.createChildTask.mockResolvedValue({} as never);
+  it("submits all filled rows in one atomic request and keeps one empty trailing row", async () => {
+    mockedApi.createTaskStepBatchForTask.mockResolvedValue({ tasks: [] });
     const onClose = vi.fn();
-    renderWithProviders(<TaskSplitSheet parentId={7} onClose={onClose} />);
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} onClose={onClose} />);
 
     const rows = () => screen.getAllByPlaceholderText("Schritt …");
     expect(rows()).toHaveLength(1);
@@ -52,16 +57,15 @@ describe("TaskSplitSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "3 Teilaufgaben anlegen" }));
 
-    await waitFor(() => expect(mockedApi.createChildTask).toHaveBeenCalledTimes(3));
-    expect(mockedApi.createChildTask).toHaveBeenNthCalledWith(1, 7, {
-      title: "Pakete prüfen",
-      createdByMemberId: null,
-      status: "actionable",
-    });
-    expect(mockedApi.createChildTask).toHaveBeenNthCalledWith(3, 7, {
-      title: "Türen montieren",
-      createdByMemberId: null,
-      status: "actionable",
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(1));
+    expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledWith(7, {
+      expectedRevision: 1,
+      expectedProjectRevisions: [],
+      steps: [
+        { title: "Pakete prüfen" },
+        { title: "Korpus aufbauen" },
+        { title: "Türen montieren" },
+      ],
     });
     // The sheet stays open after creating: it is now a persistent
     // reorganize-and-add workspace, not a one-shot form, so the newly
@@ -73,8 +77,7 @@ describe("TaskSplitSheet", () => {
   });
 
   it("removes a filled row without affecting the others", async () => {
-    mockedApi.createChildTask.mockResolvedValue({} as never);
-    renderWithProviders(<TaskSplitSheet parentId={7} onClose={vi.fn()} />);
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} onClose={vi.fn()} />);
 
     const rows = () => screen.getAllByPlaceholderText("Schritt …");
     await userEvent.type(rows()[0]!, "Erster Schritt{enter}");
@@ -84,9 +87,9 @@ describe("TaskSplitSheet", () => {
     expect(rows().map((row) => (row as HTMLInputElement).value)).toEqual(["Zweiter Schritt", ""]);
   });
 
-  it("keeps the entered rows and reports a failed child creation", async () => {
-    mockedApi.createChildTask.mockRejectedValue(new Error("Nicht gespeichert"));
-    renderWithProviders(<TaskSplitSheet parentId={7} onClose={vi.fn()} />);
+  it("keeps the complete draft when atomic batch creation fails", async () => {
+    mockedApi.createTaskStepBatchForTask.mockRejectedValue(new Error("Nicht gespeichert"));
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} onClose={vi.fn()} />);
 
     const rows = () => screen.getAllByPlaceholderText("Schritt …");
     await userEvent.type(rows()[0]!, "Erster Schritt{enter}");
@@ -101,8 +104,149 @@ describe("TaskSplitSheet", () => {
     ]);
   });
 
+  it("keeps a captured Inbox item in task-with-steps mode by default and offers explicit project conversion", async () => {
+    mockedApi.createTaskStepBatchForTask.mockResolvedValue({ tasks: [] });
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={4} parentStatus="captured" onClose={vi.fn()} />);
+    expect(screen.getByRole("checkbox", { name: "Als Projekt behandeln" })).not.toBeChecked();
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Ersten Schritt");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Als Projekt behandeln" }));
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledWith(7, expect.objectContaining({
+      expectedRevision: 4,
+      expectedProjectRevisions: [],
+      convertParentToProject: true,
+      steps: [{ title: "Ersten Schritt" }],
+    })));
+  });
+
+  it("uses the updated Inbox classification and parent revision for a second batch in the same sheet", async () => {
+    mockedApi.createTaskStepBatchForTask
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 2, status: "actionable", needsClarification: false }),
+        projectSnapshot: null,
+      })
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 2, status: "actionable", needsClarification: false }),
+        projectSnapshot: null,
+      });
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} parentStatus="captured" onClose={vi.fn()} />);
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Erster Schritt");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("checkbox", { name: "Als Projekt behandeln" })).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Zweiter Schritt");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTaskStepBatchForTask.mock.calls[1]?.[1]).toMatchObject({
+      expectedRevision: 2,
+      expectedProjectRevisions: [],
+      steps: [{ title: "Zweiter Schritt" }],
+    });
+  });
+
+  it("cancels without submitting the preserved draft", async () => {
+    const onClose = vi.fn();
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} onClose={onClose} />);
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Noch nicht speichern");
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(mockedApi.createTaskStepBatchForTask).not.toHaveBeenCalled();
+  });
+
+  it("retains the dated batch while collecting server-required activation decisions", async () => {
+    const project = makeProject({ id: 12, revision: 5, title: "Sommerfest", status: "backlog", ownerMemberId: null });
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [], ancestors: [] });
+    mockedApi.createTaskStepBatchForTask
+      .mockRejectedValueOnce(Object.assign(new Error("Treiber fehlt"), {
+        code: "project_commitment_resolution_required",
+        details: {
+          projects: [{ projectId: 12, title: project.title, revision: 5, ownerMemberId: null, required: ["driver"] }],
+          expectedProjects: [{ projectId: 12, revision: 5 }],
+          targetRevision: 5,
+        },
+      }))
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 4, status: "actionable", projectId: 12 }),
+        projectSnapshot: { ...project, revision: 6, status: "active", ancestors: [] },
+      })
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 4, status: "actionable", projectId: 12 }),
+        projectSnapshot: { ...project, revision: 6, status: "active", ancestors: [] },
+      });
+    renderWithProviders(
+      <TaskSplitSheet parentId={7} parentRevision={4} parentStatus="actionable" projectId={12} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Maße prüfen");
+    await userEvent.click(screen.getByText("Planung (optional)"));
+    await userEvent.type(screen.getByLabelText("Geplant für"), "2027-03-12");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+
+    const driver = await screen.findByLabelText(strings.commitmentDriverFor(project.title));
+    expect(screen.getByLabelText("Geplant für")).toHaveValue("2027-03-12");
+    await userEvent.selectOptions(driver, "1");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTaskStepBatchForTask).toHaveBeenLastCalledWith(7, expect.objectContaining({
+      expectedRevision: 4,
+      expectedProjectRevisions: [{ projectId: 12, revision: 5 }],
+      steps: [{ title: "Maße prüfen", scheduledDate: "2027-03-12" }],
+      activationResolution: {
+        expectedProjects: [{ projectId: 12, revision: 5 }],
+        drivers: [{ projectId: 12, ownerMemberId: 1 }],
+      },
+    }));
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Zweiter Schritt");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(3));
+    expect(mockedApi.createTaskStepBatchForTask.mock.calls[2]?.[1]).toMatchObject({
+      expectedRevision: 4,
+      expectedProjectRevisions: [{ projectId: 12, revision: 6 }],
+      steps: [{ title: "Zweiter Schritt" }],
+    });
+  });
+
+  it("drops activation decisions when the user changes the batch after a requirement response", async () => {
+    const project = makeProject({ id: 13, revision: 6, title: "Garten", status: "backlog", ownerMemberId: null });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [], ancestors: [] });
+    mockedApi.createTaskStepBatchForTask
+      .mockRejectedValueOnce(Object.assign(new Error("Treiber fehlt"), {
+        code: "project_commitment_resolution_required",
+        details: {
+          projects: [{ projectId: 13, title: project.title, revision: 6, ownerMemberId: null, required: ["driver"] }],
+          expectedProjects: [{ projectId: 13, revision: 6 }],
+        },
+      }))
+      .mockResolvedValueOnce({ tasks: [] });
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={4} projectId={13} onClose={vi.fn()} />);
+    const input = screen.getByPlaceholderText("Schritt …");
+    await userEvent.type(input, "Schritt eins");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    expect(await screen.findByLabelText(strings.commitmentDriverFor(project.title))).toBeInTheDocument();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "Schritt angepasst");
+    expect(screen.queryByLabelText(strings.commitmentDriverFor(project.title))).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTaskStepBatchForTask).toHaveBeenLastCalledWith(7, expect.objectContaining({
+      steps: [{ title: "Schritt angepasst" }],
+    }));
+    expect(mockedApi.createTaskStepBatchForTask.mock.calls[1]?.[1]).not.toHaveProperty("activationResolution");
+  });
+
   it("has no existing-subtasks outline when the task has no children yet", () => {
-    renderWithProviders(<TaskSplitSheet parentId={7} onClose={vi.fn()} />);
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} onClose={vi.fn()} />);
     expect(screen.queryByText("Vorhandene Teilaufgaben")).not.toBeInTheDocument();
   });
 
@@ -110,8 +254,9 @@ describe("TaskSplitSheet", () => {
     const first = makeTask({ id: 101, parentTaskId: 7, position: 0, title: "Kisten kaufen" });
     const second = makeTask({ id: 102, parentTaskId: 7, position: 1, title: "Klebeband besorgen" });
     renderWithProviders(
-      <TaskSplitSheet
+        <TaskSplitSheet
         parentId={7}
+          parentRevision={1}
         existingChildren={[first, second]}
         onClose={vi.fn()}
       />,
@@ -128,8 +273,9 @@ describe("TaskSplitSheet", () => {
     const first = makeTask({ id: 101, parentTaskId: 7, position: 0, title: "Kisten kaufen" });
     const second = makeTask({ id: 102, parentTaskId: 7, position: 1, title: "Klebeband besorgen" });
     renderWithProviders(
-      <TaskSplitSheet
+        <TaskSplitSheet
         parentId={7}
+          parentRevision={1}
         existingChildren={[first, second]}
         onClose={vi.fn()}
       />,
@@ -167,7 +313,7 @@ describe("TaskSplitSheet", () => {
                           <TaskDetailProvider>
                             <TaskWorkflowProvider>
                               <ProjectWorkflowProvider>
-                                <TaskSplitSheet parentId={7} existingChildren={[first, second]} onClose={vi.fn()} />
+                                <TaskSplitSheet parentId={7} parentRevision={1} existingChildren={[first, second]} onClose={vi.fn()} />
                               </ProjectWorkflowProvider>
                             </TaskWorkflowProvider>
                           </TaskDetailProvider>
