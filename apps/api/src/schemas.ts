@@ -393,6 +393,7 @@ export const moveTaskSchema = z.object({
 
 export const dependencySchema = z.object({
   dependsOnTaskId: z.number().int(),
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const upsertExternalWaitSchema = z.object({
@@ -408,7 +409,7 @@ export const resolveExternalWaitSchema = z.object({
 });
 
 const externalWaitFollowUpBaseSchema = z.object({
-  content: z.string().trim().optional(),
+  content: z.string().trim().min(1),
   expectedRevision: z.number().int().positive().optional(),
 });
 

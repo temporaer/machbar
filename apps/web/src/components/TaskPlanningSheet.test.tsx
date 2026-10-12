@@ -14,6 +14,10 @@ vi.mock("../lib/api", () => ({
     getTask: vi.fn(),
     getProject: vi.fn(),
     updateTask: vi.fn(),
+    followUpExternalWait: vi.fn(),
+    searchTasks: vi.fn(),
+    addDependency: vi.fn(),
+    removeDependency: vi.fn(),
   },
 }));
 
@@ -334,7 +338,7 @@ describe("TaskPlanningSheet", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("opens the targeted waiting card without focusing its input", () => {
+  it("opens the targeted waiting card and focuses its reason input", () => {
     const observed: Array<{ element: HTMLElement; hasTextbox: boolean }> = [];
     const scrollIntoView = stubScrollIntoView(function () {
       observed.push({
@@ -358,7 +362,7 @@ describe("TaskPlanningSheet", () => {
     expect(observed).toEqual([
       { element: card("Wartet auf"), hasTextbox: true },
     ]);
-    expect(document.activeElement).not.toBe(
+    expect(document.activeElement).toBe(
       within(card("Wartet auf")).getByRole("textbox"),
     );
     expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
@@ -530,7 +534,7 @@ describe("TaskPlanningSheet", () => {
       />,
     );
 
-    const input = within(card("Wartet auf")).getByRole("textbox");
+    const input = within(card("Wartet auf")).getByLabelText("Wartet auf");
     await user.clear(input);
     await user.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -1040,5 +1044,148 @@ describe("TaskPlanningSheet", () => {
     await user.type(screen.getByLabelText("Fällig"), "20.10.2026");
     await user.click(screen.getByRole("button", { name: "Abbrechen" }));
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("records a wait outcome together with the next wait decision", async () => {
+    const task = makeTask({
+      id: 71,
+      title: "Versicherung kontaktieren",
+      status: "actionable",
+      revision: 4,
+      revisitAt: "2026-10-20T06:00:00.000Z",
+      externalWait: { waitingFor: "Rückmeldung der Versicherung", revisitDate: null },
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue(task);
+    const onClose = vi.fn();
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={onClose} />);
+
+    await userEvent.type(screen.getByLabelText("Was ist passiert?"), "Unterlagen sind angekommen.");
+    await userEvent.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
+
+    await waitFor(() => expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(71, {
+      action: "continue",
+      content: "Unterlagen sind angekommen.",
+      waitingFor: "Rückmeldung der Versicherung",
+      revisitAt: "2026-10-20T06:00:00.000Z",
+      expectedRevision: 4,
+    }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("refreshes an untouched wait reason before retrying a follow-up after a conflict", async () => {
+    const task = makeTask({
+      id: 74,
+      revision: 4,
+      revisitAt: "2026-10-20T06:00:00.000Z",
+      externalWait: { waitingFor: "Antwort A", revisitDate: null },
+    });
+    const latest = { ...task, revision: 5, externalWait: { waitingFor: "Antwort B", revisitDate: null } };
+    mockedApi.followUpExternalWait
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 6 } as never);
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={vi.fn()} />);
+
+    await userEvent.type(screen.getByLabelText("Was ist passiert?"), "Noch keine Rückmeldung.");
+    await userEvent.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(screen.getByLabelText("Wartet auf")).toHaveValue("Antwort B");
+
+    await userEvent.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
+    await waitFor(() => expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(2));
+    expect(mockedApi.followUpExternalWait.mock.calls[1]?.[1]).toMatchObject({
+      action: "continue",
+      content: "Noch keine Rückmeldung.",
+      waitingFor: "Antwort B",
+      expectedRevision: 5,
+    });
+  });
+
+  it("requires explicit same-field choices after a prerequisite edit conflicts with schedule and reminder drafts", async () => {
+    const task = makeTask({
+      id: 75,
+      revision: 4,
+      scheduledDate: "2026-10-20",
+      reminders: [{ id: 91, kind: "absolute", at: "2026-10-19T09:00:00.000Z" }],
+    });
+    const latest = {
+      ...task,
+      revision: 5,
+      scheduledDate: "2026-11-02",
+      reminders: [{ id: 92, kind: "absolute", at: "2026-11-01T09:00:00.000Z" }],
+    };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.addDependency.mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }));
+    mockedApi.searchTasks.mockResolvedValue([makeTask({ id: 76, title: "Freigabe" })]);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="dependencies" onClose={vi.fn()} />);
+
+    const schedule = screen.getByLabelText("Geplant für");
+    fireEvent.change(schedule, { target: { value: "25.10.2026" } });
+    fireEvent.blur(schedule);
+    await userEvent.click(screen.getByRole("button", { name: "Erinnerung entfernen" }));
+    await userEvent.type(screen.getByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"), "Freigabe");
+    await userEvent.click(await screen.findByRole("button", { name: "Abhängigkeit hinzufügen: Freigabe" }));
+
+    const conflictRegion = await screen.findByRole("region", { name: /Einige Planungsdaten/ });
+    expect(within(conflictRegion).getByRole("heading", { name: "Geplant für" })).toBeInTheDocument();
+    expect(within(conflictRegion).getByRole("heading", { name: "Erinnerungen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    expect(mockedApi.addDependency).toHaveBeenCalledWith(task.id, 76, 4);
+
+    const scheduleConflict = within(conflictRegion).getByRole("heading", { name: "Geplant für" }).closest(".task-planning-conflict") as HTMLElement;
+    const reminderConflict = within(conflictRegion).getByRole("heading", { name: "Erinnerungen" }).closest(".task-planning-conflict") as HTMLElement;
+    await userEvent.click(within(scheduleConflict).getByRole("button", { name: "Aktuellen Wert übernehmen" }));
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    await userEvent.click(within(reminderConflict).getByRole("button", { name: "Aktuellen Wert übernehmen" }));
+    expect(screen.queryByRole("region", { name: /Einige Planungsdaten/ })).not.toBeInTheDocument();
+  });
+
+  it("routes outer Save through the pending wait resolution and preserves other planning drafts", async () => {
+    const task = makeTask({
+      id: 77,
+      revision: 4,
+      externalWait: { waitingFor: "Versicherung", revisitDate: null },
+      revisitAt: "2026-10-20T06:00:00.000Z",
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue({ ...task, revision: 5, externalWait: null, revisitAt: null } as never);
+    const onClose = vi.fn();
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={onClose} />);
+
+    await userEvent.type(screen.getByLabelText("Was ist passiert?"), "Vorgang erledigt.");
+    await userEvent.selectOptions(screen.getByLabelText("Danach"), "resolve");
+    await userEvent.click(within(card("Deadline")).getByRole("button", { name: "+ Deadline hinzufügen" }));
+    const deadline = within(card("Deadline")).getByRole("textbox");
+    await userEvent.type(deadline, "20.12.2026");
+    await userEvent.tab();
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(task.id, expect.objectContaining({
+      action: "resolve",
+      content: "Vorgang erledigt.",
+      expectedRevision: 4,
+    })));
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText("Rückmeldung gespeichert. Speichere die übrigen Planungsänderungen, um sie zu übernehmen.")).toBeInTheDocument();
+    expect(deadline).toHaveValue("20.12.2026");
+  });
+
+  it("opens prerequisite editing directly and submits a revision-bound canonical dependency", async () => {
+    const task = makeTask({ id: 72, title: "Antrag einreichen", revision: 6, status: "actionable" });
+    const prerequisite = makeTask({ id: 73, title: "Freigabe erhalten", status: "actionable" });
+    mockedApi.searchTasks.mockResolvedValue([prerequisite]);
+    mockedApi.addDependency.mockResolvedValue({
+      ...task,
+      revision: 7,
+      dependencies: [{ id: 1, taskId: 72, dependsOnTaskId: 73, title: prerequisite.title, resolved: false }],
+    });
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="dependencies" onClose={vi.fn()} />);
+
+    expect(screen.getByText("Eine Voraussetzung ist eine andere Machbar-Aufgabe, die zuerst erledigt werden muss. Externes Warten ist davon getrennt.")).toBeVisible();
+    await userEvent.type(screen.getByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"), "Freigabe");
+    await userEvent.click(await screen.findByRole("button", { name: "Abhängigkeit hinzufügen: Freigabe erhalten" }));
+
+    await waitFor(() => expect(mockedApi.addDependency).toHaveBeenCalledWith(72, 73, 6));
+    expect(screen.getByText("Freigabe erhalten")).toBeVisible();
   });
 });

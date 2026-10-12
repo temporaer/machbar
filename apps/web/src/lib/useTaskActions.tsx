@@ -421,12 +421,14 @@ function useTaskActionsState() {
     (
       task: Task,
       input: WithoutExpectedRevision<ExternalWaitFollowUpInput>,
+      options: { throwOnError?: boolean } = {},
     ) =>
       runExternalWaitCommand(task, () =>
         api.followUpExternalWait(task.id, {
           ...input,
           expectedRevision: task.revision,
         }),
+        options.throwOnError === true,
       ),
     [runExternalWaitCommand],
   );

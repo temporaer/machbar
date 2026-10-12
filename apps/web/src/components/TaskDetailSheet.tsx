@@ -44,15 +44,13 @@ import { buildTaskShareUrl } from "../lib/shareUrls";
 import { RecentActivity } from "./RecentActivity";
 import { useLocale } from "../lib/locale";
 import {
-  hasApiErrorCode,
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
 import {
   sortDependencies,
-  sortDependencyCandidates,
 } from "../lib/sortOrder";
-import { recencyRankLookup, recordRecentlyViewed } from "../lib/recentlyViewed";
+import { recordRecentlyViewed } from "../lib/recentlyViewed";
 import {
   containsPaperlessReference,
   extractPaperlessReferences,
@@ -112,13 +110,6 @@ export function TaskDetailSheet() {
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
-  const [depQuery, setDepQuery] = useState("");
-  const [depResults, setDepResults] = useState<Task[]>([]);
-  const [dependencyError, setDependencyError] = useState<{
-    candidateTaskId: number | null;
-    message: string;
-  } | null>(null);
-  const [addingDependencyId, setAddingDependencyId] = useState<number | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
@@ -128,7 +119,6 @@ export function TaskDetailSheet() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
-  const [addingDependency, setAddingDependency] = useState(false);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -142,7 +132,6 @@ export function TaskDetailSheet() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
-  const dependencyInputRef = useRef<HTMLInputElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
   const workflowKind = taskWorkflow.current?.kind ?? null;
@@ -206,12 +195,9 @@ export function TaskDetailSheet() {
       setTitleEditing(false);
       setNotesEditing(false);
       setAttachmentOpen(false);
-      setAddingDependency(false);
       setLifecycleOpen(false);
       setDeleting(false);
       setShareStatus(null);
-      setDependencyError(null);
-      setAddingDependencyId(null);
       setConvertedProject(null);
     }
     const hasUnsavedEdits =
@@ -262,8 +248,9 @@ export function TaskDetailSheet() {
       clearFocusField();
       return;
     }
-    if (focusField === "dependencies" && !addingDependency) {
-      setAddingDependency(true);
+    if (focusField === "dependencies") {
+      dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" });
+      clearFocusField();
       return;
     }
     const scrollTarget =
@@ -277,7 +264,7 @@ export function TaskDetailSheet() {
         ? titleInputRef.current
         : focusField === "notes"
           ? notesRef.current
-          : dependencyInputRef.current;
+          : null;
     if (scrollTarget) {
       if (typeof scrollTarget.scrollIntoView === "function") {
         scrollTarget.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -291,7 +278,7 @@ export function TaskDetailSheet() {
     clearFocusField,
     notesEditing,
     titleEditing,
-    addingDependency,
+    dispatch,
   ]);
 
   if (openTaskId === null) return null;
@@ -394,57 +381,6 @@ export function TaskDetailSheet() {
       setSaveError(localizedErrorMessage(err, strings));
     } finally {
       setClassificationBusy(false);
-    }
-  };
-
-  const runDependencySearch = async (value: string) => {
-    setDepQuery(value);
-    setDependencyError(null);
-    if (!value.trim()) {
-      setDepResults([]);
-      return;
-    }
-    try {
-      const results = await api.searchTasks({
-        text: value,
-        kinds: ["action"],
-      });
-      setDepResults(
-        task
-          ? sortDependencyCandidates(results, task, value, locale, {
-              recencyRank: recencyRankLookup("task"),
-            }).slice(0, 8)
-          : [],
-      );
-    } catch (err) {
-      setDepResults([]);
-      setDependencyError({
-        candidateTaskId: null,
-        message: localizedErrorMessage(err, strings),
-      });
-    }
-  };
-
-  const addTaskDependency = async (dependsOnTask: Task) => {
-    if (!task || addingDependencyId !== null) return;
-    setAddingDependencyId(dependsOnTask.id);
-    setDependencyError(null);
-    try {
-      await api.addDependency(task.id, dependsOnTask.id);
-      setDepQuery("");
-      setDepResults([]);
-      setAddingDependency(false);
-      bump();
-      reload();
-    } catch (err) {
-      setDependencyError({
-        candidateTaskId: dependsOnTask.id,
-        message: hasApiErrorCode(err, "task_dependency_cycle")
-          ? strings.dependencyCycleExplanation(dependsOnTask.title, task.title)
-          : localizedErrorMessage(err, strings),
-      });
-    } finally {
-      setAddingDependencyId(null);
     }
   };
 
@@ -1042,89 +978,19 @@ export function TaskDetailSheet() {
                 {sortDependencies(task.dependencies, locale).map((dep) => (
                   <li key={dep.id} className="row-between">
                     <span>{dep.title ?? `#${dep.dependsOnTaskId}`}</span>
-                    <span className="row">
-                      <span className="text-muted">
-                        {dep.resolved ? strings.resolved : strings.unresolved}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost"
-                        onClick={() =>
-                          void api
-                            .removeDependency(task.id, dep.dependsOnTaskId)
-                            .then(() => {
-                              bump();
-                              reload();
-                            })
-                        }
-                      >
-                        {strings.removeDependency}
-                      </button>
+                    <span className="text-muted">
+                      {dep.resolved ? strings.resolved : strings.unresolved}
                     </span>
                   </li>
                 ))}
               </ul>
-              {addingDependency ? (
-                <div className="stack task-dependency-search">
-                  <input
-                    ref={dependencyInputRef}
-                    aria-label={strings.searchDependency}
-                    placeholder={strings.searchDependency}
-                    value={depQuery}
-                    onChange={(event) =>
-                      void runDependencySearch(event.target.value)
-                    }
-                  />
-                  {depResults.length > 0 ? (
-                    <ul className="list" style={{ padding: 0, margin: 0 }}>
-                      {depResults.map((candidate) => (
-                        <li key={candidate.id} className="stack">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-block"
-                            disabled={addingDependencyId !== null}
-                            onClick={() => void addTaskDependency(candidate)}
-                          >
-                            {strings.addDependency}: {candidate.title}
-                            {candidate.projectTitle ? (
-                              <span className="text-muted">
-                                {" "}
-                                · {candidate.projectTitle}
-                              </span>
-                            ) : null}
-                          </button>
-                          {dependencyError?.candidateTaskId === candidate.id ? (
-                            <WorkItemInlineError message={dependencyError.message} />
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {dependencyError?.candidateTaskId === null ? (
-                    <WorkItemInlineError message={dependencyError.message} />
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      setAddingDependency(false);
-                      setDepQuery("");
-                      setDepResults([]);
-                      setDependencyError(null);
-                    }}
-                  >
-                    {strings.cancel}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => setAddingDependency(true)}
-                >
-                  {strings.addDependency}
-                </button>
-              )}
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" })}
+              >
+                {strings.editPrerequisites}
+              </button>
             </div>
           </WorkItemDetailDisclosure>
           ) : null}

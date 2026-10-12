@@ -415,12 +415,12 @@ export interface ExternalWaitInput {
 export type ExternalWaitFollowUpInput =
   | {
       action: "resolve";
-      content?: string;
+      content: string;
       expectedRevision: number;
     }
   | {
       action: "continue";
-      content?: string;
+      content: string;
       waitingFor?: string | null;
       revisitAt?: string | null;
       /** @deprecated Use revisitAt. */
@@ -990,14 +990,15 @@ export const api = {
   moveTask: (id: number, input: MoveTaskInput) =>
     request<Task>(`/tasks/${id}/move`, { method: "POST", body: JSON.stringify(input) }),
 
-  addDependency: (taskId: number, dependsOnTaskId: number) =>
+  addDependency: (taskId: number, dependsOnTaskId: number, expectedRevision: number) =>
     request<Task>(`/tasks/${taskId}/dependencies`, {
       method: "POST",
-      body: JSON.stringify({ dependsOnTaskId }),
+      body: JSON.stringify({ dependsOnTaskId, expectedRevision }),
     }),
-  removeDependency: (taskId: number, dependsOnTaskId: number) =>
+  removeDependency: (taskId: number, dependsOnTaskId: number, expectedRevision: number) =>
     request<Task>(`/tasks/${taskId}/dependencies/${dependsOnTaskId}`, {
       method: "DELETE",
+      body: JSON.stringify({ expectedRevision }),
     }),
 
   addTag: (taskId: number, tagId: number) =>

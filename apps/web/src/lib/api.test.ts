@@ -277,6 +277,24 @@ describe("api request() Content-Type handling", () => {
     });
   });
 
+  it("sends revisions for prerequisite add and remove operations", async () => {
+    const addFetch = mockFetchOnce();
+    await api.addDependency(12, 18, 7);
+    expect(addFetch.mock.calls[0]?.[0]).toBe("/api/tasks/12/dependencies");
+    expect(addFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ dependsOnTaskId: 18, expectedRevision: 7 }),
+    });
+
+    const removeFetch = mockFetchOnce();
+    await api.removeDependency(12, 18, 8);
+    expect(removeFetch.mock.calls[0]?.[0]).toBe("/api/tasks/12/dependencies/18");
+    expect(removeFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision: 8 }),
+    });
+  });
+
   it("sends revision-safe task lifecycle commands", async () => {
     const fetchMock = mockFetchOnce();
 

@@ -564,7 +564,7 @@ describe("TaskDetailSheet", () => {
     await waitFor(() => expect(screen.getByLabelText("Titel")).toHaveFocus());
   });
 
-  it("focuses dependency search after unresolved dependency removal controls", async () => {
+  it("routes dependency focus to the focused prerequisites editor", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
         id: 42,
@@ -584,13 +584,13 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
 
-    const searchInput = await screen.findByLabelText("Aufgabe suchen …");
+    const searchInput = await screen.findByLabelText("Aufgabe suchen, die zuerst erledigt werden muss");
     const removeButton = screen.getByRole("button", { name: "Entfernen" });
     await waitFor(() => expect(searchInput).toHaveFocus());
     expect(removeButton).not.toHaveFocus();
   });
 
-  it("surfaces why a searched task cannot be added as a dependency", async () => {
+  it("surfaces why a searched task cannot be added as a prerequisite", async () => {
     const task = makeTask({ id: 42, title: "Reparaturziel" });
     const candidate = makeTask({ id: 19, title: "Freigabe einholen" });
     const cycleError = Object.assign(
@@ -610,10 +610,10 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Abhängigkeiten", level: 3 }),
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Abhängigkeit hinzufügen" }),
+      screen.getByRole("button", { name: "Voraussetzungen bearbeiten" }),
     );
     await userEvent.type(
-      await screen.findByLabelText("Aufgabe suchen …"),
+      await screen.findByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"),
       "Freigabe",
     );
     const result = await screen.findByRole("button", {
@@ -630,15 +630,10 @@ describe("TaskDetailSheet", () => {
         "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
-      ).closest("li"),
-    ).toContainElement(result);
     expect(result).toBeInTheDocument();
   });
 
-  it("ranks dependency matches before limiting, excludes done candidates, and shows their project context", async () => {
+  it("ranks prerequisite matches before limiting, excludes done candidates, and shows their project context", async () => {
     const existing = makeTask({ id: 18, title: "Schon verknüpft" });
     const task = makeTask({
       id: 42,
@@ -689,10 +684,11 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await userEvent.click(
-      screen.getByRole("button", { name: "Abhängigkeit hinzufügen" }),
+      screen.getByRole("heading", { name: "Abhängigkeiten", level: 3 }),
     );
+    await userEvent.click(screen.getByRole("button", { name: "Voraussetzungen bearbeiten" }));
     await userEvent.type(
-      await screen.findByLabelText("Aufgabe suchen …"),
+      await screen.findByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"),
       "Freigabe",
     );
 

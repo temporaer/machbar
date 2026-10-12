@@ -380,6 +380,15 @@ every task must be Done, but no open task branch is left attached without an
 explicit disposition. Starting a project requires a driver plus an executable
 progress path or intentional healthy future waiting.
 
+Planning keeps two kinds of blockers distinct. “Wartet auf” records an
+external response; “Voraussetzungen” links another Machbar task that must be
+completed first. Both can apply to the same task. A waiting follow-up records
+the outcome together with the choice to continue waiting (and its next
+revisit) or end the external wait. Ending that wait does not remove task
+prerequisites. Prerequisite changes use revision-checked dependency commands;
+a conflict keeps the planning sheet open so the person can retry against the
+refreshed task.
+
 **Backlog** is the one reversible "later / not active" state; normal
 activation rules apply whenever a backlog project is picked back up.
 Returning an active project to backlog preserves its task dates, deadlines,

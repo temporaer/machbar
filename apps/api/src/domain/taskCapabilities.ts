@@ -41,12 +41,12 @@ export interface UpsertExternalWaitInput {
 export type ExternalWaitFollowUpInput =
   | {
       action: "resolve";
-      content?: string;
+      content: string;
       expectedRevision?: number;
     }
   | {
       action: "continue";
-      content?: string;
+      content: string;
       waitingFor?: string | null;
       revisitAt?: string | null;
       expectedRevision?: number;
@@ -106,7 +106,14 @@ export function followUpExternalWait(
         { taskId, reason: "external_wait_missing" },
       );
     }
-    const content = input.content?.trim() ?? "";
+    const content = input.content.trim();
+    if (!content) {
+      throw AppError.badRequest(
+        "external_wait_followup_content_required",
+        "A follow-up must include what happened.",
+        { taskId },
+      );
+    }
 
     const waitingFor =
       input.action === "continue"
@@ -481,6 +488,7 @@ export function addDependency(
   taskId: number,
   dependsOnTaskId: number,
   context?: MutationContext,
+  expectedRevision?: number,
 ) {
   if (taskId === dependsOnTaskId) {
     throw AppError.conflict(
@@ -493,6 +501,7 @@ export function addDependency(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
+    assertExpectedRevision("task", taskId, task.revision, expectedRevision);
     assertDependencyCapableTask(task);
     assertDependencyCapableTask(dependency);
     const hadNextAction =
@@ -559,11 +568,13 @@ export function removeDependency(
   taskId: number,
   dependsOnTaskId: number,
   context?: MutationContext,
+  expectedRevision?: number,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
+    assertExpectedRevision("task", taskId, task.revision, expectedRevision);
     const hadNextAction =
       task.projectId === null
         ? true
