@@ -1175,13 +1175,22 @@ export function updateTask(
       : clearsClarificationDeferral
         ? null
         : currentTask.clarificationRevisitDate;
+    // A recurring completion records the current occurrence, then leaves the
+    // task open for its next scheduled occurrence. Its clarification state
+    // therefore remains valid even though the requested transition is `done`.
+    const resultingStatus = recurringCompletion
+      ? "actionable"
+      : nextStatus ?? currentTask.status;
     if (
       nextClarificationRevisitDate !== null &&
-      (!nextNeedsClarification || nextStatus === "done" || nextStatus === "cancelled")
+      (!nextNeedsClarification ||
+        ((resultingStatus === "done" || resultingStatus === "cancelled") &&
+          input.clarificationRevisitDate !== undefined &&
+          input.clarificationRevisitDate !== null))
     ) {
       throw AppError.conflict(
         "clarification_revisit_invalid",
-        "Only open work marked for clarification can have a clarification revisit date.",
+        "Only work marked for clarification can be deferred, and terminal work cannot receive a new clarification revisit date.",
         { taskId: id },
       );
     }
