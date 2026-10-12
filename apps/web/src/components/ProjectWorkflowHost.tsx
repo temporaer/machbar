@@ -12,7 +12,7 @@ import { ProjectContextsSheet } from "./ProjectContextsSheet";
 import { ProjectConvertToTaskSheet } from "./ProjectConvertToTaskSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
-import { WorkRefinementSheet } from "./WorkRefinementSheet";
+import { WorkClarificationSheet } from "./WorkClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
 import { ProjectActivationSheet } from "./ProjectActivationSheet";
@@ -68,7 +68,7 @@ export function ProjectWorkflowHost() {
     case "structure":
       return <ProjectStructureSheet story={story} onClose={close} />;
     case "refinement":
-      return <WorkRefinementSheet targetType="project" targetId={story.id} revision={story.revision} title={story.title} onClose={close} />;
+      return <WorkClarificationSheet targetType="project" targetId={story.id} revision={story.revision} title={story.title} onClose={close} />;
     case "assignDriver":
       return (
         <MemberSelectionSheet

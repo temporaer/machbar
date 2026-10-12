@@ -101,7 +101,11 @@ export function applyBreakdown(
   }], calendar: [], paperlessDocumentIds: [] };
   for (const item of draft.workItems.filter((item) => item.enabled && item.key !== root.key)) {
     const input = {
-      title: item.title, notes: item.notes ?? "", status: "actionable" as const,
+      title: item.title, notes: item.notes ?? "",
+      // Match ordinary step entry: uncommitted additions to parked work stay
+      // parked, while createTask/createChildTask promote dated or otherwise
+      // committed steps through their canonical task rules.
+      status: !converted && task.status === "someday" ? "someday" as const : "actionable" as const,
       ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId, ownerInheritanceMode: "explicit" as const }),
       dueDate: item.dueDate, scheduledDate: item.scheduledDate,
       revisitAt: item.revisitAt ?? item.notBeforeAt,

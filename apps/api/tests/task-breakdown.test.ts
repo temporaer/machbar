@@ -100,6 +100,31 @@ describe("reviewed task breakdown", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
   });
 
+  it("keeps uncommitted steps on a someday task parked, matching ordinary step entry", async () => {
+    const task = createTask(ctx.handle.db, { title: "Dachboden sortieren", status: "someday" });
+    const { id, draft } = prepare(task.id);
+    await apply(id, draft);
+
+    const updated = getTaskOrThrow(ctx.handle.db, task.id);
+    expect(updated.status).toBe("someday");
+    expect(updated.children.map((child) => child.status)).toEqual(["someday", "someday"]);
+  });
+
+  it("lets canonical task creation promote a planned step without activating its parked parent", async () => {
+    const task = createTask(ctx.handle.db, { title: "Dachboden sortieren", status: "someday" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[1]!.scheduledDate = "2027-02-10";
+    await apply(id, draft);
+
+    const updated = getTaskOrThrow(ctx.handle.db, task.id);
+    expect(updated.status).toBe("someday");
+    expect(updated.children.find((child) => child.title === "Compare options")).toMatchObject({
+      status: "actionable",
+      scheduledDate: "2027-02-10",
+    });
+    expect(updated.children.find((child) => child.title === "Book the chosen option")?.status).toBe("someday");
+  });
+
   it.each(["recurring", "captured-child", "captured-in-project"])("rejects %s targets before creating an AI job", async (target) => {
     const parent = createTask(ctx.handle.db, { title: "Parent", status: "actionable" });
     const project = createProject(ctx.handle.db, { title: "Project" });

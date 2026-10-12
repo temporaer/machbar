@@ -30,7 +30,7 @@ reminder while a revisit is present does not promote the task. Healthy waits
 and future revisits retain their readiness meaning. Project activation does
 not bypass task blockers or future-date agenda eligibility.
 
-## Reviewed task breakdown
+## AI clarification and reviewed application
 
 `canBreakDownTask` in the shared intake contract owns target eligibility for
 both the structure menu and API: recurring actions and captured actions nested
@@ -38,11 +38,15 @@ under tasks or projects cannot start proposals. Apply selects only the enabled
 reserved root. After a recoverable Apply failure, review refreshes the recovered
 job revision before allowing another edit.
 
-`task.breakdown` opens `TaskBreakdownSheet` through `TaskWorkflowHost`.
-`useTaskBreakdown` starts a proposal at `POST /api/intake/task/:taskId` with
-free-form instructions and the task revision. The endpoint checks viewer access
-and open-action eligibility, then creates an ordinary intake job bound to that
-task, storing its subtree snapshot and editing instructions.
+`task.refine` and `story.refine` open the shared `WorkClarificationSheet` through
+their canonical workflow hosts. Its default is general improvement; next
+action and structure are available for both roles. For eligible tasks,
+“In kleinere Schritte aufteilen” reuses the existing
+`POST /api/intake/task/:taskId` proposal contract. The selected action and
+optional focus are kept in one entry flow instead of separate AI launchers.
+The endpoint checks viewer access and open-action eligibility, then creates an
+ordinary intake job bound to the task, storing its subtree snapshot and
+instructions.
 
 Generation reuses Home Assistant `intake_analyze` and the structured intake plan.
 Intake, breakdown, and cleanup-round prompts share actionability, sizing, and
@@ -50,10 +54,11 @@ finite-outcome guidance from `aiWorkGuidance.ts`, plus household AI context.
 Source notes and existing children are data, not instructions. No web research
 is assumed.
 
-The proposal contains one reserved `existing-task` root and 1–30 immediate
-action steps. Review supports title/notes edits and a task/project choice for
-the original root; children use the existing proposal editors. Existing children
-remain untouched. Calendar events, references, and deeper nesting are rejected.
+The smaller-steps proposal contains one reserved `existing-task` root and zero
+or more immediate action steps. Review supports title/notes edits and a
+task/project choice for the original root; children use the existing proposal
+editors. Existing children remain untouched. Calendar events, references, and
+deeper nesting are rejected.
 
 Apply rechecks visibility and the persisted subtree snapshot, then edits or
 converts the original and appends accepted steps through canonical domain
