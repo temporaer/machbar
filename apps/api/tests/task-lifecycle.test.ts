@@ -281,6 +281,37 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(unlockedRes.json().blocked).toBe(false);
   });
 
+  it("revision-checks prerequisite edits and rejects a stale second edit", async () => {
+    const target = await createTask({ title: "Prepare documents", status: "actionable" });
+    const first = await createTask({ title: "Request the records", status: "actionable" });
+    const second = await createTask({ title: "Confirm the date", status: "actionable" });
+    const added = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${target.id}/dependencies`,
+      payload: { dependsOnTaskId: first.id, expectedRevision: target.revision },
+    });
+    expect(added.statusCode).toBe(201);
+    expect(added.json().dependencies.map((dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId)).toEqual([first.id]);
+
+    const stale = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${target.id}/dependencies`,
+      payload: { dependsOnTaskId: second.id, expectedRevision: target.revision },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_write_conflict");
+    const current = await ctx.app.inject({ method: "GET", url: `/api/tasks/${target.id}` });
+    expect(current.json().dependencies.map((dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId)).toEqual([first.id]);
+
+    const removed = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${target.id}/dependencies/${first.id}`,
+      payload: { expectedRevision: added.json().revision },
+    });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().dependencies).toEqual([]);
+  });
+
   it("defaults projectless successors to actionable", async () => {
     const predecessor = await createTask({
       title: "Globaler Vorgänger",
@@ -483,6 +514,43 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     const completed = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision, criteriaToCheck: [criterion.json().acceptanceCriteria[0].id] } });
     expect(completed.statusCode).toBe(200);
     expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [{ checked: true }] });
+  });
+
+  it("commits task criteria and the selected open-descendant policy together", async () => {
+    const parent = await createTask({ title: "Konvertierte Aufgabe", status: "actionable" });
+    const childResponse = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/children`, payload: { title: "Offene Teilaufgabe", status: "actionable" },
+    });
+    const child = childResponse.json();
+    const criterionResponse = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/criteria`, payload: { text: "Ergebnis ist abgenommen" },
+    });
+    const criterion = criterionResponse.json().acceptanceCriteria[0];
+    const current = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json();
+
+    const missingPolicy = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/complete`,
+      payload: { expectedRevision: current.revision, criteriaToCheck: [criterion.id] },
+    });
+    expect(missingPolicy.statusCode).toBe(409);
+    expect(missingPolicy.json().error.code).toBe("descendants_policy_required");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json()).toMatchObject({
+      status: "actionable",
+      acceptanceCriteria: [{ checked: false }],
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("actionable");
+
+    const completed = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/complete`,
+      payload: {
+        expectedRevision: current.revision,
+        criteriaToCheck: [criterion.id],
+        descendantsPolicy: "complete_children",
+      },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [{ checked: true }] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("done");
   });
 
   it("leaves children untouched when completing with leave_open", async () => {
