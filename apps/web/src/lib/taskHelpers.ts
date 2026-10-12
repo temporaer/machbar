@@ -48,7 +48,6 @@ export function markOpenDescendantsTerminal(
         ? {}
         : {
             status,
-            needsClarification: false,
             completedAt: status === "done" ? at : null,
             cancelledAt: status === "cancelled" ? at : null,
           }),

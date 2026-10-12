@@ -1761,5 +1761,28 @@ describe("TaskDetailSheet", () => {
 
       await waitFor(() => expect(mockedApi.makeTaskAction).toHaveBeenCalledWith(71, 1));
     });
+
+    it("resolves re-clarification from details without changing an active task's status", async () => {
+      const task = makeTask({
+        id: 72,
+        title: "Geplante Aufgabe erneut klären",
+        status: "actionable",
+        needsClarification: true,
+        scheduledDate: "2026-10-12",
+      });
+      mockedApi.getTask.mockResolvedValue(task);
+      mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, needsClarification: false });
+      renderSheet(72);
+      await userEvent.click(screen.getByText("open"));
+      await waitForTaskTitle("Geplante Aufgabe erneut klären");
+
+      expect(screen.getByRole("button", { name: "Später klären" })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Jetzt klären" }));
+      await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(72, {
+        needsClarification: false,
+        expectedRevision: 1,
+      }));
+      expect(mockedApi.updateTask.mock.calls.at(-1)?.[1]).not.toHaveProperty("status");
+    });
   });
 });

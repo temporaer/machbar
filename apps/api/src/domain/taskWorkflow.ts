@@ -164,7 +164,6 @@ export function completeTask(
       tx.update(schema.workItems)
         .set({
           status: "done",
-          needsClarification: false,
           completedAt: now,
           revision: sql`${schema.workItems.revision} + 1`,
           updatedAt: now,
@@ -186,7 +185,6 @@ export function completeTask(
         tx.update(schema.workItems)
           .set({
             status: descendantStatus,
-            needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
             revision: sql`${schema.workItems.revision} + 1`,
@@ -322,7 +320,6 @@ export function cancelTask(
       tx.update(schema.workItems)
         .set({
           status: "cancelled",
-          needsClarification: false,
           cancelledAt: now,
           revision: sql`${schema.workItems.revision} + 1`,
           updatedAt: now,
@@ -344,7 +341,6 @@ export function cancelTask(
         tx.update(schema.workItems)
           .set({
             status: descendantStatus,
-            needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
             revision: sql`${schema.workItems.revision} + 1`,
@@ -434,7 +430,6 @@ export function reopenTask(
     tx.update(schema.workItems)
       .set({
         status: "active",
-        needsClarification: false,
         completedAt: null,
         cancelledAt: null,
         revision: sql`${schema.workItems.revision} + 1`,
@@ -471,10 +466,8 @@ export function clarifyTask(
   expectedRevision?: number,
   context?: MutationContext,
 ) {
-  return updateTask(
-    db,
-    id,
-    { status: "actionable", expectedRevision },
-    context,
-  );
+  // Resolving a clarification only promotes captured work. An active,
+  // scheduled or waiting commitment keeps its lifecycle while its separate
+  // clarification flag is cleared.
+  return updateTask(db, id, { needsClarification: false, expectedRevision }, context);
 }

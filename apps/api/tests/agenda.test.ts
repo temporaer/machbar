@@ -1480,6 +1480,7 @@ describe("Heute agenda: compiled project prompts", () => {
     const blocker = await createTask({
       projectId: blocked.id,
       title: "Offener Blockierer",
+      status: "captured",
       needsClarification: true,
     });
     const blockedAction = await createTask({
@@ -1501,6 +1502,7 @@ describe("Heute agenda: compiled project prompts", () => {
     await createTask({
       projectId: captured.id,
       title: "Noch zu klären",
+      status: "captured",
       needsClarification: true,
     });
 

@@ -244,6 +244,7 @@ export interface CreateTaskStepBatchResult {
 }
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "projectId">> & {
+  discussionRequested?: boolean;
   externalWait?: { waitingFor: string | null; revisitDate?: string | null } | null;
   additionalNextAction?: boolean;
   excludedTagIds?: number[];
@@ -290,6 +291,7 @@ export interface CreateProjectInput {
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput> & {
+  discussionRequested?: boolean;
   position?: number;
   expectedRevision?: number;
 };
@@ -325,6 +327,11 @@ export type ProjectDetail = ProjectWithActions & {
   ancestors?: WorkItemAncestor[];
   externalRefs?: ExternalWorkItemRef[];
 };
+
+export interface DiscussionListResponse {
+  tasks: Task[];
+  projects: ProjectWithActions[];
+}
 
 /** Detail-only task response (`GET /api/tasks/:id`); list/tree tasks never carry ancestors. */
 export type TaskDetail = Task & {
@@ -802,6 +809,7 @@ export const api = {
         scope,
       })}`,
     ),
+  getDiscussion: () => request<DiscussionListResponse>("/discussion"),
   getWaiting: (memberId?: number | null, scope: AgendaScope = "mine") =>
     request<WaitingEntry[]>(
       `/waiting${query({

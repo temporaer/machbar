@@ -940,11 +940,12 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Wartendes Projekt");
 
     const chips = openChips();
-    expect(within(chips).getAllByRole("button").map((button) => button.textContent)).toEqual([
+    expect(within(chips.querySelector(".rail-main-grid")!).getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Planung",
       "Struktur",
       "Nächster Schritt",
     ]);
+    expect(within(chips).getByRole("button", { name: "Für Besprechung vormerken" })).toBeInTheDocument();
 
     await userEvent.click(within(chips).getByRole("button", { name: "Planung" }));
 

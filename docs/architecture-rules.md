@@ -176,6 +176,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, and `custom_components/machbar/calendar_bridge.py` |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
+| Ordinary clarification and shared discussion nomination | Clarification uses the existing `work_items.needs_clarification` field independently from lifecycle status, `PATCH /api/tasks/:id`, and `task.clarify` through `useTaskActions`; Inbox includes requested clarification and honors an explicit future revisit while agenda eligibility remains commitment-based. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components/action rails. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
 | External-wait actions | `apps/web/src/lib/useTaskActions.ts` |

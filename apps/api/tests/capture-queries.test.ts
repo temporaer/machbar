@@ -57,6 +57,96 @@ describe("capture query views", () => {
     expect(ids).not.toContain(topLevel.id);
   });
 
+  it("keeps a re-clarification independent of active commitments and honors an explicit later revisit", async () => {
+    const scheduledDate = new Date().toISOString().slice(0, 10);
+    const task = createTask(ctx.handle.db, {
+      title: "Aktive Aufgabe erneut klären",
+      status: "actionable",
+      scheduledDate,
+    });
+    const requested = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { expectedRevision: task.revision, needsClarification: true },
+    });
+    expect(requested.statusCode).toBe(200);
+    expect(requested.json()).toMatchObject({
+      status: "actionable",
+      scheduledDate,
+      needsClarification: true,
+    });
+    const inbox = await ctx.app.inject({ method: "GET", url: "/api/inbox" });
+    expect(inbox.json().map((item: { id: number }) => item.id)).toContain(task.id);
+    const agenda = await ctx.app.inject({ method: "GET", url: `/api/agenda/today?date=${scheduledDate}` });
+    expect(JSON.stringify(agenda.json())).toContain("Aktive Aufgabe erneut klären");
+
+    const deferred = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: {
+        expectedRevision: requested.json().revision,
+        revisitAt: "2999-01-01T09:00:00.000Z",
+      },
+    });
+    expect(deferred.statusCode).toBe(200);
+    expect(deferred.json()).toMatchObject({ status: "actionable", scheduledDate: null, needsClarification: true });
+    const deferredInbox = await ctx.app.inject({ method: "GET", url: "/api/inbox" });
+    expect(deferredInbox.json().map((item: { id: number }) => item.id)).not.toContain(task.id);
+  });
+
+  it("lists and toggles discussion nominations for both work-item roles without changing lifecycle", async () => {
+    const task = createTask(ctx.handle.db, { title: "Task to discuss", status: "actionable" });
+    const project = createProject(ctx.handle.db, { title: "Project to discuss", status: "backlog" });
+
+    for (const [role, item] of [["task", task], ["project", project]] as const) {
+      const path = role === "task" ? `/api/tasks/${item.id}` : `/api/projects/${item.id}`;
+      const response = await ctx.app.inject({
+        method: "PATCH",
+        url: path,
+        payload: { expectedRevision: item.revision, discussionRequested: true },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ status: item.status, discussionRequested: true });
+    }
+
+    const listed = await ctx.app.inject({ method: "GET", url: "/api/discussion" });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().tasks.map((item: { id: number }) => item.id)).toContain(task.id);
+    expect(listed.json().projects.map((item: { id: number }) => item.id)).toContain(project.id);
+
+    const cleared = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { expectedRevision: listed.json().tasks[0].revision, discussionRequested: false },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json()).toMatchObject({ status: "actionable", discussionRequested: false });
+  });
+
+  it("does not let an unauthenticated forged member id reveal private discussion items", async () => {
+    const owner = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Privater Besitzer", color: "#123456" })
+      .returning()
+      .get();
+    const privateTask = createTask(ctx.handle.db, {
+      title: "Private Besprechung",
+      status: "actionable",
+      scope: "work",
+      ownerMemberId: owner.id,
+    });
+    ctx.handle.db.update(schema.workItems)
+      .set({ discussionRequested: true })
+      .where(eq(schema.workItems.id, privateTask.id))
+      .run();
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: `/api/discussion?memberId=${owner.id}`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().tasks.map((item: { id: number }) => item.id)).not.toContain(privateTask.id);
+  });
+
   it("/api/inbox returns remaining captured items after child creation classifies their parents", async () => {
     const project = createProject(ctx.handle.db, {
       title: "Baum-Projekt",
@@ -100,7 +190,7 @@ describe("capture query views", () => {
     ).toBe(false);
   });
 
-  it("gives captured-only active projects consolidated repair guidance", async () => {
+  it("keeps a re-clarified active action as a valid project progress path", async () => {
     const project = createProject(ctx.handle.db, {
       title: "Nur Capture",
       status: "active",
@@ -117,22 +207,11 @@ describe("capture query views", () => {
       url: "/api/review",
     });
     expect(response.statusCode).toBe(200);
-    const result = (
-      response.json() as Array<{
-        id: number;
-        entityId: number;
-        reason: string;
-      }>
-    ).find(
-      (row) =>
-        row.entityId === project.id &&
-        row.reason === "no_viable_progress_path",
-    );
-    expect(result).toMatchObject({
-      entityId: project.id,
-      reason: "no_viable_progress_path",
-    });
-    expect(result).toHaveProperty("suggestedAction");
+    expect(
+      (response.json() as Array<{ entityId: number; reason: string }>).some(
+        (row) => row.entityId === project.id && row.reason === "no_viable_progress_path",
+      ),
+    ).toBe(false);
   });
 
   it("does not use captured unassigned work to classify a mixed project as unassigned", async () => {

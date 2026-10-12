@@ -247,7 +247,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
         expect(within(chips).getAllByRole("button").length).toBeGreaterThan(0);
         expect(within(chips).queryAllByRole("combobox")).toHaveLength(0);
       } else {
-        expect(within(row).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+        const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
+        expect(chips.querySelector(".rail-main-grid")).toBeNull();
+        expect(within(chips).getByRole("button", { name: "Für Besprechung vormerken" })).toBeInTheDocument();
       }
     }
   });
@@ -281,7 +283,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
     const row = rowFor(container, "Archivierte Geschichte");
     swipeRow(row, -100);
-    expect(within(row).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+    const actions = within(row).getByRole("group", { name: "Weitere Aktionen" });
+    expect(actions.querySelector(".rail-main-grid")).toBeNull();
+    expect(within(actions).getByRole("button", { name: "Für Besprechung vormerken" })).toBeInTheDocument();
 
     swipeRow(row, 100);
     const lifecycle = within(row).getByRole("group", { name: "Status" });

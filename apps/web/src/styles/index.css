@@ -3271,6 +3271,13 @@ details[open] > .disclosure-summary::after {
   gap: 8px;
 }
 
+.rail-secondary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
 .rail-main-grid .btn {
   width: 100%;
   min-width: 0;
@@ -3732,6 +3739,16 @@ details[open] > .disclosure-summary::after {
   font-weight: 600;
   line-height: 1.35;
   word-break: break-word;
+}
+
+.workitem-discussion-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.82em;
+  font-weight: 400;
+  vertical-align: 0.08em;
 }
 
 .task-row-title.done,

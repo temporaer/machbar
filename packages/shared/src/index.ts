@@ -712,6 +712,8 @@ export interface Project {
   title: string;
   notes: string;
   status: ProjectStatus;
+  /** Shared, persistent nomination for a future conversation. */
+  discussionRequested: boolean;
   archivedAt: string | null;
   ownerMemberId: number | null;
   scope: WorkItemScope;
@@ -832,6 +834,8 @@ export interface Task {
    * material. See TaskKind. */
   kind: TaskKind;
   needsClarification: boolean;
+  /** Shared, persistent nomination for a future conversation. */
+  discussionRequested: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   contextInheritanceMode: InheritanceMode;

@@ -112,6 +112,14 @@ Decide what the capture means:
 Clarification is separate from capture so that fast collection does not force
 premature planning.
 
+The clarification need is independent of lifecycle: an active, scheduled, or
+waiting task can be marked **Erneut klären** without losing its commitment.
+Resolving the flag is explicit; opening a task or editing its notes does not
+resolve it. **Später klären** uses the existing availability editor to set a
+revisit point and suppresses the task from Eingang until then. A clarification
+flag by itself does not suppress otherwise eligible scheduled or due work from
+the agenda.
+
 When an existing task title already contains a likely date, person, tag, place,
 or simple waiting phrase, the relevant focused editor can offer up to three
 optional **Aus Titel** suggestions. Capture remains free-form and ignoring a
@@ -137,6 +145,16 @@ An inbox item leaves clarification through one explicit classification:
   classification time. From the handoff, or later from the project itself,
   the driver and progress path can be set up and the project started
   explicitly.
+
+### Besprechen
+
+Task and project rows can be marked **Für Besprechung vormerken** from their
+accessible action rail. The shared mark is independent of lifecycle, planning,
+ownership, review acknowledgement, and clarification. The **Besprechen** page
+under **Mehr** lists visible nominated tasks and projects, including backlog
+projects. Clearing the mark removes the item from that list; viewing, editing,
+or completing an item does not clear it. The mark is only a nomination for a
+shared conversation, not a meeting, agenda, or note.
 
 Conversion preserves the item's identity, title, notes, dates, tags, physical
 contexts, and sensible ownership, so activity history and links stay attached.

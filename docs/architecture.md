@@ -263,6 +263,12 @@ WorkItem(role=story) ─── WorkItem(role=task)
 - **WorkItems are one physical hierarchy.** `work_items.role = 'task'` means
   executable work; `role = 'story'` means an outcome planned through child
   progress. Stories may contain stories and/or tasks at arbitrary depth.
+- **Besprechen is a shared nomination.** The `discussion_requested` boolean
+  lives on `work_items` for both roles and is changed only through the
+  canonical task/project update mutations. `GET /api/discussion` projects
+  only viewer-visible work; the More page reuses the normal task/project row
+  workflows. The flag does not affect status, agenda, review acknowledgement,
+  or any other work property.
 - **Projects are the story UI/API adapter.** The German UI may still call a
   story a “Projekt”. A story has one responsible person, optional
   due/scheduled dates, free-form `notes`, and an ordered
@@ -631,7 +637,13 @@ captured ──► actionable ──► done
 ```
 
 `TaskStatus` is `captured | actionable | someday | done | cancelled`.
-`captured` is the current clarification state and appears in **Eingang**.
+`captured` identifies unclassified work and appears in **Eingang**. The stored
+`needs_clarification` flag is independent: a task can remain active, scheduled,
+or waiting while it is explicitly queued for another clarification pass.
+Clarifying a flagged active task clears only the flag; clarifying a captured
+task also promotes it to actionable. Future `revisit_at` dates defer the
+clarification queue without changing status, and the flag alone does not hide
+scheduled or due tasks from Today/Week.
 Project and child creation can start as already clarified actionable work.
 Captured tasks stay visible in project trees but are excluded from Heute,
 next-action selection, and blocker classification.

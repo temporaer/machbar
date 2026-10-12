@@ -107,7 +107,10 @@ export function createAgendaSelection(
     task.kind === "action" &&
     isOpenTask(task) &&
     task.status === "actionable" &&
-    !task.needsClarification &&
+    (!task.needsClarification ||
+      task.scheduledDate !== null ||
+      task.dueDate !== null ||
+      (task.externalWait !== null && task.revisitAt !== null)) &&
     isOperationalTask(task) &&
     matchesOwner(task) &&
     matchesScope(task);
@@ -128,7 +131,10 @@ export function createAgendaSelection(
       ]),
   );
   const isSelectedOrdinaryWork = (task: TaskRecord) =>
-    task.projectId === null || selectedProjectTaskIds.has(task.id);
+    task.projectId === null ||
+    selectedProjectTaskIds.has(task.id) ||
+    (task.needsClarification &&
+      (task.scheduledDate !== null || task.dueDate !== null));
   const isExecutableWork = (task: TaskRecord) =>
     isAgendaTask(task) &&
     task.executable &&

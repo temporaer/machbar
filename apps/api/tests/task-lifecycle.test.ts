@@ -350,7 +350,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(projectCapture.needsClarification).toBe(true);
   });
 
-  it("normalizes legacy clarification patches without changing actionable work", async () => {
+  it("keeps clarification requests independent from an actionable task's lifecycle", async () => {
     const actionable = await createTask({ title: "Machbar", status: "actionable" });
     const actionableRes = await ctx.app.inject({
       method: "PATCH",
@@ -376,7 +376,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       payload: { needsClarification: true },
     });
     expect(recapturedRes.json()).toMatchObject({
-      status: "captured",
+      status: "actionable",
       needsClarification: true,
     });
   });
@@ -787,7 +787,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(reopenRes.json().completedAt).toBeNull();
   });
 
-  it("reopens a never-clarified task as clarified actionable", async () => {
+  it("reopens a captured task while retaining its unresolved clarification request", async () => {
     const task = await createTask({ title: "Ganz neu" });
     await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/cancel` });
     const reopenRes = await ctx.app.inject({
@@ -795,7 +795,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       url: `/api/tasks/${task.id}/reopen`,
     });
     expect(reopenRes.json().status).toBe("actionable");
-    expect(reopenRes.json().needsClarification).toBe(false);
+    expect(reopenRes.json().needsClarification).toBe(true);
     expect(reopenRes.json().cancelledAt).toBeNull();
   });
 
