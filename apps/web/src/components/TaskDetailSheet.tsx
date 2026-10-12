@@ -429,6 +429,7 @@ export function TaskDetailSheet() {
       | "task.lifecycle"
       | "task.assignOwner"
       | "task.availability"
+      | "task.deferClarification"
       | "task.plan"
       | "task.reminders"
       | "task.waitingLifecycle"
@@ -616,6 +617,31 @@ export function TaskDetailSheet() {
               status={task.status}
               {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })}
             />
+            {!taskIsCapturedInboxItem && !isReference ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={taskMutationPending}
+                onClick={() => void taskActions.update(
+                  task,
+                  { needsClarification: !task.needsClarification },
+                  { needsClarification: !task.needsClarification },
+                  true,
+                )}
+              >
+                {task.needsClarification ? strings.clarifyNow : strings.clarifyAgain}
+              </button>
+            ) : null}
+            {task.needsClarification && !isReference ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={taskMutationPending}
+                onClick={() => runCommand("task.deferClarification")}
+              >
+                {strings.clarifyLater}
+              </button>
+            ) : null}
             {task.projectId !== null && task.projectTitle ? (
               <span className="detail-meta-static">
                 <span className="detail-meta-label">{strings.project}</span>

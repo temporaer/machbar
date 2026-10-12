@@ -106,6 +106,8 @@ interface RawTask {
   status: TaskStatus;
   kind: TaskKind;
   needsClarification: boolean;
+  clarificationRevisitDate: string | null;
+  discussionRequested: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   physicalContextInheritanceMode: InheritanceMode;
@@ -137,6 +139,7 @@ interface RawProject {
   title: string;
   notes: string;
   status: ProjectStatus;
+  discussionRequested: boolean;
   archivedAt: string | null;
   ownerMemberId: number | null;
   scope: WorkItemScope;
@@ -341,6 +344,7 @@ export class Graph {
           row.status as StoredWorkItemStatus,
           row.archivedAt,
         ),
+        discussionRequested: row.discussionRequested,
         archivedAt: row.archivedAt,
         ownerMemberId: row.ownerMemberId,
         scope: row.scope as WorkItemScope,
@@ -367,7 +371,9 @@ export class Graph {
         notes: row.notes,
         status: taskStatusFromStored(row.status as StoredWorkItemStatus),
         kind: (row.taskKind as TaskKind | null) ?? "action",
-        needsClarification: row.status === "captured",
+        needsClarification: row.needsClarification,
+        clarificationRevisitDate: row.clarificationRevisitDate,
+        discussionRequested: row.discussionRequested,
         ownerMemberId: row.ownerMemberId,
         ownerInheritanceMode: row.ownerInheritanceMode as InheritanceMode,
         physicalContextInheritanceMode:
@@ -626,6 +632,7 @@ export class Graph {
         title: p.title,
         notes: p.notes,
         status: p.status,
+        discussionRequested: p.discussionRequested,
         archivedAt: p.archivedAt,
         ownerMemberId: p.ownerMemberId,
         scope: p.scope,
@@ -772,7 +779,9 @@ export class Graph {
         notes: raw.notes,
         status: raw.status,
         kind: raw.kind,
-        needsClarification: raw.status === "captured",
+        needsClarification: raw.needsClarification,
+        clarificationRevisitDate: raw.clarificationRevisitDate,
+        discussionRequested: raw.discussionRequested,
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
         contextInheritanceMode: raw.physicalContextInheritanceMode,

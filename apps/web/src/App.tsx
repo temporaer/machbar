@@ -22,6 +22,7 @@ import { WaitingPage } from "./pages/WaitingPage";
 import { MorePage } from "./pages/MorePage";
 import { AllPage } from "./pages/AllPage";
 import { ReviewPage } from "./pages/ReviewPage";
+import { DiscussionPage } from "./pages/DiscussionPage";
 import { WeekPage } from "./pages/WeekPage";
 import { TagsPage } from "./pages/TagsPage";
 import { SharePage } from "./pages/SharePage";
@@ -87,6 +88,7 @@ function Shell() {
             <Route path="/more/week" element={<WeekPage />} />
             <Route path="/more/all" element={<AllPage />} />
             <Route path="/more/review" element={<ReviewPage />} />
+            <Route path="/more/discussion" element={<DiscussionPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/activity" element={<ActivityPage />} />
             <Route path="/more/reflection" element={<ReflectionStartPage />} />

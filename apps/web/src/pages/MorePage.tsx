@@ -53,6 +53,10 @@ export function MorePage() {
               <span aria-hidden="true">›</span>
             </span>
           </Link>
+          <Link to="/more/discussion" className="list-link more-list-link">
+            <span>{strings.discussionTitle}</span>
+            <span aria-hidden="true">›</span>
+          </Link>
           <Link to="/more/reflection" className="list-link more-list-link">
             <span>
               <strong>{strings.reflectionStart}</strong>

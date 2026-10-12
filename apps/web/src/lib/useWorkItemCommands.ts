@@ -29,6 +29,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.open":
     case "task.plan":
     case "task.availability":
+    case "task.deferClarification":
     case "task.shape":
     case "task.structure":
     case "task.reminders":
@@ -51,6 +52,8 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
     case "task.makeAction":
+    case "task.setDiscussion":
+    case "task.setClarification":
       return "task" in command ? command.task.id : command.taskId;
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -74,6 +77,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
+    case "story.setDiscussion":
       return command.story.id;
     case "outline.collapse":
     case "outline.expand":
@@ -92,6 +96,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.open":
     case "task.plan":
     case "task.availability":
+    case "task.deferClarification":
     case "task.shape":
     case "task.structure":
     case "task.reminders":
@@ -114,6 +119,8 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
     case "task.makeAction":
+    case "task.setDiscussion":
+    case "task.setClarification":
       return "task";
     case "story.activate":
     case "story.deferProject":
@@ -131,6 +138,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
+    case "story.setDiscussion":
       return "story";
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -256,6 +264,9 @@ export function useWorkItemCommands() {
         case "task.availability":
           taskWorkflow.open("availability", command.taskId, "availability");
           return;
+        case "task.deferClarification":
+          taskWorkflow.open("deferClarification", command.taskId);
+          return;
         case "task.shape":
           taskWorkflow.open("shape", command.taskId);
           return;
@@ -374,6 +385,20 @@ export function useWorkItemCommands() {
         case "task.makeAction":
           void taskActions.makeAction(command.task);
           return;
+        case "task.setDiscussion":
+          return taskActions.update(
+            command.task,
+            { discussionRequested: command.requested },
+            { discussionRequested: command.requested },
+            true,
+          );
+        case "task.setClarification":
+          return taskActions.update(
+            command.task,
+            { needsClarification: command.requested },
+            { needsClarification: command.requested, clarificationRevisitDate: null },
+            true,
+          );
         case "workItem.schedule":
           return taskActions.update(
             command.item.task,
@@ -489,6 +514,13 @@ export function useWorkItemCommands() {
         case "story.lifecycle":
           scope?.setOpenLifecycle(command.story.id);
           return;
+        case "story.setDiscussion":
+          return projectActions.update(
+            command.story,
+            { discussionRequested: command.requested },
+            { discussionRequested: command.requested },
+            true,
+          );
         case "outline.collapse":
           scope?.setCollapsed(command.workItemId, true);
           return;

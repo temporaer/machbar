@@ -42,6 +42,7 @@ vi.mock("../lib/api", () => ({
     resolveExternalWait: vi.fn(),
     transitionTaskStatus: vi.fn(),
     clarifyTask: vi.fn(),
+    deferTaskClarification: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
@@ -1760,6 +1761,67 @@ describe("TaskDetailSheet", () => {
       await userEvent.click(screen.getByRole("button", { name: strings.makeAction }));
 
       await waitFor(() => expect(mockedApi.makeTaskAction).toHaveBeenCalledWith(71, 1));
+    });
+
+    it("resolves re-clarification from details without changing an active task's status", async () => {
+      const task = makeTask({
+        id: 72,
+        title: "Geplante Aufgabe erneut klären",
+        status: "actionable",
+        needsClarification: true,
+        scheduledDate: "2026-10-12",
+      });
+      mockedApi.getTask.mockResolvedValue(task);
+      mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, needsClarification: false });
+      renderSheet(72);
+      await userEvent.click(screen.getByText("open"));
+      await waitForTaskTitle("Geplante Aufgabe erneut klären");
+
+      expect(screen.getByRole("button", { name: "Später klären" })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Jetzt klären" }));
+      await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(72, {
+        needsClarification: false,
+        expectedRevision: 1,
+      }));
+      expect(mockedApi.updateTask.mock.calls.at(-1)?.[1]).not.toHaveProperty("status");
+    });
+
+    it("defers only the clarification reminder from details and leaves cancellation untouched", async () => {
+      const task = makeTask({
+        id: 73,
+        title: "Geplante Aufgabe später klären",
+        status: "actionable",
+        needsClarification: true,
+        scheduledDate: "2026-10-12",
+        reminders: [{ id: 9, kind: "absolute", at: "2026-10-13T08:00:00.000Z" }],
+      });
+      mockedApi.getTask.mockResolvedValue(task);
+      mockedApi.deferTaskClarification.mockResolvedValue({
+        ...task,
+        revision: 2,
+        clarificationRevisitDate: "2999-01-01",
+      });
+      renderSheet(73);
+      await userEvent.click(screen.getByText("open"));
+      await waitForTaskTitle("Geplante Aufgabe später klären");
+      await userEvent.click(screen.getByRole("button", { name: "Später klären" }));
+
+      const dialog = screen.getByRole("dialog", { name: "Klärung zurückstellen" });
+      expect(within(dialog).getByText(/Die Aufgabe bleibt wie geplant/)).toBeInTheDocument();
+      const dateInput = within(dialog).getByLabelText("Erneut in den Eingang aufnehmen am");
+      await userEvent.clear(dateInput);
+      await userEvent.type(dateInput, "2999-01-01");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+      expect(mockedApi.deferTaskClarification).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: "Später klären" }));
+      const reopenedDialog = screen.getByRole("dialog", { name: "Klärung zurückstellen" });
+      const reopenedDateInput = within(reopenedDialog).getByLabelText("Erneut in den Eingang aufnehmen am");
+      await userEvent.clear(reopenedDateInput);
+      await userEvent.type(reopenedDateInput, "2999-01-01");
+      await userEvent.click(within(reopenedDialog).getByRole("button", { name: "Speichern" }));
+      await waitFor(() => expect(mockedApi.deferTaskClarification).toHaveBeenCalledWith(73, "2999-01-01", 1));
+      expect(mockedApi.updateTask).not.toHaveBeenCalledWith(73, expect.objectContaining({ revisitAt: expect.anything() }));
     });
   });
 });

@@ -28,6 +28,7 @@ import {
   acknowledgeTaskReview,
   cancelTask,
   clarifyTask,
+  deferTaskClarification,
   completeTask,
   reopenTask,
 } from "../domain/taskWorkflow.js";
@@ -44,6 +45,7 @@ import {
   convertTaskToStorySchema,
   tagRefSchema,
   taskLifecycleSchema,
+  deferTaskClarificationSchema,
   taskStepBatchSchema,
   transitionTaskStatusSchema,
   updateTaskSchema,
@@ -389,6 +391,22 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       clarifyTask(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
       });
+      return taskOrThrow(db, id, viewerMemberId(request));
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/clarification-revisit",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(deferTaskClarificationSchema, request.body);
+      deferTaskClarification(
+        db,
+        id,
+        body.clarificationRevisitDate,
+        body.expectedRevision,
+        { actorMemberId: request.activityActor?.id ?? null },
+      );
       return taskOrThrow(db, id, viewerMemberId(request));
     },
   );

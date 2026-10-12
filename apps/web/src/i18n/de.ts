@@ -654,6 +654,18 @@ Unterstütze Reflexion über Verhaltensänderung, wenn die Person das möchte. H
 Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusammenfassung und einen klar gegliederten Übergabe-Entwurf mit bestätigten Entscheidungen, vorläufigen Einsichten, möglichen Änderungen an bestehenden Aufgaben/Projekten und offenen Fragen. Verwende für bestehende Einträge ausschließlich IDs, die im Bericht stehen; erfinde niemals IDs. Frage nach ausdrücklicher Zustimmung, bevor du eine Verpflichtung als vereinbart formulierst. Der Entwurf ist Gesprächsnotiz und kein ausführbarer oder importierbarer Machbar-Befehl; verwende kein selbst erfundenes JSON- oder Versionsformat.`,
   moreMomentum: "Gemeinsam vorankommen",
   moreFindAndReview: "Finden und prüfen",
+  discussionTitle: "Besprechen",
+  discussionDescription: "Für ein gemeinsames Gespräch vorgemerkte Aufgaben und Projekte.",
+  discussionEmpty: "Noch nichts zum Besprechen vorgemerkt.",
+  addDiscussion: "Für Besprechung vormerken",
+  removeDiscussion: "Besprechungsmarkierung entfernen",
+  discussionMarked: "Für Besprechung vorgemerkt",
+  clarifyAgain: "Erneut klären",
+  clarifyLater: "Später klären",
+  clarificationRevisitTitle: "Klärung zurückstellen",
+  clarificationRevisitNote: "Die Aufgabe bleibt wie geplant. Nur die Erinnerung an die Klärung wird auf den gewählten Tag verschoben.",
+  clarificationRevisitDate: "Erneut in den Eingang aufnehmen am",
+  clarificationRevisitFutureError: "Wähle einen zukünftigen Tag.",
   morePreferences: "Einstellungen",
   moreHousehold: "Haushalt",
   aiContextTitle: "KI-Kontext",
@@ -1651,6 +1663,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     task_not_found: "Die Aufgabe wurde nicht gefunden.",
     task_schedule_before_available:
       "Eine Aufgabe kann nicht vor ihrem Ab-Datum eingeplant werden.",
+    clarification_revisit_invalid:
+      "Nur offene Aufgaben mit Klärungsbedarf können zur späteren Klärung zurückgestellt werden.",
     task_availability_date_required:
       "Zur Verfügbarkeit fehlt das zugehörige lokale Datum.",
     task_parent_self:

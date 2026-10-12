@@ -124,6 +124,14 @@ describe("MorePage", () => {
     );
   });
 
+  it("links to the quiet shared Besprechen list", async () => {
+    renderWithProviders(<MorePage />);
+    expect(await screen.findByRole("link", { name: "Besprechen" })).toHaveAttribute(
+      "href",
+      "/more/discussion",
+    );
+  });
+
   it("links to the standalone historical reflection export", async () => {
     renderWithProviders(<MorePage />);
 

@@ -39,7 +39,7 @@ function isWeekDatedTask(
   if (
     task.kind !== "action" ||
     task.status !== "actionable" ||
-    task.needsClarification ||
+    (task.needsClarification && task.scheduledDate === null && task.dueDate === null) ||
     !selection.matchesOwner(task) ||
     !selection.matchesScope(task)
   ) {

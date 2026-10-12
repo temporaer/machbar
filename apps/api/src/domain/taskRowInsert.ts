@@ -7,6 +7,7 @@ type TaskRowInput = {
   parentId: number | null;
   title: string;
   status: TaskStatus;
+  needsClarification?: boolean;
   scope: WorkItemScope;
   taskKind?: TaskKind;
   notes?: string;
@@ -62,7 +63,7 @@ export function insertTaskRow(db: Db, input: TaskRowInput) {
     title: input.title.trim(),
     notes: input.notes ?? "",
     status: storedTaskStatus(input.status),
-    needsClarification: input.status === "captured",
+    needsClarification: input.needsClarification ?? input.status === "captured",
     ownerMemberId,
     ownerInheritanceMode: input.ownerInheritanceMode ?? (autoAssignedOwner !== null ? "explicit" : "inherit"),
     physicalContextInheritanceMode: input.physicalContextInheritanceMode ?? "inherit",

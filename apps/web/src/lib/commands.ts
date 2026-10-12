@@ -41,6 +41,7 @@ export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
   | { type: "task.plan"; taskId: number; target?: TaskPlanningTarget }
   | { type: "task.availability"; taskId: number }
+  | { type: "task.deferClarification"; taskId: number }
   | { type: "task.shape"; taskId: number }
   | { type: "task.structure"; taskId: number }
   | { type: "task.reminders"; taskId: number }
@@ -63,6 +64,8 @@ export type WorkItemCommand =
   | { type: "task.toggleAdditionalNextAction"; task: Task }
   | { type: "task.primaryAction"; task: Task }
   | { type: "task.makeAction"; task: Task }
+  | { type: "task.setDiscussion"; task: Task; requested: boolean }
+  | { type: "task.setClarification"; task: Task; requested: boolean }
   | { type: "workItem.schedule"; item: WeekTaskPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
   | {
@@ -88,6 +91,7 @@ export type WorkItemCommand =
   | { type: "story.tags"; story: ProjectWithActions }
   | { type: "story.contexts"; story: ProjectWithActions }
   | { type: "story.lifecycle"; story: ProjectWithActions }
+  | { type: "story.setDiscussion"; story: ProjectWithActions; requested: boolean }
   | { type: "outline.collapse"; workItemId: number }
   | { type: "outline.expand"; workItemId: number }
   | { type: "outline.moveUp"; workItemId: number }

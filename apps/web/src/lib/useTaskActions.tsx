@@ -104,7 +104,6 @@ function useTaskActionsState() {
               ...task,
               revision: task.revision + 1,
               status: "actionable",
-              needsClarification: false,
               completedAt: null,
               cancelledAt: null,
               scheduledDate: addIsoCalendarDays(
@@ -120,7 +119,6 @@ function useTaskActionsState() {
               ...task,
               revision: task.revision + 1,
               status: "done",
-              needsClarification: false,
               completedAt: now,
               cancelledAt: null,
               children: descendantStatus
@@ -153,7 +151,6 @@ function useTaskActionsState() {
         ...task,
         revision: task.revision + 1,
         status: "cancelled",
-        needsClarification: false,
         cancelledAt: now,
         completedAt: null,
         children: descendantStatus ? markOpenDescendantsTerminal(task.children, descendantStatus, now) : task.children,
@@ -171,7 +168,7 @@ function useTaskActionsState() {
         ...task,
         revision: task.revision + 1,
         status: "actionable",
-        needsClarification: false,
+        needsClarification: task.needsClarification,
         completedAt: null,
         cancelledAt: null,
       };
@@ -187,7 +184,7 @@ function useTaskActionsState() {
         ...task,
         revision: task.revision + 1,
         status,
-        needsClarification: status === "captured",
+        needsClarification: status === "captured" ? true : task.needsClarification,
         completedAt: status === "done" ? now : null,
         cancelledAt: status === "cancelled" ? now : null,
       };
@@ -205,7 +202,7 @@ function useTaskActionsState() {
         ...task,
         revision: task.revision + 1,
         status,
-        needsClarification: false,
+        needsClarification: status === "actionable" && task.status === "captured" ? false : task.needsClarification,
         completedAt: null,
         cancelledAt: null,
       };
@@ -216,18 +213,37 @@ function useTaskActionsState() {
     [runTransition],
   );
 
-  /** Clarifying a captured task makes it actionable. */
+  /** Resolve clarification without demoting any existing commitment. */
   const clarify = useCallback(
     (task: Task) => {
       const optimistic: Task = {
         ...task,
         revision: task.revision + 1,
-        status: "actionable",
+        status: task.status === "captured" ? "actionable" : task.status,
         needsClarification: false,
+        clarificationRevisitDate: null,
         updatedAt: new Date().toISOString(),
       };
       return runTransition(task, optimistic, () =>
         api.clarifyTask(task.id, task.revision),
+      );
+    },
+    [runTransition],
+  );
+
+  const deferClarification = useCallback(
+    (task: Task, date: string, throwOnError = false) => {
+      const optimistic: Task = {
+        ...task,
+        revision: task.revision + 1,
+        clarificationRevisitDate: date,
+        updatedAt: new Date().toISOString(),
+      };
+      return runTransition(
+        task,
+        optimistic,
+        () => api.deferTaskClarification(task.id, date, task.revision),
+        throwOnError,
       );
     },
     [runTransition],
@@ -518,6 +534,7 @@ function useTaskActionsState() {
     requestPrimarySwipe,
     setStatus,
     clarify,
+    deferClarification,
     makeAction,
     update,
     assignOwner,

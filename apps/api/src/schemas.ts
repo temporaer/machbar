@@ -142,6 +142,7 @@ export const createProjectSchema = z.object({
 export const updateProjectSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
+  discussionRequested: z.boolean().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
@@ -296,6 +297,7 @@ export const updateTaskSchema = z.object({
   notes: z.string().optional(),
   status: z.enum(taskStatuses).optional(),
   needsClarification: z.boolean().optional(),
+  discussionRequested: z.boolean().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   ownerInheritanceMode: z.enum(inheritanceModes).optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
@@ -321,6 +323,11 @@ export const updateTaskSchema = z.object({
   contextIds: z.array(z.number().int().positive()).optional(),
   expectedRevision: z.number().int().positive().optional(),
   completedOn: isoDate.optional(),
+});
+
+export const deferTaskClarificationSchema = z.object({
+  clarificationRevisitDate: isoDate,
+  expectedRevision: z.number().int().positive(),
 });
 
 export const transitionTaskStatusSchema = z.object({

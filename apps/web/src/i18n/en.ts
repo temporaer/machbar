@@ -666,6 +666,18 @@ Support reflection on behavioral change when the person wants it. Help them desc
 When the person ends the reflection, provide a concise human-readable summary and a clearly structured handover draft with confirmed decisions, tentative insights, possible changes to existing tasks/projects, and open questions. For existing items use only IDs present in the report; never invent IDs. Ask for explicit agreement before describing a commitment as agreed. This draft is a conversation note, not an executable or importable Machbar command; do not invent a JSON or versioned format.`,
   moreMomentum: "Household momentum",
   moreFindAndReview: "Find and review",
+  discussionTitle: "Discuss",
+  discussionDescription: "Tasks and projects nominated for a shared conversation.",
+  discussionEmpty: "Nothing has been marked for discussion yet.",
+  addDiscussion: "Mark for discussion",
+  removeDiscussion: "Remove discussion mark",
+  discussionMarked: "Marked for discussion",
+  clarifyAgain: "Clarify again",
+  clarifyLater: "Clarify later",
+  clarificationRevisitTitle: "Defer clarification",
+  clarificationRevisitNote: "The task keeps its current plan. Only the clarification reminder moves to the selected date.",
+  clarificationRevisitDate: "Return to Inbox on",
+  clarificationRevisitFutureError: "Choose a future date.",
   morePreferences: "Preferences",
   moreHousehold: "Household",
   aiContextTitle: "AI context",
@@ -1647,6 +1659,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     task_not_found: "The task could not be found.",
     task_schedule_before_available:
       "A task cannot be planned before its availability date.",
+    clarification_revisit_invalid:
+      "Only open tasks that need clarification can have a clarification revisit date.",
     task_availability_date_required:
       "The local date for this availability time is missing.",
     task_parent_self: "A task cannot be its own parent.",

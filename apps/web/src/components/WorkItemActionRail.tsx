@@ -6,6 +6,10 @@ interface WorkItemActionRailProps {
     label: string;
     onSelect: () => void;
   }[];
+  secondaryActions?: readonly {
+    label: string;
+    onSelect: () => void;
+  }[];
 }
 
 /**
@@ -24,10 +28,11 @@ export function WorkItemActionRail({
   disabled = false,
   groupLabel,
   actions,
+  secondaryActions = [],
 }: WorkItemActionRailProps) {
   return (
     <div className="work-item-command-rail" data-kind={kind} role="group" aria-label={groupLabel}>
-      <div
+      {actions.length > 0 ? <div
         className="rail-main-grid"
         style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}
       >
@@ -42,7 +47,16 @@ export function WorkItemActionRail({
             {action.label}
           </button>
         ))}
-      </div>
+      </div> : null}
+      {secondaryActions.length > 0 ? (
+        <div className="rail-secondary-grid">
+          {secondaryActions.map((action) => (
+            <button key={action.label} type="button" className="btn btn-sm" disabled={disabled} onClick={action.onSelect}>
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

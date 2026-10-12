@@ -192,7 +192,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     const task = makeTask({
       id: 13,
       title: "Nächsten Schritt klären",
-      status: "actionable",
+      status: "captured",
       needsClarification: true,
     });
     mockedApi.clarifyTask.mockResolvedValue({
@@ -218,7 +218,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     const task = makeTask({
       id: 14,
       title: "Ungeklärte Aufgabe",
-      status: "actionable",
+      status: "captured",
       needsClarification: true,
     });
     const { container } = renderWithProviders(
@@ -260,7 +260,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     const task = makeTask({
       id: 15,
       title: "Später einordnen",
-      status: "actionable",
+      status: "captured",
       needsClarification: true,
     });
     mockedApi.clarifyTask.mockResolvedValue({
@@ -413,6 +413,38 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(screen.getByRole("button", { name: "Planung" })).toBeInTheDocument();
   });
 
+  it("offers re-clarification and Besprechen from the same row rail without changing status", async () => {
+    const task = makeTask({ id: 208, title: "Aktiv und erneut zu klären", status: "actionable" });
+    mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, needsClarification: true });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Aktiv und erneut zu klären");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    await userEvent.click(within(rail).getByRole("button", { name: "Erneut klären" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(208, {
+      needsClarification: true,
+      expectedRevision: 1,
+    }));
+    expect(screen.getByText("Aktiv und erneut zu klären").closest(".task-row"))
+      .not.toHaveClass("task-row-captured");
+
+  });
+
+  it("toggles the discussion flag through the canonical task update", async () => {
+    const task = makeTask({ id: 209, title: "Gemeinsam besprechen", status: "actionable" });
+    mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, discussionRequested: true });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Gemeinsam besprechen");
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    await userEvent.click(within(rail).getByRole("button", { name: "Für Besprechung vormerken" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(209, {
+      discussionRequested: true,
+      expectedRevision: 1,
+    }));
+  });
+
   it("renders the fixed planning/step/move rail, never configurable per row", async () => {
     const task = makeTask({ id: 10, title: "Kompakte Aktionen", status: "actionable", projectId: 2 });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
@@ -449,8 +481,9 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(
-      within(rail).getAllByRole("button").map((button) => button.textContent),
+      within(rail.querySelector(".rail-main-grid")!).getAllByRole("button").map((button) => button.textContent),
     ).toEqual(["Wartet auf", "Schritt hinzufügen", "Verschieben"]);
+    expect(within(rail).getByRole("button", { name: "Für Besprechung vormerken" })).toBeInTheDocument();
     expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
     expect(within(rail).queryByRole("button", { name: "Irgendwann" })).not.toBeInTheDocument();
   });

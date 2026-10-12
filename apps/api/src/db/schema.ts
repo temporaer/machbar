@@ -514,9 +514,14 @@ export const workItems = sqliteTable(
     // captured | backlog | active | done | cancelled
     status: text("status").notNull().default("captured"),
     archivedAt: text("archived_at"),
-    // Legacy storage retained to avoid rebuilding this table again. Domain
-    // responses derive clarification exclusively from status="captured".
+    // Whether this item needs an explicit clarification pass is independent
+    // of its lifecycle status. Captured items start in this state, but active
+    // commitments may also need clarification without being demoted.
     needsClarification: integer("needs_clarification", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    clarificationRevisitDate: text("clarification_revisit_date"),
+    discussionRequested: integer("discussion_requested", { mode: "boolean" })
       .notNull()
       .default(false),
     ownerMemberId: integer("owner_member_id").references(() => members.id, {
