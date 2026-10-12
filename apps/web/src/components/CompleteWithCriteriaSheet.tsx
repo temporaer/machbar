@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { AcceptanceCriterion, Project, Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
+import { hasOpenDescendants } from "../lib/taskHelpers";
+import type { ChildPolicy } from "../lib/useTaskActions";
 import { BottomSheet } from "./BottomSheet";
 import { localizedErrorMessage } from "../lib/errorMessage";
 
@@ -17,10 +19,10 @@ export function CompleteWithCriteriaSheet({
   onComplete,
   onRefresh,
 }: {
-  workItem: Pick<Project | Task, "id" | "title"> & { acceptanceCriteria: AcceptanceCriterion[] };
+  workItem: (Pick<Project, "id" | "title"> & { acceptanceCriteria: AcceptanceCriterion[] }) | Task;
   workItemType: "project" | "task";
   onClose: () => void;
-  onComplete: (criteriaToCheck: number[]) => Promise<void>;
+  onComplete: (criteriaToCheck: number[], childPolicy?: ChildPolicy) => Promise<void>;
   onRefresh?: () => void;
 }) {
   const strings = useStrings();
@@ -29,6 +31,8 @@ export function CompleteWithCriteriaSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const allChecked = criteria.every((criterion) => checkedIds.has(criterion.id));
+  const taskHasOpenDescendants = workItemType === "task" && hasOpenDescendants(workItem as Task);
+  const [childPolicy, setChildPolicy] = useState<ChildPolicy | null>(null);
   useEffect(() => {
     const checked = criteria.filter((criterion) => criterion.checked).map((criterion) => criterion.id);
     setCheckedIds((previous) => new Set([...previous, ...checked]));
@@ -59,15 +63,35 @@ export function CompleteWithCriteriaSheet({
             </li>
           ))}
         </ul>
+        {taskHasOpenDescendants ? (
+          <fieldset className="stack">
+            <legend>{strings.openChildrenPrompt}</legend>
+            <label>
+              <input type="radio" name={`complete-child-policy-${workItem.id}`} checked={childPolicy === "leave_open"} disabled={busy} onChange={() => setChildPolicy("leave_open")} />
+              {strings.onlyThisTask} – {strings.leaveChildrenOpen}
+            </label>
+            <label>
+              <input type="radio" name={`complete-child-policy-${workItem.id}`} checked={childPolicy === "complete_children"} disabled={busy} onChange={() => setChildPolicy("complete_children")} />
+              {strings.completeChildren}
+            </label>
+            <label>
+              <input type="radio" name={`complete-child-policy-${workItem.id}`} checked={childPolicy === "cancel_children"} disabled={busy} onChange={() => setChildPolicy("cancel_children")} />
+              {strings.cancelChildren}
+            </label>
+          </fieldset>
+        ) : null}
         <button
           type="button"
           className="btn btn-primary btn-block"
-          disabled={!allChecked || busy}
+          disabled={!allChecked || busy || (taskHasOpenDescendants && childPolicy === null)}
           onClick={async () => {
             setBusy(true);
             setError(null);
             try {
-              await onComplete([...checkedIds].filter((id) => !criteria.find((criterion) => criterion.id === id)?.checked));
+              await onComplete(
+                [...checkedIds].filter((id) => !criteria.find((criterion) => criterion.id === id)?.checked),
+                taskHasOpenDescendants ? childPolicy ?? undefined : undefined,
+              );
               onClose();
             } catch (cause) {
               setError(localizedErrorMessage(cause, strings));

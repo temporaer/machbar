@@ -136,8 +136,8 @@ export function TaskWorkflowHost() {
           workItemType="task"
           onClose={close}
           onRefresh={reload}
-          onComplete={async (criteriaToCheck) => {
-            await taskActions.complete(task, undefined, criteriaToCheck, true);
+          onComplete={async (criteriaToCheck, childPolicy) => {
+            await taskActions.complete(task, childPolicy, criteriaToCheck, true);
           }}
         />
       );

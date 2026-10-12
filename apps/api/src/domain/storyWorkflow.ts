@@ -17,6 +17,7 @@ import { getProjectOrThrow } from "./storyCrud.js";
 import {
   activateProjectFromWorkflow,
 } from "./commitmentActivation.js";
+import { hasExecutionCommitment } from "./commitmentTransition.js";
 import type { ProjectActivationResolution } from "@machbar/shared";
 import {
   MutationContext,
@@ -140,16 +141,31 @@ export function returnProjectToBacklog(
       revision: schema.workItems.revision,
       dueDate: schema.workItems.dueDate,
       scheduledDate: schema.workItems.scheduledDate,
+      revisitAt: schema.workItems.revisitAt,
       repeatAfterDays: schema.workItems.repeatAfterDays,
       status: schema.workItems.status,
       taskKind: schema.workItems.taskKind,
     }).from(schema.workItems).where(inArray(schema.workItems.id, taskIds)).all();
-    const reminders = taskIds.length === 0 ? [] : tx.select({ taskId: schema.taskReminders.taskId })
+    const reminders = taskIds.length === 0 ? [] : tx.select({ taskId: schema.taskReminders.taskId, id: schema.taskReminders.id })
       .from(schema.taskReminders).where(inArray(schema.taskReminders.taskId, taskIds)).all();
-    const taskIdsWithReminders = new Set(reminders.map((row) => row.taskId));
-    const committedTasks = tasks.filter((task) => task.taskKind === "action" && (
-      task.dueDate !== null || task.scheduledDate !== null || task.repeatAfterDays !== null || taskIdsWithReminders.has(task.id)
-    ));
+    const remindersByTask = new Map<number, typeof reminders>();
+    for (const reminder of reminders) {
+      const taskReminders = remindersByTask.get(reminder.taskId) ?? [];
+      taskReminders.push(reminder);
+      remindersByTask.set(reminder.taskId, taskReminders);
+    }
+    // Terminal task fields are historical evidence, not live commitments.
+    // Revisit notifications are intentional deferrals; the shared helper
+    // excludes reminders attached to a revisit point from execution work.
+    const committedTasks = tasks.filter((task) =>
+      task.status !== "done" && task.status !== "cancelled" && hasExecutionCommitment({
+        kind: task.taskKind === "action" ? "action" : "reference",
+        dueDate: task.dueDate,
+        scheduledDate: task.scheduledDate,
+        revisitAt: task.revisitAt,
+        reminders: remindersByTask.get(task.id) ?? [],
+      }),
+    );
     const projectHasCommitment = project.dueDate !== null;
     if ((committedTasks.length > 0 || projectHasCommitment) && !withdrawCommitments) {
       throw AppError.conflict(

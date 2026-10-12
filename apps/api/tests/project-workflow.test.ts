@@ -1043,6 +1043,85 @@ describe("project workflow (HTTP routes)", () => {
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ dueDate: null, scheduledDate: null, repeatAfterDays: null, reminders: [] });
   });
 
+  it("preserves terminal task history during ordinary parking and explicit withdrawal", async () => {
+    for (const [title, withdraw, terminalAction] of [
+      ["Ohne Frist", false, "complete"],
+      ["Mit Frist", true, "cancel"],
+    ] as const) {
+      const project = await createProjectRoute({ title, status: "active" });
+      const created = await ctx.app.inject({
+        method: "POST", url: "/api/tasks", payload: {
+          projectId: project.id,
+          title: "Abgeschlossener Termin",
+          status: "actionable",
+          scheduledDate: "2026-11-04",
+          ...(terminalAction === "cancel" ? { repeatAfterDays: 30, allowedDeviationDays: 2 } : { dueDate: "2026-12-12" }),
+          reminders: [{ kind: "absolute", at: "2026-10-28T09:00:00.000Z" }],
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const task = created.json();
+      const terminal = await ctx.app.inject({
+        method: "POST", url: `/api/tasks/${task.id}/${terminalAction}`,
+        payload: { expectedRevision: task.revision },
+      });
+      expect(terminal.statusCode).toBe(200);
+      const completedTask = terminal.json();
+      expect(completedTask.status).toBe(terminalAction === "complete" ? "done" : "cancelled");
+
+      let activeProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+      if (withdraw) {
+        const dated = await ctx.app.inject({
+          method: "PATCH", url: `/api/projects/${project.id}`,
+          payload: { dueDate: "2026-12-15", expectedRevision: activeProject.revision },
+        });
+        activeProject = dated.json();
+      }
+      const parked = await ctx.app.inject({
+        method: "POST", url: `/api/projects/${project.id}/return-to-backlog`,
+        payload: { expectedRevision: activeProject.revision, ...(withdraw ? { withdrawCommitments: true } : {}) },
+      });
+      expect(parked.statusCode).toBe(200);
+      const after = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json();
+      expect(after).toMatchObject({
+        id: task.id,
+        status: terminalAction === "complete" ? "done" : "cancelled",
+        scheduledDate: "2026-11-04",
+        repeatAfterDays: terminalAction === "cancel" ? 30 : null,
+        dueDate: terminalAction === "complete" ? "2026-12-12" : null,
+        allowedDeviationDays: terminalAction === "cancel" ? 2 : null,
+        reminders: completedTask.reminders,
+        revision: completedTask.revision,
+      });
+    }
+  });
+
+  it("does not treat a revisit reminder as an execution commitment when parking", async () => {
+    const project = await createProjectRoute({ title: "Später entscheiden", status: "active" });
+    const created = await ctx.app.inject({
+      method: "POST", url: "/api/tasks", payload: {
+        projectId: project.id,
+        title: "Auf Entscheidung zurückkommen",
+        status: "actionable",
+        revisitAt: "2026-12-01T09:00:00.000Z",
+        reminders: [{ kind: "absolute", at: "2026-11-30T09:00:00.000Z" }],
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const task = created.json();
+
+    const parked = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/return-to-backlog`,
+      payload: { expectedRevision: project.revision },
+    });
+    expect(parked.statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({
+      id: task.id,
+      revisitAt: "2026-12-01T09:00:00.000Z",
+      reminders: task.reminders,
+    });
+  });
+
   it("moves a selected open task branch to Inbox atomically with project completion", async () => {
     const project = await createProjectRoute({ title: "Abschluss mit Restarbeit", status: "active" });
     const task = (await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: { projectId: project.id, title: "Rückfrage", status: "actionable" } })).json();
