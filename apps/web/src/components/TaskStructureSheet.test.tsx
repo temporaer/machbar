@@ -316,9 +316,9 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
     await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2));
 
-    await userEvent.click(within(sheet).getAllByRole("button", { name: "Serverfassung verwenden" })[0]);
+    await userEvent.click(within(sheet).getAllByRole("button", { name: "Serverfassung verwenden" })[0]!);
     expect(within(sheet).getByLabelText("Titel")).toHaveValue("Server Titel");
-    await userEvent.click(within(sheet).getAllByRole("button", { name: "Serverfassung verwenden" })[0]);
+    await userEvent.click(within(sheet).getAllByRole("button", { name: "Serverfassung verwenden" })[0]!);
     expect(within(sheet).getByLabelText("Notizen")).toHaveValue("Server Notizen");
 
     await userEvent.clear(within(sheet).getByLabelText("Titel"));
