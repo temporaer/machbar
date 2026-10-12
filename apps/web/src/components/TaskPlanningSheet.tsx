@@ -1434,7 +1434,13 @@ export function TaskPlanningSheet({
             reminders={reminders}
             dueDate={recurrenceEnabled ? recurrenceDeadline : dueDate || null}
             onChange={setReminders}
-            onPendingChange={setReminderDraftPending}
+            onPendingChange={(pending) => {
+              setReminderDraftPending(pending);
+              if (!pending) {
+                setWaitingError((current) => current === strings.planningFinishReminderFirst ? null : current);
+                setDependencyError((current) => current === strings.planningFinishReminderFirst ? null : current);
+              }
+            }}
             disabled={saving}
             autoOpen={initialTarget === "reminders"}
           />

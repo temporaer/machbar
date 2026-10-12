@@ -960,6 +960,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 minute" : `In ${minutes} minutes`),
   reminderRemove: "Remove reminder",
   reminderRowConfirm: "Confirm",
+  reminderRowCancel: "Cancel edit",
   reminderDaysBeforeFieldLabel: "Days before",
   reminderTimeFieldLabel: "Time",
   reminderDeadlineRelative: "Deadline-relative",

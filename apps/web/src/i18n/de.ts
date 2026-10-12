@@ -949,6 +949,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 Minute" : `In ${minutes} Minuten`),
   reminderRemove: "Erinnerung entfernen",
   reminderRowConfirm: "Bestätigen",
+  reminderRowCancel: "Eingabe abbrechen",
   reminderDaysBeforeFieldLabel: "Tage vorher",
   reminderTimeFieldLabel: "Uhrzeit",
   reminderDeadlineRelative: "Deadline-bezogen",

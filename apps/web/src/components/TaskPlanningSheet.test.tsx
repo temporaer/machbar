@@ -1042,7 +1042,7 @@ describe("TaskPlanningSheet", () => {
     );
     await user.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
     await user.type(screen.getByLabelText("Fällig"), "20.10.2026");
-    await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Eingabe abbrechen" }));
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
@@ -1098,6 +1098,7 @@ describe("TaskPlanningSheet", () => {
     expect(onClose).not.toHaveBeenCalled();
 
     await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Bestätigen" }));
+    expect(screen.queryByText("Speichere oder brich die offene Erinnerung ab, bevor du diese Änderung übernimmst.")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
     await waitFor(() => expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1));
   });
@@ -1194,6 +1195,10 @@ describe("TaskPlanningSheet", () => {
     await user.type(reminderDate, "20.12.2030");
     expect(reminderDate).toHaveValue("20.12.2030");
     expect(mockedApi.getTask).not.toHaveBeenCalled();
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Eingabe abbrechen" }));
+    await user.click(await screen.findByRole("button", { name: "Abhängigkeit hinzufügen: Freigabe" }));
+    await waitFor(() => expect(mockedApi.addDependency).toHaveBeenCalledWith(task.id, 80, 4));
+    expect(mockedApi.getTask).toHaveBeenCalledWith(task.id);
   });
 
   it("routes outer Save through the pending wait resolution and preserves other planning drafts", async () => {
