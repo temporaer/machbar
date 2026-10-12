@@ -409,7 +409,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(dependencySchema, request.body);
       addDependency(db, id, body.dependsOnTaskId, {
         actorMemberId: request.activityActor?.id ?? null,
-      });
+      }, body.expectedRevision);
       reply.status(201);
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -480,9 +480,10 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const dependsOnTaskId = parseId(request.params.dependsOnTaskId);
+      const body = parseOrThrow(taskLifecycleSchema, request.body ?? {});
       removeDependency(db, id, dependsOnTaskId, {
         actorMemberId: request.activityActor?.id ?? null,
-      });
+      }, body.expectedRevision);
       return taskOrThrow(db, id, viewerMemberId(request));
     },
   );

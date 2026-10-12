@@ -698,6 +698,12 @@ archived ◄──archive── (backlog | active | completed)
   recurrence and reminders. When explicitly requested, it revision-checks the
   descendant tasks and clears those commitments atomically with parking while
   preserving wait and revisit information.
+- Task Planning is also the focused editor for prerequisite relationships.
+  External waiting remains separate state: ending a wait removes only the
+  external-wait row and revisit date, leaving dependency edges in place.
+  Follow-up outcome text and the continue/end decision are written by one
+  revision-checked domain operation. Dependency add/remove requests carry the
+  task revision and use the existing cycle and task-kind guards.
 - `archived` only exposes `return_to_backlog`; there is no `archived → active`
   transition. Reactivating an archived project always goes through backlog
   first.

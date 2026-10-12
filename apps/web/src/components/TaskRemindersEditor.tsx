@@ -232,6 +232,13 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
           disabled={disabled || pendingReminder() === null}
           onClick={confirmEditor}
         >✓</button>
+        <button
+          type="button"
+          className="btn btn-sm reminder-row-cancel"
+          aria-label={strings.reminderRowCancel}
+          disabled={disabled}
+          onClick={() => updateEditor({ mode: "closed" })}
+        >{strings.reminderRowCancel}</button>
       </li>
     );
   };

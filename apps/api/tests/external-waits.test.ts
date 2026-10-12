@@ -606,6 +606,33 @@ describe("task external waits", () => {
     );
   });
 
+  it("keeps unrelated task prerequisites when an external wait is ended", async () => {
+    const prerequisite = await createTask({ title: "Receive the approval" });
+    const task = await createTask({ title: "Submit the application", scheduledDate: "2026-09-11" });
+    const withDependency = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/dependencies`,
+      payload: { dependsOnTaskId: prerequisite.id, expectedRevision: task.revision },
+    });
+    const waiting = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${task.id}/external-wait`,
+      payload: { waitingFor: "Office response", revisitDate: "2026-09-02", expectedRevision: withDependency.json().revision },
+    });
+    const resolved = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      payload: { action: "resolve", content: "The office replied.", expectedRevision: waiting.json().revision },
+    });
+
+    expect(resolved.statusCode).toBe(200);
+    expect(resolved.json()).toMatchObject({
+      externalWait: null,
+      dependencies: [{ dependsOnTaskId: prerequisite.id, resolved: false }],
+      blocked: true,
+    });
+  });
+
   it("rolls back the whole follow-up on stale revision or a missing continuation reason", async () => {
     const task = await createTask({
       title: "Keep atomic",
@@ -648,6 +675,13 @@ describe("task external waits", () => {
     });
     expect(noReason.statusCode).toBe(400);
     expect(noReason.json().error.code).toBe("external_wait_reason_required");
+
+    const noOutcome = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      payload: { action: "resolve", expectedRevision: waiting.revision },
+    });
+    expect(noOutcome.statusCode).toBe(400);
 
     const current = await ctx.app.inject({
       method: "GET",

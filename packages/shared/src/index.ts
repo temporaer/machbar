@@ -228,6 +228,7 @@ export type ApiErrorCode =
   | "role_conversion_invalid"
   | "task_title_required"
   | "external_wait_reason_required"
+  | "external_wait_followup_content_required"
   | "external_task_title_required"
   | "waiting_query_invalid"
   | "inbox_query_invalid"

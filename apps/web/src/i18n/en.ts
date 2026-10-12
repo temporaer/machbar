@@ -339,6 +339,20 @@ const en = {
   planningUndoWaitingToSetRevisit:
     "Undo ending the wait before setting a revisit.",
   planningWaitingReasonRequired: "Please say what this task is waiting for.",
+  planningFollowUpOutcome: "What happened?",
+  planningFollowUpOutcomePlaceholder: "Record the response or attempt",
+  planningFollowUpOutcomeRequired: "Record what happened before saving this follow-up.",
+  planningFollowUpNext: "Next",
+  planningContinueWaiting: "Keep waiting and set the next revisit",
+  planningSaveFollowUp: "Save follow-up",
+  planningFollowUpPrerequisitesNote: "Ending this external wait keeps any task prerequisites in place.",
+  planningFollowUpSavedDraftRemaining: "Follow-up saved. Save the remaining planning changes to apply them.",
+  planningFinishReminderFirst: "Save or cancel the open reminder before applying this change.",
+  prerequisitesTitle: "Prerequisites",
+  prerequisitesExplanation: "A prerequisite is another Machbar task that must be finished first. An external wait is separate.",
+  prerequisitesEmpty: "No task prerequisites.",
+  prerequisitesSearchHint: "Search for a task that must come first",
+  editPrerequisites: "Edit prerequisites",
   planningWaitingConflict:
     "After ending the wait, planning and a revisit cannot both remain. Remove one of the two dates.",
   planningWaitingConflictWithoutWait:
@@ -946,6 +960,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 minute" : `In ${minutes} minutes`),
   reminderRemove: "Remove reminder",
   reminderRowConfirm: "Confirm",
+  reminderRowCancel: "Cancel edit",
   reminderDaysBeforeFieldLabel: "Days before",
   reminderTimeFieldLabel: "Time",
   reminderDeadlineRelative: "Deadline-relative",
@@ -1650,6 +1665,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     external_task_title_required:
       "A title is required when creating an externally managed task.",
     external_wait_reason_required: "Enter what this task is waiting for.",
+    external_wait_followup_content_required: "Record what happened before saving a waiting follow-up.",
     waiting_query_invalid: "The Waiting query is invalid.",
     inbox_query_invalid: "The Inbox query is invalid.",
     external_wait_recurring_forbidden:

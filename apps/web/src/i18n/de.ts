@@ -317,6 +317,20 @@ const base = {
   planningUndoWaitingToSetRevisit:
     "Zum Setzen einer Wiedervorlage zuerst das Beenden des Wartens rückgängig machen.",
   planningWaitingReasonRequired: "Bitte gib an, worauf die Aufgabe wartet.",
+  planningFollowUpOutcome: "Was ist passiert?",
+  planningFollowUpOutcomePlaceholder: "Rückmeldung oder Versuch festhalten",
+  planningFollowUpOutcomeRequired: "Bitte halte zuerst fest, was bei diesem Folgeschritt passiert ist.",
+  planningFollowUpNext: "Danach",
+  planningContinueWaiting: "Weiter warten und neuen Wiedervorlagetermin festlegen",
+  planningSaveFollowUp: "Rückmeldung speichern",
+  planningFollowUpPrerequisitesNote: "Beim Beenden des externen Wartens bleiben Aufgaben-Voraussetzungen erhalten.",
+  planningFollowUpSavedDraftRemaining: "Rückmeldung gespeichert. Speichere die übrigen Planungsänderungen, um sie zu übernehmen.",
+  planningFinishReminderFirst: "Speichere oder brich die offene Erinnerung ab, bevor du diese Änderung übernimmst.",
+  prerequisitesTitle: "Voraussetzungen",
+  prerequisitesExplanation: "Eine Voraussetzung ist eine andere Machbar-Aufgabe, die zuerst erledigt werden muss. Externes Warten ist davon getrennt.",
+  prerequisitesEmpty: "Keine Aufgaben-Voraussetzungen.",
+  prerequisitesSearchHint: "Aufgabe suchen, die zuerst erledigt werden muss",
+  editPrerequisites: "Voraussetzungen bearbeiten",
   planningWaitingConflict:
     "Nach dem Beenden des Wartens können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
   planningWaitingConflictWithoutWait:
@@ -935,6 +949,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 Minute" : `In ${minutes} Minuten`),
   reminderRemove: "Erinnerung entfernen",
   reminderRowConfirm: "Bestätigen",
+  reminderRowCancel: "Eingabe abbrechen",
   reminderDaysBeforeFieldLabel: "Tage vorher",
   reminderTimeFieldLabel: "Uhrzeit",
   reminderDeadlineRelative: "Deadline-bezogen",
@@ -1656,6 +1671,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Beim Erstellen einer extern verwalteten Aufgabe ist ein Titel erforderlich.",
     external_wait_reason_required:
       "Bitte gib an, worauf diese Aufgabe wartet.",
+    external_wait_followup_content_required:
+      "Halte fest, was passiert ist, bevor du die Rückmeldung speicherst.",
     waiting_query_invalid: "Die Wartelisten-Abfrage ist ungültig.",
     inbox_query_invalid: "Die Eingangs-Abfrage ist ungültig.",
     external_wait_recurring_forbidden:
