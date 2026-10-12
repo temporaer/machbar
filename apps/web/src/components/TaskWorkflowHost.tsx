@@ -7,11 +7,9 @@ import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskStructureSheet } from "./TaskStructureSheet";
-import { TaskRemindersSheet } from "./TaskRemindersSheet";
 import { TaskSplitSheet } from "./TaskSplitSheet";
 import { TaskBreakdownSheet } from "./TaskBreakdownSheet";
 import { WorkRefinementSheet } from "./WorkRefinementSheet";
-import { TaskRecurrenceSheet } from "./TaskRecurrenceSheet";
 import { TaskPrioritySheet } from "./TaskPrioritySheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
 import { TaskContextsSheet } from "./TaskContextsSheet";
@@ -70,8 +68,6 @@ export function TaskWorkflowHost() {
       return <TaskShapeSheet task={task} onClose={close} />;
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
-    case "reminders":
-      return <TaskRemindersSheet task={task} onClose={close} />;
     case "waitingLifecycle":
       return <TaskPlanningSheet task={task} onClose={close} initialTarget="waiting" />;
     case "split":
@@ -122,8 +118,6 @@ export function TaskWorkflowHost() {
       );
     case "changeProject":
       return <MoveTaskSheet task={task} onClose={close} />;
-    case "recurrence":
-      return <TaskRecurrenceSheet task={task} onClose={close} />;
     case "priority":
       return <TaskPrioritySheet task={task} onClose={close} />;
     case "tags":

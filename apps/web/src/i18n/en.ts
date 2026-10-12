@@ -343,6 +343,11 @@ const en = {
     "After ending the wait, planning and a revisit cannot both remain. Remove one of the two dates.",
   planningWaitingConflictWithoutWait:
     "Without an external wait, planning and a revisit cannot both remain. Remove one of the two dates.",
+  planningConcurrentChanges: "Some planning values changed in the meantime. Choose which values to keep before saving again.",
+  planningConflictCurrent: "Currently saved",
+  planningConflictDraft: "Your draft",
+  planningConflictKeepMine: "Keep my change",
+  planningConflictUseCurrent: "Use current value",
   remove: "Remove",
   removePlanningDate: "Remove planning date",
   removeRevisitDate: "Remove revisit",

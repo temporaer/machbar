@@ -253,7 +253,7 @@ export function useWorkItemCommands() {
           taskWorkflow.open("structure", command.taskId);
           return;
         case "task.reminders":
-          taskWorkflow.open("reminders", command.taskId);
+          taskWorkflow.open("plan", command.taskId, "reminders");
           return;
         case "task.waitingLifecycle":
           taskWorkflow.open("waitingLifecycle", command.taskId, "waiting");
@@ -291,7 +291,7 @@ export function useWorkItemCommands() {
           taskWorkflow.open("changeProject", command.taskId);
           return;
         case "task.recurrence":
-          taskWorkflow.open("recurrence", command.taskId);
+          taskWorkflow.open("plan", command.taskId, "recurrence");
           return;
         case "task.priority":
           taskWorkflow.open("priority", command.taskId);

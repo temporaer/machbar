@@ -866,8 +866,6 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
         scheduledDate: resolveScheduleShortcut("tomorrow"),
-        revisitAt: null,
-        dueDate: null,
         expectedRevision: 1,
       }),
     );

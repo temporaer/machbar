@@ -49,7 +49,6 @@ describe("TaskAvailabilitySheet", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
         revisitAt: expect.any(String),
         scheduledDate: null,
-        dueDate: null,
         expectedRevision: 1,
       }),
     );
@@ -73,8 +72,6 @@ describe("TaskAvailabilitySheet", () => {
 
     expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
       revisitAt: expect.any(String),
-      scheduledDate: null,
-      dueDate: null,
       expectedRevision: 1,
     });
     expect(onClose).toHaveBeenCalled();
@@ -108,8 +105,6 @@ describe("TaskAvailabilitySheet", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
         revisitAt: expect.any(String),
-        scheduledDate: null,
-        dueDate: null,
         expectedRevision: 1,
       }),
     );
@@ -128,8 +123,6 @@ describe("TaskAvailabilitySheet", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(44, {
         revisitAt: null,
-        scheduledDate: null,
-        dueDate: null,
         expectedRevision: 1,
       }),
     );
@@ -194,8 +187,6 @@ describe("TaskAvailabilitySheet", () => {
         "03:30",
         "Europe/Berlin",
       ),
-      scheduledDate: null,
-      dueDate: null,
       expectedRevision: 1,
     });
   });

@@ -58,6 +58,40 @@ describe("fixed-day recurring tasks", () => {
     ).toThrow(/derived/i);
   });
 
+  it("sets the first occurrence and interval in one update without making future work eligible today", async () => {
+    const task = createTask(ctx.handle.db, {
+      title: "Filter prüfen",
+      status: "someday",
+    });
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: {
+        expectedRevision: task.revision,
+        scheduledDate: "2026-12-01",
+        repeatAfterDays: 14,
+        allowedDeviationDays: 2,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: task.id,
+      status: "actionable",
+      scheduledDate: "2026-12-01",
+      repeatAfterDays: 14,
+      allowedDeviationDays: 2,
+      dueDate: "2026-12-03",
+    });
+    const today = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?scope=all&date=2026-10-12",
+    });
+    const agenda = today.json() as { planned: Array<{ id: number }>; unscheduled: Array<{ id: number }> };
+    expect(agenda.planned.map(({ id }) => id)).not.toContain(task.id);
+    expect(agenda.unscheduled.map(({ id }) => id)).not.toContain(task.id);
+  });
+
   it.each([
     ["2026-08-19", "hit"],
     ["2026-08-22", "hit"],

@@ -164,6 +164,61 @@ describe("project workflow (HTTP routes)", () => {
       .toMatchObject({ status: "active", ownerMemberId: member.id });
   });
 
+  it("collects a missing project driver before atomically enabling recurrence", async () => {
+    const member = await createMemberRoute("Rae");
+    const project = await createProjectRoute({ title: "Heizung", ownerMemberId: null });
+    const created = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { projectId: project.id, title: "Filter prüfen", status: "someday" },
+    });
+    expect(created.statusCode).toBe(201);
+    const task = created.json();
+    const commitment = {
+      expectedRevision: task.revision,
+      scheduledDate: "2026-12-01",
+      repeatAfterDays: 14,
+      allowedDeviationDays: 2,
+    };
+
+    const required = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: commitment });
+    expect(required.statusCode).toBe(409);
+    expect(required.json().error).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: { projects: [{ projectId: project.id, required: ["driver"] }] },
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({
+      status: "someday",
+      scheduledDate: null,
+      repeatAfterDays: null,
+      dueDate: null,
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
+
+    const retried = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: {
+        ...commitment,
+        activationResolution: {
+          expectedProjects: required.json().error.details.expectedProjects,
+          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
+        },
+      },
+    });
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json()).toMatchObject({
+      status: "actionable",
+      scheduledDate: "2026-12-01",
+      repeatAfterDays: 14,
+      dueDate: "2026-12-03",
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json()).toMatchObject({
+      status: "active",
+      ownerMemberId: member.id,
+    });
+  });
+
   it("requires decisions before persisting a newly created project deadline, then creates the next action and activates atomically", async () => {
     const member = await createMemberRoute("Mira");
     const payload = {
