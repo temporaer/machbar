@@ -111,6 +111,7 @@ function createSteps(
   let projectId: number | null;
   let convertedProjectId: number | null = null;
   let destinationTaskId: number | null = null;
+  let childStatus: TaskStatus = "actionable";
 
   if (destination.type === "task") {
     const parent = getTaskOrThrow(txDb, destination.id);
@@ -120,6 +121,7 @@ function createSteps(
       });
     }
     destinationTaskId = parent.id;
+    childStatus = parent.status === "someday" ? "someday" : "actionable";
     if (input.convertParentToProject) {
       const converted = convertTaskToStoryInTransaction(txDb, parent.id, {
         status: "backlog",
@@ -150,7 +152,7 @@ function createSteps(
   const tasks = input.steps.map((step) => {
     const taskInput = {
       title: step.title.trim(),
-      status: "actionable" as const,
+      status: childStatus,
       createdByMemberId: input.createdByMemberId,
       dueDate: step.dueDate ?? null,
       scheduledDate: step.scheduledDate ?? null,

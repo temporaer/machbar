@@ -536,6 +536,13 @@ export function createTaskInTransaction(
   context?: MutationContext,
   options: { activateCommitment?: boolean } = {},
 ) {
+    // A parentTaskId supplied through the general create contract is the same
+    // structural mutation as POST /children. Route it through the canonical
+    // child implementation so Inbox classification and parked-parent rules
+    // cannot depend on which transport created the child.
+    if (input.parentTaskId != null) {
+      return createChildTaskInTransaction(txDb, input.parentTaskId, input, context, options);
+    }
     const projectId = input.projectId ?? null;
     const hadNextAction =
       projectId !== null ? projectHasNextAction(txDb, projectId) : true;
@@ -609,17 +616,22 @@ export function createChildTask(
 export function createChildTaskInTransaction(
   txDb: Db,
   parentTaskId: number,
-  input: Omit<CreateTaskInput, "parentTaskId" | "projectId">,
+  input: CreateTaskInput,
   context?: MutationContext,
   options: { activateCommitment?: boolean } = {},
 ) {
     const parent = getTaskOrThrow(txDb, parentTaskId);
     assertParentAcceptsChildren(txDb, parentTaskId);
-    const firstChildForCapturedParent = parent.kind === "action" && parent.status === "captured" &&
-      txDb.select({ id: schema.workItems.id }).from(schema.workItems)
-        .where(and(eq(schema.workItems.role, "task"), eq(schema.workItems.parentId, parentTaskId)))
-        .get() === undefined;
-    if (firstChildForCapturedParent) {
+    const actionChildAlreadyExists = txDb.select({ id: schema.workItems.id }).from(schema.workItems)
+      .where(and(
+        eq(schema.workItems.role, "task"),
+        eq(schema.workItems.parentId, parentTaskId),
+        eq(schema.workItems.taskKind, "action"),
+      ))
+      .get() !== undefined;
+    const createsFirstActionChild = input.kind !== "reference" && !actionChildAlreadyExists;
+    const classifiesCapturedParent = parent.kind === "action" && parent.status === "captured" && createsFirstActionChild;
+    if (classifiesCapturedParent) {
       txDb.update(schema.workItems).set({
         status: "active",
         needsClarification: false,
@@ -656,7 +668,14 @@ export function createChildTaskInTransaction(
       )
       .all()
       .some((child) => child.status !== "done" && child.status !== "cancelled");
-    const task = insertTask(txDb, { ...input, parentTaskId });
+    const defaultChildStatus = parent.status === "someday" ? "someday" : "actionable";
+    const task = insertTask(txDb, input.kind === "reference"
+      ? { ...input, parentTaskId }
+      : {
+          ...input,
+          status: input.status ?? defaultChildStatus,
+          parentTaskId,
+        });
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_created",

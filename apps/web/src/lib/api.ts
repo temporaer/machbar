@@ -230,8 +230,16 @@ export interface CreateTaskStepBatchInput {
   activationResolution?: ProjectActivationResolution;
 }
 
+export type ProjectRevisionSnapshot = Pick<Project, "id" | "revision" | "title" | "status"> & {
+  ancestors?: WorkItemAncestor[];
+};
+
 export interface CreateTaskStepBatchResult {
   tasks: TaskDetail[];
+  /** Fresh target snapshot after this batch; omitted when the target converted to a project. */
+  parent?: TaskDetail;
+  /** Current project state/chain for another batch in the same editor. */
+  projectSnapshot?: ProjectRevisionSnapshot | null;
   convertedProject?: ProjectWithActions | null;
 }
 

@@ -119,6 +119,35 @@ describe("TaskSplitSheet", () => {
     })));
   });
 
+  it("uses the updated Inbox classification and parent revision for a second batch in the same sheet", async () => {
+    mockedApi.createTaskStepBatchForTask
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 2, status: "actionable", needsClarification: false }),
+        projectSnapshot: null,
+      })
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 2, status: "actionable", needsClarification: false }),
+        projectSnapshot: null,
+      });
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} parentStatus="captured" onClose={vi.fn()} />);
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Erster Schritt");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("checkbox", { name: "Als Projekt behandeln" })).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Zweiter Schritt");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTaskStepBatchForTask.mock.calls[1]?.[1]).toMatchObject({
+      expectedRevision: 2,
+      expectedProjectRevisions: [],
+      steps: [{ title: "Zweiter Schritt" }],
+    });
+  });
+
   it("cancels without submitting the preserved draft", async () => {
     const onClose = vi.fn();
     renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} onClose={onClose} />);
@@ -141,7 +170,16 @@ describe("TaskSplitSheet", () => {
           targetRevision: 5,
         },
       }))
-      .mockResolvedValueOnce({ tasks: [] });
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 4, status: "actionable", projectId: 12 }),
+        projectSnapshot: { ...project, revision: 6, status: "active", ancestors: [] },
+      })
+      .mockResolvedValueOnce({
+        tasks: [],
+        parent: makeTask({ id: 7, revision: 4, status: "actionable", projectId: 12 }),
+        projectSnapshot: { ...project, revision: 6, status: "active", ancestors: [] },
+      });
     renderWithProviders(
       <TaskSplitSheet parentId={7} parentRevision={4} parentStatus="actionable" projectId={12} onClose={vi.fn()} />,
     );
@@ -166,6 +204,15 @@ describe("TaskSplitSheet", () => {
         drivers: [{ projectId: 12, ownerMemberId: 1 }],
       },
     }));
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Zweiter Schritt");
+    await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(3));
+    expect(mockedApi.createTaskStepBatchForTask.mock.calls[2]?.[1]).toMatchObject({
+      expectedRevision: 4,
+      expectedProjectRevisions: [{ projectId: 12, revision: 6 }],
+      steps: [{ title: "Zweiter Schritt" }],
+    });
   });
 
   it("drops activation decisions when the user changes the batch after a requirement response", async () => {

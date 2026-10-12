@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Task } from "@machbar/shared";
-import { api, type CreateTaskStepBatchInput, type ProjectWithActions } from "../lib/api";
+import { api, type CreateTaskStepBatchInput, type ProjectRevisionSnapshot, type ProjectWithActions } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { useRefresh } from "../lib/refresh";
@@ -21,7 +21,7 @@ function fingerprint(steps: StepDraft[], convert: boolean, projectId: number | n
   return JSON.stringify({ steps, convert, projectId });
 }
 
-function projectRevisions(project: Awaited<ReturnType<typeof api.getProject>>) {
+function projectRevisions(project: ProjectRevisionSnapshot) {
   const ancestors = (project.ancestors ?? [])
     .filter((ancestor) => ancestor.role === "story" && typeof ancestor.revision === "number")
     .map((ancestor) => ({ projectId: ancestor.id, revision: ancestor.revision! }));
@@ -53,7 +53,7 @@ export function TaskSplitSheet({
   const [convertParent, setConvertParent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
-  const [currentProject, setCurrentProject] = useState<Awaited<ReturnType<typeof api.getProject>> | null>(null);
+  const [currentProject, setCurrentProject] = useState<ProjectRevisionSnapshot | null>(null);
   const [convertedProject, setConvertedProject] = useState<ProjectWithActions | null>(null);
   const [currentParentRevision, setCurrentParentRevision] = useState(parentRevision);
   const [currentParentStatus, setCurrentParentStatus] = useState(parentStatus);
@@ -84,10 +84,9 @@ export function TaskSplitSheet({
   const requestFingerprint = fingerprint(draftSteps, convertParent, currentProjectId);
   const activationPrompt = activationState?.fingerprint === requestFingerprint ? activationState.prompt : null;
   const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
-  const expectedProjectRevisions = useMemo(
-    () => currentProjectId === null ? [] : currentProject?.id === currentProjectId ? projectRevisions(currentProject) : null,
-    [currentProject, currentProjectId],
-  );
+  const expectedProjectRevisions = currentProjectId === null
+    ? []
+    : currentProject?.id === currentProjectId ? projectRevisions(currentProject) : null;
 
   const refreshSnapshots = async () => {
     let nextProjectId = currentProjectId;
@@ -98,7 +97,12 @@ export function TaskSplitSheet({
       nextProjectId = task.projectId;
       setCurrentProjectId(nextProjectId);
     }
-    setCurrentProject(nextProjectId === null ? null : await api.getProject(nextProjectId));
+    if (nextProjectId === null) {
+      setCurrentProject(null);
+    } else {
+      const project = await api.getProject(nextProjectId);
+      setCurrentProject(project);
+    }
   };
 
   const submit = async (steps: StepDraft[]) => {
@@ -113,6 +117,12 @@ export function TaskSplitSheet({
     };
     try {
       const result = await api.createTaskStepBatchForTask(parentId, input);
+      if (result.parent) {
+        setCurrentParentRevision(result.parent.revision);
+        setCurrentParentStatus(result.parent.status);
+        setCurrentProjectId(result.parent.projectId);
+        setCurrentProject(result.projectSnapshot ?? null);
+      }
       bump();
       if (result.convertedProject) setConvertedProject(result.convertedProject);
     } catch (cause) {

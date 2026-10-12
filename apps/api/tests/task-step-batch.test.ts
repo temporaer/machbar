@@ -50,7 +50,102 @@ describe("atomic task step batches", () => {
     });
 
     expect(response.statusCode).toBe(201);
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json().status).toBe("someday");
+    const updatedParent = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json();
+    expect(updatedParent.status).toBe("someday");
+    expect(updatedParent.children).toMatchObject([{ title: "Kisten sichten", status: "someday" }]);
+    const agenda = await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2026-10-12" });
+    expect(JSON.stringify(agenda.json())).not.toContain("Irgendwann Dachboden");
+    expect(JSON.stringify(agenda.json())).not.toContain("Kisten sichten");
+
+    const committed = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children/batch`,
+      payload: {
+        expectedRevision: response.json().parent.revision,
+        expectedProjectRevisions: [],
+        steps: [{ title: "Kisten sortieren", scheduledDate: "2027-01-15" }],
+      },
+    });
+    expect(committed.statusCode).toBe(201);
+    expect(committed.json().parent).toMatchObject({ status: "someday" });
+    expect(committed.json().tasks).toMatchObject([{ status: "actionable", scheduledDate: "2027-01-15" }]);
+    const futureAgenda = await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2026-10-12" });
+    expect(JSON.stringify(futureAgenda.json())).not.toContain("Irgendwann Dachboden");
+    expect(JSON.stringify(futureAgenda.json())).not.toContain("Kisten sortieren");
+  });
+
+  it("classifies the first Inbox action child through every canonical create entry point", async () => {
+    const viaGeneralCreate = await createTask({ title: "Posteingang A" });
+    const viaGeneralChildCreate = await ctx.app.inject({
+      method: "POST", url: "/api/tasks", payload: { title: "Erster Schritt A", parentTaskId: viaGeneralCreate.id },
+    });
+    expect(viaGeneralChildCreate.statusCode).toBe(201);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${viaGeneralCreate.id}` })).json())
+      .toMatchObject({ status: "actionable", needsClarification: false });
+
+    const viaChildRoute = await createTask({ title: "Posteingang B" });
+    const childRoute = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${viaChildRoute.id}/children`, payload: { title: "Erster Schritt B" },
+    });
+    expect(childRoute.statusCode).toBe(201);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${viaChildRoute.id}` })).json())
+      .toMatchObject({ status: "actionable", needsClarification: false });
+
+    const viaBatch = await createTask({ title: "Posteingang C" });
+    const batch = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${viaBatch.id}/children/batch`,
+      payload: { expectedRevision: viaBatch.revision, expectedProjectRevisions: [], steps: [{ title: "Erster Schritt C" }] },
+    });
+    expect(batch.statusCode).toBe(201);
+    expect(batch.json().parent).toMatchObject({ status: "actionable", needsClarification: false });
+  });
+
+  it("rolls back first-child classification when the child is invalid", async () => {
+    const parent = await createTask({ title: "Unvollständige Inbox-Aufgabe" });
+    const response = await ctx.app.inject({
+      method: "POST", url: "/api/tasks", payload: {
+        title: "Ungültiges Kind", parentTaskId: parent.id, contextIds: [99999],
+      },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("physical_context_not_found");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json())
+      .toMatchObject({ status: "captured", needsClarification: true, children: [] });
+  });
+
+  it("retries a dated successor with explicit project activation decisions exactly once", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const project = await createProject({ title: "Sommerfest", status: "backlog" });
+    const predecessor = await createTask({ title: "Termin abstimmen", projectId: project.id, status: "actionable" });
+    const payload = { title: "Angebot vergleichen", scheduledDate: "2027-03-12", status: "actionable" };
+
+    const blocked = await ctx.app.inject({ method: "POST", url: `/api/tasks/${predecessor.id}/successors`, payload });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json().error.code).toBe("project_commitment_resolution_required");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().tasks)
+      .not.toContainEqual(expect.objectContaining({ title: "Angebot vergleichen" }));
+
+    const requirements = blocked.json().error.details;
+    const activationResolution = {
+      expectedProjects: requirements.expectedProjects,
+      drivers: requirements.projects
+        .filter((entry: { required: string[] }) => entry.required.includes("driver"))
+        .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
+      ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
+        ? { nextActionTitle: "Termin abstimmen" }
+        : {}),
+    };
+    const applied = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${predecessor.id}/successors`,
+      payload: { ...payload, activationResolution },
+    });
+    expect(applied.statusCode, applied.body).toBe(201);
+    expect(applied.json()).toMatchObject({ title: "Angebot vergleichen", scheduledDate: "2027-03-12" });
+
+    const updatedProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    expect(updatedProject.status).toBe("active");
+    expect(updatedProject.tasks.filter((task: { title: string }) => task.title === "Angebot vergleichen")).toHaveLength(1);
   });
 
   it("rolls back every child when dated work needs decisions, then applies one complete retry", async () => {

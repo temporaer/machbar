@@ -165,8 +165,15 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     }, { actorMemberId: request.activityActor?.id ?? null });
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(201);
+    const parent = result.convertedProjectId === null
+      ? taskOrThrow(db, parentId, viewerMemberId(request))
+      : undefined;
     return {
       tasks: result.tasks.map((task) => taskOrThrow(db, task.id, viewerMemberId(request))),
+      ...(parent ? {
+        parent,
+        projectSnapshot: parent.projectId === null ? null : graph.projectWithComputed(parent.projectId),
+      } : {}),
       ...(result.convertedProjectId !== null
         ? { convertedProject: graph.projectWithComputed(result.convertedProjectId) }
         : {}),
