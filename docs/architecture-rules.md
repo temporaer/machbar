@@ -197,9 +197,10 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project metadata and lifecycle actions | `apps/web/src/lib/useProjectActions.ts` |
 | Task hierarchy planning | `apps/web/src/lib/taskTreeMove.ts` |
 | Task hierarchy execution | `apps/web/src/lib/useOutlineOrganize.tsx` and `api.moveTask` |
+| Shared task-step entry and atomic batches | `apps/web/src/components/StepComposer.tsx` for authored rows; `POST /api/tasks/:id/children/batch` and `POST /api/projects/:id/tasks/batch` call the shared transactional task-step operation in `apps/api/src/domain/taskStepBatch.ts`. Inbox parent classification and commitment activation are part of that transaction. Inline successors still use the canonical successor mutation. |
 | Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |
 | Household member selection | `apps/web/src/components/MemberSelectionSheet.tsx` |
-| Single-task composition | `apps/web/src/components/InlineTaskComposer.tsx` |
+| Single-task composition | `apps/web/src/components/StepComposer.tsx` in single-step mode |
 | Acceptance criteria direct check/uncheck | `apps/web/src/lib/useCriterionCheck.ts` |
 | Acceptance criteria structural editing | `apps/web/src/components/AcceptanceCriteriaEditor.tsx` via `story.editOutcome` |
 | Completion-with-open-criteria continuation | `apps/web/src/components/CompleteWithCriteriaSheet.tsx`, opened as the `completeWithCriteria` workflow |
@@ -231,7 +232,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task/project `scope` ("household" \| "work") read/derivation and owner-only visibility | `apps/api/src/domain/graph.ts` (`Graph.load`'s viewer-restriction parameter; see below) |
 | Household/work agenda-scope filtering shared by Today/Week/Waiting | `apps/api/src/domain/agendaSelection.ts` (`matchesScope`) |
 | Work-item exclusion from points/gamification | `apps/api/src/repo/contributionRepo.ts` (`entityScope` gate in `recordContribution`) |
-| Contextual successor creation ("+" in organizable outlines only) | `apps/web/src/components/InlineSuccessorComposer.tsx`, rendered by `apps/web/src/components/TaskRow.tsx` when `organizeEnabled` |
+| Contextual successor creation ("+" in organizable outlines only) | `apps/web/src/components/InlineSuccessorComposer.tsx` reuses `StepComposer` and calls the canonical successor mutation; the composer is also shared by `TaskSplitSheet` and the captured-project handoff |
 | Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |

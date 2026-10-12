@@ -2,7 +2,7 @@ import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { InlineTaskComposer } from "./InlineTaskComposer";
+import { StepComposer } from "./StepComposer";
 
 export function InlineSuccessorComposer({
   predecessorId,
@@ -17,9 +17,11 @@ export function InlineSuccessorComposer({
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
 
-  const create = async (title: string) => {
+  const create = async (steps: Array<{ title: string; dueDate?: string | null; scheduledDate?: string | null }>) => {
+    const step = steps[0];
+    if (!step) return;
     await api.createTaskSuccessor(predecessorId, {
-      title,
+      ...step,
       createdByMemberId: currentMemberId,
       status: "actionable",
     });
@@ -28,12 +30,14 @@ export function InlineSuccessorComposer({
   };
 
   return (
-    <InlineTaskComposer
-      inputId={`inline-successor-title-${predecessorId}`}
+    <StepComposer
+      inputIdPrefix={`inline-successor-title-${predecessorId}`}
       label={strings.addSuccessor}
       placeholder={strings.successorPlaceholder}
+      submitLabel={strings.save}
       onCancel={onCancel}
-      onSave={create}
+      onSubmit={create}
+      singleStep
     />
   );
 }

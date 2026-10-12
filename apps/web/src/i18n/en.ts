@@ -753,6 +753,9 @@ When the person ends the reflection, provide a concise human-readable summary an
     nextMonth: "Next month",
   },
   splitTaskRowPlaceholder: "Step …",
+  stepPlanningOptional: "Planning (optional)",
+  stepTreatAsProject: "Treat as a project",
+  stepParentRevisionMissing: "Reload the task before saving these steps.",
   removeStep: "Remove step",
   confirmDone: "Done",
   unknownMember: "Unknown person",
@@ -798,6 +801,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   railPlanning: "Planning",
   railShape: "Type",
   railStructure: "Structure",
+  railAddStep: "Add step",
+  railMove: "Move",
   railNote: "Note",
   railWaitingFor: "Waiting for",
   railUpdate: "Update",
@@ -1603,6 +1608,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     task_parent_self: "A task cannot be its own parent.",
     task_promotion_invalid:
       "This inbox item cannot be converted to a project in its current state.",
+    task_step_batch_invalid: "The steps could not be saved together. Check the entries and try again.",
     task_reopen_required:
       "Explicitly reopen this completed or cancelled task before adding a new execution commitment.",
     scope_mismatch:

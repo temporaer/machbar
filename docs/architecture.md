@@ -762,12 +762,28 @@ take over.
 
 ### Entering successive tasks
 
-**Nächsten Schritt danach hinzufügen** on a task creates one actionable
-sibling at the same outline level and makes it depend on the source task —
-the one lightweight bulk-entry surface. `POST /api/tasks/:id/successors`
-performs creation and dependency insertion in one SQLite transaction. It
-intentionally collects only a title; existing focused actions handle
-external waits, dependencies, Wiedervorlage, ownership, notes, and dates.
+`StepComposer` is the shared authored step-entry component used for inline
+successors, task splitting, and the post-conversion project handoff. Inline
+**Nächsten Schritt danach hinzufügen** still creates one actionable sibling at
+the same outline level and makes it depend on its source task;
+`POST /api/tasks/:id/successors` performs creation and dependency insertion in
+one SQLite transaction. It may include the optional plan or deadline collected
+by the shared composer.
+
+Task splitting and project handoff submit every filled row in one request to
+`domain/taskStepBatch.ts`. The domain operation checks the selected parent or
+project revision and the full containing project chain, creates all tasks,
+classifies an Inbox parent with its first child, and runs the Phase 1
+commitment evaluator before commit. Missing driver/progress decisions roll back
+the complete batch; the UI keeps its rows and renders the server requirements
+for an explicit retry. A requested captured-task conversion invokes the
+existing guarded role-conversion implementation inside the same transaction.
+Undated children do not activate Someday/backlog work. Existing outline
+reordering still uses `useOutlineOrganize` and the canonical task move API.
+
+The task row rail exposes **Schritt hinzufügen** and **Verschieben** directly;
+both dispatch existing `task.split` and `task.changeProject` commands. The row
+does not reproduce task creation or movement semantics.
 
 Outline position (likely work order) and dependencies (genuinely blocked
 work) remain distinct: a project's ordinary task list needs neither a
@@ -813,7 +829,7 @@ tasks. Healthy future waiting suppresses generic active inactivity.
 Review decisions execute through `useProjectActions` and `useTaskActions`.
 Expected revisions, optimistic retention, stale conflicts, and refresh remain
 inside those canonical hooks. Focused repair reuses project/task detail,
-`TaskOwnerSheet`, `MemberSelectionSheet`, `InlineTaskComposer`, and
+`TaskOwnerSheet`, `MemberSelectionSheet`, `StepComposer`, and
 `AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
 available as optional secondary planning tools rather than a separate
 Refinement workflow.

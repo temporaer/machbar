@@ -212,6 +212,7 @@ export type ApiErrorCode =
   | "task_availability_date_required"
   | "task_parent_self"
   | "task_promotion_invalid"
+  | "task_step_batch_invalid"
   | "task_reminder_invalid"
   | "scope_mismatch"
   | "scope_edit_root_only"
@@ -876,6 +877,8 @@ export interface WorkItemAncestor {
   id: number;
   role: "story" | "task";
   title: string;
+  /** Revision for conflict-safe commands whose destination spans the chain. */
+  revision?: number;
 }
 
 export type RecurrenceOccurrenceResult = "hit" | "miss";

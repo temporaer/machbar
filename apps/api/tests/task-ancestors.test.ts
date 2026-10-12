@@ -44,9 +44,9 @@ describe("task detail ancestor breadcrumbs", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ancestors).toEqual([
-      { id: haus.id, role: "story", title: "Haus" },
-      { id: urlaub.id, role: "story", title: "Urlaub" },
-      { id: autoPacken.id, role: "task", title: "Auto packen" },
+      { id: haus.id, role: "story", title: "Haus", revision: 1 },
+      { id: urlaub.id, role: "story", title: "Urlaub", revision: 1 },
+      { id: autoPacken.id, role: "task", title: "Auto packen", revision: 1 },
     ]);
   });
 
@@ -63,7 +63,7 @@ describe("task detail ancestor breadcrumbs", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ancestors).toEqual([
-      { id: parent.id, role: "task", title: "Elternaufgabe" },
+      { id: parent.id, role: "task", title: "Elternaufgabe", revision: 1 },
     ]);
   });
 
@@ -91,7 +91,7 @@ describe("task detail ancestor breadcrumbs", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().ancestors).toEqual([
-      { id: project.id, role: "story", title: "Umzug" },
+      { id: project.id, role: "story", title: "Umzug", revision: 1 },
     ]);
   });
 

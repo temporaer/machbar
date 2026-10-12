@@ -171,7 +171,7 @@ describe("task kind (reference/material nodes)", () => {
     });
   });
 
-  it("still rejects children under a genuinely captured action parent", async () => {
+  it("classifies a captured Inbox parent when its first step is added", async () => {
     const parent = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
@@ -185,14 +185,10 @@ describe("task kind (reference/material nodes)", () => {
       payload: { title: "Should fail" },
     });
 
-    expect(child.statusCode).toBe(409);
-    expect(child.json().error).toMatchObject({
-      code: "task_promotion_invalid",
-      details: {
-        taskId: parent.json().id,
-        reason: "captured_child_forbidden",
-      },
-    });
+    expect(child.statusCode).toBe(201);
+    expect(child.json()).toMatchObject({ title: "Should fail", parentTaskId: parent.json().id });
+    const refreshedParent = await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.json().id}` });
+    expect(refreshedParent.json()).toMatchObject({ status: "actionable", needsClarification: false });
   });
 
   it("an action is not selected as next action if its only child is a reference containing an open action", async () => {

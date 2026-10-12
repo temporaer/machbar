@@ -58,9 +58,11 @@ are secondary actions in the same sheet. Every task capture uses the existing
 canonical task-creation operation. Global captures go to **Eingang** as
 unclassified items; captures made inside a project inherit that destination,
 which can be changed in the composer. After capture, the form resets and shows
-the created task with an **Öffnen** action. If a captured task later turns out
-to be a multi-step outcome, use the existing **Zum Projekt machen** workflow to
-promote it.
+the created task with an **Öffnen** action. If a captured task needs steps, add
+them directly. The default keeps it as a task and classifies the Inbox item in
+the same transaction as its first child; **Als Projekt behandeln** is an
+optional branch through the existing guarded conversion. Unsupported
+conversions leave the original task and the whole step batch intact.
 
 When creation would also activate a project chain, the server evaluates the
 transition and returns any missing decisions. The composer displays those
@@ -116,9 +118,9 @@ An inbox item leaves clarification through one explicit classification:
 - **Machbar** keeps it as a task and makes it actionable.
 - **Irgendwann** keeps it as a task outside the current action lists.
 - **Backlog** converts it to a backlog project/story and opens a handoff sheet
-  showing the project's steps as a persistent, always-visible list -- each
-  added step is created immediately as a real task, so what's there and what
-  just got added is never in doubt. Starting the project ("Aktivieren")
+  showing the project's steps as a persistent, always-visible list. Added steps
+  are submitted as one revision-checked batch, so either every row and any
+  required activation transition is committed or none is. Starting the project ("Aktivieren")
   remains a strictly later, explicit decision made once it has a driver and a
   viable progress or future-waiting path: a raw Inbox capture can never
   satisfy that precondition immediately (no driver is inherited by default,

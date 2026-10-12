@@ -274,6 +274,21 @@ export const createChildTaskSchema = createTaskSchema.omit({
   parentTaskId: true,
 });
 
+export const taskStepBatchSchema = z.object({
+  steps: z.array(z.object({
+    title: z.string().trim().min(1),
+    dueDate: isoDate.nullable().optional(),
+    scheduledDate: isoDate.nullable().optional(),
+  }).strict()).min(1).max(30),
+  expectedRevision: z.number().int().positive(),
+  expectedProjectRevisions: z.array(z.object({
+    projectId: z.number().int().positive(),
+    revision: z.number().int().positive(),
+  }).strict()),
+  convertParentToProject: z.boolean().optional(),
+  activationResolution: projectActivationResolutionSchema.optional(),
+}).strict();
+
 export const updateTaskSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),

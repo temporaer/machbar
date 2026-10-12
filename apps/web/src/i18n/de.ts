@@ -735,6 +735,9 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     nextMonth: "Nächster Monat",
   },
   splitTaskRowPlaceholder: "Schritt …",
+  stepPlanningOptional: "Planung (optional)",
+  stepTreatAsProject: "Als Projekt behandeln",
+  stepParentRevisionMissing: "Die Aufgabe muss vor dem Speichern erneut geladen werden.",
   removeStep: "Schritt entfernen",
   confirmDone: "Fertig",
   unknownMember: "Unbekannte Person",
@@ -780,6 +783,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   railPlanning: "Planung",
   railShape: "Art",
   railStructure: "Struktur",
+  railAddStep: "Schritt hinzufügen",
+  railMove: "Verschieben",
   railNote: "Notiz",
   railWaitingFor: "Wartet auf",
   railUpdate: "Update",
@@ -1608,6 +1613,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Eine Aufgabe kann nicht ihre eigene übergeordnete Aufgabe sein.",
     task_promotion_invalid:
       "Dieser Eingangseintrag kann in seinem aktuellen Zustand nicht in ein Projekt umgewandelt werden.",
+    task_step_batch_invalid: "Die Schritte konnten nicht gemeinsam gespeichert werden. Prüfe die Eingaben.",
     task_reopen_required:
       "Öffne die erledigte oder abgebrochene Aufgabe ausdrücklich wieder, bevor du einen neuen Ausführungstermin hinzufügst.",
     scope_mismatch:

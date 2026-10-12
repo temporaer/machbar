@@ -79,6 +79,9 @@ export function TaskWorkflowHost() {
         <TaskSplitSheet
           parentId={task.id}
           parentTitle={task.title}
+          parentRevision={task.revision}
+          parentStatus={task.status}
+          projectId={task.projectId}
           existingChildren={task.children}
           onClose={close}
         />

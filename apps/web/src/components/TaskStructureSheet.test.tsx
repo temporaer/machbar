@@ -485,7 +485,7 @@ describe("TaskStructureSheet routing", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("hides split but still offers move and conversion for a captured inbox item", async () => {
+  it("offers step entry, move, and conversion for a captured inbox item", async () => {
     const task = makeTask({
       id: 75,
       title: "Unklarer Einfall",
@@ -499,7 +499,7 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
     await screen.findByRole("dialog", { name: "Struktur: Unklarer Einfall" });
 
-    expect(screen.queryByRole("button", { name: "Aufteilen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aufteilen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zum Projekt machen" })).toBeInTheDocument();
   });

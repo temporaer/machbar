@@ -222,6 +222,19 @@ export interface CreateTaskInput {
 /** Body for `POST /api/tasks/:id/children` (no `projectId`/`parentTaskId`, both implied). */
 export type CreateChildTaskInput = Omit<CreateTaskInput, "projectId" | "parentTaskId">;
 
+export interface CreateTaskStepBatchInput {
+  steps: Array<{ title: string; dueDate?: string | null; scheduledDate?: string | null }>;
+  expectedRevision: number;
+  expectedProjectRevisions: Array<{ projectId: number; revision: number }>;
+  convertParentToProject?: boolean;
+  activationResolution?: ProjectActivationResolution;
+}
+
+export interface CreateTaskStepBatchResult {
+  tasks: TaskDetail[];
+  convertedProject?: ProjectWithActions | null;
+}
+
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "projectId">> & {
   externalWait?: { waitingFor: string | null; revisitDate?: string | null } | null;
   additionalNextAction?: boolean;
@@ -838,6 +851,16 @@ export const api = {
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(input) }),
   createChildTask: (parentId: number, input: CreateChildTaskInput) =>
     request<Task>(`/tasks/${parentId}/children`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  createTaskStepBatchForTask: (parentId: number, input: CreateTaskStepBatchInput) =>
+    request<CreateTaskStepBatchResult>(`/tasks/${parentId}/children/batch`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  createTaskStepBatchForProject: (projectId: number, input: CreateTaskStepBatchInput) =>
+    request<CreateTaskStepBatchResult>(`/projects/${projectId}/tasks/batch`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
