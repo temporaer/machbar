@@ -53,10 +53,21 @@ later.
 ### 1. Capture
 
 Record an idea, request, link, or commitment without completing a form first.
-Every capture creates a task. Global captures go to **Eingang** as
-unclassified items; captures made inside a project become normal tasks in that
-project. If a captured task later turns out to be a multi-step outcome, use
-the existing **Zum Projekt machen** workflow to promote it.
+The `+` button opens the title field immediately; photo, file, and **Verarbeiten**
+are secondary actions in the same sheet. Every task capture uses the existing
+canonical task-creation operation. Global captures go to **Eingang** as
+unclassified items; captures made inside a project inherit that destination,
+which can be changed in the composer. After capture, the form resets and shows
+the created task with an **Öffnen** action. If a captured task later turns out
+to be a multi-step outcome, use the existing **Zum Projekt machen** workflow to
+promote it.
+
+When creation would also activate a project chain, the server evaluates the
+transition and returns any missing decisions. The composer displays those
+requirements and retries the same create operation with the explicit choices;
+the initial attempt rolls back, so collecting decisions does not leave a
+partial task behind. The capture UI presents server requirements but does not
+reconstruct activation rules or project ancestry.
 
 The title field accepts optional short syntax for faster capture, for example
 `~morgen` for a planned date, `!15.9` for a deadline, `@Hanna` for an owner,

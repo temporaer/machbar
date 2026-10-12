@@ -100,9 +100,11 @@ system, or AI assistant. A person starts **Verarbeiten** from Quick Add or the
 share target. Machbar stores a short-lived intake job and asks the paired Home
 Assistant integration to run the configured AI Task entity:
 
-The ordinary Quick Add **Aufgabe** capture remains its existing direct task
-capture path. **Verarbeiten** is a separate choice and does not change the
-semantics of ordinary capture.
+Quick Add opens the title composer immediately. Photo, file, and **Verarbeiten**
+remain secondary actions from that composer. Switching to AI intake keeps the
+task draft mounted; cancelling intake returns to the same draft. Successful
+task capture resets the composer and shows the created item with an **Öffnen**
+command routed through `useWorkItemCommands()`.
 
 ```text
 Quick Add / SharePage

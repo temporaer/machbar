@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CreateTaskInput } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
@@ -51,6 +51,12 @@ export interface CaptureFormProps {
   onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
   secondaryAction?: { label: string; onClick: () => void };
+  captureActions?: {
+    photoLabel: string;
+    fileLabel: string;
+    onPhoto: () => void;
+    onFile: () => void;
+  };
   /** Set on capture only when the currently active view is the Work
    * scope; omitted (server default `"household"` applies) otherwise. */
   defaultScope?: "work";
@@ -72,6 +78,7 @@ export function CaptureForm({
   onCancel,
   onCaptured,
   secondaryAction,
+  captureActions,
   defaultScope,
 }: CaptureFormProps) {
   const strings = useStrings();
@@ -85,6 +92,9 @@ export function CaptureForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [projectDestinationOverride, setProjectDestinationOverride] = useState<
+    number | null | undefined
+  >(undefined);
   const [openModifier, setOpenModifier] = useState<
     "member" | "context" | "schedule" | "project" | null
   >(null);
@@ -110,6 +120,14 @@ export function CaptureForm({
     [resolvedTokens],
   );
   const capturedTitle = stripResolvedTokens(title, resolvedTokens);
+  const effectiveProjectId =
+    syntaxMetadata.projectId ??
+    (projectDestinationOverride !== undefined
+      ? projectDestinationOverride
+      : projectId ?? null);
+  const effectiveProject = (projects ?? []).find(
+    (project) => project.id === effectiveProjectId,
+  );
   const suggestions = useMemo(
     () =>
       captureSyntaxSuggestions({
@@ -130,7 +148,7 @@ export function CaptureForm({
   ): CreateTaskInput => ({
     title: capturedTitle,
     ...(preparedNotes ? { notes: preparedNotes } : {}),
-    projectId: syntaxMetadata.projectId ?? projectId ?? null,
+    projectId: effectiveProjectId,
     parentTaskId: parentTaskId ?? null,
     createdByMemberId: currentMemberId,
     status: needsClarification ? "captured" : "actionable",
@@ -150,10 +168,20 @@ export function CaptureForm({
         : ownerAssignmentPatch(currentMemberId)),
   });
 
+  const needsClarification =
+    effectiveProjectId === null && (parentTaskId ?? null) === null;
+  const requestFingerprint = JSON.stringify(taskInput(needsClarification, notes));
+  const currentActivationPrompt =
+    activationPrompt?.requestFingerprint === requestFingerprint ? activationPrompt : null;
+
+  useEffect(() => {
+    if (activationPrompt && activationPrompt.requestFingerprint !== requestFingerprint) {
+      setActivationPrompt(null);
+    }
+  }, [activationPrompt, requestFingerprint]);
+
   const createTask = async () => {
     if (!capturedTitle || saving) return;
-    const needsClarification =
-      (projectId ?? null) === null && (parentTaskId ?? null) === null;
     setSaving(true);
     setError(null);
     try {
@@ -162,15 +190,17 @@ export function CaptureForm({
         taskInput(
           needsClarification,
           preparedNotes,
-          activationPrompt
-            ? projectActivationResolutionFromPrompt(activationPrompt) ?? undefined
+          currentActivationPrompt
+            ? projectActivationResolutionFromPrompt(currentActivationPrompt) ?? undefined
             : undefined,
         ),
       );
       onCaptured({ kind: "task", task, needsClarification });
     } catch (cause) {
-      const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (refreshedPrompt) setActivationPrompt(refreshedPrompt);
+      const refreshedPrompt = projectActivationPromptFromError(cause, currentActivationPrompt);
+      if (refreshedPrompt) {
+        setActivationPrompt({ ...refreshedPrompt, requestFingerprint });
+      }
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -210,6 +240,19 @@ export function CaptureForm({
           .map((candidate) => modifierCaptureToken({ kind: "context", context: candidate })),
       ];
     });
+  };
+
+  const selectProjectDestination = (destination: number | null) => {
+    const token = resolvedTokens.find((candidate) => candidate.kind === "story");
+    if (token && title.slice(token.start, token.end) === token.raw) {
+      setTitle((current) =>
+        `${current.slice(0, token.start)}${current.slice(token.end)}`.replace(/\s+/g, " ").trim(),
+      );
+    }
+    setSelectedTokens((current) => current.filter((candidate) => candidate.kind !== "story"));
+    setProjectDestinationOverride(destination);
+    setOpenModifier(null);
+    focusTitle();
   };
 
   return (
@@ -331,6 +374,9 @@ export function CaptureForm({
             + {strings.project}
           </button>
         </div>
+        <p className="capture-destination" aria-live="polite">
+          {strings.captureDestination}: {effectiveProject?.title ?? strings.inbox}
+        </p>
         {openModifier === "member" ? (
           <MemberChoiceGroup
             label={strings.member}
@@ -393,6 +439,14 @@ export function CaptureForm({
         ) : null}
         {openModifier === "project" ? (
           <div className="choice-group" role="group" aria-label={strings.project}>
+            <button
+              type="button"
+              className="choice-chip"
+              aria-pressed={effectiveProjectId === null}
+              onClick={() => selectProjectDestination(null)}
+            >
+              {strings.inbox}
+            </button>
             {(projects ?? [])
               .slice()
               .sort((a, b) => a.title.localeCompare(b.title, locale))
@@ -401,8 +455,8 @@ export function CaptureForm({
                   key={project.id}
                   type="button"
                   className="choice-chip"
-                  aria-pressed={syntaxMetadata.projectId === project.id}
-                  onClick={() => selectModifier(modifierCaptureToken({ kind: "story", story: project }))}
+                  aria-pressed={effectiveProjectId === project.id}
+                  onClick={() => selectProjectDestination(project.id)}
                 >
                   {project.title}
                 </button>
@@ -433,9 +487,9 @@ export function CaptureForm({
           />
         </div>
       ) : null}
-      {activationPrompt ? (
+      {currentActivationPrompt ? (
         <ProjectActivationDecisionFields
-          prompt={activationPrompt}
+          prompt={currentActivationPrompt}
           disabled={saving}
           onChange={setActivationPrompt}
         />
@@ -450,12 +504,22 @@ export function CaptureForm({
             {secondaryAction.label}
           </button>
         ) : null}
+        {captureActions ? (
+          <>
+            <button type="button" className="btn" onClick={captureActions.onPhoto}>
+              {captureActions.photoLabel}
+            </button>
+            <button type="button" className="btn" onClick={captureActions.onFile}>
+              {captureActions.fileLabel}
+            </button>
+          </>
+        ) : null}
         <button
           type="submit"
           className="btn btn-primary"
           aria-label={strings.create}
           disabled={saving || !capturedTitle || !dueDateValid ||
-            (activationPrompt !== null && projectActivationResolutionFromPrompt(activationPrompt) === null)}
+            (currentActivationPrompt !== null && projectActivationResolutionFromPrompt(currentActivationPrompt) === null)}
         >
           {strings.create}
         </button>
