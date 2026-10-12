@@ -478,7 +478,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     const criterion = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/criteria`, payload: { text: "Result geprüft" } });
     const incomplete = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision } });
     expect(incomplete.statusCode).toBe(409);
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ status: "active", acceptanceCriteria: [{ checked: false }] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ status: "actionable", acceptanceCriteria: [{ checked: false }] });
 
     const completed = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision, criteriaToCheck: [criterion.json().acceptanceCriteria[0].id] } });
     expect(completed.statusCode).toBe(200);

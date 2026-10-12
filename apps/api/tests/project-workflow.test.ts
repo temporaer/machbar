@@ -89,6 +89,7 @@ describe("project workflow (HTTP routes)", () => {
       payload: { projectId, title: "Next action", status: "actionable" },
     });
     expect(response.statusCode).toBe(201);
+    return response.json();
   }
 
   it("defaults a newly created project to backlog with activate/archive as its only actions", async () => {
@@ -927,10 +928,19 @@ describe("project workflow (HTTP routes)", () => {
   it("completes an active project manually, and reopens a completed one back to active", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute({ ownerMemberId: anna.id, status: "active" });
-    await addProgressTask(project.id);
+    const task = await addProgressTask(project.id);
+    const current = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
 
     const completed = (
-      await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/complete` })
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/complete`,
+        payload: {
+          expectedRevision: current.revision,
+          expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
+          descendantResolutions: [{ taskId: task.id, action: "move_to_inbox", expectedRevision: task.revision }],
+        },
+      })
     ).json();
     expect(completed.status).toBe("completed");
     expect(completed.ownerMemberId).toBe(anna.id);
@@ -988,11 +998,12 @@ describe("project workflow (HTTP routes)", () => {
     const project = await createProjectRoute({ title: "Geplantes Projekt", status: "active", dueDate: "2026-12-20" });
     const created = await ctx.app.inject({
       method: "POST", url: "/api/tasks", payload: {
-        projectId: project.id, title: "Termin vorbereiten", status: "actionable", dueDate: "2026-11-10", scheduledDate: "2026-11-01",
+        projectId: project.id, title: "Termin vorbereiten", status: "actionable", scheduledDate: "2026-11-01",
         repeatAfterDays: 30, allowedDeviationDays: 2,
         reminders: [{ kind: "absolute", at: "2026-10-20T09:00:00.000Z" }],
       },
     });
+    expect(created.statusCode).toBe(201);
     const task = created.json();
     const first = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: { expectedRevision: project.revision, revisitAt: "2026-11-15T09:00:00.000Z" } });
     expect(first.statusCode).toBe(409);
@@ -1203,7 +1214,7 @@ describe("project workflow (HTTP routes)", () => {
   it("accepts the current revision for every project lifecycle action and returns confirmed entities", async () => {
     const anna = await createMemberRoute("Revision driver");
     let project = await createProjectRoute({ ownerMemberId: anna.id });
-    await addProgressTask(project.id);
+    const progressTask = await addProgressTask(project.id);
     for (const action of [
       "activate",
       "complete",
@@ -1211,10 +1222,17 @@ describe("project workflow (HTTP routes)", () => {
       "return-to-backlog",
       "archive",
     ]) {
+      const payload = action === "complete"
+        ? {
+            expectedRevision: project.revision,
+            expectedTaskRevisions: [{ taskId: progressTask.id, revision: progressTask.revision }],
+            descendantResolutions: [{ taskId: progressTask.id, action: "move_to_inbox" as const, expectedRevision: progressTask.revision }],
+          }
+        : { expectedRevision: project.revision };
       const response = await ctx.app.inject({
         method: "POST",
         url: `/api/projects/${project.id}/${action}`,
-        payload: { expectedRevision: project.revision },
+        payload,
       });
       expect(response.statusCode).toBe(200);
       expect(response.json().id).toBe(project.id);
