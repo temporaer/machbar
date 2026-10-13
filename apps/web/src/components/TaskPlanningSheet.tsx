@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Task, TaskReminderInput } from "@machbar/shared";
+import type { AvailabilityRule, Task, TaskReminderInput } from "@machbar/shared";
 import { calendarDateForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
@@ -51,12 +51,16 @@ import {
 type DateField = "scheduled" | "availability" | "deadline";
 type DateValidity = Record<DateField, boolean>;
 type PendingScrollTarget = TaskPlanningTarget | "top" | null;
-type PlanningConflictField = "scheduledDate" | "dueDate" | "revisitAt" | "recurrence" | "reminders" | "externalWait" | "title";
+type PlanningConflictField = "availabilityRule" | "scheduledDate" | "dueDate" | "revisitAt" | "recurrence" | "reminders" | "externalWait" | "title";
 interface PlanningConflict {
   field: PlanningConflictField;
   label: string;
   currentValue: string;
   draftValue: string;
+}
+
+function businessHoursRule(match: "inside" | "outside"): AvailabilityRule {
+  return { kind: "weekly", match, windows: [{ weekdays: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }] };
 }
 
 function cardClass(active: boolean) {
@@ -107,6 +111,10 @@ export function TaskPlanningSheet({
     taskAvailabilityClock(baselineTask.revisitAt, householdTimezone) ?? "06:00",
   );
   const [availabilityEdited, setAvailabilityEdited] = useState(false);
+  const [availabilityRule, setAvailabilityRule] = useState<AvailabilityRule | null>(baselineTask.availabilityRule);
+  const windowLabel = (rule: AvailabilityRule | null) => rule === null
+    ? strings.availabilityAnytime
+    : rule.match === "inside" ? strings.availabilityBusinessHours : strings.availabilityOutsideBusinessHours;
   const [scheduledDate, setScheduledDate] = useState(baselineTask.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(baselineTask.dueDate ?? "");
   const [repeatAfterDays, setRepeatAfterDays] = useState<number | null>(baselineTask.repeatAfterDays);
@@ -263,6 +271,7 @@ export function TaskPlanningSheet({
     notBeforeDate,
     notBeforeTime,
     availabilityEdited,
+    availabilityRule,
     waitingFor,
     waitingEnded,
     repeatAfterDays,
@@ -314,6 +323,7 @@ export function TaskPlanningSheet({
     : baselineTask.revisitAt;
   const scheduledChanged = (scheduledDate || null) !== baselineTask.scheduledDate;
   const revisitChanged = revisitAtForCommit !== baselineTask.revisitAt;
+  const windowChanged = JSON.stringify(availabilityRule) !== JSON.stringify(baselineTask.availabilityRule);
   const deadlineChanged = !recurrenceEnabled && (dueDate || null) !== baselineTask.dueDate;
   const waitingChangedFromBaseline = waitingEnded ||
     (hasExistingWait
@@ -324,6 +334,7 @@ export function TaskPlanningSheet({
   const dateConflict =
     canMutuallyExclude && Boolean(scheduledDate) && Boolean(notBeforeDate);
   const dirty =
+    windowChanged ||
     waitingChangedFromBaseline ||
     revisitChanged ||
     scheduledChanged ||
@@ -553,6 +564,10 @@ export function TaskPlanningSheet({
     const localScheduled = (scheduledDate || null) !== previous.scheduledDate;
     const localDeadline = !recurrenceEnabled && (dueDate || null) !== previous.dueDate;
     const localRevisit = revisitAtForCommit !== previous.revisitAt;
+    const localWindow = JSON.stringify(availabilityRule) !== JSON.stringify(previous.availabilityRule);
+    if (localWindow && JSON.stringify(latest.availabilityRule) !== JSON.stringify(previous.availabilityRule)) {
+      addConflict("availabilityRule", strings.availabilityWindow, windowLabel(latest.availabilityRule), windowLabel(availabilityRule));
+    }
     const localRecurrence = repeatAfterDays !== previous.repeatAfterDays || allowedDeviationDays !== previous.allowedDeviationDays;
     const localReminders = JSON.stringify(plannedReminders) !== JSON.stringify(previous.reminders);
     const localWait = waitingEnded || waitingFor.trim() !== (previous.externalWait?.waitingFor ?? "").trim();
@@ -580,6 +595,7 @@ export function TaskPlanningSheet({
       addConflict("title", strings.title, latest.title, cleanedTitle);
     }
 
+    if (!localWindow) setAvailabilityRule(latest.availabilityRule);
     setBaselineTask(latest);
     setExpectedTaskRevision(latest.revision);
     if (!localScheduled) setScheduledDate(latest.scheduledDate ?? "");
@@ -662,7 +678,7 @@ export function TaskPlanningSheet({
         { throwOnError: true },
       );
       if (updated) {
-        const otherDraftChanges = scheduledChanged || deadlineChanged || recurrenceChanged || remindersChanged || reminderDraftPending || titleChanged;
+        const otherDraftChanges = windowChanged || scheduledChanged || deadlineChanged || recurrenceChanged || remindersChanged || reminderDraftPending || titleChanged;
         setBaselineTask(updated);
         setExpectedTaskRevision(updated.revision);
         setFollowUpOutcome("");
@@ -743,6 +759,7 @@ export function TaskPlanningSheet({
             : null
           : undefined;
       const patch = {
+        ...(windowChanged ? { availabilityRule } : {}),
         ...(revisitChanged ? { revisitAt: revisitAtForCommit } : {}),
         ...(scheduledChanged ? { scheduledDate: scheduledDate || null } : {}),
         ...(!recurrenceEnabled && deadlineChanged ? { dueDate: dueDate || null } : {}),
@@ -798,6 +815,9 @@ export function TaskPlanningSheet({
   const resolvePlanningConflict = (conflict: PlanningConflict, keepDraft: boolean) => {
     if (!keepDraft) {
       switch (conflict.field) {
+        case "availabilityRule":
+          setAvailabilityRule(baselineTask.availabilityRule);
+          break;
         case "scheduledDate":
           setScheduledDate(baselineTask.scheduledDate ?? "");
           break;
@@ -858,6 +878,21 @@ export function TaskPlanningSheet({
           void commit();
         }}
       >
+        <div className="task-planning-card task-planning-card-compact">
+          <label htmlFor={`planning-window-${baselineTask.id}`}>{strings.availabilityWindow}</label>
+          <select
+            id={`planning-window-${baselineTask.id}`}
+            value={availabilityRule?.match ?? "anytime"}
+            disabled={saving}
+            onChange={(event) => setAvailabilityRule(event.target.value === "anytime"
+              ? null : businessHoursRule(event.target.value as "inside" | "outside"))}
+          >
+            <option value="anytime">{strings.availabilityAnytime}</option>
+            <option value="inside">{strings.availabilityBusinessHours}</option>
+            <option value="outside">{strings.availabilityOutsideBusinessHours}</option>
+          </select>
+          <p className="text-muted">{strings.availabilityBusinessHoursHint(householdTimezone)}</p>
+        </div>
         <section
           ref={scheduledCardRef}
           className={cardClass(activeTarget === "scheduled" || activeTarget === "recurrence")}

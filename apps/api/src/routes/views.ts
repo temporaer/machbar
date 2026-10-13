@@ -131,8 +131,10 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     if (memberId !== undefined) {
       getMemberOrThrow(db, memberId);
     }
-    const graph = Graph.load(db, undefined, viewerMemberId);
+    const now = new Date().toISOString();
+    const graph = Graph.load(db, now, viewerMemberId);
     return buildAgenda(graph, {
+      now,
       memberId,
       today: date,
       scope: scope === "work" ? "work" : memberId === undefined ? "all" : "mine",

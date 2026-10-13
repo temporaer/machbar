@@ -229,6 +229,18 @@ export const reorderCriteriaSchema = z.object({
   orderedCriterionIds: z.array(z.number().int()).min(1),
 });
 
+// Only the current business-hours preset is writable; the stored weekly shape
+// can support future split windows without another migration.
+export const availabilityRuleSchema = z.object({
+  kind: z.literal("weekly"),
+  match: z.enum(["inside", "outside"]),
+  windows: z.tuple([z.object({
+    weekdays: z.tuple([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+    start: z.literal("09:00"),
+    end: z.literal("17:00"),
+  }).strict()]),
+}).strict();
+
 export const createTaskSchema = z.object({
   projectId: z.number().int().nullable().optional(),
   parentTaskId: z.number().int().nullable().optional(),
@@ -247,6 +259,7 @@ export const createTaskSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   revisitAt: isoDateTime.nullable().optional(),
+  availabilityRule: availabilityRuleSchema.nullable().optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
@@ -290,6 +303,7 @@ export const updateTaskSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   revisitAt: isoDateTime.nullable().optional(),
+  availabilityRule: availabilityRuleSchema.nullable().optional(),
   externalWait: z
     .object({
       waitingFor: z.string().nullable().optional(),

@@ -1,6 +1,8 @@
 import type { ContextAvailability, ProjectStatus } from "@machbar/shared";
+import { DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
 import type { Graph, TaskRecord } from "./graph.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
+import { isTaskAvailableInWindow } from "./taskAvailability.js";
 import { hasExecutionCommitment } from "./commitmentTransition.js";
 
 export type AgendaScope = "mine" | "all" | "work";
@@ -9,6 +11,9 @@ export type AgendaLaneSelection =
   | { scope: "all" };
 
 export interface AgendaSelectionOptions {
+  /** Only Today evaluates execution windows; Week/inventory remain accessible. */
+  now?: string;
+  householdTimezone?: string;
   memberId?: number;
   scope?: AgendaScope;
   ignoreContextAvailability?: boolean;
@@ -90,8 +95,16 @@ export function createAgendaSelection(
       }
     );
   };
+  const isWindowAvailable = (task: TaskRecord) =>
+    options.now === undefined || isTaskAvailableInWindow(
+      task.availabilityRule,
+      options.now,
+      options.householdTimezone ?? DEFAULT_HOUSEHOLD_TIMEZONE,
+    );
   const isContextAvailable = (task: TaskRecord) =>
     contextAvailability(task).status !== "unavailable";
+  const isExecutionAvailable = (task: TaskRecord) =>
+    isContextAvailable(task) && isWindowAvailable(task);
   const matchesOwnerId = (ownerId: number | null) =>
     memberId === undefined ||
     ownerId === null ||
@@ -125,13 +138,13 @@ export function createAgendaSelection(
       .filter((project) => project.status === "active")
       .flatMap((project) => [
         ...graph
-          .selectedNextActionsFor(project.id, laneSelection, isContextAvailable)
+          .selectedNextActionsFor(project.id, laneSelection, isExecutionAvailable)
           .map((task) => task.id),
         ...graph
           .additionalSelectedNextActionsFor(
             project.id,
             laneSelection,
-            isContextAvailable,
+            isExecutionAvailable,
           )
           .map((task) => task.id),
       ]),
@@ -144,7 +157,7 @@ export function createAgendaSelection(
   const isExecutableWork = (task: TaskRecord) =>
     isAgendaTask(task) &&
     task.executable &&
-    isContextAvailable(task) &&
+    isExecutionAvailable(task) &&
     isSelectedOrdinaryWork(task);
   const isDirectExternalWaitAttention = (task: TaskRecord) =>
     isAgendaTask(task) && task.blocked && task.externalWait !== null;
@@ -172,6 +185,8 @@ export function createAgendaSelection(
     laneSelection,
     contextAvailability,
     isContextAvailable,
+    isWindowAvailable,
+    isExecutionAvailable,
     matchesOwnerId,
     matchesOwner,
     matchesScope,
@@ -196,7 +211,7 @@ export function selectCurrentAvailableWork(
     if (
       selection.isDirectExternalWaitAttention(task) &&
       task.revisitAt &&
-      Date.parse(task.revisitAt) <= Date.now()
+      Date.parse(task.revisitAt) <= Date.parse(options.now ?? new Date().toISOString())
     ) {
       takenByCurrentAttention.add(task.id);
       for (const descendantId of descendantIds(task)) {
@@ -210,7 +225,7 @@ export function selectCurrentAvailableWork(
       selection.isContextAvailable(task) &&
       ((task.status === "actionable" &&
         !!task.scheduledDate &&
-        task.scheduledDate <= options.today) ||
+        task.scheduledDate <= options.today && selection.isWindowAvailable(task)) ||
         (!!task.dueDate && task.dueDate <= soonLimit))
     ) {
       takenByCurrentAttention.add(task.id);

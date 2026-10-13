@@ -1,4 +1,5 @@
 import type {
+  AvailabilityRule,
   AcceptanceCriterion,
   Dependency,
   InheritanceMode,
@@ -116,6 +117,7 @@ interface RawTask {
   dueDate: string | null;
   scheduledDate: string | null;
   revisitAt: string | null;
+  availabilityRule: AvailabilityRule | null;
   notBeforeAt: string | null;
   notBeforeDate: string | null;
   priority: number | null;
@@ -383,6 +385,7 @@ export class Graph {
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
         revisitAt: row.revisitAt,
+        availabilityRule: row.availabilityRule,
         notBeforeAt: row.notBeforeAt,
         notBeforeDate: row.notBeforeDate,
         priority: row.priority,
@@ -790,6 +793,7 @@ export class Graph {
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
         revisitAt,
+        availabilityRule: raw.availabilityRule,
         externalWait: externalWait
           ? { waitingFor: externalWait.waitingFor }
           : null,

@@ -440,6 +440,21 @@ task never appears twice. Future-scheduled work, captured work,
 completed/cancelled work, unavailable-context work, and blocked work without a
 reached revisit stay out.
 
+Task execution availability is an independent nullable `availabilityRule` weekly
+JSON field. The planning sheet offers Anytime, Business hours, or Outside business
+hours; the constrained window is Monday–Friday 09:00 inclusive to 17:00 exclusive
+in the household IANA timezone. `taskAvailability.ts` evaluates an explicit instant
+with Temporal without database or clock access. Today passes one instant through
+`agendaSelection.ts` and `agenda.ts`: project next-action selection, planned rows,
+ordinary reached revisits, shared/unplanned work, and embedded execution suggestions
+respect the window. Deadline attention and reached external waits retain their
+existing precedence. Null preserves existing behavior; Week, inventory, completion,
+structural executability, and blocker diagnoses do not evaluate the window.
+Boundaries are evaluated on reads through Today's existing visible refresh interval;
+they never mutate dates, revisions, or activity. Planning edits use the same atomic
+save/cancel and field-level conflict merge as the other planning fields, independently
+of Plan/Wiedervorlage exclusion.
+
 The **Week planning** view is another read-only WorkItem projection:
 `apps/api/src/domain/weekAgenda.ts` builds `/api/agenda/week` from `Graph` into
 one compact rolling `today..today+6` list with chips, plus an **Ohne Planung**
@@ -1480,7 +1495,11 @@ above) and re-points `activity_events`/`notification_events`/
 survive the conversion instead of starting fresh. A root standalone task may
 become a story while keeping its descendants and content. Its task-only
 commitments are remapped transactionally to a preserved action step; explicit
-physical-context bindings and recurrence-derived deadlines stay on that step.
+physical-context bindings, recurrence-derived deadlines, and execution windows
+stay on that step. Even a window-only source retains an action, but the window
+never creates an execution commitment or activates the project. Project rows
+clear the task-only window; reverse conversion preserves child-specific windows
+without restoring a window on the container or introducing inheritance.
 The source revisit date continues to mean intentional deferral even when an
 absolute reminder is also present. The conversion sheet can map both outgoing
 dependencies and visible tasks that wait on the source, including to nested

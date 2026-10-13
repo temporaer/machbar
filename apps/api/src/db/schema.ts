@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import type {
+  AvailabilityRule,
   ActivityEntityType,
   ActivityEventKind,
   ActivityEventMetadata,
@@ -548,6 +549,7 @@ export const workItems = sqliteTable(
     dueDate: text("due_date"),
     scheduledDate: text("scheduled_date"),
     revisitAt: text("revisit_at"),
+    availabilityRule: text("availability_rule", { mode: "json" }).$type<AvailabilityRule | null>(),
     notBeforeAt: text("not_before_at"),
     notBeforeDate: text("not_before_date"),
     priority: integer("priority"),
