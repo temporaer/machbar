@@ -2,11 +2,13 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
 import type { IntakeDraft } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { IntakeReviewPage } from "./IntakeReviewPage";
 import { api } from "../lib/api";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useNavigate } from "react-router-dom";
 
 const mockedApi = vi.mocked(api, true);
 
@@ -101,16 +103,34 @@ function record(status: string = "ready", error: { code: string; message: string
   };
 }
 
-function renderPage(initialEntry: string | { pathname: string; state?: unknown } = "/intake/i1") {
+function renderPage(initialEntry: string | { pathname: string; state?: unknown } = "/intake/i1", bootstrapHandoff = false) {
   return renderWithProviders(
-    <Routes>
-      <Route path="/intake/:id" element={<IntakeReviewPage />} />
-      <Route path="/today" element={<OriginRestored />} />
-      <Route path="/projects/:id" element={<p>Project detail returned</p>} />
-      <Route path="/tasks/:id" element={<p>Task detail route returned</p>} />
-    </Routes>,
+    <>
+      <Routes>
+        <Route path="/intake/:id" element={<IntakeReviewPage />} />
+        <Route path="/today" element={<OriginRestored />} />
+        <Route path="/projects/:id" element={<p>Project detail returned</p>} />
+        <Route path="/tasks/:id" element={<p>Task detail route returned</p>} />
+      </Routes>
+      <BrowserBackControl />
+      {bootstrapHandoff ? <HandoffBootstrap /> : null}
+    </>,
     { initialEntries: [initialEntry] },
   );
+}
+
+function BrowserBackControl() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>Browser back</button>;
+}
+
+function HandoffBootstrap() {
+  const detail = useTaskDetail();
+  useEffect(() => {
+    detail.openQueue([27, 28], "notes");
+    detail.suspendForHandoff();
+  }, []);
+  return null;
 }
 
 function OriginRestored() {
@@ -1813,6 +1833,89 @@ describe("IntakeReviewPage", () => {
     expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Zurück zur Aufgabe" }));
     expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+  });
+
+  it("restores a suspended task-detail queue when browser Back leaves intake", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record("queued"), draft: null } as never);
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/intake/:id" element={<IntakeReviewPage />} />
+          <Route path="/today" element={<OriginRestored />} />
+        </Routes>
+        <BrowserBackControl />
+        <HandoffBootstrap />
+      </>,
+      { initialEntries: ["/today", { pathname: "/intake/i1", state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: "notes" },
+      } } }] },
+    );
+    expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+  });
+
+  it("restores the task-detail queue when browser Back leaves a failed refinement", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record("analysis_failed", { code: "ai_error", message: "failed", retryable: true }), draft: null } as never);
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/intake/:id" element={<IntakeReviewPage />} />
+          <Route path="/today" element={<OriginRestored />} />
+        </Routes>
+        <BrowserBackControl />
+        <HandoffBootstrap />
+      </>,
+      { initialEntries: ["/today", { pathname: "/intake/i1", state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: "notes" },
+      } } }] },
+    );
+    expect(await screen.findByRole("heading", { name: /Die Analyse ist fehlgeschlagen/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+  });
+
+  it("discards a smaller-steps proposal through the handoff return path", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("ready"),
+      breakdown: {
+        taskId: 27, instruction: "Smaller steps", sourceStatus: "actionable", sourceOwnerMemberId: null,
+        scheduledDate: null, revisitAt: null, notBeforeAt: null, notBeforeDate: null, priority: null, size: null, existingChildren: [],
+      },
+    } as never);
+    mockedApi.deleteIntake.mockResolvedValue(undefined as never);
+    renderPage({
+      pathname: "/intake/i1",
+      state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: null },
+      } },
+    }, true);
+    await userEvent.click(await screen.findByRole("button", { name: "Verwerfen" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+    expect(mockedApi.deleteIntake).toHaveBeenCalledWith("i1");
+  });
+
+  it("keeps the original task and project links on directly opened leave-alone reviews", async () => {
+    const task = {
+      ...record("ready"), draft: null,
+      refinement: { targetType: "task" as const, targetId: 27, intent: "improve" as const, proposal: {
+        intent: "improve" as const, summary: "Passt so.", disposition: "leave_alone" as const, question: null, changes: [],
+      } },
+    };
+    mockedApi.getIntake.mockResolvedValue(task as never);
+    const view = renderPage();
+    expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/tasks/27");
+    view.unmount();
+
+    mockedApi.getIntake.mockResolvedValue({
+      ...task,
+      refinement: { ...task.refinement, targetType: "project", targetId: 42 },
+    } as never);
+    renderPage();
+    expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/projects/42");
   });
 
   it("returns applied ordinary tasks to the preserved detail and conversions to the resulting project", async () => {

@@ -149,7 +149,9 @@ export function IntakeReviewPage() {
   const { members, membersLoading } = useIdentity();
   const { version, bump } = useRefresh();
   const refinementOrigin = parseWorkRefinementOrigin((location.state as { refinementOrigin?: unknown } | null)?.refinementOrigin);
+  const refinementHandoffHandledRef = useRef(false);
   const returnFromRefinement = useCallback((afterApply = false, resultingRole?: "task" | "story") => {
+    refinementHandoffHandledRef.current = true;
     if (!refinementOrigin) { navigate("/today"); return; }
     const convertedToProject = afterApply && resultingRole === "story";
     const taskDetailReturn = refinementOrigin.entry === "task_detail" && !convertedToProject;
@@ -171,6 +173,18 @@ export function IntakeReviewPage() {
       navigate(refinementOrigin.originPath, { replace: true });
     }
   }, [bump, navigate, refinementOrigin, taskDetail]);
+  const refinementHandoffCleanupRef = useRef<() => void>(() => undefined);
+  refinementHandoffCleanupRef.current = () => {
+    if (refinementHandoffHandledRef.current || !refinementOrigin?.taskDetail) return;
+    const current = recordRef.current;
+    const resultingRole = current?.applyResults?.work.find((item) => item.workItemId === refinementOrigin.targetId)?.role;
+    if (current?.status === "applied" && resultingRole === "story") {
+      taskDetail.close();
+      return;
+    }
+    taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail);
+  };
+  useEffect(() => () => refinementHandoffCleanupRef.current(), []);
   const returnAction = refinementOrigin ? <button className="btn btn-ghost" onClick={() => returnFromRefinement()}>{refinementOrigin.targetType === "task" ? strings.backToTask : strings.backToProject}</button> : null;
   const returnedAppliedJobRef = useRef<string | null>(null);
   const timezone = useMemo(
@@ -618,7 +632,11 @@ export function IntakeReviewPage() {
   };
   const discard = async () => {
     setBusy(true);
-    try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
+    try {
+      await api.deleteIntake(id);
+      if (refinementOrigin) returnFromRefinement();
+      else navigate("/today");
+    } finally { setBusy(false); }
   };
   if (record.status === "analysis_failed" && !draft && !record.refinement?.proposal) {
     const validationIssues = record.error ? intakeErrorIssues(record.error) : [];
@@ -697,7 +715,7 @@ export function IntakeReviewPage() {
     </section>;
   }
   if (record.refinement?.proposal && ["ready", "analysis_failed"].includes(record.status)) {
-    return <WorkRefinementReview record={record} onReturn={() => returnFromRefinement()} onChange={(next) => { recordRef.current = next; revisionRef.current = next.revision; setRecord(next); }} />;
+    return <WorkRefinementReview record={record} {...(refinementOrigin ? { onReturn: () => returnFromRefinement() } : {})} onChange={(next) => { recordRef.current = next; revisionRef.current = next.revision; setRecord(next); }} />;
   }
   if (!draft) return <LoadingState />;
   return (
