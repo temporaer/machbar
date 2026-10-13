@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import "../styles/index.css";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
@@ -1072,6 +1073,30 @@ describe("TaskPlanningSheet", () => {
       expectedRevision: 4,
     }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps the existing-wait follow-up controls bounded for long mobile content", () => {
+    const task = makeTask({
+      id: 194,
+      externalWait: { waitingFor: "A very long unbroken external-wait identifier that must wrap", revisitDate: null },
+    });
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={vi.fn()} />);
+
+    const waitingCard = card("Wartet auf");
+    expect(waitingCard.querySelector("input")).toHaveAttribute("id", "planning-waiting-194");
+    expect(waitingCard.querySelector("textarea")).toHaveAttribute("id", "planning-follow-up-194");
+    expect(waitingCard.querySelector("select")).toBeInTheDocument();
+    expect(waitingCard.querySelector("option[value=continue]")).toHaveTextContent(
+      "Weiter warten und neuen Wiedervorlagetermin festlegen",
+    );
+    expect(waitingCard).toHaveClass("task-planning-card");
+    expect(waitingCard.querySelector(".task-planning-follow-up")).toHaveClass("stack");
+
+    expect(getComputedStyle(waitingCard.querySelector("select")!).width).toBe("100%");
+    expect(getComputedStyle(waitingCard.querySelector("textarea")!).width).toBe("100%");
+    const recurrenceToggle = document.querySelector<HTMLInputElement>(".recurrence-toggle input");
+    expect(recurrenceToggle).toBeInTheDocument();
+    expect(getComputedStyle(recurrenceToggle!).width).toBe("20px");
   });
 
   it("keeps an unfinished custom reminder intact and blocks follow-up until it is confirmed", async () => {

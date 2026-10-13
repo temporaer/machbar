@@ -314,6 +314,7 @@ const en = {
   pickDate: "Date …",
   scheduled: "Planned for",
   notBefore: "Revisit",
+  addRevisit: "+ Revisit",
   planning: "Planning",
   planningShowFrom: "Revisit",
   planningScheduledFor: "Planned for",
