@@ -206,6 +206,27 @@ describe("ProjectDetailPage task explanations", () => {
     });
   });
 
+  it("launches AI from the header action group and keeps controls together while editing", async () => {
+    const project = { ...makeProject({ id: 42, title: "Plan a sample workshop with a long descriptive project title", revision: 6 }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    renderProjectRoute("/projects/42");
+    const heading = await screen.findByRole("heading", { name: project.title });
+    expect(within(heading).queryByRole("button")).not.toBeInTheDocument();
+    const header = heading.closest(".project-page-header") as HTMLElement;
+    const actions = header.querySelector(".project-page-actions") as HTMLElement;
+    const sparkles = within(actions).getByRole("button", { name: strings.workRefinement });
+    expect(sparkles).toHaveAttribute("title", strings.workRefinement);
+    await userEvent.click(within(actions).getByRole("button", { name: strings.edit }));
+    expect(within(actions).getByRole("button", { name: strings.edit })).toBeDisabled();
+    expect(within(actions).getByRole("button", { name: strings.attach })).toBeEnabled();
+    await userEvent.click(within(header).getByRole("button", { name: strings.cancel }));
+    await userEvent.click(sparkles);
+    const launcher = await screen.findByRole("dialog", { name: `${strings.workRefinement}: ${project.title}` });
+    await userEvent.click(within(launcher).getByRole("button", { name: strings.workRefinementGenerate }));
+    await waitFor(() => expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("project", 42, { expectedRevision: 6, intent: "improve" }));
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/intake/refinement-job");
+  });
+
   it("renders nested stories and ancestor breadcrumbs", async () => {
     mockedApi.getProject.mockImplementation(async (id: number) => {
       if (id === 3) {
@@ -716,6 +737,7 @@ describe("ProjectDetailPage task explanations", () => {
       screen.getByRole("button", { name: /Status.*Aktiv/ }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ort reservieren" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: strings.workRefinement })).toBeDisabled();
 
     resolveUpdate?.({
       ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
@@ -901,7 +923,7 @@ describe("ProjectDetailPage task explanations", () => {
     const actions = titleRow?.querySelector(".project-page-actions");
     expect(titleRow).toHaveClass("project-page-title-row");
     expect(actions).toHaveClass("project-page-actions");
-    expect(within(actions as HTMLElement).getAllByRole("button")).toHaveLength(3);
+    expect(within(actions as HTMLElement).getAllByRole("button")).toHaveLength(5);
   });
 
   it("does not show Calendar export for a Project without a deadline", async () => {

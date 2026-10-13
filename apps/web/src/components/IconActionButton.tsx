@@ -20,6 +20,7 @@ export type IconActionKind =
   | "attachment"
   | "camera"
   | "upload"
+  | "sparkles"
   | "edit"
   | "close"
   | "more"
@@ -116,6 +117,11 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
       ) : kind === "upload" ? (
         <>
           <path d="M12 15V4M8 8l4-4 4 4M5 14v5h14v-5" {...common} />
+        </>
+      ) : kind === "sparkles" ? (
+        <>
+          <path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3z" {...common} />
+          <path d="M20 2v4M18 4h4" {...common} />
         </>
       ) : kind === "edit" ? (
         <>

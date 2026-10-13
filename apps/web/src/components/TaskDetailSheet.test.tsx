@@ -15,7 +15,6 @@ import {
 } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
-import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeMember, makePhysicalContext, makeProject, makeTag, makeTask } from "../test/fixtures";
@@ -94,14 +93,12 @@ function QueueOpenerHarness({ taskIds, children }: { taskIds: number[]; children
 
 function RefinementHandoffHarness({ taskId }: { taskId: number }) {
   const detail = useTaskDetail();
-  const workflow = useTaskWorkflow();
   const location = useLocation();
   const navigate = useNavigate();
   return <>
     <Routes>
       <Route path="/" element={<>
         <button onClick={() => detail.openQueue([taskId, taskId + 1])}>Open task detail</button>
-        <button onClick={() => workflow.open("refinement", taskId)}>Launch AI refinement</button>
       </>} />
       <Route path="/intake/:id" element={<>
         <p>Intake foreground {JSON.stringify(location.state)}</p>
@@ -261,7 +258,7 @@ describe("TaskDetailSheet", () => {
   });
 
   it("hands refinement started in task details to the foreground intake route", async () => {
-    const task = makeTask({ id: 73, title: "Kita-Tasche vorbereiten", revision: 6 });
+    const task = makeTask({ id: 73, title: "Prepare sample kit", revision: 6 });
     mockedApi.getTask.mockResolvedValue(task);
     mockedApi.startWorkRefinement.mockResolvedValue({ id: "refinement-job" } as never);
     renderWithProviders(<RefinementHandoffHarness taskId={task.id} />);
@@ -270,7 +267,7 @@ describe("TaskDetailSheet", () => {
     expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
     const notes = await openNotesEditor();
     fireEvent.change(notes, { target: { value: "Lokale Notiz bleibt erhalten" } });
-    await userEvent.click(screen.getByRole("button", { name: "Launch AI refinement" }));
+    await userEvent.click(screen.getByRole("button", { name: strings.workRefinement }));
     await userEvent.click(screen.getByRole("button", { name: "Vorschlag vorbereiten" }));
 
     const intake = await screen.findByText(/Intake foreground/);

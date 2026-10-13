@@ -187,13 +187,18 @@ a {
   min-width: 0;
 }
 
-.project-page-title-row {
+.project-page-header .project-page-title-row {
   min-width: 0;
   align-items: flex-start;
   flex-direction: column;
 }
 
-.project-page-title-row h1,
+.project-page-title-row h1 {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .task-detail-title-row h1 {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -204,8 +209,9 @@ a {
 
 .project-page-actions {
   max-width: 100%;
-  align-self: flex-end;
-  gap: 4px;
+  align-self: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .project-page-header > .row {
@@ -324,13 +330,14 @@ a {
 }
 
 @media (min-width: 560px) {
-  .project-page-title-row {
-    align-items: center;
+  .project-page-header .project-page-title-row {
+    align-items: flex-start;
     flex-direction: row;
   }
 
   .project-page-actions {
     flex: 0 0 auto;
+    max-width: 50%;
   }
 }
 
@@ -2706,6 +2713,7 @@ details[open] > .disclosure-summary::after {
 
 .sheet-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -2722,6 +2730,8 @@ details[open] > .disclosure-summary::after {
 
 .sheet-header-actions {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
