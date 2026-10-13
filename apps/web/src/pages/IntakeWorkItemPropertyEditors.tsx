@@ -1,4 +1,4 @@
-import type { IntakeDraftWorkItem, IntakeIssue, Member, TaskReminderInput } from "@machbar/shared";
+import { calendarDateForInstant, intakeCanonicalPlanning, INTAKE_TIMEZONE, type IntakeDraftWorkItem, type IntakeIssue, type Member, type TaskReminderInput } from "@machbar/shared";
 import {
   taskAvailabilityClock,
   taskAvailabilityForLocalDate,
@@ -143,7 +143,11 @@ export function IntakeAvailabilityEditor({
   const strings = useStrings();
   const key = `work:${item.key}:availability`;
   const onValidityChange = useDateValidityCallback(key, onDateValidityChange);
-  const currentClock = taskAvailabilityClock(item.revisitAt ?? item.notBeforeAt);
+  const planning = intakeCanonicalPlanning(item);
+  const revisitDate = planning.revisitAt
+    ? calendarDateForInstant(planning.revisitAt, INTAKE_TIMEZONE) ?? planning.revisitAt
+    : null;
+  const currentClock = taskAvailabilityClock(planning.revisitAt);
   const hasTime = currentClock !== null && currentClock !== "00:00";
   const updateAvailability = (date: string, time: string | null) => {
     if (!date) {
@@ -151,7 +155,7 @@ export function IntakeAvailabilityEditor({
       return;
     }
     const availability = taskAvailabilityForLocalDate(date, time);
-    if (availability) onChange({ ...item, revisitAt: availability.notBeforeAt, ...availability });
+    if (availability) onChange({ ...item, revisitAt: availability.notBeforeAt, notBeforeDate: null, notBeforeAt: null });
   };
 
   return (
@@ -168,7 +172,7 @@ export function IntakeAvailabilityEditor({
         </label>
         <HumanDateInput
           id={`intake-work-${item.key}-availability`}
-          value={item.revisitAt?.slice(0, 10) ?? item.notBeforeDate}
+          value={revisitDate}
           onValidityChange={onValidityChange}
           onChange={(date) =>
             updateAvailability(date ?? "", hasTime ? currentClock : null)
@@ -178,10 +182,10 @@ export function IntakeAvailabilityEditor({
           <input
             type="checkbox"
             checked={hasTime}
-            disabled={!item.notBeforeDate}
+            disabled={!revisitDate}
             onChange={(event) =>
               updateAvailability(
-                item.revisitAt?.slice(0, 10) ?? item.notBeforeDate ?? "",
+                revisitDate ?? "",
                 event.target.checked
                   ? currentClock && currentClock !== "00:00"
                     ? currentClock
@@ -200,7 +204,7 @@ export function IntakeAvailabilityEditor({
               value={currentClock ?? ""}
               onChange={(event) =>
                 updateAvailability(
-                  item.notBeforeDate ?? "",
+                  revisitDate ?? "",
                   event.target.value || null,
                 )
               }

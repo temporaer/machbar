@@ -11,6 +11,7 @@ import {
 } from "@machbar/shared";
 import {
   intakeSelectedDraftIssues,
+  intakeCanonicalPlanning,
   paperlessMarkdownReference,
   prepareIncompleteIntakeDraft,
 } from "@machbar/shared";
@@ -43,9 +44,12 @@ function failApplyClaim(
   claimToken: string,
   claimRevision: number,
   error: IntakeErrorInfo,
+  hasEffects: boolean,
+  draft: IntakeDraft,
 ): void {
   db.update(schema.intakeJobs).set({
-    status: "partially_applied",
+    status: hasEffects ? "partially_applied" : "ready",
+    ...(!hasEffects ? { acceptedDraftJson: null, draftJson: JSON.stringify(draft) } : {}),
     applyClaimToken: null,
     applyClaimExpiresAt: null,
     errorJson: JSON.stringify(error),
@@ -65,6 +69,9 @@ function applyFailureInfo(
 ): IntakeErrorInfo {
   if (error instanceof AppError && error.code === "intake_source_retention_failed") {
     return { code: "intake_source_retention_failed", message: error.message, retryable: true };
+  }
+  if (error instanceof AppError) {
+    return { code: error.code, message: error.message, retryable: true, ...(error.details ? { details: error.details } : {}) };
   }
   if (logger) logger.error({ err: error }, "Intake Apply failed.");
   else console.error("Intake Apply failed.", error);
@@ -130,9 +137,24 @@ export async function applyIntake(
     incompletePreparation = prepareIncompleteIntakeDraft(draftToValidate, validationOptions);
     draftToValidate = incompletePreparation.draft;
   }
-  const issues = incompletePreparation
+  const validationIssues = incompletePreparation
     ? incompletePreparation.blockingIssues
     : intakeSelectedDraftIssues(draftToValidate, validationOptions);
+  const committedWork = initialAcceptance ? [] : parse<IntakeApplyResults>(stored.applyResultsJson)?.work ?? [];
+  const issues = validationIssues.filter((issue) => {
+    // Old immutable partial drafts may contain planning now rejected for new
+    // acceptance. Only grandfather the new checks on ledger-confirmed work
+    // that Apply will skip; all hierarchy, reminder and external checks remain.
+    if (issue.path[0] !== "workItems" || typeof issue.path[1] !== "number") return true;
+    const item = draftToValidate.workItems[issue.path[1]];
+    if (!item || !committedWork.some((work) => work.key === item.key && work.kind === item.kind)) return true;
+    const field = issue.path[2];
+    const newPlanningCheck = issue.code === "planning_conflict"
+      || (issue.code === "invalid_datetime" && field === "revisitAt")
+      || (issue.code === "reference_field_not_allowed" && field === "revisitAt")
+      || (issue.code === "project_field_not_allowed" && field === "scheduledDate");
+    return !newPlanningCheck;
+  });
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
   if (stored.breakdownTaskId !== null) assertBreakdownDraft(draftToValidate);
 
@@ -181,7 +203,18 @@ export async function applyIntake(
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     return { acceptedDraft: claimDraft, claimToken, claimRevision: effectiveExpectedRevision + 1 };
   });
-  const fail = (error: unknown) => failApplyClaim(db, id, claim.claimToken, claim.claimRevision, applyFailureInfo(error, logger));
+  // Read persisted results, never the in-memory list modified by a rolled-back transaction.
+  const fail = (error: unknown) => {
+    const current = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
+    const committed = parse<IntakeApplyResults>(current?.applyResultsJson ?? null);
+    const hasEffects = Boolean(committed && (committed.work.length || committed.calendar.length || committed.paperlessDocumentIds.length));
+    const info = applyFailureInfo(error, logger);
+    if (!hasEffects && info.code === "intake_apply_partial") {
+      info.code = "intake_apply_failed";
+      info.message = "Nothing was applied. Review the proposal and retry.";
+    }
+    failApplyClaim(db, id, claim.claimToken, claim.claimRevision, info, hasEffects, claim.acceptedDraft);
+  };
 
   try {
   const draft = claim.acceptedDraft;
@@ -272,7 +305,8 @@ export async function applyIntake(
       }
       const parent = item.parentKey ? byKey.get(item.parentKey) : null;
       const parentId = item.parentKey ? ids.get(item.parentKey) ?? null : null;
-      const notes = item.notes ?? "";
+      const planning = intakeCanonicalPlanning(item);
+      const notes = [item.notes, planning.availabilityContext].filter(Boolean).join("\n\n");
       const isRoot = item.parentKey === null;
       let created: { id: number; title: string; kind?: string; role?: string };
       if (item.kind === "project") {
@@ -285,7 +319,7 @@ export async function applyIntake(
           // own deadline after its child actions exist so readiness is
           // evaluated against the final atomic graph.
           dueDate: null,
-          revisitAt: item.revisitAt ?? item.notBeforeAt ?? null,
+          revisitAt: planning.revisitAt,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         }, context);
         if (item.dueDate !== null) {
@@ -307,8 +341,8 @@ export async function applyIntake(
           ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
           ownerInheritanceMode: item.ownerMemberId === null ? undefined : "explicit" as const,
           dueDate: item.dueDate,
-          scheduledDate: item.scheduledDate,
-          revisitAt: item.revisitAt ?? item.notBeforeAt,
+          scheduledDate: planning.scheduledDate,
+          revisitAt: planning.revisitAt,
           reminders: item.reminders.length > 0 ? item.reminders : undefined,
           createdByMemberId: jobNow.createdByMemberId,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
@@ -375,20 +409,6 @@ export async function applyIntake(
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   });
   } catch (error) {
-    if (stored.breakdownTaskId !== null) {
-      // Breakdown has no external side effects. A failed transaction can be
-      // edited or regenerated; never freeze it as a partially applied intake.
-      db.update(schema.intakeJobs).set({
-        status: "ready", acceptedDraftJson: null,
-        applyClaimToken: null, applyClaimExpiresAt: null,
-        revision: claim.claimRevision + 1, updatedAt: nowIso(),
-      }).where(and(
-        eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.status, "applying"),
-        eq(schema.intakeJobs.applyClaimToken, claim.claimToken),
-        eq(schema.intakeJobs.revision, claim.claimRevision),
-      )).run();
-      throw error;
-    }
     fail(error);
     throw error;
   }

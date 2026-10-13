@@ -210,6 +210,41 @@ describe("IntakeReviewPage", () => {
     mockedApi.retryIntake.mockResolvedValue(record() as never);
   });
 
+  it("focuses ordinary Apply failures, preserves edits and selection, and retries the recovered revision", async () => {
+    const edited = structuredClone(draft);
+    edited.calendarEvents[0]!.enabled = false;
+    edited.workItems[0]!.title = "Edited anonymous action";
+    const initial = { ...record(), draft: edited };
+    const recovered = { ...initial, revision: 4, error: { code: "project_driver_required", message: "Choose a project driver.", retryable: true } };
+    mockedApi.getIntake.mockResolvedValueOnce(initial as never).mockResolvedValue(recovered as never);
+    mockedApi.applyIntake.mockRejectedValueOnce(Object.assign(new Error("Choose a project driver."), { code: "project_driver_required" }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Edited anonymous action" });
+    fireEvent.click(applyButton());
+    const alert = await screen.findByRole("alert");
+    await waitFor(() => expect(alert).toHaveFocus());
+    await waitFor(() => expect(applyButton()).not.toBeDisabled());
+    expect(screen.getByRole("heading", { name: "Edited anonymous action" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "In Vorschlag übernehmen: Elternabend" })).not.toBeChecked();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({ expectedRevision: 4, draft: edited });
+  });
+
+  it("does not display legacy availability as a revisit when canonical revisit is explicitly null", async () => {
+    const explicit = structuredClone(draft);
+    explicit.calendarEvents = [];
+    explicit.workItems = [{ ...explicit.workItems[0]!, relatedCalendarKeys: [], revisitAt: null,
+      scheduledDate: "2026-10-16", dueDate: null, notBeforeDate: "2026-10-16", notBeforeAt: "2026-10-16T18:00:00+02:00",
+      reminders: [{ kind: "absolute", at: "2026-10-16T17:30:00+02:00" }] }];
+    mockedApi.getIntake.mockResolvedValue({ ...record(), draft: explicit } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Rückmeldezettel abgeben" });
+    expect(screen.getByRole("button", { name: "+ Wiedervorlage" })).toBeInTheDocument();
+    expect(screen.getByText("Source availability: 2026-10-16T18:00:00+02:00")).toBeInTheDocument();
+    expect(applyButton()).not.toBeDisabled();
+  });
+
   it("renders compact approval cards without exposing the full editors", async () => {
     renderPage();
     expect(await screen.findByRole("heading", { name: "Kalender" })).toBeInTheDocument();
@@ -1248,7 +1283,7 @@ describe("IntakeReviewPage", () => {
     expect(editor.getByLabelText("Ende")).toHaveValue("");
   });
 
-  it("supports a date-only availability value and keeps the API pair coherent", async () => {
+  it("supports a date-only revisit without reintroducing legacy availability", async () => {
     renderPage();
     const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Wiedervorlage");
     const date = editor.getByRole("textbox", { name: "Wiedervorlage" });
@@ -1258,9 +1293,9 @@ describe("IntakeReviewPage", () => {
     fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
     const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0];
-    expect(availability?.notBeforeDate).toBe("2026-10-12");
-    expect(availability?.notBeforeAt).toBeTruthy();
-    expect(availability?.notBeforeAt).toBe("2026-10-12T04:00:00Z");
+    expect(availability?.notBeforeDate).toBeNull();
+    expect(availability?.notBeforeAt).toBeNull();
+    expect(availability?.revisitAt).toBe("2026-10-12T04:00:00Z");
   });
 
   it("changes a timed availability date and clears both date and time fields", async () => {

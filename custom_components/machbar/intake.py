@@ -59,7 +59,7 @@ def _work_schema() -> vol.Schema:
             _optional_field("ownerName", None, _NULL): _NULL,
             _optional_field("dueDate", None, _NULL): _NULL,
             _optional_field("scheduledDate", None, _NULL): _NULL,
-            _optional_field("revisitAt", None, _NULL): _NULL,
+            vol.Optional("revisitAt", description="Canonical revisit timestamp; explicit null means no revisit"): _NULL,
             _optional_field("notBeforeDate", None, _NULL): _NULL,
             _optional_field("notBeforeAt", None, _NULL): _NULL,
             _field("reminders", [_reminder_schema()]): [_reminder_schema()],
@@ -401,7 +401,7 @@ def _compact_plan(value: Any) -> Any:
     }
     work_fields = {
         "key", "kind", "title", "notes", "parentKey", "ownerName", "dueDate",
-        "scheduledDate", "notBeforeDate", "notBeforeAt", "reminders",
+        "scheduledDate", "revisitAt", "notBeforeDate", "notBeforeAt", "reminders",
         "needsClarification", "relatedCalendarKeys",
     }
     warning_fields = {"message"}
@@ -467,7 +467,6 @@ def _compact_plan(value: Any) -> Any:
                 "ownerName": None,
                 "dueDate": None,
                 "scheduledDate": None,
-                "revisitAt": None,
                 "notBeforeDate": None,
                 "notBeforeAt": None,
                 "reminders": [],
@@ -614,7 +613,7 @@ def normalize_plan(data: Any) -> dict[str, Any]:
                     "ownerName": _normalize_string(_required(raw, "ownerName", item_path, "a string or null"), path=item_path + ["ownerName"], absence=True),
                     "dueDate": _normalize_string(_required(raw, "dueDate", item_path, "a date or null"), path=item_path + ["dueDate"], absence=True),
                     "scheduledDate": _normalize_string(_required(raw, "scheduledDate", item_path, "a date or null"), path=item_path + ["scheduledDate"], absence=True),
-                    "revisitAt": _normalize_string(raw.get("revisitAt"), path=item_path + ["revisitAt"], absence=True),
+                    **({"revisitAt": _normalize_string(raw["revisitAt"], path=item_path + ["revisitAt"], absence=True)} if "revisitAt" in raw else {}),
                     "notBeforeDate": _normalize_string(_required(raw, "notBeforeDate", item_path, "a date or null"), path=item_path + ["notBeforeDate"], absence=True),
                     "notBeforeAt": _normalize_string(_required(raw, "notBeforeAt", item_path, "an RFC 3339 instant or null"), path=item_path + ["notBeforeAt"], absence=True),
                     "reminders": _normalize_reminders(_required(raw, "reminders", item_path, "an array of reminder objects"), path=item_path + ["reminders"]),

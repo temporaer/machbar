@@ -101,6 +101,59 @@ describe("intake apply", () => {
     };
   }
 
+  it("applies the reported work date and early reminder without inventing a revisit", async () => {
+    const setup = await prepare();
+    const d = draft([{ key: "register", kind: "action", title: "Register", notes: null, parentKey: null,
+      ownerMemberId: null, dueDate: null, scheduledDate: "2026-10-16", revisitAt: null,
+      notBeforeDate: "2026-10-16", notBeforeAt: "2026-10-16T18:00:00+02:00",
+      reminders: [{ kind: "absolute", at: "2026-10-16T17:30:00+02:00" }],
+      needsClarification: true, relatedCalendarKeys: [], enabled: true }]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
+      { expectedRevision: setup.revision, draft: d }, { actorMemberId: setup.member.id }, setup.member.id);
+    const record = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(record.status).toBe("applied");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toMatchObject([
+      { scheduledDate: "2026-10-16", revisitAt: null, needsClarification: true,
+        notes: "Source availability: 2026-10-16T18:00:00+02:00" },
+    ]);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toMatchObject([
+      { kind: "absolute", at: "2026-10-16T17:30:00+02:00" },
+    ]);
+  });
+
+  it("rolls back failed ordinary creation, retains concrete errors, and retries corrected work once", async () => {
+    const setup = await prepare();
+    const item: IntakeDraftWorkItem = { key: "first", kind: "action", title: "First", notes: null,
+      parentKey: null, ownerMemberId: null, dueDate: null, scheduledDate: "2026-10-16", revisitAt: null,
+      notBeforeDate: null, notBeforeAt: null, reminders: [{ kind: "absolute", at: "2026-10-16T17:30:00+02:00" }],
+      needsClarification: false, relatedCalendarKeys: [], enabled: true };
+    // A project deadline activates the project and needs a driver; validation cannot decide this from the draft alone.
+    const d = draft([item, { ...item, key: "project", title: "Project", kind: "project", scheduledDate: null,
+      dueDate: "2026-10-20", reminders: [] }]);
+    updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, { expectedRevision: setup.revision, draft: d });
+    const saved = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    const beforeActivity = ctx.handle.db.select().from(schema.activityEvents).all();
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
+      { expectedRevision: saved.revision, draft: d }, { actorMemberId: null }, setup.member.id)).rejects.toMatchObject({
+        code: "project_commitment_resolution_required",
+      });
+    const recovered = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(recovered.status).toBe("ready");
+    expect(recovered.error).toMatchObject({ code: "project_commitment_resolution_required", retryable: true });
+    expect(recovered.error?.details).toBeDefined();
+    expect(recovered.draft).toEqual(d);
+    expect(recovered.applyResults).toBeNull();
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(beforeActivity);
+    const corrected = draft([item]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
+      { expectedRevision: recovered.revision, draft: corrected }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toHaveLength(1);
+    expect(getIntake(ctx.handle.db, setup.id, setup.member.id).status).toBe("applied");
+  });
+
   it("creates nested projects, actions, and references with domain activity", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
@@ -338,6 +391,61 @@ describe("intake apply", () => {
     expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
   });
 
+  it("retries an immutable legacy project date after committed work without duplicate work or changed external payloads", async () => {
+    const setup = await prepare();
+    const project = createProject(ctx.handle.db, { title: "Committed project", ownerMemberId: setup.member.id }, { actorMemberId: setup.member.id });
+    const d = draft([{ key: "project", kind: "project", title: "Committed project", notes: null, parentKey: null,
+      ownerMemberId: setup.member.id, dueDate: null, scheduledDate: "2026-10-16", revisitAt: null,
+      notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false,
+      relatedCalendarKeys: ["event"], enabled: true }], [{
+      key: "event", title: "Accepted appointment", description: "Accepted description", location: "Library", allDay: false,
+      startDate: null, endDate: null, startDateTime: "2026-10-16T18:00:00+02:00", endDateTime: "2026-10-16T19:00:00+02:00",
+      relatedWorkKeys: ["project"], enabled: true, durationAssumed: false,
+    }]);
+    const signal = new HomeAssistantRequestSignal();
+    // The same project date is rejected for new acceptance and for uncommitted partial work.
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision, draft: d }, { actorMemberId: setup.member.id }, setup.member.id))
+      .rejects.toMatchObject({ code: "intake_draft_invalid", details: { issues: expect.arrayContaining([
+        expect.objectContaining({ code: "project_field_not_allowed", path: ["workItems", 0, "scheduledDate"] }),
+      ]) } });
+    const results = { work: [{ key: "project", kind: "project", workItemId: project.id, role: "story" }],
+      calendar: [{ key: "event", correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", status: "failed", error: { code: "calendar_create_failed", message: "Retry", retryable: true }, event: null }],
+      paperlessDocumentIds: [] };
+    ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied", acceptedDraftJson: JSON.stringify(d),
+      draftJson: JSON.stringify(d), applyResultsJson: JSON.stringify(results) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const invalidExternal = structuredClone(d);
+    invalidExternal.calendarEvents[0]!.startDateTime = "not-a-date";
+    ctx.handle.db.update(schema.intakeJobs).set({ acceptedDraftJson: JSON.stringify(invalidExternal) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision }, { actorMemberId: setup.member.id }, setup.member.id))
+      .rejects.toMatchObject({ code: "intake_draft_invalid" });
+    ctx.handle.db.update(schema.intakeJobs).set({ acceptedDraftJson: JSON.stringify(d),
+      applyResultsJson: JSON.stringify({ ...results, work: [] }) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision }, { actorMemberId: setup.member.id }, setup.member.id))
+      .rejects.toMatchObject({ code: "intake_draft_invalid" });
+    ctx.handle.db.update(schema.intakeJobs).set({ applyResultsJson: JSON.stringify(results) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const edited = structuredClone(d);
+    edited.calendarEvents[0]!.title = "Unaccepted replacement";
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision, draft: edited }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    const retried = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(retried.applyResults?.calendar[0]).toMatchObject({ correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", status: "pending" });
+    const request = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.kind, "calendar_create")).get()!;
+    expect(JSON.parse(request.payloadJson)).toMatchObject({ correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", title: "Accepted appointment", description: "Accepted description" });
+    const leased = await ctx.app.inject({ method: "GET", url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
+      headers: { authorization: `Bearer ${setup.token}` } });
+    const completed = await ctx.app.inject({ method: "POST", url: `/api/integrations/home-assistant/requests/${leased.json().id}/complete`,
+      headers: { authorization: `Bearer ${setup.token}` }, payload: { leaseToken: leased.json().leaseToken, outcome: "succeeded",
+        result: { correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", calendarEntityId: "calendar.test", uid: "legacy-event", recurrenceId: null, summary: "Accepted appointment", start: "2026-10-16T18:00:00+02:00", end: "2026-10-16T19:00:00+02:00" } } });
+    expect(completed.statusCode, completed.body).toBe(204);
+    expect(getIntake(ctx.handle.db, setup.id, setup.member.id).status).toBe("applied");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    expect(JSON.parse(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!.acceptedDraftJson!)).toEqual(d);
+  });
+
   it("does not duplicate work when a calendar apply is retried", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
@@ -569,7 +677,7 @@ describe("intake apply", () => {
     expect(response.body).not.toContain(secret);
     const detail = await ctx.app.inject({ method: "GET", url: `/api/intake/${setup.id}` });
     expect(detail.statusCode).toBe(200);
-    expect(detail.json().status).toBe("partially_applied");
+    expect(detail.json().status).toBe("ready");
     expect(detail.body).not.toContain(secret);
   });
 
@@ -598,10 +706,10 @@ describe("intake apply", () => {
       draft: calendarDraft,
     }, { actorMemberId: setup.member.id }, setup.member.id, logger)).rejects.toThrow(unsafeMessage);
     const record = getIntake(ctx.handle.db, setup.id, setup.member.id);
-    expect(record.status).toBe("partially_applied");
+    expect(record.status).toBe("ready");
     expect(record.error).toEqual({
-      code: "intake_apply_partial",
-      message: "The intake could not be fully applied.",
+      code: "intake_apply_failed",
+      message: "Nothing was applied. Review the proposal and retry.",
       retryable: true,
     });
     expect(JSON.stringify(record.error)).not.toContain(unsafeMessage);

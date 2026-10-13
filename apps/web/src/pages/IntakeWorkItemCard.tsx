@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { IntakeDraftWorkItem, IntakeIssue, Member } from "@machbar/shared";
+import { calendarDateForInstant, intakeCanonicalPlanning, INTAKE_TIMEZONE, type IntakeDraftWorkItem, type IntakeIssue, type Member } from "@machbar/shared";
 import { useLocale } from "../lib/locale";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import { taskAvailabilityClock } from "../lib/taskAvailability";
@@ -81,20 +81,16 @@ export function IntakeWorkItemCard({
     ? formatExactLocalDate(item.scheduledDate, locale) ??
       formatInvalidIntakeValue(item.scheduledDate, strings)
     : null;
-  const revisitDate = item.revisitAt
-    ? item.revisitAt.slice(0, 10)
-    : item.notBeforeDate;
+  const planning = intakeCanonicalPlanning(item);
+  const revisitDate = planning.revisitAt
+    ? calendarDateForInstant(planning.revisitAt, INTAKE_TIMEZONE) ?? planning.revisitAt
+    : null;
   const notBefore = revisitDate
-    ? formatExactLocalDate(revisitDate, locale) ??
-      formatInvalidIntakeValue(revisitDate, strings)
+    ? formatExactLocalDate(revisitDate, locale) ?? formatInvalidIntakeValue(revisitDate, strings)
     : null;
   const reminders = item.reminders.map((reminder) =>
     formatReminderLabel(reminder, item.dueDate, strings, locale));
-  const availabilityTime =
-    (item.revisitAt ?? item.notBeforeAt) &&
-    taskAvailabilityClock(item.revisitAt ?? item.notBeforeAt) !== "00:00"
-      ? taskAvailabilityClock(item.revisitAt ?? item.notBeforeAt)
-      : null;
+  const availabilityTime = taskAvailabilityClock(planning.revisitAt);
 
   return (
     <>
@@ -139,7 +135,7 @@ export function IntakeWorkItemCard({
               {due}
             </DetailPropertyPill>
           ) : null}
-          {editableMetadata && item.kind !== "reference" && item.scheduledDate !== null ? (
+          {editableMetadata && item.scheduledDate !== null ? (
             <DetailPropertyPill
               label={strings.scheduled}
               ariaLabel={`${strings.scheduled}: ${scheduled}`}
@@ -148,7 +144,7 @@ export function IntakeWorkItemCard({
               {scheduled}
             </DetailPropertyPill>
           ) : null}
-          {editableMetadata && item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) != null ? (
+          {editableMetadata && planning.revisitAt !== null ? (
             <DetailPropertyPill
               label={strings.notBefore}
               ariaLabel={`${strings.notBefore}: ${notBefore}`}
@@ -178,6 +174,7 @@ export function IntakeWorkItemCard({
             className="intake-proposal-notes"
           />
         ) : null}
+        {planning.availabilityContext ? <p>{planning.availabilityContext}</p> : null}
         {item.needsClarification ? (
           <span className="badge">{strings.intakeNeedsClarification}</span>
         ) : null}
@@ -216,7 +213,7 @@ export function IntakeWorkItemCard({
               + {strings.due}
             </DetailPropertyPill>
           ) : null}
-          {editableMetadata && item.kind !== "reference" && item.scheduledDate === null ? (
+          {editableMetadata && item.kind === "action" && item.scheduledDate === null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.scheduled}`}
@@ -225,7 +222,7 @@ export function IntakeWorkItemCard({
               + {strings.scheduled}
             </DetailPropertyPill>
           ) : null}
-          {editableMetadata && item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) == null ? (
+          {editableMetadata && item.kind !== "reference" && planning.revisitAt === null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.notBefore}`}

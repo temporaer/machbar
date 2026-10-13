@@ -1648,3 +1648,29 @@ rebuilds activity events around `entity_id`. The migration is covered by
 `apps/api/tests/migration-workitems-merge.test.ts`, including status mapping,
 satellite-table repointing, deletion-safe activity snapshots, and archived-story
 metadata.
+
+
+### Ordinary intake planning boundary
+
+`intakeCanonicalPlanning` in the shared intake contract interprets canonical
+planning for validation, incomplete-draft preparation, review, and Apply.
+A present `revisitAt` wins over deprecated availability fields, including
+explicit null; only an omitted canonical value permits legacy conversion.
+Legacy availability overridden by explicit null is retained as source context
+in review and applied notes. Actions require a choice between work date and
+revisit; reminders may precede either and deadlines can coexist with revisits.
+Projects support deadlines and revisits, with execution dates on child actions.
+Unsupported reference planning and project execution dates remain visible
+validation blockers. Canonical revisit timestamps follow the existing offset,
+household-local, and DST normalization policy with explicit incomplete acceptance.
+
+Apply continues through canonical task/project mutations. A failed transaction
+with no persisted work, calendar requests, or retained source documents releases
+its claim, clears the accepted draft, and returns to editable `ready` with a
+safe concrete application error. Persisted results retain `partially_applied`
+and the immutable accepted draft for idempotent retries. Newly tightened planning
+checks are grandfathered only for matching committed work in the persisted results;
+new acceptance, uncommitted work, hierarchy, reminders, and external payloads
+continue to be validated. Review refreshes the
+revision after failures while keeping the local edits and selections, and
+focuses the visible Apply alert.

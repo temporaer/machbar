@@ -181,8 +181,7 @@
                 "null"
               ],
               "nullable": true,
-              "description": "Machbar intake field revisitAt",
-              "default": null
+              "description": "Canonical revisit timestamp; explicit null means no revisit"
             },
             "notBeforeDate": {
               "type": [

@@ -1,4 +1,4 @@
-import type { Task, TaskReminderInput, TaskSize } from "./index.js";
+import type { ApiErrorCode, Task, TaskReminderInput, TaskSize } from "./index.js";
 import type { CleanupRoundAiResponse, CleanupRoundAnalyzePayload } from "./cleanupRound.js";
 import {
   isAbsentOwnerSuggestion,
@@ -152,6 +152,33 @@ export interface IntakeWorkItem {
   relatedCalendarKeys: string[];
 }
 
+/** Canonical presence wins, including explicit null. Legacy conversion lives here. */
+export function intakeCanonicalPlanning(item: Pick<IntakeWorkItem, "scheduledDate" | "revisitAt" | "notBeforeAt" | "notBeforeDate">): {
+  scheduledDate: string | null;
+  revisitAt: string | null;
+  revisitField: "revisitAt" | "notBeforeAt" | "notBeforeDate";
+  availabilityContext: string | null;
+} {
+  if (item.revisitAt !== undefined) {
+    const legacyAvailability = item.notBeforeAt ?? item.notBeforeDate;
+    return {
+      scheduledDate: item.scheduledDate,
+      revisitAt: item.revisitAt,
+      revisitField: "revisitAt",
+      availabilityContext: item.revisitAt === null && legacyAvailability !== null
+        ? `Source availability: ${legacyAvailability}` : null,
+    };
+  }
+  const revisitAt = item.notBeforeAt ?? (item.notBeforeDate && validDate(item.notBeforeDate)
+    ? newDateOnlyRevisitAt(item.notBeforeDate, INTAKE_TIMEZONE) : item.notBeforeDate);
+  return {
+    scheduledDate: item.scheduledDate,
+    revisitAt,
+    revisitField: item.notBeforeAt !== null ? "notBeforeAt" : "notBeforeDate",
+    availabilityContext: null,
+  };
+}
+
 export interface IntakeWarning {
   message: string;
 }
@@ -207,6 +234,7 @@ export type IntakeIssueCode =
   | "dangling_related_key"
   | "duplicate_related_key"
   | "scheduling_order"
+  | "planning_conflict"
   | "deadline_relative_without_due"
   | "captured_reminder"
   | "timed_end_required"
@@ -240,6 +268,7 @@ const intakeIssueCodes = new Set<IntakeIssueCode>([
   "dangling_related_key",
   "duplicate_related_key",
   "scheduling_order",
+  "planning_conflict",
   "deadline_relative_without_due",
   "captured_reminder",
   "timed_end_required",
@@ -333,7 +362,7 @@ function validDateTime(value: string): boolean {
   if (
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
   ) return false;
-  return !Number.isNaN(Date.parse(value));
+  return timestampParts(value) !== null && !Number.isNaN(Date.parse(value));
 }
 
 function validReminderTime(value: string): boolean {
@@ -483,6 +512,16 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     addIssueForDate(issues, [...path, "scheduledDate"], item.scheduledDate);
     addIssueForDate(issues, [...path, "notBeforeDate"], item.notBeforeDate);
     addIssueForDateTime(issues, [...path, "notBeforeAt"], item.notBeforeAt);
+    const planning = intakeCanonicalPlanning(item);
+    if (planning.revisitField === "revisitAt") {
+      addIssueForDateTime(issues, [...path, "revisitAt"], planning.revisitAt);
+    }
+    if (item.kind === "action" && planning.scheduledDate !== null && planning.revisitAt !== null) {
+      issues.push(issue([...path, planning.revisitField], "planning_conflict", "Choose either an intended work date or a revisit; ordinary actions cannot have both. Reminders can be kept with either choice."));
+    }
+    if (item.revisitAt != null && item.notBeforeAt !== null && validDateTime(item.revisitAt) && validDateTime(item.notBeforeAt) && Date.parse(item.revisitAt) !== Date.parse(item.notBeforeAt)) {
+      issues.push(issue([...path, "notBeforeAt"], "planning_conflict", "Legacy availability conflicts with the canonical revisit. Clear the legacy availability or choose one revisit."));
+    }
     for (const [reminderIndex, reminder] of item.reminders.entries()) {
       const reminderPath = [...path, "reminders", reminderIndex] as (string | number)[];
       if (reminder.kind === "absolute") {
@@ -522,13 +561,19 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
       issues.push(issue(path, "scheduling_order", "Scheduled date must not be after the due date."));
     }
     if (item.kind === "project") {
+      if (item.scheduledDate !== null) {
+        issues.push(issue([...path, "scheduledDate"], "project_field_not_allowed", "Projects cannot have an intended work date. Put execution dates on concrete child actions and keep the project timing intention in notes."));
+      }
       if (item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
-        issues.push(issue(path, "project_field_not_allowed", "Projects may have a scheduled date and due date, but no availability, reminders, or clarification fields."));
+        issues.push(issue(path, "project_field_not_allowed", "Projects may have a deadline and revisit, but no legacy availability, reminders, or clarification fields."));
       }
       if (item.parentKey !== null && !plan.workItems.some((parent) => parent.key === item.parentKey && parent.kind === "project")) {
         issues.push(issue([...path, "parentKey"], "invalid_parent", "Projects can only be children of projects."));
       }
     } else if (item.kind === "reference") {
+      if (planning.revisitAt !== null) {
+        issues.push(issue([...path, planning.revisitField], "reference_field_not_allowed", "References cannot have a revisit. Use an action for the follow-up or clear the revisit."));
+      }
       if (item.ownerName !== null || item.dueDate !== null || item.scheduledDate !== null || item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
         issues.push(issue(path, "reference_field_not_allowed", "References cannot carry ownership, scheduling, reminders, or clarification fields."));
       }
@@ -937,6 +982,18 @@ export function prepareIncompleteIntakeDraft(
       }
     }
 
+    const planning = intakeCanonicalPlanning(item);
+    if (item.kind !== "reference" && item.revisitAt != null && planning.revisitField === "revisitAt") {
+      const path = ["workItems", index, "revisitAt"] as (string | number)[];
+      const result = recordTimestamp(item.revisitAt, path);
+      if (result.status === "normalized") item.revisitAt = result.value;
+      else if (result.status !== "unchanged") {
+        omission(omissions, path, timestampOmissionCode(result.status), item.revisitAt);
+        // DST gaps and overlaps require a person to choose the actual instant.
+        if (result.status === "invalid") item.revisitAt = null;
+      }
+    }
+
     let availabilityRequiresDiagnostic = false;
     if (item.kind === "action" && item.notBeforeAt !== null) {
       const path = ["workItems", index, "notBeforeAt"] as (string | number)[];
@@ -1077,6 +1134,8 @@ export type IntakeStatus =
   | "partially_applied";
 
 export type IntakeErrorCode =
+  | ApiErrorCode
+  | "intake_apply_failed"
   | "home_assistant_not_connected"
   | "home_assistant_protocol_outdated"
   | "ai_task_not_configured"

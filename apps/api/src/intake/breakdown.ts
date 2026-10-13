@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 import type { IntakeApplyResults, IntakeDraft, ProjectActivationResolution, Task, TaskStatus } from "@machbar/shared";
-import { canBreakDownTask } from "@machbar/shared";
+import { canBreakDownTask, intakeCanonicalPlanning } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -93,7 +93,7 @@ export function applyBreakdown(
       kind: item.kind === "reference" ? "reference" : "action",
       dueDate: item.dueDate,
       scheduledDate: item.scheduledDate,
-      revisitAt: item.revisitAt ?? item.notBeforeAt,
+      revisitAt: intakeCanonicalPlanning(item).revisitAt,
       reminders: item.reminders,
     }));
     conversion = beginCommitmentConversion(
@@ -118,15 +118,16 @@ export function applyBreakdown(
   }], calendar: [], paperlessDocumentIds: [] };
   const createdChildren: Task[] = [];
   for (const item of draft.workItems.filter((item) => item.enabled && item.key !== root.key)) {
+    const planning = intakeCanonicalPlanning(item);
     const input = {
-      title: item.title, notes: item.notes ?? "",
+      title: item.title, notes: [item.notes, planning.availabilityContext].filter(Boolean).join("\n\n"),
       // Match ordinary step entry: uncommitted additions to parked work stay
       // parked, while createTask/createChildTask promote dated or otherwise
       // committed steps through their canonical task rules.
       status: !converted && task.status === "someday" ? "someday" as const : "actionable" as const,
       ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId, ownerInheritanceMode: "explicit" as const }),
-      dueDate: item.dueDate, scheduledDate: item.scheduledDate,
-      revisitAt: item.revisitAt ?? item.notBeforeAt,
+      dueDate: item.dueDate, scheduledDate: planning.scheduledDate,
+      revisitAt: planning.revisitAt,
       reminders: item.reminders.length ? item.reminders : undefined,
       createdByMemberId: job.createdByMemberId,
     };
