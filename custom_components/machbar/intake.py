@@ -71,9 +71,37 @@ def _work_schema() -> vol.Schema:
 
 
 def _reminder_schema() -> Any:
+    absolute = vol.Schema(
+        {
+            _field("kind", vol.In(["absolute"])): vol.In(["absolute"]),
+            _field("at", str): str,
+            _optional_field("daysBefore", None, vol.Any(None, int)): vol.Any(None, int),
+            _optional_field("time", None, _NULL): _NULL,
+            _optional_field("timezone", None, _NULL): _NULL,
+        },
+        extra=vol.PREVENT_EXTRA,
+    )
+    deadline_relative = vol.Schema(
+        {
+            _field("kind", vol.In(["deadline_relative"])): vol.In(["deadline_relative"]),
+            _field("daysBefore", int): int,
+            _field("time", str): str,
+            _field("timezone", str): str,
+            _optional_field("at", None, _NULL): _NULL,
+        },
+        extra=vol.PREVENT_EXTRA,
+    )
+    return vol.Any(absolute, deadline_relative)
+
+
+def _refinement_reminder_schema() -> vol.Schema:
+    # A single object variant keeps HA's strict schema conversion stable;
+    # _normalize_ai_result enforces the variant-specific required fields.
     return vol.Schema(
         {
-            _field("kind", vol.In(["absolute", "deadline_relative"])): vol.In(["absolute", "deadline_relative"]),
+            _field("kind", vol.In(["absolute", "deadline_relative"])): vol.In(
+                ["absolute", "deadline_relative"]
+            ),
             _optional_field("at", None, _NULL): _NULL,
             _optional_field("daysBefore", None, vol.Any(None, int)): vol.Any(None, int),
             _optional_field("time", None, _NULL): _NULL,
@@ -112,7 +140,7 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "clearScheduledDate": (False, vol.Any(bool, None)),
         "clearDueDate": (False, vol.Any(bool, None)),
         "clearRevisitAt": (False, vol.Any(bool, None)),
-        "reminders": (False, vol.Any(None, [_reminder_schema()])),
+        "reminders": (False, vol.Any(None, [_refinement_reminder_schema()])),
     },
     "update_project": {
         "targetId": (True, int),
@@ -132,7 +160,7 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "clearScheduledDate": (False, vol.Any(bool, None)),
         "clearDueDate": (False, vol.Any(bool, None)),
         "clearRevisitAt": (False, vol.Any(bool, None)),
-        "reminders": (False, vol.Any(None, [_reminder_schema()])),
+        "reminders": (False, vol.Any(None, [_refinement_reminder_schema()])),
     },
     "move_task": {
         "targetId": (True, int),
@@ -746,22 +774,57 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
                 reminder = dict(raw_reminder)
                 reminder_kind = reminder.get("kind")
                 reminder_path = item_path + ["reminders", reminder_index]
-                if reminder_kind == "absolute" and not isinstance(reminder.get("at"), str):
-                    raise _invalid(reminder_path + ["at"], "an ISO datetime string", value=reminder.get("at", _MISSING))
+                if reminder_kind == "absolute" and not isinstance(
+                    reminder.get("at"), str
+                ):
+                    raise _invalid(
+                        reminder_path + ["at"],
+                        "an ISO datetime string",
+                        value=reminder.get("at", _MISSING),
+                    )
                 if reminder_kind == "absolute":
                     for field in ("daysBefore", "time", "timezone"):
                         if reminder.get(field, _MISSING) is not None:
-                            raise _invalid(reminder_path + [field], "omitted for an absolute reminder", value=reminder[field])
+                            raise _invalid(
+                                reminder_path + [field],
+                                "omitted for an absolute reminder",
+                                value=reminder[field],
+                            )
                 if reminder_kind == "deadline_relative":
                     days_before = reminder.get("daysBefore", _MISSING)
-                    if not isinstance(days_before, int) or isinstance(days_before, bool) or days_before < 0:
-                        raise _invalid(reminder_path + ["daysBefore"], "a non-negative integer", value=days_before)
-                    if not isinstance(reminder.get("time"), str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", reminder["time"]):
-                        raise _invalid(reminder_path + ["time"], "a local HH:mm time", value=reminder.get("time", _MISSING))
-                    if not isinstance(reminder.get("timezone"), str) or not reminder["timezone"]:
-                        raise _invalid(reminder_path + ["timezone"], "a non-empty IANA timezone", value=reminder.get("timezone", _MISSING))
+                    if (
+                        not isinstance(days_before, int)
+                        or isinstance(days_before, bool)
+                        or days_before < 0
+                    ):
+                        raise _invalid(
+                            reminder_path + ["daysBefore"],
+                            "a non-negative integer",
+                            value=days_before,
+                        )
+                    if not isinstance(reminder.get("time"), str) or not re.fullmatch(
+                        r"([01]\d|2[0-3]):[0-5]\d", reminder["time"]
+                    ):
+                        raise _invalid(
+                            reminder_path + ["time"],
+                            "a local HH:mm time",
+                            value=reminder.get("time", _MISSING),
+                        )
+                    if (
+                        not isinstance(reminder.get("timezone"), str)
+                        or not reminder["timezone"]
+                    ):
+                        raise _invalid(
+                            reminder_path + ["timezone"],
+                            "a non-empty IANA timezone",
+                            value=reminder.get("timezone", _MISSING),
+                        )
                     if reminder.get("at", _MISSING) is not None:
-                        raise _invalid(reminder_path + ["at"], "omitted for a deadline-relative reminder", value=reminder["at"])
+                        raise _invalid(
+                            reminder_path + ["at"],
+                            "omitted for a deadline-relative reminder",
+                            value=reminder["at"],
+                        )
                 irrelevant = (
                     {"daysBefore", "time", "timezone"}
                     if reminder_kind == "absolute"
