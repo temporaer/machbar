@@ -623,6 +623,45 @@ describe("AI work refinement proposals", () => {
     expect(child.ownerMemberId).toBeNull();
   });
 
+  it("activates conversion for a commitment on a proposed grandchild and retries without duplicates", () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Nested driver", color: "#987654" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Kita-Termin vorbereiten", status: "someday" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    const reminder = { kind: "absolute" as const, at: "2026-10-13T07:00:00.000Z" };
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
+      refinementIntent: "structure", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({
+        intent: "structure", summary: "Vorbereitung mit konkretem Bringeschritt", disposition: "changes", question: null,
+        changes: [
+          { kind: "convert_task_to_project", targetId: task.id, rationale: "Die Arbeit hat mehrere Schritte.", accepted: true },
+          { kind: "create_child", parentTaskId: task.id, proposalKey: "prepare", title: "Unterlagen vorbereiten", rationale: "Zuerst vorbereiten.", accepted: true },
+          { kind: "create_child", parentProposalKey: "prepare", proposalKey: "bring", title: "Unterlagen am Mittwoch mitbringen", scheduledDate: "2026-10-14", reminders: [reminder], rationale: "Der Termin ist verbindlich.", accepted: true },
+        ],
+      }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    let requirements: unknown;
+    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
+    expect(requirements).toMatchObject({ code: "project_commitment_resolution_required" });
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ kind: "action", status: "someday", children: [] });
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toHaveLength(0);
+    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id, "Kita-Termin abstimmen"));
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).get()!;
+    const grandchild = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, child.id)).get()!;
+    expect(project).toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+    expect(grandchild).toMatchObject({ title: "Unterlagen am Mittwoch mitbringen", status: "active", scheduledDate: "2026-10-14" });
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, grandchild.id)).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()).toHaveLength(1);
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+  });
+
   it("uses an existing captured-task execution commitment to request a driver during typed conversion", () => {
     const driver = ctx.handle.db.insert(schema.members).values({ name: "Refinement driver", color: "#234567" }).returning().get();
     const task = createTask(ctx.handle.db, { title: "Prepare the move", status: "captured" });

@@ -725,15 +725,17 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     assert converted["properties"]["disposition"]["type"] == "string"
     change = converted["properties"]["changes"]["items"]
     variants = change["anyOf"]
-    assert len(variants) == 9
+    assert len(variants) == 11
     expected_fields = {
         "update_task": {"kind", "rationale", "accepted", "targetId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"},
         "update_project": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
         "convert_task_to_project": {"kind", "rationale", "accepted", "targetId"},
-        "create_child": {"kind", "rationale", "accepted", "parentTaskId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"},
+        "create_child": {"kind", "rationale", "accepted", "parentTaskId", "proposalKey", "parentProposalKey", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"},
         "move_task": {"kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"},
         "add_dependency": {"kind", "rationale", "accepted", "taskId", "dependsOnTaskId"},
-        "update_wait": {"kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"},
+        "update_wait": {"kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt", "clearRevisitAt"},
+        "resolve_wait": {"kind", "rationale", "accepted", "taskId"},
+        "cancel_task": {"kind", "rationale", "accepted", "targetId", "descendantsPolicy"},
         "update_project_outcome": {"kind", "rationale", "accepted", "projectId", "criterionId", "outcome"},
         "advisory": {"kind", "rationale", "accepted", "affectedIds", "title"},
     }
@@ -882,18 +884,39 @@ def test_work_refinement_adapter_routes_wait_cancellation_and_nested_steps():
             {"kind": "resolve_wait", "taskId": 13, "rationale": "Die Rückmeldung ist eingetroffen."},
             {"kind": "cancel_task", "targetId": 14, "descendantsPolicy": "cancel_children", "rationale": "Der Termin wurde abgesagt."},
             {"kind": "create_child", "parentTaskId": 15, "proposalKey": "prepare", "parentProposalKey": None, "title": "Vorbereitung", "rationale": "Zuerst vorbereiten."},
-            {"kind": "create_child", "parentProposalKey": "prepare", "proposalKey": "send", "title": "Einreichen", "rationale": "Danach einreichen."},
+            {"kind": "create_child", "parentTaskId": None, "parentProposalKey": "prepare", "proposalKey": "send", "title": "Einreichen", "rationale": "Danach einreichen."},
         ],
     }
     normalized = _normalize_ai_result(proposal, "work_refinement", WORK_REFINEMENT_STRUCTURE)
-    assert normalized["changes"][0]["revisitAt"] is None
-    assert "clearRevisitAt" not in normalized["changes"][0]
+    assert "revisitAt" not in normalized["changes"][0]
+    assert normalized["changes"][0]["clearRevisitAt"] is True
     assert normalized["changes"][1]["kind"] == "resolve_wait"
     assert normalized["changes"][2]["kind"] == "cancel_task"
     assert "descendantsPolicy" not in normalized["changes"][2]
     assert normalized["changes"][3]["proposalKey"] == "prepare"
     assert "parentProposalKey" not in normalized["changes"][3]
     assert normalized["changes"][4]["parentProposalKey"] == "prepare"
+    assert "parentTaskId" not in normalized["changes"][4]
+
+
+def test_work_refinement_adapter_compacts_unused_parent_placeholders_for_nested_children():
+    provider_proposal = {
+        "intent": "structure", "summary": "Eine verschachtelte Aufgabe", "disposition": "changes", "question": None,
+        "changes": [
+            {"kind": "create_child", "parentTaskId": 15, "parentProposalKey": None, "proposalKey": "prepare", "title": "Vorbereitung", "rationale": "Zuerst vorbereiten."},
+            {"kind": "create_child", "parentTaskId": None, "parentProposalKey": "prepare", "proposalKey": "send", "title": "Einreichen", "rationale": "Danach einreichen."},
+            {"kind": "create_child", "parentTaskId": 15, "parentProposalKey": None, "proposalKey": None, "title": "Bestehender Vorschlag", "rationale": "Bleibt rückwärtskompatibel."},
+        ],
+    }
+    normalized = _normalize_ai_result(provider_proposal, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert normalized["changes"][1] == {
+        "kind": "create_child", "parentProposalKey": "prepare", "proposalKey": "send",
+        "title": "Einreichen", "rationale": "Danach einreichen.", "accepted": False,
+    }
+    assert normalized["changes"][2] == {
+        "kind": "create_child", "parentTaskId": 15, "title": "Bestehender Vorschlag",
+        "rationale": "Bleibt rückwärtskompatibel.", "accepted": False,
+    }
 
 
 @pytest.mark.parametrize("change", [

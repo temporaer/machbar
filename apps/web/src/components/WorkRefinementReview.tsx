@@ -349,6 +349,15 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     return false;
   });
   const proposalParentIssue = proposal.changes.find((change) => change.kind === "create_child" && change.accepted && change.parentProposalKey && !proposal.changes.some((parent) => parent.kind === "create_child" && parent.proposalKey === change.parentProposalKey && parent.accepted));
+  const proposalKeyFor = (index: number, change: Extract<WorkRefinementChange, { kind: "create_child" }>): string => {
+    if (change.proposalKey) return change.proposalKey;
+    const used = new Set(proposal.changes.flatMap((candidate) => candidate.kind === "create_child" && candidate.proposalKey ? [candidate.proposalKey] : []));
+    const base = `review-child-${index + 1}`;
+    let key = base;
+    let suffix = 2;
+    while (used.has(key)) key = `${base}-${suffix++}`;
+    return key;
+  };
   const hasNestedCycle = (() => {
     const keyed = new Map(proposal.changes.flatMap((change) => change.kind === "create_child" && change.proposalKey && change.accepted ? [[change.proposalKey, change] as const] : []));
     for (const change of keyed.values()) {
@@ -441,10 +450,20 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         <p>{change.rationale}</p>
         {change.kind === "create_child" ? <label className="stack"><span>{strings.refinementNestedParent}</span><select disabled={editorLocked} value={change.parentProposalKey ? `proposal:${change.parentProposalKey}` : `existing:${change.parentTaskId ?? ""}`} onChange={(event) => {
           const value = event.target.value;
-          const parentPatch = value.startsWith("proposal:")
-            ? { parentTaskId: undefined, parentProposalKey: value.slice("proposal:".length) }
-            : { parentTaskId: Number(value.slice("existing:".length)), parentProposalKey: undefined };
-          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => candidateIndex === index && candidate.kind === "create_child" ? { ...candidate, ...parentPatch } : candidate) as WorkRefinementChange[] });
+          const changes = proposal.changes.map((candidate, candidateIndex) => {
+            if (candidateIndex !== index || candidate.kind !== "create_child") return candidate;
+            const next = { ...candidate };
+            if (value.startsWith("proposal:")) {
+              delete next.parentTaskId;
+              next.parentProposalKey = value.slice("proposal:".length);
+              next.proposalKey = proposalKeyFor(index, next);
+            } else {
+              delete next.parentProposalKey;
+              next.parentTaskId = Number(value.slice("existing:".length));
+            }
+            return next;
+          }) as WorkRefinementChange[];
+          setDraft({ ...proposal, changes });
           setError(null);
         }}>
           {[...contextLabels.entries()].filter(([, item]) => item.role === "task" || item.role === "project").map(([id, item]) => <option key={`existing:${id}`} value={`existing:${id}`}>{item.title}</option>)}

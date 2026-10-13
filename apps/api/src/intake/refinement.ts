@@ -273,6 +273,18 @@ export function applyWorkRefinement(
     const projectsToActivate = new Set<number>();
     const createdIdsByKey = new Map<string, number>();
     const fieldWrites = new Map<string, string>();
+    const proposedRootParent = (creation: Extract<WorkRefinementProposal["changes"][number], { kind: "create_child" }>) => {
+      let current = creation;
+      const seen = new Set<string>();
+      while (current.parentProposalKey) {
+        if (seen.has(current.parentProposalKey)) return null;
+        seen.add(current.parentProposalKey);
+        const parent = childByKey.get(current.parentProposalKey);
+        if (!parent) return null;
+        current = parent;
+      }
+      return current.parentTaskId ?? null;
+    };
     for (const change of orderedChanges) {
       if (change.kind === "convert_task_to_project") changedRoleIds.add(change.targetId);
       if ((change.kind === "update_task" || change.kind === "update_project") && changedRoleIds.has(change.targetId)) {
@@ -358,7 +370,7 @@ export function applyWorkRefinement(
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
-          const additionalCommitment = orderedChanges.some((candidate) => candidate.kind === "create_child" && candidate.parentTaskId === task.id && hasExecutionCommitment({
+          const additionalCommitment = orderedChanges.some((candidate) => candidate.kind === "create_child" && proposedRootParent(candidate) === task.id && hasExecutionCommitment({
             kind: "action",
             dueDate: candidate.dueDate ?? null,
             scheduledDate: candidate.scheduledDate ?? null,

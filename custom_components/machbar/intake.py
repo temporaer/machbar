@@ -180,7 +180,10 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
 _REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "proposalKey", "parentProposalKey", "descendantsPolicy"}
 _REFINEMENT_PLANNING_NULL_PLACEHOLDERS = {
     "update_task": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
-    "create_child": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
+    # Some structured-output providers inject nulls for every optional field.
+    # A nested child has no persisted parent ID, so compact this placeholder
+    # before the strict adapter schema validates the proposal.
+    "create_child": {"parentTaskId", "scheduledDate", "dueDate", "revisitAt", "reminders"},
     "update_wait": {"revisitAt"},
 }
 _REFINEMENT_ALL_FIELDS = {
