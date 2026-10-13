@@ -719,14 +719,14 @@ export function TaskDetailSheet() {
             )}
             {revisitAtValue ? (
               <DetailPropertyPill
-                label={strings.planning}
+                label={strings.notBefore}
                 onClick={() => runCommand("task.availability")}
               >
                 <span>{revisitAtValue}</span>
               </DetailPropertyPill>
             ) : (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>
-                {strings.planning}
+                {strings.addRevisit}
               </DetailPropertyPill>
             )}
             {task.reminders.length > 0 && reminderSummary ? (

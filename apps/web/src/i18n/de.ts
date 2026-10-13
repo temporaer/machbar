@@ -292,6 +292,7 @@ const base = {
   pickDate: "Datum …",
   scheduled: "Geplant für",
   notBefore: "Wiedervorlage",
+  addRevisit: "+ Wiedervorlage",
   planning: "Planung",
   planningShowFrom: "Wiedervorlage",
   planningScheduledFor: "Geplant für",

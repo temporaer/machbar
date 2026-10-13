@@ -483,7 +483,7 @@ describe("TaskDetailSheet", () => {
     expect(
       within(meta).queryByRole("button", { name: /Wiederholung/ }),
     ).not.toBeInTheDocument();
-    for (const affordance of ["+ Planen", "+ Warten auf", "+ Zuweisen"]) {
+    for (const affordance of ["+ Planen", "+ Wiedervorlage", "+ Warten auf", "+ Zuweisen"]) {
       expect(within(meta).getByRole("button", { name: affordance })).toBeVisible();
     }
 
@@ -1254,7 +1254,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Noch nicht verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
+    await userEvent.click(screen.getByRole("button", { name: "+ Wiedervorlage" }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung" }),
@@ -1273,7 +1273,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Abends verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: /Planung.*18:00/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Wiedervorlage.*18:00/ }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung" }),
