@@ -14,6 +14,10 @@ vi.mock("../lib/api", async (importOriginal) => {
   } };
 });
 const mockedApi = vi.mocked(api, true);
+async function editDetails() {
+  const toggle = screen.queryByRole("button", { name: "Details bearbeiten" });
+  if (toggle) await userEvent.click(toggle);
+}
 vi.mock("../lib/identity", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/identity")>();
   return { ...actual, useIdentity: () => ({ members: [{ id: 1, name: "Mira", color: "#123456", pictureUrl: null }], currentMemberId: 1 }) };
@@ -50,11 +54,77 @@ function withProposalTitle(current: IntakeRecord, title: string, revision = 3): 
 describe("WorkRefinementReview", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("shows a compact title-only proposal without empty planning controls", () => {
+    renderWithProviders(<WorkRefinementReview record={record()} onChange={vi.fn()} />);
+    expect(screen.getByText("Kita-Formular → Kita-Formular im Sekretariat abgeben")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Geplantes Datum")).not.toBeInTheDocument();
+    expect(document.querySelector(".refinement-compact-summary")?.textContent).not.toMatch(/Keine → Vorgeschlagen: Keine/);
+    expect(screen.getByRole("button", { name: "Details bearbeiten" })).toBeInTheDocument();
+  });
+
+  it("shows proposed dates and reminders together in household-local time", () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Container vorbereiten", status: "actionable", kind: "action", children: [] });
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Zwei konkrete Bringaktionen", disposition: "changes", question: null,
+      changes: [{ kind: "create_child", parentTaskId: 4, title: "Kita A bringen", scheduledDate: "2026-10-13", reminders: [{ kind: "absolute", at: "2026-10-12T05:00:00.000Z" }], rationale: "Am Vortag erinnern.", accepted: false }],
+    };
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    const card = screen.getByText("Kita A bringen").closest("article");
+    expect(card).toHaveTextContent("Geplant für: 13.10.2026");
+    expect(card).toHaveTextContent("12.10.2026 07:00");
+    expect(card?.querySelector(".refinement-compact-summary")).not.toHaveTextContent("Keine → Vorgeschlagen: Keine");
+  });
+
+  it("keeps high-signal dates visible in the compact view at a narrow viewport", () => {
+    const priorWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 360 });
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Kita-Sachen", status: "actionable", kind: "action", children: [] });
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Bringtermine", disposition: "changes", question: null,
+      changes: [{ kind: "create_child", parentTaskId: 4, title: "Kita-Formular abgeben", scheduledDate: "2026-10-13", reminders: [{ kind: "absolute", at: "2026-10-12T05:00:00.000Z" }], rationale: "Eine Erinnerung am Vortag ist vorgeschlagen.", accepted: false }],
+    };
+    try {
+      renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+      const summary = document.querySelector(".refinement-compact-summary");
+      expect(summary).toHaveTextContent("13.10.2026");
+      expect(summary).toHaveTextContent("12.10.2026 07:00");
+      expect(screen.queryByLabelText("Geplant für")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: priorWidth });
+    }
+  });
+
+  it("keeps unfinished revisit input while proposal details are collapsed and reopened", async () => {
+    const current = record();
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Wiedervorlage planen", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 4, title: "Kita-Formular", rationale: "Keep the editor draft.", accepted: false }],
+    };
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    await editDetails();
+    fireEvent.change(screen.getByLabelText("Wiedervorlage-Datum"), { target: { value: "2026-10-19" } });
+    await userEvent.click(screen.getByRole("button", { name: "Details schließen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Details bearbeiten" }));
+    expect(screen.getByLabelText("Wiedervorlage-Datum")).toHaveValue("2026-10-19");
+  });
+
+  it("makes explicit deadline and reminder removals visible in the compact summary", () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Frist prüfen", dueDate: "2026-10-19", reminders: [{ kind: "absolute", at: "2026-10-18T05:00:00.000Z" }], children: [] });
+    current.refinement!.proposal!.changes = [{ kind: "update_task", targetId: 4, dueDate: null, reminders: [], rationale: "Die alten Erinnerungen passen nicht mehr.", accepted: false }];
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    expect(document.querySelector(".refinement-compact-summary")).toHaveTextContent("Fällig bis: 19.10.2026 → Frist entfernt");
+    expect(document.querySelector(".refinement-compact-summary")).toHaveTextContent("Erinnerungen entfernt");
+  });
+
   it("preserves edited fields across an equivalent background refresh", async () => {
     const current = record();
     const { rerender } = renderWithProviders(
       <WorkRefinementReview record={current} onChange={vi.fn()} />,
     );
+    await editDetails();
     const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
     await userEvent.clear(title);
     await userEvent.type(title, "Kita-Formular persönlich abgeben");
@@ -70,6 +140,7 @@ describe("WorkRefinementReview", () => {
     const { rerender } = renderWithProviders(
       <WorkRefinementReview record={current} onChange={vi.fn()} />,
     );
+    await editDetails();
     const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
     await userEvent.clear(title);
     await userEvent.type(title, "Kita-Formular selbst abgeben");
@@ -90,7 +161,7 @@ describe("WorkRefinementReview", () => {
       }),
     );
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-
+    await editDetails();
     const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
     await userEvent.clear(title);
     await userEvent.type(title, "Kita-Formular B");
@@ -111,6 +182,7 @@ describe("WorkRefinementReview", () => {
     const { rerender } = renderWithProviders(
       <WorkRefinementReview record={current} onChange={vi.fn()} />,
     );
+    await editDetails();
     const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
     await userEvent.clear(title);
     await userEvent.type(title, "Lokale Änderung");
@@ -126,6 +198,7 @@ describe("WorkRefinementReview", () => {
     const { rerender } = renderWithProviders(
       <WorkRefinementReview record={current} onChange={vi.fn()} />,
     );
+    await editDetails();
     rerender(<WorkRefinementReview record={withProposalTitle(current, "Neue Serverfassung")} onChange={vi.fn()} />);
 
     expect(await screen.findByDisplayValue("Neue Serverfassung")).toBeInTheDocument();
@@ -159,6 +232,7 @@ describe("WorkRefinementReview", () => {
     mockedApi.applyWorkRefinement.mockResolvedValue({ ...current, status: "applied", revision: 5 } as IntakeRecord);
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
 
+    await editDetails();
     await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
     const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
     await waitFor(() => expect(title).toBeDisabled());
@@ -176,6 +250,7 @@ describe("WorkRefinementReview", () => {
     }));
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
 
+    await editDetails();
     await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
     const title = screen.getByDisplayValue("Gespeicherte Änderung");
     await waitFor(() => expect(title).toBeDisabled());
@@ -195,6 +270,7 @@ describe("WorkRefinementReview", () => {
     const { rerender } = renderWithProviders(
       <WorkRefinementReview record={current} onChange={onChange} />,
     );
+    await editDetails();
     const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
     await userEvent.clear(title);
     await userEvent.type(title, "Lokale Änderung");
@@ -304,7 +380,7 @@ describe("WorkRefinementReview", () => {
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Rückmeldung ist eingetroffen" })).toBeInTheDocument();
     expect(screen.getByText("Deckungszusage")).toBeInTheDocument();
-    expect(screen.getByText("Beendet nur das Warten. Die Aufgabe bleibt offen.")).toBeInTheDocument();
+    expect(screen.getAllByText("Beendet nur das Warten. Die Aufgabe bleibt offen.").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeEnabled();
     expect(screen.getByRole("checkbox")).not.toBeChecked();
   });
@@ -326,11 +402,13 @@ describe("WorkRefinementReview", () => {
     mockedApi.applyWorkRefinement.mockResolvedValue({ ...current, status: "applied", revision: 4 } as IntakeRecord);
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
 
-    expect(screen.getByText(/Aktuell: Keine → Vorgeschlagen: 2026-10-13/)).toBeInTheDocument();
-    expect(screen.getByText(/Aktuell: Keine → Vorgeschlagen: 2026-10-19/)).toBeInTheDocument();
-    expect(screen.getAllByText(/Aktuell: Keine → Vorgeschlagen: 2026-10-12 07:00/)).toHaveLength(2);
+    expect(document.querySelector(".refinement-compact-summary")).toHaveTextContent("Geplant für: Keine → 13.10.2026");
+    expect(document.querySelector(".refinement-compact-summary")).toHaveTextContent("Fällig bis: Keine → 19.10.2026");
+    expect(document.querySelector(".refinement-compact-summary")).toHaveTextContent("12.10.2026 07:00");
+    expect(screen.queryByText(/Keine → Vorgeschlagen: Keine/)).not.toBeInTheDocument();
+    await editDetails();
     expect(screen.getByRole("button", { name: "2026-10-12 · 07:00" })).toBeInTheDocument();
-    expect(screen.getByText("Erinnerungen", { exact: true }).parentElement).toHaveTextContent("Aktuell: Keine → Vorgeschlagen: 2026-10-12 07:00");
+    expect(screen.getByText("Erinnerungen", { exact: true }).parentElement).toHaveTextContent("12.10.2026 07:00");
     await userEvent.click(screen.getByRole("button", { name: "Erinnerung entfernen" }));
     await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
 
@@ -348,6 +426,7 @@ describe("WorkRefinementReview", () => {
       changes: [{ kind: "update_task", targetId: 4, title: "Kita-Formular", rationale: "A focused edit." , accepted: true }],
     };
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    await editDetails();
     fireEvent.change(screen.getByLabelText("Wiedervorlage-Datum"), { target: { value: "2026-03-29" } });
     fireEvent.change(screen.getByLabelText("Wiedervorlage-Uhrzeit"), { target: { value: "02:30" } });
     expect(screen.getByRole("alert")).toHaveTextContent("Bitte vervollständige oder verwirf");
@@ -367,6 +446,7 @@ describe("WorkRefinementReview", () => {
     };
     const { rerender, container } = renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
 
+    await editDetails();
     fireEvent.change(screen.getByLabelText("Wiedervorlage-Datum"), { target: { value: "2026-03-29" } });
     fireEvent.change(screen.getByLabelText("Wiedervorlage-Uhrzeit"), { target: { value: "02:30" } });
     await userEvent.click(screen.getByRole("button", { name: "+ Erinnerung" }));
@@ -392,6 +472,7 @@ describe("WorkRefinementReview", () => {
     };
     const { rerender, container } = renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
 
+    await editDetails();
     await userEvent.click(screen.getByRole("button", { name: "+ Erinnerung" }));
     await userEvent.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
     const reminderDate = container.querySelector<HTMLInputElement>("#reminder-date-new");
@@ -416,7 +497,7 @@ describe("WorkRefinementReview", () => {
     expect(mockedApi.updateWorkRefinement).toHaveBeenCalledWith("job", expect.objectContaining({ expectedRevision: 2 }));
   });
 
-  it("shows a meaningful place for moves instead of a numeric position control", () => {
+  it("shows a meaningful move summary instead of a numeric position control", () => {
     const current = record();
     current.text = JSON.stringify({ id: 4, title: "Project", tasks: [
       { id: 8, title: "Prepare", position: 0, parentTaskId: null, projectId: 4, children: [] },
@@ -425,8 +506,7 @@ describe("WorkRefinementReview", () => {
     current.refinement!.targetType = "project";
     current.refinement!.proposal!.changes = [{ kind: "move_task", targetId: 9, parentTaskId: null, projectId: 4, position: 0, rationale: "Vorbereitung soll vor der Buchung stattfinden.", accepted: false }];
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
-    expect(screen.getByRole("link", { name: "Book" })).toHaveAttribute("href", "/tasks/9");
-    expect(screen.getByLabelText("Einordnen")).toHaveDisplayValue("An den Anfang");
+    expect(document.querySelector(".refinement-compact-summary")).toHaveTextContent("Book → Project · An den Anfang");
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 

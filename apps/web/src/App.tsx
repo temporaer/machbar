@@ -2,7 +2,7 @@ import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-d
 import type { ReactNode } from "react";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
-import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
+import { TaskDetailProvider } from "./lib/taskDetailContext";
 import { TaskWorkflowProvider } from "./lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "./lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "./lib/swipeSettings";
@@ -43,8 +43,6 @@ import { HouseholdTimezoneProvider } from "./lib/householdTimezone";
 import { useStrings } from "./lib/strings";
 
 function TaskDetailHost() {
-  const { openTaskId } = useTaskDetail();
-  if (openTaskId === null) return null;
   return <TaskDetailSheet />;
 }
 

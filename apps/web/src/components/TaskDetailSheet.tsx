@@ -104,12 +104,13 @@ export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
   const navigate = useNavigate();
-  const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
+  const suspended = detailSuspended;
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
@@ -281,7 +282,7 @@ export function TaskDetailSheet() {
     dispatch,
   ]);
 
-  if (openTaskId === null) return null;
+  if (openTaskId === null || suspended) return null;
 
   const titleIsValid = titleDraft.trim().length > 0;
   const titleDirty =

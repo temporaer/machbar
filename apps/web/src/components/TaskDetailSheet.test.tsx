@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import type { Task } from "@machbar/shared";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskActionsProvider } from "../lib/useTaskActions";
@@ -15,6 +15,7 @@ import {
 } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeMember, makePhysicalContext, makeProject, makeTag, makeTask } from "../test/fixtures";
@@ -53,6 +54,7 @@ vi.mock("../lib/api", () => ({
     uploadPaperlessDocument: vi.fn(),
     searchPaperlessDocuments: vi.fn(),
     makeTaskAction: vi.fn(),
+    startWorkRefinement: vi.fn(),
   },
 }));
 
@@ -88,6 +90,31 @@ function QueueOpenerHarness({ taskIds, children }: { taskIds: number[]; children
       {children}
     </div>
   );
+}
+
+function RefinementHandoffHarness({ taskId }: { taskId: number }) {
+  const detail = useTaskDetail();
+  const workflow = useTaskWorkflow();
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <>
+    <Routes>
+      <Route path="/" element={<>
+        <button onClick={() => detail.openQueue([taskId, taskId + 1])}>Open task detail</button>
+        <button onClick={() => workflow.open("refinement", taskId)}>Launch AI refinement</button>
+      </>} />
+      <Route path="/intake/:id" element={<>
+        <p>Intake foreground {JSON.stringify(location.state)}</p>
+        <button onClick={() => {
+          const origin = (location.state as { refinementOrigin?: { originPath: string; taskDetail?: import("../lib/taskDetailContext").TaskDetailHandoff } } | null)?.refinementOrigin;
+          if (origin?.taskDetail) detail.resumeAfterHandoff(origin.taskDetail);
+          navigate(origin?.originPath ?? "/");
+        }}>Return from intake</button>
+      </>} />
+    </Routes>
+    <TaskDetailSheet />
+    <TaskWorkflowHost />
+  </>;
 }
 
 function renderSheet(taskId: number, focusField?: TaskDetailFocusField) {
@@ -172,6 +199,34 @@ describe("TaskDetailSheet", () => {
       originalFileName: "receipt.pdf",
       mimeType: "application/pdf",
     });
+  });
+
+  it("hands refinement started in task details to the foreground intake route", async () => {
+    const task = makeTask({ id: 73, title: "Kita-Tasche vorbereiten", revision: 6 });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.startWorkRefinement.mockResolvedValue({ id: "refinement-job" } as never);
+    renderWithProviders(<RefinementHandoffHarness taskId={task.id} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open task detail" }));
+    expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
+    const notes = await openNotesEditor();
+    fireEvent.change(notes, { target: { value: "Lokale Notiz bleibt erhalten" } });
+    await userEvent.click(screen.getByRole("button", { name: "Launch AI refinement" }));
+    await userEvent.click(screen.getByRole("button", { name: "Vorschlag vorbereiten" }));
+
+    const intake = await screen.findByText(/Intake foreground/);
+    expect(intake).toHaveTextContent('"targetType":"task"');
+    expect(intake).toHaveTextContent('"targetId":73');
+    expect(intake).toHaveTextContent('"entry":"task_detail"');
+    expect(intake).toHaveTextContent('"taskId":73');
+    expect(intake).toHaveTextContent('"queueTaskIds":[74]');
+    expect(intake).toHaveTextContent('"queueActive":true');
+    expect(screen.queryByRole("dialog", { name: "Details" })).not.toBeInTheDocument();
+    expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("task", 73, { expectedRevision: 6, intent: "improve" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Return from intake" }));
+    expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Lokale Notiz bleibt erhalten")).toBeInTheDocument();
   });
 
   it("shows Calendar export beside Share only for a dated Task", async () => {

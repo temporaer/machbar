@@ -1,10 +1,12 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Routes, Route } from "react-router-dom";
 import type { IntakeDraft } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { IntakeReviewPage } from "./IntakeReviewPage";
 import { api } from "../lib/api";
+import { useTaskDetail } from "../lib/taskDetailContext";
 
 const mockedApi = vi.mocked(api, true);
 
@@ -99,13 +101,21 @@ function record(status: string = "ready", error: { code: string; message: string
   };
 }
 
-function renderPage() {
+function renderPage(initialEntry: string | { pathname: string; state?: unknown } = "/intake/i1") {
   return renderWithProviders(
     <Routes>
       <Route path="/intake/:id" element={<IntakeReviewPage />} />
+      <Route path="/today" element={<OriginRestored />} />
+      <Route path="/projects/:id" element={<p>Project detail returned</p>} />
+      <Route path="/tasks/:id" element={<p>Task detail route returned</p>} />
     </Routes>,
-    { initialEntries: ["/intake/i1"] },
+    { initialEntries: [initialEntry] },
   );
+}
+
+function OriginRestored() {
+  const detail = useTaskDetail();
+  return <p>Origin restored: {detail.openTaskId ?? "none"}, {String(detail.queueActive)}, {String(detail.suspended)}</p>;
 }
 
 async function openEditor(title: string) {
@@ -1789,6 +1799,36 @@ describe("IntakeReviewPage", () => {
     } as never);
     renderPage();
     expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/tasks/27");
+  });
+
+  it("returns from queued refinement and restores the suspended detail queue", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record("queued"), draft: null } as never);
+    renderPage({
+      pathname: "/intake/i1",
+      state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: "notes" },
+      } },
+    });
+    expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Zurück zur Aufgabe" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+  });
+
+  it("returns applied ordinary tasks to the preserved detail and conversions to the resulting project", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("applied"), draft: null,
+      refinement: { targetType: "task", targetId: 27, intent: "structure", proposal: null },
+      applyResults: { work: [{ key: "refinement-target", kind: "project", workItemId: 27, role: "story" }], calendar: [], paperlessDocumentIds: [] },
+    } as never);
+    renderPage({
+      pathname: "/intake/i1",
+      state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: null },
+      } },
+    });
+    expect(await screen.findByText("Project detail returned")).toBeInTheDocument();
   });
 
   it("provides an exit for calendar-only applied results with no created work", async () => {

@@ -7,6 +7,8 @@ import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { calendarDateForInstant, householdCalendarDateTimeToRevisitAt, localTimeForInstant, type TaskReminderInput } from "@machbar/shared";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
+import { useLocale } from "../lib/locale";
+import { formatExactLocalDate } from "../lib/relativeDate";
 import { TaskRemindersEditor, type TaskRemindersEditorHandle } from "./TaskRemindersEditor";
 import {
   projectActivationPromptFromError,
@@ -47,10 +49,11 @@ function semanticSignature(value: unknown): string {
   return JSON.stringify(value) ?? String(value);
 }
 
-export function WorkRefinementReview({ record, onChange }: { record: IntakeRecord; onChange: (record: IntakeRecord) => void }) {
+export function WorkRefinementReview({ record, onChange, onReturn }: { record: IntakeRecord; onChange: (record: IntakeRecord) => void; onReturn?: () => void }) {
   const strings = useStrings();
   const { members } = useIdentity();
   const { timezone: householdTimezone } = useHouseholdTimezone();
+  const { locale } = useLocale();
   const reminderEditors = useRef(new Map<number, TaskRemindersEditorHandle>());
   const navigate = useNavigate();
   const refinement = record.refinement;
@@ -77,6 +80,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const [pendingReminderEditors, setPendingReminderEditors] = useState<Record<number, boolean>>({});
   const [editorResetGeneration, setEditorResetGeneration] = useState(0);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [expandedDetails, setExpandedDetails] = useState<Record<number, boolean>>({});
   const incomingProposalSignature = semanticSignature(serverProposal);
   const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
   const latestObservedRevisionRef = useRef(record.revision);
@@ -299,14 +303,14 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   };
   const discard = async () => {
     setOperation("discard"); setBusy(true);
-    try { await api.deleteIntake(record.id); navigate("/today"); }
+    try { await api.deleteIntake(record.id); if (onReturn) onReturn(); else navigate("/today"); }
     catch (cause) { setError(localizedErrorMessage(cause, strings)); }
     finally { setBusy(false); setOperation(null); }
   };
   const label = (change: WorkRefinementChange) => change.kind === "update_wait"
     ? strings[contextLabels.get(change.taskId)?.waitingFor ? "refinementWaitUpdate" : "refinementWaitStart"]
     : strings[labels[change.kind]];
-  const contextLabels = new Map<number, { title: string; path: string; role: "task" | "project"; status: string; kind: string | null; position: number; parentTaskId: number | null; projectId: number | null; scheduledDate: string | null; dueDate: string | null; revisitAt: string | null; reminders: TaskReminderInput[]; waitingFor: string | null }>();
+  const contextLabels = new Map<number, { title: string; notes: string | null; outcome: string | null; path: string; role: "task" | "project"; status: string; kind: string | null; position: number; parentTaskId: number | null; projectId: number | null; scheduledDate: string | null; dueDate: string | null; revisitAt: string | null; reminders: TaskReminderInput[]; waitingFor: string | null }>();
   try {
     const walk = (value: unknown) => {
       if (!value || typeof value !== "object") return;
@@ -316,6 +320,8 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         const externalWait = item.externalWait && typeof item.externalWait === "object" ? item.externalWait as Record<string, unknown> : null;
         contextLabels.set(item.id, {
           title: item.title,
+          notes: typeof item.notes === "string" ? item.notes : null,
+          outcome: typeof item.outcome === "string" ? item.outcome : null,
           path: `/${role}/${item.id}`,
           role: role === "projects" ? "project" : "task",
           status: typeof item.status === "string" ? item.status : "",
@@ -390,8 +396,77 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   proposal.changes.forEach((_change, index) => displayChange(index));
   const targetPath = refinement.targetType === "project" ? `/projects/${refinement.targetId}` : `/tasks/${refinement.targetId}`;
   const revisitSummary = (value: string | null | undefined) => value
-    ? `${calendarDateForInstant(value, householdTimezone) ?? value} ${localTimeForInstant(value, householdTimezone) ?? ""}`.trim()
+    ? `${formatExactLocalDate(calendarDateForInstant(value, householdTimezone) ?? value, locale) ?? calendarDateForInstant(value, householdTimezone) ?? value} ${localTimeForInstant(value, householdTimezone) ?? ""}`.trim()
     : strings.refinementNone;
+  const exactDate = (value: string | null | undefined) => value
+    ? formatExactLocalDate(value, locale) ?? value
+    : null;
+  const reminderSummary = (value: TaskReminderInput[]) => value.length === 0
+    ? null
+    : value.map((reminder) => reminder.kind === "absolute"
+      ? `${formatExactLocalDate(calendarDateForInstant(reminder.at, householdTimezone) ?? reminder.at, locale) ?? calendarDateForInstant(reminder.at, householdTimezone) ?? reminder.at} ${localTimeForInstant(reminder.at, householdTimezone) ?? ""}`.trim()
+      : `${reminder.daysBefore} ${strings.reminderDaysBeforeFieldLabel}, ${reminder.time} (${reminder.timezone})`).join(" · ");
+  const reminderSignature = (value: TaskReminderInput[]) => semanticSignature(value.map(({ id: _id, ...reminder }) => reminder));
+  const compactText = (value: string | null) => value && value.length > 140 ? `${value.slice(0, 137).trimEnd()}…` : value;
+  const compactSummary = (change: WorkRefinementChange): string[] => {
+    const result: string[] = [];
+    const existing = "targetId" in change
+      ? contextLabels.get(change.targetId)
+      : change.kind === "update_project_outcome"
+        ? contextLabels.get(change.projectId)
+        : undefined;
+    const displayDate = (value: string | null | undefined) => value ? exactDate(value) : null;
+    const transition = (labelText: string, before: string | null, after: string | null, clearedLabel: string) => {
+      if (before === after) return;
+      result.push(`${labelText}: ${before ?? strings.refinementNone} → ${after ?? clearedLabel}`);
+    };
+    if ((change.kind === "update_task" || change.kind === "update_project") && change.title !== undefined && change.title !== existing?.title) {
+      result.push(`${existing?.title ?? strings.refinementUnavailable} → ${change.title}`);
+    } else if (change.kind === "create_child") {
+      result.push(change.title);
+    } else if (change.kind === "move_task") {
+      const target = contextLabels.get(change.targetId);
+      const parent = change.parentTaskId === null ? null : contextLabels.get(change.parentTaskId);
+      const project = change.projectId === null ? null : contextLabels.get(change.projectId);
+      const siblings = moveSiblings(change);
+      const relative = change.position === 0
+        ? strings.refinementMoveBeginning
+        : change.position >= siblings.length
+          ? strings.refinementMoveEnd
+          : `${strings.refinementMoveAfter} ${contextLabels.get(siblings[change.position - 1]?.[0] ?? -1)?.title ?? ""}`;
+      result.push(`${target?.title ?? strings.refinementUnavailable} → ${parent?.title ?? project?.title ?? strings.refinementMoveBeginning} · ${relative}`);
+    } else if (change.kind === "convert_task_to_project") result.push(existing?.status === "actionable" ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog);
+    else if (change.kind === "update_wait") result.push(`${contextLabels.get(change.taskId)?.title ?? strings.refinementUnavailable}: ${contextLabels.get(change.taskId)?.waitingFor ?? strings.refinementNone} → ${change.waitingFor}`);
+    else if (change.kind === "resolve_wait") result.push(`${contextLabels.get(change.taskId)?.title ?? strings.refinementUnavailable}: ${contextLabels.get(change.taskId)?.waitingFor ?? strings.refinementWaitCurrent} → ${strings.refinementResolveWaitHelp}`);
+    else if (change.kind === "cancel_task") result.push(`${contextLabels.get(change.targetId)?.title ?? strings.refinementUnavailable}: ${strings.refinementCancel}`);
+    else if (change.kind === "update_project_outcome") transition(strings.refinementOutcome, compactText(contextLabels.get(change.projectId)?.outcome ?? null), compactText(change.outcome), strings.refinementOutcome);
+    else if (change.kind === "add_dependency") result.push(`${contextLabels.get(change.taskId)?.title ?? strings.refinementUnavailable} → ${contextLabels.get(change.dependsOnTaskId)?.title ?? strings.refinementUnavailable}`);
+    else if (change.kind === "advisory") result.push(change.title);
+
+    if (change.kind === "update_task" || change.kind === "create_child") {
+      const scheduled = change.scheduledDate !== undefined ? change.scheduledDate : (change.kind === "update_task" ? existing?.scheduledDate : null);
+      const due = change.dueDate !== undefined ? change.dueDate : (change.kind === "update_task" ? existing?.dueDate : null);
+      const revisit = change.revisitAt !== undefined ? change.revisitAt : (change.kind === "update_task" ? existing?.revisitAt : null);
+      const reminders = change.reminders !== undefined ? change.reminders : (change.kind === "update_task" ? existing?.reminders ?? [] : []);
+      if (change.scheduledDate !== undefined && change.kind === "update_task") transition(strings.refinementScheduledDate, displayDate(existing?.scheduledDate), displayDate(scheduled), strings.refinementScheduledRemoved);
+      else if (change.scheduledDate !== undefined && scheduled) result.push(`${strings.refinementScheduledDate}: ${displayDate(scheduled)}`);
+      if (change.dueDate !== undefined && change.kind === "update_task") transition(strings.refinementDueDate, displayDate(existing?.dueDate), displayDate(due), strings.refinementDeadlineRemoved);
+      else if (change.dueDate !== undefined && due) result.push(`${strings.refinementDueDate}: ${displayDate(due)}`);
+      if (change.revisitAt !== undefined && change.kind === "update_task") transition(strings.refinementRevisit, existing?.revisitAt ? revisitSummary(existing.revisitAt) : null, revisit ? revisitSummary(revisit) : null, strings.refinementRevisitRemoved);
+      else if (change.revisitAt !== undefined && revisit) result.push(`${strings.refinementRevisit}: ${revisitSummary(revisit)}`);
+      if (change.reminders !== undefined && reminderSignature(reminders) !== reminderSignature(existing?.reminders ?? [])) {
+        transition(strings.refinementReminders, reminderSummary(existing?.reminders ?? []), reminderSummary(reminders), strings.refinementRemindersRemoved);
+      } else if (change.kind === "create_child" && reminders.length > 0) {
+        result.push(reminderSummary(reminders) ?? "");
+      }
+    }
+    if (change.kind === "update_wait" && change.revisitAt !== undefined) {
+      const priorRevisit = contextLabels.get(change.taskId)?.revisitAt ?? null;
+      transition(strings.refinementRevisit, priorRevisit ? revisitSummary(priorRevisit) : null, change.revisitAt ? revisitSummary(change.revisitAt) : null, strings.refinementRevisitRemoved);
+    }
+    if ("notes" in change && change.notes !== undefined) transition(strings.notes, existing?.notes ?? null, typeof change.notes === "string" && change.notes.trim() ? change.notes.trim() : null, strings.refinementNotesRemoved);
+    return result.filter(Boolean);
+  };
   const leaveAlone = proposal.disposition === "leave_alone";
   let source: Record<string, unknown> | null = null;
   try {
@@ -413,9 +488,9 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
   const hasRetryFeedback = answer.trim().length > 0;
   return <main className="page stack">
-    {!leaveAlone ? <header className="stack"><p className="eyebrow">{strings.workRefinement}</p><h1>{refinement.targetType === "project" ? strings.project : strings.task}</h1></header> : null}
+    {!leaveAlone ? <header className="stack"><p className="eyebrow">{strings.workRefinement}</p><h1>{refinement.targetType === "project" ? strings.project : strings.task}</h1>{onReturn ? <button className="btn btn-ghost" onClick={onReturn}>{refinement.targetType === "project" ? strings.backToProject : strings.backToTask}</button> : null}</header> : null}
     <section className="card stack">
-      {leaveAlone ? <><h1>{strings.refinementLeaveAlone}</h1><p>{proposal.summary}</p><Link className="btn" to={targetPath}>{strings.refinementOpenOriginal}</Link></> : <>
+      {leaveAlone ? <><h1>{strings.refinementLeaveAlone}</h1><p>{proposal.summary}</p>{onReturn ? <button className="btn" onClick={onReturn}>{strings.refinementOpenOriginal}</button> : <Link className="btn" to={targetPath}>{strings.refinementOpenOriginal}</Link>}</> : <>
         <h2>{proposal.summary}</h2>
         {proposal.question ? <><strong>{strings.refinementQuestionLabel}</strong><p>{proposal.question}</p></> : null}
       </>}
@@ -431,6 +506,12 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
       ) : null}
       {conflict ? <p role="alert" className="error-text">{strings.refinementConflict}</p> : null}
       {!leaveAlone ? displayChanges.map(({ change, index }) => <article className="card stack" style={change.kind === "create_child" && change.parentProposalKey ? { marginInlineStart: "1rem" } : undefined} key={`${change.kind}-${index}`}>
+        <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
+          const checked = event.target.checked;
+          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, accepted: checked } : candidate) as WorkRefinementChange[] });
+        }} /><strong>{label(change)}</strong></label>
+        {compactSummary(change).length ? <ul className="refinement-compact-summary">{compactSummary(change).map((line, lineIndex) => <li key={`${index}:${lineIndex}`}>{line}</li>)}</ul> : null}
+        <div className="refinement-rationale">{change.rationale.length > 220 ? <details><summary>{strings.refinementWhy}</summary><p>{change.rationale}</p></details> : <p>{change.rationale}</p>}</div>
         {change.kind === "convert_task_to_project" && change.targetId === refinement.targetId && change.accepted ? (
           <section className="card stack">
             <strong>{activeConversion ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog}</strong>
@@ -439,15 +520,13 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
             ) : null}
           </section>
         ) : null}
-        <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
-          const checked = event.target.checked;
-          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, accepted: checked } : candidate) as WorkRefinementChange[] });
-        }} /><strong>{label(change)}</strong></label>
+        {change.kind === "cancel_task" ? <section className="card stack"><strong>{strings.refinementCancellationImpact}: {openDescendants(change.targetId).length}</strong>{openDescendants(change.targetId).map(([id, item]) => <small key={id}>{item.title}</small>)}{openDescendants(change.targetId).length ? <label className="stack"><span>{strings.refinementCancellationPolicy}</span><select disabled={editorLocked} value={change.descendantsPolicy ?? ""} onChange={(event) => update(index, { descendantsPolicy: event.target.value ? event.target.value as Extract<WorkRefinementChange, { kind: "cancel_task" }>['descendantsPolicy'] : undefined })}><option value="">{strings.refinementUnavailable}</option><option value="leave_open">{strings.refinementCancelLeaveOpen}</option><option value="cancel_children">{strings.refinementCancelChildren}</option><option value="complete_children">{strings.refinementCompleteChildren}</option></select></label> : <p>{strings.refinementCancel}</p>}</section> : null}
+        <button type="button" className="btn btn-ghost btn-sm" aria-expanded={Boolean(expandedDetails[index])} onClick={() => setExpandedDetails((current) => ({ ...current, [index]: !current[index] }))}>{expandedDetails[index] ? strings.refinementHideDetails : strings.refinementEditDetails}</button>
+        <div hidden={!expandedDetails[index]}>
         {Object.entries(change).filter(([key, value]) => ["targetId", "taskId", "parentTaskId", "projectId", "dependsOnTaskId"].includes(key) && typeof value === "number").map(([key, value]) => {
           const context = contextLabels.get(value as number);
           return <small key={key}>{context ? <Link to={context.path} target="_blank" rel="noreferrer">{context.title}</Link> : `#${value}`}</small>;
         })}
-        <p>{change.rationale}</p>
         {change.kind === "create_child" ? <label className="stack"><span>{strings.refinementNestedParent}</span><select disabled={editorLocked} value={change.parentProposalKey ? `proposal:${change.parentProposalKey}` : `existing:${change.parentTaskId ?? ""}`} onChange={(event) => {
           const value = event.target.value;
           const changes = proposal.changes.map((candidate, candidateIndex) => {
@@ -479,11 +558,6 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
           const revisitDate = revisitDrafts[index]?.date ?? (revisitAt ? calendarDateForInstant(revisitAt, householdTimezone) ?? "" : "");
           const revisitTime = revisitDrafts[index]?.time ?? (revisitAt ? localTimeForInstant(revisitAt, householdTimezone) ?? "06:00" : "06:00");
           const reminders = change.reminders !== undefined ? change.reminders : existing?.reminders ?? [];
-          const reminderSummary = (value: TaskReminderInput[]) => value.length === 0
-            ? strings.refinementNone
-            : value.map((reminder) => reminder.kind === "absolute"
-              ? `${calendarDateForInstant(reminder.at, householdTimezone) ?? reminder.at} ${localTimeForInstant(reminder.at, householdTimezone) ?? ""}`.trim()
-              : `${reminder.daysBefore} ${strings.reminderDaysBeforeFieldLabel}, ${reminder.time} (${reminder.timezone})`).join(" · ");
           return <section className="card stack">
             <strong>{strings.refinementPlanning}</strong>
             {change.kind === "update_task" ? <small>{strings.refinementCurrent}: {existing?.title ?? strings.refinementUnavailable}</small> : null}
@@ -542,7 +616,6 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
           }}>{strings.clearNotBefore}</button></div></fieldset></section>;
         })() : null}
         {change.kind === "resolve_wait" ? <section className="card stack"><strong>{strings.refinementWaitCurrent}</strong><p>{contextLabels.get(change.taskId)?.waitingFor ?? strings.refinementUnavailable}</p><small>{strings.refinementWaitRevisit}: {revisitSummary(contextLabels.get(change.taskId)?.revisitAt)}</small><p>{strings.refinementResolveWaitHelp}</p></section> : null}
-        {change.kind === "cancel_task" ? <section className="card stack"><strong>{strings.refinementCancellationImpact}: {openDescendants(change.targetId).length}</strong>{openDescendants(change.targetId).map(([id, item]) => <small key={id}>{item.title}</small>)}{openDescendants(change.targetId).length ? <label className="stack"><span>{strings.refinementCancellationPolicy}</span><select disabled={editorLocked} value={change.descendantsPolicy ?? ""} onChange={(event) => update(index, { descendantsPolicy: event.target.value ? event.target.value as Extract<WorkRefinementChange, { kind: "cancel_task" }>['descendantsPolicy'] : undefined })}><option value="">{strings.refinementUnavailable}</option><option value="leave_open">{strings.refinementCancelLeaveOpen}</option><option value="cancel_children">{strings.refinementCancelChildren}</option><option value="complete_children">{strings.refinementCompleteChildren}</option></select></label> : <p>{strings.refinementCancel}</p>}</section> : null}
         {change.kind === "update_project_outcome" ? <label className="stack"><span>{strings.refinementOutcome}</span><textarea disabled={editorLocked} value={change.outcome} onChange={(event) => update(index, { outcome: event.target.value })} /></label> : null}
         {change.kind === "move_task" ? <label className="stack"><span>{strings.refinementMoveDestination}</span><select disabled={editorLocked} value={change.position} onChange={(event) => update(index, { position: Number(event.target.value) })}>
           {Array.from({ length: moveSiblings(change).length + 1 }, (_, position) => {
@@ -552,6 +625,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
           })}
         </select></label> : null}
         {change.kind === "advisory" ? <p>{change.title}</p> : null}
+        </div>
       </article>) : null}
       {activationPrompt ? <ProjectActivationDecisionFields
         prompt={activationPrompt}
