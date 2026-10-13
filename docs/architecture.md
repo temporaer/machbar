@@ -1668,6 +1668,9 @@ Apply continues through canonical task/project mutations. A failed transaction
 with no persisted work, calendar requests, or retained source documents releases
 its claim, clears the accepted draft, and returns to editable `ready` with a
 safe concrete application error. Persisted results retain `partially_applied`
-and the immutable accepted draft for idempotent retries. Review refreshes the
+and the immutable accepted draft for idempotent retries. Newly tightened planning
+checks are grandfathered only for matching committed work in the persisted results;
+new acceptance, uncommitted work, hierarchy, reminders, and external payloads
+continue to be validated. Review refreshes the
 revision after failures while keeping the local edits and selections, and
 focuses the visible Apply alert.

@@ -137,9 +137,24 @@ export async function applyIntake(
     incompletePreparation = prepareIncompleteIntakeDraft(draftToValidate, validationOptions);
     draftToValidate = incompletePreparation.draft;
   }
-  const issues = incompletePreparation
+  const validationIssues = incompletePreparation
     ? incompletePreparation.blockingIssues
     : intakeSelectedDraftIssues(draftToValidate, validationOptions);
+  const committedWork = initialAcceptance ? [] : parse<IntakeApplyResults>(stored.applyResultsJson)?.work ?? [];
+  const issues = validationIssues.filter((issue) => {
+    // Old immutable partial drafts may contain planning now rejected for new
+    // acceptance. Only grandfather the new checks on ledger-confirmed work
+    // that Apply will skip; all hierarchy, reminder and external checks remain.
+    if (issue.path[0] !== "workItems" || typeof issue.path[1] !== "number") return true;
+    const item = draftToValidate.workItems[issue.path[1]];
+    if (!item || !committedWork.some((work) => work.key === item.key && work.kind === item.kind)) return true;
+    const field = issue.path[2];
+    const newPlanningCheck = issue.code === "planning_conflict"
+      || (issue.code === "invalid_datetime" && field === "revisitAt")
+      || (issue.code === "reference_field_not_allowed" && field === "revisitAt")
+      || (issue.code === "project_field_not_allowed" && field === "scheduledDate");
+    return !newPlanningCheck;
+  });
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
   if (stored.breakdownTaskId !== null) assertBreakdownDraft(draftToValidate);
 

@@ -391,6 +391,61 @@ describe("intake apply", () => {
     expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
   });
 
+  it("retries an immutable legacy project date after committed work without duplicate work or changed external payloads", async () => {
+    const setup = await prepare();
+    const project = createProject(ctx.handle.db, { title: "Committed project", ownerMemberId: setup.member.id }, { actorMemberId: setup.member.id });
+    const d = draft([{ key: "project", kind: "project", title: "Committed project", notes: null, parentKey: null,
+      ownerMemberId: setup.member.id, dueDate: null, scheduledDate: "2026-10-16", revisitAt: null,
+      notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false,
+      relatedCalendarKeys: ["event"], enabled: true }], [{
+      key: "event", title: "Accepted appointment", description: "Accepted description", location: "Library", allDay: false,
+      startDate: null, endDate: null, startDateTime: "2026-10-16T18:00:00+02:00", endDateTime: "2026-10-16T19:00:00+02:00",
+      relatedWorkKeys: ["project"], enabled: true, durationAssumed: false,
+    }]);
+    const signal = new HomeAssistantRequestSignal();
+    // The same project date is rejected for new acceptance and for uncommitted partial work.
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision, draft: d }, { actorMemberId: setup.member.id }, setup.member.id))
+      .rejects.toMatchObject({ code: "intake_draft_invalid", details: { issues: expect.arrayContaining([
+        expect.objectContaining({ code: "project_field_not_allowed", path: ["workItems", 0, "scheduledDate"] }),
+      ]) } });
+    const results = { work: [{ key: "project", kind: "project", workItemId: project.id, role: "story" }],
+      calendar: [{ key: "event", correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", status: "failed", error: { code: "calendar_create_failed", message: "Retry", retryable: true }, event: null }],
+      paperlessDocumentIds: [] };
+    ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied", acceptedDraftJson: JSON.stringify(d),
+      draftJson: JSON.stringify(d), applyResultsJson: JSON.stringify(results) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const invalidExternal = structuredClone(d);
+    invalidExternal.calendarEvents[0]!.startDateTime = "not-a-date";
+    ctx.handle.db.update(schema.intakeJobs).set({ acceptedDraftJson: JSON.stringify(invalidExternal) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision }, { actorMemberId: setup.member.id }, setup.member.id))
+      .rejects.toMatchObject({ code: "intake_draft_invalid" });
+    ctx.handle.db.update(schema.intakeJobs).set({ acceptedDraftJson: JSON.stringify(d),
+      applyResultsJson: JSON.stringify({ ...results, work: [] }) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision }, { actorMemberId: setup.member.id }, setup.member.id))
+      .rejects.toMatchObject({ code: "intake_draft_invalid" });
+    ctx.handle.db.update(schema.intakeJobs).set({ applyResultsJson: JSON.stringify(results) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const edited = structuredClone(d);
+    edited.calendarEvents[0]!.title = "Unaccepted replacement";
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id,
+      { expectedRevision: setup.revision, draft: edited }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    const retried = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(retried.applyResults?.calendar[0]).toMatchObject({ correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", status: "pending" });
+    const request = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.kind, "calendar_create")).get()!;
+    expect(JSON.parse(request.payloadJson)).toMatchObject({ correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", title: "Accepted appointment", description: "Accepted description" });
+    const leased = await ctx.app.inject({ method: "GET", url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
+      headers: { authorization: `Bearer ${setup.token}` } });
+    const completed = await ctx.app.inject({ method: "POST", url: `/api/integrations/home-assistant/requests/${leased.json().id}/complete`,
+      headers: { authorization: `Bearer ${setup.token}` }, payload: { leaseToken: leased.json().leaseToken, outcome: "succeeded",
+        result: { correlationId: "b724f23a-90df-45cb-9e37-9881182b1ffe", calendarEntityId: "calendar.test", uid: "legacy-event", recurrenceId: null, summary: "Accepted appointment", start: "2026-10-16T18:00:00+02:00", end: "2026-10-16T19:00:00+02:00" } } });
+    expect(completed.statusCode, completed.body).toBe(204);
+    expect(getIntake(ctx.handle.db, setup.id, setup.member.id).status).toBe("applied");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    expect(JSON.parse(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!.acceptedDraftJson!)).toEqual(d);
+  });
+
   it("does not duplicate work when a calendar apply is retried", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
