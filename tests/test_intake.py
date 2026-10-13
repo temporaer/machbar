@@ -847,6 +847,33 @@ def test_work_refinement_adapter_preserves_planning_presence_and_reminder_shapes
     assert normalized_clear["clearRevisitAt"] is True
 
 
+@pytest.mark.parametrize("reminder, expected", [
+    (
+        {"kind": "absolute", "at": "2026-10-19T05:00:00Z"},
+        {"kind": "absolute", "at": "2026-10-19T05:00:00Z"},
+    ),
+    (
+        {"kind": "absolute", "at": "2026-10-19T05:00:00Z", "daysBefore": None, "time": None, "timezone": None},
+        {"kind": "absolute", "at": "2026-10-19T05:00:00Z"},
+    ),
+    (
+        {"kind": "deadline_relative", "daysBefore": 1, "time": "07:00", "timezone": "Europe/Berlin"},
+        {"kind": "deadline_relative", "daysBefore": 1, "time": "07:00", "timezone": "Europe/Berlin"},
+    ),
+    (
+        {"kind": "deadline_relative", "at": None, "daysBefore": 1, "time": "07:00", "timezone": "Europe/Berlin"},
+        {"kind": "deadline_relative", "daysBefore": 1, "time": "07:00", "timezone": "Europe/Berlin"},
+    ),
+])
+def test_work_refinement_adapter_accepts_minimal_and_placeholder_reminder_variants(reminder, expected):
+    proposal = {
+        "intent": "improve", "summary": "Set a useful reminder", "disposition": "changes", "question": None,
+        "changes": [{"kind": "create_child", "parentTaskId": 12, "title": "Follow up", "reminders": [reminder], "rationale": "Remember the next step."}],
+    }
+    normalized = _normalize_ai_result(proposal, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert normalized["changes"][0]["reminders"] == [expected]
+
+
 def test_work_refinement_adapter_treats_null_reminder_array_as_provider_placeholder():
     provider_shape = {
         "intent": "improve", "summary": "No reminder change", "disposition": "changes", "question": None,

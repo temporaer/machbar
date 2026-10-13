@@ -765,7 +765,7 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
                     )
                 if reminder_kind == "absolute":
                     for field in ("daysBefore", "time", "timezone"):
-                        if reminder.get(field, _MISSING) is not None:
+                        if field in reminder and reminder[field] is not None:
                             raise _invalid(
                                 reminder_path + [field],
                                 "omitted for an absolute reminder",
@@ -800,7 +800,7 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
                             "a non-empty IANA timezone",
                             value=reminder.get("timezone", _MISSING),
                         )
-                    if reminder.get("at", _MISSING) is not None:
+                    if "at" in reminder and reminder["at"] is not None:
                         raise _invalid(
                             reminder_path + ["at"],
                             "omitted for a deadline-relative reminder",
