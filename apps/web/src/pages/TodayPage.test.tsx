@@ -17,6 +17,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getAgenda: vi.fn(),
+    getActivityDigest: vi.fn(),
     getContributionSummary: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
     completeTask: vi.fn(),
@@ -83,6 +84,71 @@ describe("TodayPage", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("settles all four queries after slow responses and sustained external invalidations", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const pulse = await mockedApi.getContributionSummary();
+    const status = await mockedApi.getHomeAssistantStatus();
+    vi.clearAllMocks();
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((done) => { resolve = done; });
+      return { promise, resolve };
+    }
+    const agenda = deferred<Awaited<ReturnType<typeof api.getAgenda>>>();
+    const digest = deferred<Awaited<ReturnType<typeof api.getActivityDigest>>>();
+    const contribution = deferred<typeof pulse>();
+    const integration = deferred<typeof status>();
+    mockedApi.getAgenda.mockReturnValue(agenda.promise);
+    mockedApi.getActivityDigest.mockReturnValue(digest.promise);
+    mockedApi.getContributionSummary.mockReturnValue(contribution.promise);
+    mockedApi.getHomeAssistantStatus.mockReturnValue(integration.promise);
+    const rendered = renderWithProviders(<TodayPage />);
+    await waitFor(() => expect(mockedApi.getActivityDigest).toHaveBeenCalledOnce());
+    expect(screen.getByText("Lädt …")).toBeInTheDocument();
+    const agendaCalls = mockedApi.getAgenda.mock.calls.length;
+    vi.useFakeTimers();
+    for (let index = 0; index < 13; index++) {
+      act(() => {
+        vi.advanceTimersByTime(200);
+        window.dispatchEvent(new Event("focus"));
+        window.dispatchEvent(new Event("online"));
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    }
+    act(() => vi.advanceTimersByTime(1000));
+    expect(mockedApi.getAgenda).toHaveBeenCalledTimes(agendaCalls);
+    for (const query of [mockedApi.getActivityDigest, mockedApi.getContributionSummary, mockedApi.getHomeAssistantStatus]) {
+      expect(query).toHaveBeenCalledOnce();
+    }
+    await act(async () => {
+      agenda.resolve(makeEmptyAgenda());
+      digest.resolve({ acknowledgedThroughEventId: 0, throughEventId: 1,
+        totalEntryCount: 1, hiddenEntryCount: 0, entries: [{
+          key: "completed", category: "progress", priority: 3, kind: "task_completed",
+          params: { title: "Settled task" }, actor: null, project: null,
+          primary: { type: "task", id: 1, title: "Settled task" }, related: [],
+          eventIds: [1], latestEventAt: "2026-10-13T10:00:00.000Z",
+        }] });
+      contribution.resolve({ ...pulse, pulse: pulse.pulse.map((bucket) => ({ ...bucket, level: "high" as const })) });
+      integration.resolve({ ...status, intakeReady: true });
+    });
+    expect(screen.getByText(/Settled task/)).toBeInTheDocument();
+    expect(rendered.container.querySelectorAll(".contribution-pulse-high")).toHaveLength(7);
+    expect(screen.getByRole("link", { name: /Klärungsrunde/ })).toBeInTheDocument();
+    expect(screen.queryByText("Lädt …")).not.toBeInTheDocument();
+    expect(mockedApi.getAgenda).toHaveBeenCalledTimes(agendaCalls + 1);
+    for (const query of [mockedApi.getActivityDigest, mockedApi.getContributionSummary, mockedApi.getHomeAssistantStatus]) {
+      expect(query).toHaveBeenCalledTimes(2);
+    }
+    await act(async () => vi.advanceTimersByTime(10_000));
+    expect(mockedApi.getAgenda).toHaveBeenCalledTimes(agendaCalls + 1);
+    for (const query of [mockedApi.getActivityDigest, mockedApi.getContributionSummary, mockedApi.getHomeAssistantStatus]) {
+      expect(query).toHaveBeenCalledTimes(2);
+    }
+    rendered.unmount();
   });
 
   it("shows a number-free seven-day shared contribution pulse below the header", async () => {

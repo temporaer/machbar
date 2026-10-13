@@ -16,7 +16,7 @@ import {
 } from "./commitmentPreservingConversion.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import { nowIso } from "../domain/workItemShared.js";
-import { workRefinementProposalSchema } from "@machbar/shared";
+import { workRefinementProposalSchema, workRefinementSelectionConflict } from "@machbar/shared";
 import { activateCommittedProjectChain } from "../domain/commitmentActivation.js";
 import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
 
@@ -28,7 +28,26 @@ function idsFromSnapshot(snapshot: unknown, result = new Map<number, number>()):
   return result;
 }
 
+function assertAcceptedRefinementSelection(proposal: WorkRefinementProposal): void {
+  const conflict = workRefinementSelectionConflict(proposal.changes);
+  if (!conflict) return;
+  if (conflict.kind === "conversion_task_fields") {
+    throw AppError.badRequest("intake_draft_invalid", "When converting a task to a project, only its title and notes may be edited in the same proposal.", {
+      refinementConflict: conflict.kind, targetId: conflict.targetId,
+    });
+  }
+  if (conflict.kind === "conversion_operation") {
+    throw AppError.badRequest("intake_draft_invalid", "This operation cannot be combined with converting the same task to a project.", {
+      refinementConflict: conflict.kind, targetId: conflict.targetId, changeKind: conflict.changeKind,
+    });
+  }
+  throw AppError.badRequest("intake_draft_invalid", "The selected changes edit the same title or notes more than once. Keep one edit for each field.", {
+    refinementConflict: conflict.kind, targetId: conflict.targetId, field: conflict.field,
+  });
+}
+
 export function assertRefinementContext(proposal: WorkRefinementProposal, targetType: "task" | "project", targetId: number, snapshot: unknown, acceptedOnly = false): void {
+  if (acceptedOnly) assertAcceptedRefinementSelection(proposal);
   const nodes = new Map<number, Record<string, unknown>>();
   const collect = (value: unknown, role?: "task" | "project") => {
     if (!value || typeof value !== "object") return;
@@ -226,6 +245,7 @@ export function updateWorkRefinement(db: Db, id: string, viewerId: number | null
   const proposal = workRefinementProposalSchema.parse(value);
   if (proposal.intent !== job.refinementIntent) throw AppError.badRequest("intake_draft_invalid", "The refinement intent cannot be changed.");
   assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false);
+  assertAcceptedRefinementSelection(proposal);
   const result = db.update(schema.intakeJobs).set({ refinementJson: JSON.stringify(proposal), status: "ready", errorJson: null, revision: job.revision + 1, updatedAt: nowIso() })
     .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, expectedRevision), eq(schema.intakeJobs.status, job.status))).run();
   if (result.changes !== 1) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before saving.");
@@ -246,11 +266,10 @@ export function applyWorkRefinement(
     if (job.status !== "ready" || job.revision !== expectedRevision || !job.refinementJson) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before applying.");
     const proposal = workRefinementProposalSchema.parse(JSON.parse(job.refinementJson));
     const { allowed, snapshot } = assertFresh(txDb, job, viewerId);
-    assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, snapshot, true);
     const changes = proposal.changes.filter((change) => change.accepted);
     if (changes.some((change) => change.kind === "advisory")) throw AppError.badRequest("intake_draft_invalid", "Advisory recommendations require manual resolution.");
     // Validate the selected set as a whole before making any domain mutation.
-    assertRefinementContext({ ...proposal, changes }, job.refinementTargetType, job.refinementTargetId!, snapshot, true);
+    assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, snapshot, true);
     const priority: Record<string, number> = { convert_task_to_project: 0, update_task: 1, update_project: 1, create_child: 2, move_task: 3, add_dependency: 4, update_wait: 5, resolve_wait: 5, cancel_task: 5, update_project_outcome: 6, advisory: 7 };
     const childByKey = new Map(changes.flatMap((change) => change.kind === "create_child" && change.proposalKey ? [[change.proposalKey, change] as const] : []));
     const orderedChildren: typeof changes = [];
@@ -268,7 +287,6 @@ export function applyWorkRefinement(
     };
     changes.filter((change) => change.kind === "create_child").forEach(emitChild);
     const orderedChanges = [...changes].sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99) || (a.kind === "create_child" && b.kind === "create_child" ? orderedChildren.indexOf(a) - orderedChildren.indexOf(b) : 0));
-    const changedRoleIds = new Set<number>();
     const conversions = new Map<number, ReturnType<typeof beginCommitmentConversion>>();
     const projectsToActivate = new Set<number>();
     const createdIdsByKey = new Map<string, number>();
@@ -286,10 +304,6 @@ export function applyWorkRefinement(
       return current.parentTaskId ?? null;
     };
     for (const change of orderedChanges) {
-      if (change.kind === "convert_task_to_project") changedRoleIds.add(change.targetId);
-      if ((change.kind === "update_task" || change.kind === "update_project") && changedRoleIds.has(change.targetId)) {
-        throw AppError.badRequest("intake_draft_invalid", "A role conversion cannot be combined with an edit to the same item.");
-      }
       const writes: Array<[number, string, unknown]> = [];
       if (change.kind === "update_task" || change.kind === "update_project") {
         for (const field of ["title", "notes"] as const) if (change[field] !== undefined) writes.push([change.targetId, field, change[field]]);
@@ -310,7 +324,7 @@ export function applyWorkRefinement(
         const key = `${entityId}:${field}`;
         const encoded = JSON.stringify(value) ?? "__undefined__";
         const previous = fieldWrites.get(key);
-        if (previous !== undefined && previous !== encoded) throw AppError.badRequest("intake_draft_invalid", "The selected changes contain conflicting edits to the same item.");
+        if (previous !== undefined && previous !== encoded) throw AppError.badRequest("intake_draft_invalid", "The selected changes contain conflicting edits to the same item.", { refinementConflict: "duplicate_field", targetId: entityId, field });
         fieldWrites.set(key, encoded);
       }
     }
@@ -346,18 +360,27 @@ export function applyWorkRefinement(
         case "update_task": {
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
-          if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task target.");
-          const taskBefore = getTaskOrThrow(txDb, task.id);
-          const updated = updateTask(txDb, task.id, {
-            ...(change.title !== undefined ? { title: change.title } : {}),
-            ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}),
-            ...(change.scheduledDate !== undefined ? { scheduledDate: change.scheduledDate } : {}),
-            ...(change.dueDate !== undefined ? { dueDate: change.dueDate } : {}),
-            ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}),
-            ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
-            expectedRevision: task.revision,
-          }, context, { activateCommitment: false });
-          if (updated.projectId !== null && !hasExecutionCommitment(taskBefore) && hasExecutionCommitment(updated)) projectsToActivate.add(updated.projectId);
+          if (conversions.has(change.targetId)) {
+            if (!task || task.role !== "story") throw AppError.badRequest("intake_draft_invalid", "The converted project is unavailable for its reviewed title or notes edit.");
+            updateProject(txDb, task.id, {
+              ...(change.title !== undefined ? { title: change.title } : {}),
+              ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}),
+              expectedRevision: task.revision,
+            }, context);
+          } else {
+            if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task target.");
+            const taskBefore = getTaskOrThrow(txDb, task.id);
+            const updated = updateTask(txDb, task.id, {
+              ...(change.title !== undefined ? { title: change.title } : {}),
+              ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}),
+              ...(change.scheduledDate !== undefined ? { scheduledDate: change.scheduledDate } : {}),
+              ...(change.dueDate !== undefined ? { dueDate: change.dueDate } : {}),
+              ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}),
+              ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
+              expectedRevision: task.revision,
+            }, context, { activateCommitment: false });
+            if (updated.projectId !== null && !hasExecutionCommitment(taskBefore) && hasExecutionCommitment(updated)) projectsToActivate.add(updated.projectId);
+          }
           break;
         }
         case "update_project": {

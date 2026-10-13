@@ -79,6 +79,14 @@ with the other accepted changes. Execution commitments run through the shared
 activation requirement/decision continuation in the same transaction; a
 revisit alone remains a reconsideration point rather than execution work.
 
+For task-to-project refinement, an accepted `update_task` targeting the
+converted task may edit only title and/or notes. The conversion runs first;
+the canonical `updateProject` mutation then applies those text fields using the
+new project revision. The shared selected-change validator rejects task-only
+planning, waiting, movement, cancellation, or dependency operations on the
+same item, along with duplicate title/notes writes, before the transaction
+starts mutating work.
+
 This document is the technical deep dive for contributors. For product
 concepts, start with the [household workflow](workflow.md). For operating the
 application, see [deployment](deployment.md) and
@@ -547,9 +555,25 @@ frontend refresh bus. `useAsync` treats these same-query refetches as
 stale-while-revalidate: successful data remains rendered, `loading` stays
 false, and background failures do not replace the page with its foreground
 error state. Dependency changes start a new logical query generation and hide
-old-query data immediately. Request IDs and effect cancellation prevent stale
-or unmounted requests from committing. No external pub/sub is required under
-the supported single-process deployment model.
+old-query data immediately. Each logical query generation allows one in-flight
+request; additional invalidations queue one trailing revalidation and do not
+cancel the pending result, so initial loading can settle. Generation checks and
+effect cancellation prevent stale or unmounted requests from committing.
+Remote SSE, focus, visibility, online, and disconnected-poll invalidations use
+a leading/trailing one-second cadence, including a final refresh after a burst.
+Explicit mutation refreshes remain immediate; hidden-tab polling and visible
+eligibility timers retain their existing behavior.
+
+For temporary incident tracing, set `sessionStorage["machbar:refresh-debug"] =
+"1"` in the affected browser tab. Console diagnostics contain only refresh
+reason, monotonic time, version, and SSE lifecycle (never change-event payloads
+or work-item content). Correlate these with the server's successful write-route
+access logs to distinguish remote writes, reconnects, browser events, and local
+mutations. Remove the key to disable tracing. Home Assistant context and sync
+POSTs currently notify even when their semantic content is unchanged; suppression
+requires verifying both domain changes and freshness/liveness transitions.
+No external pub/sub is required under the supported single-process deployment
+model.
 
 ---
 

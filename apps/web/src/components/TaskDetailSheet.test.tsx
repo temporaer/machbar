@@ -1,11 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import type { Task } from "@machbar/shared";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
-import { RefreshProvider } from "../lib/refresh";
+import { RefreshProvider, useRefresh } from "../lib/refresh";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import {
@@ -161,6 +161,65 @@ async function waitForTaskTitle(title: string) {
 }
 
 describe("TaskDetailSheet", () => {
+  it("loads an opened task despite repeated refreshes while its first response is pending", async () => {
+    const task = makeTask({ id: 42, title: "Slow task", repeatAfterDays: 7 });
+    let resolve!: (value: typeof task) => void;
+    const pending = new Promise<typeof task>((done) => { resolve = done; });
+    mockedApi.getTask.mockReturnValueOnce(pending).mockResolvedValue(task);
+    let bump!: () => void;
+    function RefreshControl() { bump = useRefresh().bump; return null; }
+    const rendered = renderWithProviders(
+      <OpenerHarness taskId={42}>
+        <RefreshControl />
+        <TaskDetailSheet />
+        <TaskWorkflowHost />
+      </OpenerHarness>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(within(screen.getByRole("dialog")).getByText(strings.loading)).toBeInTheDocument();
+    for (let index = 0; index < 5; index++) act(() => bump());
+    expect(mockedApi.getTask).toHaveBeenCalledOnce();
+    await act(async () => resolve(task));
+    await waitForTaskTitle("Slow task");
+    expect(within(screen.getByRole("dialog")).queryByText(strings.loading)).not.toBeInTheDocument();
+    expect(mockedApi.getTask).toHaveBeenCalledTimes(2);
+    const historyCalls = mockedApi.getTaskRecurrenceHistory.mock.calls.length;
+    await act(async () => Promise.resolve());
+    expect(mockedApi.getTask).toHaveBeenCalledTimes(2);
+    expect(mockedApi.getTaskRecurrenceHistory).toHaveBeenCalledTimes(historyCalls);
+    rendered.unmount();
+  });
+
+  it("opening and rerendering task details settles without emitting global refreshes", async () => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "Read-only open", repeatAfterDays: 7 }));
+    function RefreshVersion() {
+      const { version } = useRefresh();
+      return <output aria-label="refresh version">{version}</output>;
+    }
+    const rendered = renderWithProviders(
+      <OpenerHarness taskId={42}>
+        <RefreshVersion />
+        <TaskDetailSheet />
+        <TaskWorkflowHost />
+      </OpenerHarness>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Read-only open");
+    await act(async () => Promise.resolve());
+    const historyCalls = mockedApi.getTaskRecurrenceHistory.mock.calls.length;
+    expect(historyCalls).toBeLessThanOrEqual(2);
+    expect(mockedApi.getTask).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("refresh version")).toHaveTextContent("0");
+    // Reopening the same task changes context callbacks and rerenders the sheet.
+    fireEvent.click(screen.getByRole("button", { name: "open", hidden: true }));
+    await act(async () => Promise.resolve());
+    expect(mockedApi.getTask).toHaveBeenCalledOnce();
+    expect(mockedApi.getTaskRecurrenceHistory).toHaveBeenCalledTimes(historyCalls);
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("refresh version")).toHaveTextContent("0");
+    rendered.unmount();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
