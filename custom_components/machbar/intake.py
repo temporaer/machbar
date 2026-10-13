@@ -132,7 +132,9 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "targetId": (True, int),
     },
     "create_child": {
-        "parentTaskId": (True, int),
+        "parentTaskId": (False, int),
+        "proposalKey": (False, str),
+        "parentProposalKey": (False, str),
         "title": (True, str),
         "notes": (False, vol.Any(str, None)),
         "scheduledDate": (False, vol.Any(str, None)),
@@ -157,6 +159,12 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "taskId": (True, int),
         "waitingFor": (True, str),
         "revisitAt": (False, vol.Any(str, None)),
+        "clearRevisitAt": (False, vol.Any(bool, None)),
+    },
+    "resolve_wait": {"taskId": (True, int)},
+    "cancel_task": {
+        "targetId": (True, int),
+        "descendantsPolicy": (False, vol.In(("leave_open", "complete_children", "cancel_children"))),
     },
     "update_project_outcome": {
         "projectId": (True, int),
@@ -169,10 +177,11 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
     },
 }
 
-_REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId", "clearScheduledDate", "clearDueDate", "clearRevisitAt"}
+_REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "proposalKey", "parentProposalKey", "descendantsPolicy"}
 _REFINEMENT_PLANNING_NULL_PLACEHOLDERS = {
     "update_task": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
     "create_child": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
+    "update_wait": {"revisitAt"},
 }
 _REFINEMENT_ALL_FIELDS = {
     "kind",
@@ -718,6 +727,9 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
             continue
         normalized = dict(change)
         kind = normalized.get("kind")
+        if kind == "cancel_task":
+            # Descendant handling is a user-reviewed domain decision, never an AI choice.
+            normalized.pop("descendantsPolicy", None)
         allowed = _REFINEMENT_CHANGE_FIELDS.get(kind, {})
         item_path = ["changes", change_index]
         clear_fields = (
@@ -726,7 +738,7 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
                 "dueDate": "clearDueDate",
                 "revisitAt": "clearRevisitAt",
             }
-            if kind in ("update_task", "create_child")
+            if kind in ("update_task", "create_child", "update_wait")
             else {}
         )
         for field, clear_field in clear_fields.items():

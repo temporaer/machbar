@@ -34,11 +34,16 @@ choose **Geprüfte Änderungen übernehmen**. For smaller-step proposals, the
 original task remains the root and existing steps are preserved. Any proposed
 project conversion is explicit and uses the usual restrictions; captured Inbox
 tasks are converted only when accepted new steps require it.
+Multi-step proposals can show nested steps; a child is created only when its
+proposed parent is also accepted. External waits can be started or updated
+through structured fields, then resolved separately without completing the
+action. Cancelling an obsolete action uses the normal cancellation command and
+asks for an explicit policy when open descendants are affected.
 
 Nothing changes during generation or when discarding a proposal. Apply is
 atomic. If the original task or its steps changed meanwhile, use **Änderungen
 anfragen** to regenerate and review again. No additional AI credentials are
-needed; the paired Home Assistant integration must support version 0.5.2 or
+needed; the paired Home Assistant integration must support version 0.5.7 or
 newer for AI work refinement.
 
 Machbar is built around a simple problem: household work is shared, but

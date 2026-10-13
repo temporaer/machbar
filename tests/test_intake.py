@@ -874,6 +874,40 @@ def test_work_refinement_adapter_accepts_minimal_and_placeholder_reminder_varian
     assert normalized["changes"][0]["reminders"] == [expected]
 
 
+def test_work_refinement_adapter_routes_wait_cancellation_and_nested_steps():
+    proposal = {
+        "intent": "structure", "summary": "Rückmeldung abwarten und Schritte ordnen", "disposition": "changes", "question": None,
+        "changes": [
+            {"kind": "update_wait", "taskId": 12, "waitingFor": "Deckungszusage", "clearRevisitAt": True, "revisitAt": None, "rationale": "Die Wiedervorlage ist nicht mehr sinnvoll."},
+            {"kind": "resolve_wait", "taskId": 13, "rationale": "Die Rückmeldung ist eingetroffen."},
+            {"kind": "cancel_task", "targetId": 14, "descendantsPolicy": "cancel_children", "rationale": "Der Termin wurde abgesagt."},
+            {"kind": "create_child", "parentTaskId": 15, "proposalKey": "prepare", "parentProposalKey": None, "title": "Vorbereitung", "rationale": "Zuerst vorbereiten."},
+            {"kind": "create_child", "parentProposalKey": "prepare", "proposalKey": "send", "title": "Einreichen", "rationale": "Danach einreichen."},
+        ],
+    }
+    normalized = _normalize_ai_result(proposal, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert normalized["changes"][0]["revisitAt"] is None
+    assert "clearRevisitAt" not in normalized["changes"][0]
+    assert normalized["changes"][1]["kind"] == "resolve_wait"
+    assert normalized["changes"][2]["kind"] == "cancel_task"
+    assert "descendantsPolicy" not in normalized["changes"][2]
+    assert normalized["changes"][3]["proposalKey"] == "prepare"
+    assert "parentProposalKey" not in normalized["changes"][3]
+    assert normalized["changes"][4]["parentProposalKey"] == "prepare"
+
+
+@pytest.mark.parametrize("change", [
+    {"kind": "resolve_wait", "targetId": 12, "rationale": "Wrong field."},
+    {"kind": "cancel_task", "taskId": 12, "rationale": "Wrong field."},
+    {"kind": "create_child", "parentTaskId": "not-an-id", "title": "Nested", "rationale": "Malformed parent."},
+])
+def test_work_refinement_adapter_rejects_malformed_new_change_types(change):
+    proposal = {"intent": "improve", "summary": "Invalid", "disposition": "changes", "question": None, "changes": [change]}
+    with pytest.raises(AdapterError) as err:
+        _normalize_ai_result(proposal, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert err.value.code == "ai_task_invalid_response"
+
+
 def test_work_refinement_adapter_treats_null_reminder_array_as_provider_placeholder():
     provider_shape = {
         "intent": "improve", "summary": "No reminder change", "disposition": "changes", "question": None,
