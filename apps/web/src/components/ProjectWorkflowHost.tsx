@@ -16,6 +16,8 @@ import { WorkClarificationSheet } from "./WorkClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
 import { ProjectActivationSheet } from "./ProjectActivationSheet";
+import { useLocation, useNavigate } from "react-router-dom";
+import type { WorkRefinementOrigin } from "../lib/taskDetailContext";
 
 function flattenTaskRevisions(tasks: ProjectDetail["tasks"]): Array<{ taskId: number; revision: number }> {
   return tasks.flatMap((task) => [{ taskId: task.id, revision: task.revision }, ...flattenTaskRevisions(task.children)]);
@@ -33,6 +35,8 @@ export function ProjectWorkflowHost() {
   const strings = useStrings();
   const { members } = useIdentity();
   const projectActions = useProjectActions();
+  const location = useLocation();
+  const navigate = useNavigate();
   const projectId = workflow.current?.projectId ?? null;
   const { data: fetchedProject, reload } = useAsync(
     () => (projectId !== null ? api.getProject(projectId) : Promise.resolve(null)),
@@ -68,7 +72,11 @@ export function ProjectWorkflowHost() {
     case "structure":
       return <ProjectStructureSheet story={story} onClose={close} />;
     case "refinement":
-      return <WorkClarificationSheet targetType="project" targetId={story.id} revision={story.revision} title={story.title} onClose={close} />;
+      return <WorkClarificationSheet targetType="project" targetId={story.id} revision={story.revision} title={story.title} onClose={close} onStarted={(intakeId) => {
+        const refinementOrigin: WorkRefinementOrigin = { targetType: "project", targetId: story.id, originPath: `${location.pathname}${location.search}`, entry: "page" };
+        close();
+        navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });
+      }} />;
     case "assignDriver":
       return (
         <MemberSelectionSheet

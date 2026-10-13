@@ -46,6 +46,14 @@ anfragen** to regenerate and review again. No additional AI credentials are
 needed; the paired Home Assistant integration must support version 0.5.7 or
 newer for AI work refinement.
 
+Refinement proposals start with a compact change summary. Proposed dates and
+reminders are shown with household-local times; title, notes, parent and
+planning editors open only when requested. From task details, successful
+generation hands the existing review route to the foreground and temporarily
+suspends the detail sheet, preserving its text draft and clarification queue.
+Returning restores that task context; applying a task-to-project conversion
+opens the resulting project instead.
+
 Machbar is built around a simple problem: household work is shared, but
 responsibility and next steps are often not.
 

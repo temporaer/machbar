@@ -1583,6 +1583,14 @@ as direct actions, omit empty optional metadata, and keep substantive
 collections as readable sections. Semantic transformations continue through
 the shared command/action paths and focused sheets.
 
+AI refinement launched from `TaskDetailSheet` keeps the existing
+`IntakeReviewPage` as the sole job/status/review surface. After a successful
+job start, `TaskDetailProvider` suspends the mounted detail sheet without
+clearing its text draft, focus or clarification queue. The route carries a
+typed return snapshot; leaving the review restores the task context, while an
+applied task-to-project conversion clears the obsolete task sheet and opens
+the project route. Failed starts leave the launcher in place.
+
 **Still two separate rows and two separate detail surfaces.** `TaskRow.tsx`
 and `ProjectStoryRow.tsx` render as fully separate components (they now both
 carry `data-workitem-id` and dispatch through the same command layer, but

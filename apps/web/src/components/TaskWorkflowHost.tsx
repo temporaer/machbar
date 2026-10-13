@@ -19,6 +19,8 @@ import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { TaskClarificationSheet } from "./TaskClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
 
 /**
  * The single host for every focused task workflow reachable through a
@@ -38,6 +40,9 @@ export function TaskWorkflowHost() {
   const strings = useStrings();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
+  const taskDetail = useTaskDetail();
+  const location = useLocation();
+  const navigate = useNavigate();
   const dispatch = useWorkItemCommands();
   const taskId = workflow.current?.taskId ?? null;
   const { data: fetchedTask, reload } = useAsync(
@@ -88,7 +93,12 @@ export function TaskWorkflowHost() {
         />
       );
     case "refinement":
-      return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} />;
+      return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onStarted={(intakeId) => {
+        const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
+        const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
+        close();
+        navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });
+      }} />;
     case "assignOwner":
       return (
         <TaskOwnerSheet

@@ -9,9 +9,9 @@ import { BottomSheet } from "./BottomSheet";
 type WorkClarificationIntent = WorkRefinementIntent | "smaller_steps";
 
 export function WorkClarificationSheet({
-  targetType, targetId, revision, title, task, onClose,
+  targetType, targetId, revision, title, task, onClose, onStarted,
 }: {
-  targetType: "task" | "project"; targetId: number; revision: number; title: string; task?: Task; onClose: () => void;
+  targetType: "task" | "project"; targetId: number; revision: number; title: string; task?: Task; onClose: () => void; onStarted?: (intakeId: string) => void;
 }) {
   const strings = useStrings();
   const navigate = useNavigate();
@@ -29,8 +29,11 @@ export function WorkClarificationSheet({
         : await api.startWorkRefinement(targetType, targetId, {
             expectedRevision: revision, intent, ...optionalInstruction,
           });
-      onClose();
-      navigate(`/intake/${result.id}`);
+      if (onStarted) onStarted(result.id);
+      else {
+        onClose();
+        navigate(`/intake/${result.id}`);
+      }
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally { setPending(false); }
