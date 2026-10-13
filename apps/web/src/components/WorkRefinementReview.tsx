@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { intakeErrorIssues, type IntakeRecord, type WorkRefinementChange } from "@machbar/shared";
+import { intakeErrorIssues, workRefinementSelectionConflict, type IntakeRecord, type WorkRefinementChange } from "@machbar/shared";
 import { api } from "../lib/api";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
@@ -81,9 +81,38 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
   const [editorResetGeneration, setEditorResetGeneration] = useState(0);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [expandedDetails, setExpandedDetails] = useState<Record<number, boolean>>({});
+  const errorRef = useRef<HTMLParagraphElement | null>(null);
+  const activationRef = useRef<HTMLDivElement | null>(null);
+  const previousVisibleIssueRef = useRef<string | null>(null);
+  const hadActivationPromptRef = useRef(false);
   const incomingProposalSignature = semanticSignature(serverProposal);
   const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
   const latestObservedRevisionRef = useRef(record.revision);
+
+  const selectionConflict = workRefinementSelectionConflict(proposal?.changes ?? []);
+  const selectionConflictMessage = selectionConflict?.kind === "conversion_task_fields"
+    ? strings.refinementConversionEditConflict
+    : selectionConflict?.kind === "conversion_operation"
+      ? strings.refinementConversionOperationConflict
+      : selectionConflict
+        ? strings.refinementDuplicateEditConflict
+        : null;
+  const visibleIssue = conflict ? strings.refinementConflict : error ?? selectionConflictMessage;
+
+  useEffect(() => {
+    const newActivationPrompt = activationPrompt !== null && !hadActivationPromptRef.current;
+    const scrollAndFocus = (element: HTMLElement | null) => {
+      element?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      element?.focus();
+    };
+    if (newActivationPrompt) {
+      scrollAndFocus(activationRef.current);
+    } else if (visibleIssue && visibleIssue !== previousVisibleIssueRef.current) {
+      scrollAndFocus(errorRef.current);
+    }
+    hadActivationPromptRef.current = activationPrompt !== null;
+    previousVisibleIssueRef.current = visibleIssue;
+  }, [activationPrompt, visibleIssue]);
 
   const setDraft = useCallback((next: RefinementProposal | null, userEdit = true) => {
     proposalDraftRef.current = next;
@@ -420,7 +449,8 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
       if (before === after) return;
       result.push(`${labelText}: ${before ?? strings.refinementNone} → ${after ?? clearedLabel}`);
     };
-    if ((change.kind === "update_task" || change.kind === "update_project") && change.title !== undefined && change.title !== existing?.title) {
+    const titleIsShownOnConversion = change.kind === "update_task" && change.accepted && proposal?.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.targetId && candidate.accepted);
+    if ((change.kind === "update_task" || change.kind === "update_project") && change.title !== undefined && change.title !== existing?.title && !titleIsShownOnConversion) {
       result.push(`${existing?.title ?? strings.refinementUnavailable} → ${change.title}`);
     } else if (change.kind === "create_child") {
       result.push(change.title);
@@ -435,7 +465,11 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
           ? strings.refinementMoveEnd
           : `${strings.refinementMoveAfter} ${contextLabels.get(siblings[change.position - 1]?.[0] ?? -1)?.title ?? ""}`;
       result.push(`${target?.title ?? strings.refinementUnavailable} → ${parent?.title ?? project?.title ?? strings.refinementMoveBeginning} · ${relative}`);
-    } else if (change.kind === "convert_task_to_project") result.push(existing?.status === "actionable" ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog);
+    } else if (change.kind === "convert_task_to_project") {
+      const titleEdit = proposal?.changes.find((candidate) => candidate.kind === "update_task" && candidate.targetId === change.targetId && candidate.accepted && candidate.title !== undefined);
+      if (change.accepted && titleEdit?.kind === "update_task" && titleEdit.title !== existing?.title) result.push(`${existing?.title ?? strings.refinementUnavailable} → ${titleEdit.title}`);
+      result.push(existing?.status === "actionable" ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog);
+    }
     else if (change.kind === "update_wait") result.push(`${contextLabels.get(change.taskId)?.title ?? strings.refinementUnavailable}: ${contextLabels.get(change.taskId)?.waitingFor ?? strings.refinementNone} → ${change.waitingFor}`);
     else if (change.kind === "resolve_wait") result.push(`${contextLabels.get(change.taskId)?.title ?? strings.refinementUnavailable}: ${contextLabels.get(change.taskId)?.waitingFor ?? strings.refinementWaitCurrent} → ${strings.refinementResolveWaitHelp}`);
     else if (change.kind === "cancel_task") result.push(`${contextLabels.get(change.targetId)?.title ?? strings.refinementUnavailable}: ${strings.refinementCancel}`);
@@ -504,7 +538,6 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
           ))}
         </section>
       ) : null}
-      {conflict ? <p role="alert" className="error-text">{strings.refinementConflict}</p> : null}
       {!leaveAlone ? displayChanges.map(({ change, index }) => <article className="card stack" style={change.kind === "create_child" && change.parentProposalKey ? { marginInlineStart: "1rem" } : undefined} key={`${change.kind}-${index}`}>
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
           const checked = event.target.checked;
@@ -627,21 +660,23 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
         {change.kind === "advisory" ? <p>{change.title}</p> : null}
         </div>
       </article>) : null}
-      {activationPrompt ? <ProjectActivationDecisionFields
-        prompt={activationPrompt}
-        disabled={editorLocked}
-        onChange={setActivationPrompt}
-      /> : null}
+      {activationPrompt ? <div ref={activationRef} tabIndex={-1}>
+        <ProjectActivationDecisionFields
+          prompt={activationPrompt}
+          disabled={editorLocked}
+          onChange={setActivationPrompt}
+        />
+      </div> : null}
       <label className="stack"><span>{proposal.question ? strings.refinementAnswerLabel : strings.refinementFeedbackLabel}</span><textarea disabled={editorLocked} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={proposal.question ?? strings.workRefinementPlaceholder} /></label>
-      {error ? <p role="alert" className="error-text">{error}</p> : null}
+      {visibleIssue ? <p ref={errorRef} role="alert" tabIndex={-1} className="error-text">{visibleIssue}</p> : null}
       {proposalParentIssue || hasNestedCycle || missingCancelPolicy ? <p role="alert" className="error-text">{proposalParentIssue ? strings.refinementParentRequired : hasNestedCycle ? strings.refinementNestedCycle : strings.refinementCancellationPolicy}</p> : null}
       <div className="actions">
         {hasRetryFeedback || record.status === "analysis_failed" ? <button className="btn" disabled={busy || !canRegenerate} onClick={() => void regenerate()}>{hasRetryFeedback ? proposal.question ? strings.refinementRegenerate : strings.refinementRegenerateFeedback : strings.intakeRetry}</button> : null}
         {leaveAlone
           ? <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
           : <>
-            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || activationPrompt !== null && activationResolution === null || Boolean(proposalParentIssue) || hasNestedCycle || missingCancelPolicy} onClick={() => void apply()}>{strings.refinementApply}</button>
-            <button className="btn" disabled={busy} onClick={() => void save()}>{strings.save}</button>
+            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || activationPrompt !== null && activationResolution === null || Boolean(proposalParentIssue) || hasNestedCycle || missingCancelPolicy || Boolean(selectionConflict)} onClick={() => void apply()}>{strings.refinementApply}</button>
+            <button className="btn" disabled={busy || Boolean(selectionConflict)} onClick={() => void save()}>{strings.save}</button>
             <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
           </>}
       </div>

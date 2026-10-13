@@ -36,7 +36,8 @@ describe("intake AI instructions", () => {
     expect(prompt).toContain("Machbar must show the affected open descendants");
     expect(prompt).toContain("position only there");
     expect(prompt).toContain("update_project_outcome for acceptance criteria with outcome");
-    expect(prompt).toContain("convert_task_to_project only for the role change");
+    expect(prompt).toContain("A task-to-project conversion may be combined with update_task on that same task only for its title and/or notes");
+    expect(prompt).toContain("Do not combine conversion with task-only planning fields, waiting changes, moves, cancellations, or dependency changes");
   });
   it("regenerates refinement from current context, original focus, previous choices and latest answer", () => {
     const instructions = buildIntakeInstructions({

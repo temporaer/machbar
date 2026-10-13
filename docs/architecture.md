@@ -79,6 +79,14 @@ with the other accepted changes. Execution commitments run through the shared
 activation requirement/decision continuation in the same transaction; a
 revisit alone remains a reconsideration point rather than execution work.
 
+For task-to-project refinement, an accepted `update_task` targeting the
+converted task may edit only title and/or notes. The conversion runs first;
+the canonical `updateProject` mutation then applies those text fields using the
+new project revision. The shared selected-change validator rejects task-only
+planning, waiting, movement, cancellation, or dependency operations on the
+same item, along with duplicate title/notes writes, before the transaction
+starts mutating work.
+
 This document is the technical deep dive for contributors. For product
 concepts, start with the [household workflow](workflow.md). For operating the
 application, see [deployment](deployment.md) and

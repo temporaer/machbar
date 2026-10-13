@@ -54,6 +54,16 @@ suspends the detail sheet, preserving its text draft and clarification queue.
 Returning restores that task context; applying a task-to-project conversion
 opens the resulting project instead.
 
+An accepted task-to-project conversion may include one reviewed title and/or
+notes edit for the same item. Those text changes are applied to the resulting
+project through canonical project mutations after conversion; task-only
+planning, waiting, move, cancellation, and dependency changes remain separate
+and are rejected when selected with that conversion. Conflicting selected
+changes are identified in review before saving or applying. Failed saves and
+applies retain the proposal and local edits, show a localized error in the
+foreground review, and focus it for correction. Missing activation decisions
+are brought into view as well.
+
 Machbar is built around a simple problem: household work is shared, but
 responsibility and next steps are often not.
 

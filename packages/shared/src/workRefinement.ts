@@ -126,6 +126,54 @@ export const workRefinementProposalSchema = z.object({
 });
 export type WorkRefinementProposal = z.infer<typeof workRefinementProposalSchema>;
 
+export type WorkRefinementSelectionConflict =
+  | { kind: "conversion_task_fields"; targetId: number }
+  | { kind: "conversion_operation"; targetId: number; changeKind: WorkRefinementChange["kind"] }
+  | { kind: "duplicate_text_field"; targetId: number; field: "title" | "notes" };
+
+/**
+ * Checks conflicts that depend only on the user's accepted change set.
+ * Context-dependent structural rules remain in the API's refinement validator.
+ */
+export function workRefinementSelectionConflict(
+  changes: readonly WorkRefinementChange[],
+): WorkRefinementSelectionConflict | null {
+  const selected = changes.filter((change) => change.accepted);
+  const conversions = selected.filter((change) => change.kind === "convert_task_to_project");
+  for (const conversion of conversions) {
+    for (const change of selected) {
+      if (change === conversion || change.kind === "create_child") continue;
+      if (change.kind === "update_task" && change.targetId === conversion.targetId) {
+        const taskOnlyFields = ["scheduledDate", "dueDate", "revisitAt", "reminders"] as const;
+        if (taskOnlyFields.some((field) => change[field] !== undefined)) {
+          return { kind: "conversion_task_fields", targetId: conversion.targetId };
+        }
+        continue;
+      }
+      const affectsConvertedItem =
+        (("targetId" in change) && change.targetId === conversion.targetId) ||
+        ((change.kind === "update_wait" || change.kind === "resolve_wait") && change.taskId === conversion.targetId) ||
+        (change.kind === "add_dependency" && (change.taskId === conversion.targetId || change.dependsOnTaskId === conversion.targetId)) ||
+        (change.kind === "update_project_outcome" && change.projectId === conversion.targetId);
+      if (affectsConvertedItem) {
+        return { kind: "conversion_operation", targetId: conversion.targetId, changeKind: change.kind };
+      }
+    }
+  }
+
+  const textWrites = new Map<string, { targetId: number; field: "title" | "notes" }>();
+  for (const change of selected) {
+    if (change.kind !== "update_task" && change.kind !== "update_project") continue;
+    for (const field of ["title", "notes"] as const) {
+      if (change[field] === undefined) continue;
+      const key = `${change.targetId}:${field}`;
+      if (textWrites.has(key)) return { kind: "duplicate_text_field", targetId: change.targetId, field };
+      textWrites.set(key, { targetId: change.targetId, field });
+    }
+  }
+  return null;
+}
+
 export const workRefinementInputSchema = z.object({
   intent: workRefinementIntentSchema,
   instruction: z.string().trim().max(2_000).optional(),
