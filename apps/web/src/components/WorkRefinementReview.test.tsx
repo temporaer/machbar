@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { IntakeRecord } from "@machbar/shared";
+import { workRefinementProposalSchema, type IntakeRecord } from "@machbar/shared";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { WorkRefinementReview } from "./WorkRefinementReview";
@@ -225,6 +225,88 @@ describe("WorkRefinementReview", () => {
       proposal: expect.objectContaining({ changes: [expect.objectContaining({ accepted: true })] }),
     })));
     expect(mockedApi.applyWorkRefinement).toHaveBeenCalledWith("job", { expectedRevision: 3 });
+  });
+
+  it("requires an accepted parent before applying nested proposed steps", async () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Kita vorbereiten", status: "actionable", kind: "action", children: [] });
+    current.refinement!.proposal = {
+      intent: "structure", summary: "Vorbereitung und Einreichen", disposition: "changes", question: null,
+      changes: [
+        { kind: "create_child", parentTaskId: 4, proposalKey: "prepare", title: "Formular vorbereiten", rationale: "Zuerst vorbereiten.", accepted: false },
+        { kind: "create_child", parentProposalKey: "prepare", proposalKey: "submit", title: "Formular abgeben", rationale: "Danach einreichen.", accepted: true },
+      ],
+    };
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    const applyButton = screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" });
+    expect(applyButton).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Übernimm zuerst den übergeordneten Schritt");
+    await userEvent.click(screen.getAllByRole("checkbox")[0]!);
+    expect(applyButton).toBeEnabled();
+  });
+
+  it("adds a proposal-local key when reparenting an older unkeyed child", async () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Kita vorbereiten", status: "actionable", kind: "action", children: [] });
+    current.refinement!.proposal = {
+      intent: "structure", summary: "Vorbereitung und Einreichen", disposition: "changes", question: null,
+      changes: [
+        { kind: "create_child", parentTaskId: 4, proposalKey: "prepare", title: "Formular vorbereiten", rationale: "Zuerst vorbereiten.", accepted: false },
+        { kind: "create_child", parentTaskId: 4, title: "Formular abgeben", rationale: "Danach einreichen.", accepted: false },
+      ],
+    };
+    mockedApi.updateWorkRefinement.mockResolvedValue(current);
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    const parentSelectors = screen.getAllByLabelText("Übergeordneter Schritt");
+
+    await userEvent.selectOptions(parentSelectors[1]!, "proposal:prepare");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.updateWorkRefinement).toHaveBeenCalled());
+    const saved = mockedApi.updateWorkRefinement.mock.calls[0]?.[1].proposal;
+    expect(saved?.changes[1]).toMatchObject({
+      kind: "create_child",
+      parentProposalKey: "prepare",
+      proposalKey: expect.stringMatching(/^review-child-2/),
+    });
+    expect(saved?.changes[1]).not.toHaveProperty("parentTaskId");
+    expect(workRefinementProposalSchema.safeParse(saved).success).toBe(true);
+  });
+
+  it("shows cancellation impact and requires a reviewed descendant policy", async () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Altes Vorhaben", status: "actionable", kind: "action", parentTaskId: null, children: [{ id: 5, title: "Offener Teilschritt", status: "actionable", kind: "action", parentTaskId: 4, children: [] }] });
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Nicht mehr benötigt", disposition: "changes", question: null,
+      changes: [{ kind: "cancel_task", targetId: 4, rationale: "Das Vorhaben ist überholt.", accepted: true }],
+    };
+    mockedApi.updateWorkRefinement.mockImplementation(async (_id, body) => ({ ...current, revision: 3, refinement: { ...current.refinement!, proposal: body.proposal } } as IntakeRecord));
+    mockedApi.applyWorkRefinement.mockResolvedValue({ ...current, status: "applied", revision: 4 } as IntakeRecord);
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    const applyButton = screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" });
+    expect(screen.getByText("Offene Unteraufgaben: 1")).toBeInTheDocument();
+    expect(applyButton).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText("Was soll mit den offenen Unteraufgaben geschehen?"), "cancel_children");
+    expect(applyButton).toBeEnabled();
+    await userEvent.click(applyButton);
+    await waitFor(() => expect(mockedApi.updateWorkRefinement).toHaveBeenCalledWith("job", expect.objectContaining({
+      proposal: expect.objectContaining({ changes: [expect.objectContaining({ descendantsPolicy: "cancel_children" })] }),
+    })));
+  });
+
+  it("shows external wait resolution as separate from task completion", () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Versicherung prüfen", status: "actionable", kind: "action", revisitAt: "2026-11-01T09:00:00.000Z", externalWait: { waitingFor: "Deckungszusage" }, children: [] });
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Rückmeldung ist eingetroffen", disposition: "changes", question: null,
+      changes: [{ kind: "resolve_wait", taskId: 4, rationale: "Die Versicherung hat geantwortet.", accepted: false }],
+    };
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Rückmeldung ist eingetroffen" })).toBeInTheDocument();
+    expect(screen.getByText("Deckungszusage")).toBeInTheDocument();
+    expect(screen.getByText("Beendet nur das Warten. Die Aufgabe bleibt offen.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeEnabled();
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
   });
 
   it("reviews and edits schedule, deadline, revisit and reminder changes before applying", async () => {

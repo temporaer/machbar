@@ -31,7 +31,9 @@ describe("intake AI instructions", () => {
       refinement: { targetType: "project", intent: "structure", context: "{}" },
     });
     expect(prompt).toContain("only when both tasks already exist");
-    expect(prompt).toContain("Never reference a newly proposed create_child");
+    expect(prompt).toContain("parentProposalKey");
+    expect(prompt).toContain("resolve_wait");
+    expect(prompt).toContain("Machbar must show the affected open descendants");
     expect(prompt).toContain("position only there");
     expect(prompt).toContain("update_project_outcome for acceptance criteria with outcome");
     expect(prompt).toContain("convert_task_to_project only for the role change");
