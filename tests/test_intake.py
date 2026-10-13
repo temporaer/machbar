@@ -751,8 +751,14 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     assert dependency["properties"]["taskId"]["type"] == "integer"
     assert dependency["properties"]["dependsOnTaskId"]["type"] == "integer"
     update_task = variants[0]
-    reminder_array = next(option for option in update_task["properties"]["reminders"]["anyOf"] if option["type"] == "array")
-    reminder_item = reminder_array["items"]
+    reminder_schema = update_task["properties"]["reminders"]
+    if "items" not in reminder_schema:
+        reminder_schema = next(
+            option for option in reminder_schema["anyOf"]
+            if option.get("type") == "array" or "array" in option.get("type", [])
+        )
+    assert reminder_schema.get("type") == "array" or "array" in reminder_schema.get("type", [])
+    reminder_item = reminder_schema["items"]
     assert reminder_item["properties"]["kind"]["enum"] == ["absolute", "deadline_relative"]
     assert set(reminder_item["properties"]) == {"kind", "at", "daysBefore", "time", "timezone"}
 
