@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import type { AvailabilityRule, Task } from "@machbar/shared";
+import { Graph } from "../src/domain/graph.js";
+import { buildAgenda } from "../src/domain/agenda.js";
 import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -661,6 +664,83 @@ describe("task <-> story role conversion", () => {
     expect(waitProject.tasks.find((child: { title: string }) => child.title === waiting.title).externalWait.waitingFor).toBe("Antwort");
     const reminderStepId = reminderProject.tasks.find((child: { title: string }) => child.title === reminder.title).id;
     expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, reminderStepId)).all()).toHaveLength(1);
+  });
+
+  const windowRule = (match: "inside" | "outside"): AvailabilityRule => ({
+    kind: "weekly", match,
+    windows: [{ weekdays: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }],
+  });
+
+  it.each([
+    ["inside", true], ["outside", true],
+    ["inside", false], ["outside", false],
+  ] as const)("preserves %s availability on the action through conversion and reversal (scheduled=%s)", async (match, scheduled) => {
+    const rule = windowRule(match);
+    const childRule = windowRule(match === "inside" ? "outside" : "inside");
+    const member = (await post("/api/members", { name: "Driver" })).json();
+    const source = (await post("/api/tasks", {
+      title: "Business-hour action",
+      status: scheduled ? "actionable" : "someday",
+      ownerMemberId: member.id,
+      ownerInheritanceMode: "explicit",
+      availabilityRule: rule,
+      ...(scheduled ? { scheduledDate: "2026-10-12" } : {}),
+    })).json();
+    const child = (await post("/api/tasks", {
+      title: "Child with its own window", parentTaskId: source.id,
+      status: "actionable", availabilityRule: childRule,
+    })).json();
+    const before = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${source.id}` })).json();
+    const conversion = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: scheduled ? "active" : "backlog", expectedRevision: before.revision,
+    });
+    expect(conversion.statusCode, JSON.stringify(conversion.json())).toBe(201);
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
+    expect(project.status).toBe(scheduled ? "active" : "backlog");
+    const preserved = project.tasks.find((task: Task) => task.id !== child.id);
+    expect(preserved).toMatchObject({ availabilityRule: rule, scheduledDate: scheduled ? "2026-10-12" : null });
+    expect(project.tasks.find((task: Task) => task.id === child.id).availabilityRule).toEqual(childRule);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, source.id)).get()?.availabilityRule).toBeNull();
+
+    const agendaIds = (now: string) => {
+      const agenda = buildAgenda(Graph.load(ctx.handle.db, now), { now, today: "2026-10-12", householdTimezone: "Europe/Berlin" });
+      const ids: number[] = [];
+      const visit = (task: Task) => { ids.push(task.id); task.children.forEach(visit); };
+      [...agenda.planned, ...agenda.shared, ...agenda.unscheduled, ...agenda.revisit].forEach(visit);
+      return ids;
+    };
+    const unavailableNow = match === "inside" ? "2026-10-12T16:00:00Z" : "2026-10-12T10:00:00Z";
+    const availableNow = match === "inside" ? "2026-10-12T10:00:00Z" : "2026-10-12T16:00:00Z";
+    expect(agendaIds(unavailableNow)).not.toContain(preserved.id);
+    if (scheduled) expect(agendaIds(availableNow)).toContain(preserved.id);
+    else expect(agendaIds(availableNow)).not.toContain(preserved.id); // window alone never activates the project
+
+    const reversal = await post(`/api/projects/${source.id}/convert-to-task`, { expectedRevision: project.revision });
+    expect(reversal.statusCode, JSON.stringify(reversal.json())).toBe(201);
+    expect(reversal.json()).toMatchObject({ availabilityRule: null, status: scheduled ? "actionable" : "someday" });
+    const graph = Graph.load(ctx.handle.db, unavailableNow);
+    expect(graph.tasksById.get(preserved.id)).toMatchObject({ availabilityRule: rule, status: scheduled ? "actionable" : "someday" });
+    expect(graph.tasksById.get(child.id)?.availabilityRule).toEqual(childRule);
+    expect(agendaIds(unavailableNow)).not.toContain(preserved.id);
+  });
+
+  it.each(["stale", "cancelled", "activation"] as const)("retains the original window when conversion is rejected (%s)", async (reason) => {
+    const rule = windowRule("inside");
+    const source = (await post("/api/tasks", {
+      title: "Original window", availabilityRule: rule,
+      status: reason === "cancelled" ? "cancelled" : "actionable",
+      ...(reason === "activation" ? { scheduledDate: "2026-10-12" } : {}),
+    })).json();
+    const before = ctx.handle.db.select().from(schema.workItems).all();
+    const eventsBefore = ctx.handle.db.select().from(schema.activityEvents).all();
+    const result = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog", expectedRevision: source.revision + (reason === "stale" ? 1 : 0),
+    });
+    expect(result.statusCode).toBe(409);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(before);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(eventsBefore);
+    const retained = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${source.id}` })).json();
+    expect(retained.availabilityRule).toEqual(rule);
   });
 
   it("keeps a future revisit and its reminder deferred during conversion", async () => {

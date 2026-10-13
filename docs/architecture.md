@@ -1495,7 +1495,11 @@ above) and re-points `activity_events`/`notification_events`/
 survive the conversion instead of starting fresh. A root standalone task may
 become a story while keeping its descendants and content. Its task-only
 commitments are remapped transactionally to a preserved action step; explicit
-physical-context bindings and recurrence-derived deadlines stay on that step.
+physical-context bindings, recurrence-derived deadlines, and execution windows
+stay on that step. Even a window-only source retains an action, but the window
+never creates an execution commitment or activates the project. Project rows
+clear the task-only window; reverse conversion preserves child-specific windows
+without restoring a window on the container or introducing inheritance.
 The source revisit date continues to mean intentional deferral even when an
 absolute reminder is also present. The conversion sheet can map both outgoing
 dependencies and visible tasks that wait on the source, including to nested
