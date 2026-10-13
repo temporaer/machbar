@@ -169,6 +169,13 @@
       "when": 1791832059469,
       "tag": "0023_clarification_revisit_date",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791925200000,
+      "tag": "0024_task_availability_rule",
+      "breakpoints": true
     }
   ]
 }

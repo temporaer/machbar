@@ -1,5 +1,6 @@
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
+  AvailabilityRule,
   ActivityPage,
   ReflectionBriefing,
   ReflectionBriefingScope,
@@ -201,6 +202,7 @@ export interface CreateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   revisitAt?: string | null;
+  availabilityRule?: AvailabilityRule | null;
   /** @deprecated Use revisitAt. */
   notBeforeAt?: string | null;
   /** @deprecated Use revisitAt. */
