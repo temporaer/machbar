@@ -70,19 +70,28 @@ def _work_schema() -> vol.Schema:
     )
 
 
-def _reminder_schema() -> vol.Schema:
-    return vol.Schema(
+def _reminder_schema() -> Any:
+    absolute = vol.Schema(
         {
-            _field("kind", vol.In(["absolute", "deadline_relative"])): vol.In(
-                ["absolute", "deadline_relative"]
-            ),
-            _optional_field("at", None, _NULL): _NULL,
+            _field("kind", vol.In(["absolute"])): vol.In(["absolute"]),
+            _field("at", str): str,
             _optional_field("daysBefore", None, vol.Any(None, int)): vol.Any(None, int),
             _optional_field("time", None, _NULL): _NULL,
             _optional_field("timezone", None, _NULL): _NULL,
         },
         extra=vol.PREVENT_EXTRA,
     )
+    deadline_relative = vol.Schema(
+        {
+            _field("kind", vol.In(["deadline_relative"])): vol.In(["deadline_relative"]),
+            _field("daysBefore", int): int,
+            _field("time", str): str,
+            _field("timezone", str): str,
+            _optional_field("at", None, _NULL): _NULL,
+        },
+        extra=vol.PREVENT_EXTRA,
+    )
+    return vol.Any(absolute, deadline_relative)
 
 
 def _warning_schema() -> vol.Schema:
@@ -111,6 +120,9 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "scheduledDate": (False, vol.Any(str, None)),
         "dueDate": (False, vol.Any(str, None)),
         "revisitAt": (False, vol.Any(str, None)),
+        "clearScheduledDate": (False, vol.Any(bool, None)),
+        "clearDueDate": (False, vol.Any(bool, None)),
+        "clearRevisitAt": (False, vol.Any(bool, None)),
         "reminders": (False, vol.Any(None, [_reminder_schema()])),
     },
     "update_project": {
@@ -128,6 +140,9 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "scheduledDate": (False, vol.Any(str, None)),
         "dueDate": (False, vol.Any(str, None)),
         "revisitAt": (False, vol.Any(str, None)),
+        "clearScheduledDate": (False, vol.Any(bool, None)),
+        "clearDueDate": (False, vol.Any(bool, None)),
+        "clearRevisitAt": (False, vol.Any(bool, None)),
         "reminders": (False, vol.Any(None, [_reminder_schema()])),
     },
     "move_task": {
@@ -156,7 +171,7 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
     },
 }
 
-_REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId"}
+_REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId", "clearScheduledDate", "clearDueDate", "clearRevisitAt"}
 _REFINEMENT_PLANNING_NULL_PLACEHOLDERS = {
     "update_task": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
     "create_child": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
@@ -699,13 +714,33 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
         raise _invalid(["changes"], "an array", value=data.get("changes"))
 
     normalized_changes = []
-    for change in data["changes"]:
+    for change_index, change in enumerate(data["changes"]):
         if not isinstance(change, dict):
             normalized_changes.append(change)
             continue
         normalized = dict(change)
         kind = normalized.get("kind")
         allowed = _REFINEMENT_CHANGE_FIELDS.get(kind, {})
+        item_path = ["changes", change_index]
+        clear_fields = (
+            {
+                "scheduledDate": "clearScheduledDate",
+                "dueDate": "clearDueDate",
+                "revisitAt": "clearRevisitAt",
+            }
+            if kind in ("update_task", "create_child")
+            else {}
+        )
+        for field, clear_field in clear_fields.items():
+            if normalized.get(clear_field) is True:
+                if field in normalized and normalized[field] is not None:
+                    raise _invalid(
+                        item_path + [clear_field],
+                        f"omit {field} when explicitly clearing it",
+                        value=normalized[field],
+                    )
+            elif normalized.get(clear_field) is False or normalized.get(clear_field) is None:
+                normalized.pop(clear_field, None)
         for field in _REFINEMENT_ALL_FIELDS:
             if normalized.get(field) is None and (
                 field not in allowed or field in _REFINEMENT_OPTIONAL_NULL_FIELDS

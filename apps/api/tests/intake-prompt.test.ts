@@ -176,8 +176,9 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("Today is 2026-10-12 in Europe/Berlin");
     expect(instructions).toContain("scheduledDate only for an explicit intended work date");
     expect(instructions).toContain("absolute reminders require an ISO datetime with the correct timezone offset");
+    expect(instructions).toContain("set the corresponding clearScheduledDate, clearDueDate, or clearRevisitAt flag to true");
     expect(instructions).toContain("An empty reminders array means explicitly clear reminders");
-    expect(instructions).toContain("omit fields that should remain unchanged");
+    expect(instructions).toContain("Omit fields that should remain unchanged");
   });
 
   it("omits the household context section from refinement when all configured fields are empty", () => {

@@ -94,6 +94,21 @@ describe("AI work refinement proposals", () => {
     }) as { changes: Array<Record<string, unknown>> };
     expect(explicitClear.changes[0]?.reminders).toEqual([]);
     expect(workRefinementProposalSchema.safeParse(explicitClear).success).toBe(true);
+
+    const explicitDateClear = normalizeWorkRefinementProposalInput({
+      intent: "improve", summary: "Clear obsolete dates", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 12, clearScheduledDate: true, clearDueDate: true, clearRevisitAt: true, rationale: "The dates no longer apply." }],
+    }) as { changes: Array<Record<string, unknown>> };
+    expect(explicitDateClear.changes[0]).toMatchObject({ scheduledDate: null, dueDate: null, revisitAt: null });
+    expect(explicitDateClear.changes[0]).not.toHaveProperty("clearScheduledDate");
+    expect(explicitDateClear.changes[0]).not.toHaveProperty("clearDueDate");
+    expect(explicitDateClear.changes[0]).not.toHaveProperty("clearRevisitAt");
+    expect(workRefinementProposalSchema.safeParse(explicitDateClear).success).toBe(true);
+    const conflictingClear = normalizeWorkRefinementProposalInput({
+      intent: "improve", summary: "Conflicting date", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 12, scheduledDate: "2026-10-13", clearScheduledDate: true, rationale: "Conflicting instructions." }],
+    });
+    expect(workRefinementProposalSchema.safeParse(conflictingClear).success).toBe(false);
   });
 
   it("normalizes the synthetic cellar-staircase provider fixture", () => {
@@ -287,8 +302,8 @@ describe("AI work refinement proposals", () => {
     const task = createTask(ctx.handle.db, { title: "Durchsichtigen Plastikbehälter für das Laternenbasteln vorbereiten", status: "captured" });
     const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
     const id = randomUUID();
-    const tuesdayReminder = "2026-10-12T05:00:00.000Z"; // 07:00 in Europe/Berlin on 2026-10-13.
-    const mondayReminder = "2026-10-18T05:00:00.000Z"; // 07:00 in Europe/Berlin on 2026-10-19.
+    const tuesdayReminder = "2026-10-13T05:00:00.000Z"; // 07:00 in Europe/Berlin on Tuesday, 2026-10-13.
+    const mondayReminder = "2026-10-19T05:00:00.000Z"; // 07:00 in Europe/Berlin on Monday, 2026-10-19.
     ctx.handle.db.insert(schema.intakeJobs).values({
       id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
       text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
@@ -334,18 +349,36 @@ describe("AI work refinement proposals", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ title: "Follow up with the office", scheduledDate: "2026-10-13", dueDate: "2026-10-19" });
     expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, task.id)).all()).toHaveLength(2);
 
+    const applyProviderClear = (target: ReturnType<typeof createTask>, clearFields: Record<string, unknown>, summary: string) => {
+      const targetSnapshot = buildRefinementSnapshot(ctx.handle.db, "task", target.id, null).snapshot;
+      const clearId = randomUUID();
+      const providerProposal = workRefinementProposalSchema.parse(normalizeWorkRefinementProposalInput({
+        intent: "improve", summary, disposition: "changes", question: null,
+        changes: [{ kind: "update_task", targetId: target.id, ...clearFields, rationale: summary }],
+      }));
+      const acceptedProposal = {
+        ...providerProposal,
+        changes: providerProposal.changes.map((change) => ({ ...change, accepted: true })),
+      };
+      ctx.handle.db.insert(schema.intakeJobs).values({
+        id: clearId, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: targetSnapshot,
+        refinementTargetType: "task", refinementTargetId: target.id, refinementIntent: "improve", refinementSnapshotJson: targetSnapshot,
+        refinementJson: JSON.stringify(acceptedProposal),
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      }).run();
+      applyWorkRefinement(ctx.handle.db, clearId, null, 1, {});
+    };
+
+    const clearableDates = createTask(ctx.handle.db, {
+      title: "Clear obsolete dates", status: "actionable", scheduledDate: "2026-10-13", dueDate: "2026-10-19",
+      reminders: [{ kind: "absolute", at: "2026-10-11T05:00:00.000Z" }],
+    });
+    applyProviderClear(clearableDates, { clearScheduledDate: true, clearDueDate: true, reminders: [] }, "Remove obsolete planned and deadline dates.");
+    expect(getTaskOrThrow(ctx.handle.db, clearableDates.id)).toMatchObject({ scheduledDate: null, dueDate: null, revisitAt: null, reminders: [] });
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, clearableDates.id)).all()).toEqual([]);
+
     const revisitable = createTask(ctx.handle.db, { title: "Revisit", status: "actionable", revisitAt: "2026-10-12T05:00:00.000Z", reminders: [{ kind: "absolute", at: "2026-10-11T05:00:00.000Z" }] });
-    const revisitSnapshot = buildRefinementSnapshot(ctx.handle.db, "task", revisitable.id, null).snapshot;
-    const clearId = randomUUID();
-    ctx.handle.db.insert(schema.intakeJobs).values({
-      id: clearId, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: revisitSnapshot,
-      refinementTargetType: "task", refinementTargetId: revisitable.id, refinementIntent: "improve", refinementSnapshotJson: revisitSnapshot,
-      refinementJson: JSON.stringify({ intent: "improve", summary: "Clear revisit information", disposition: "changes", question: null, changes: [
-        { kind: "update_task", targetId: revisitable.id, revisitAt: null, reminders: [], rationale: "Remove the old revisit and reminder.", accepted: true },
-      ] }),
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
-    }).run();
-    applyWorkRefinement(ctx.handle.db, clearId, null, 1, {});
+    applyProviderClear(revisitable, { clearRevisitAt: true, reminders: [] }, "Remove the old revisit and reminder.");
     expect(getTaskOrThrow(ctx.handle.db, revisitable.id)).toMatchObject({ revisitAt: null, scheduledDate: null, dueDate: null, reminders: [] });
     expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, revisitable.id)).all()).toEqual([]);
   });

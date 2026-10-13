@@ -727,10 +727,10 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     variants = change["anyOf"]
     assert len(variants) == 9
     expected_fields = {
-        "update_task": {"kind", "rationale", "accepted", "targetId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "reminders"},
+        "update_task": {"kind", "rationale", "accepted", "targetId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"},
         "update_project": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
         "convert_task_to_project": {"kind", "rationale", "accepted", "targetId"},
-        "create_child": {"kind", "rationale", "accepted", "parentTaskId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "reminders"},
+        "create_child": {"kind", "rationale", "accepted", "parentTaskId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"},
         "move_task": {"kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"},
         "add_dependency": {"kind", "rationale", "accepted", "taskId", "dependsOnTaskId"},
         "update_wait": {"kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"},
@@ -750,6 +750,13 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     dependency = variants[5]
     assert dependency["properties"]["taskId"]["type"] == "integer"
     assert dependency["properties"]["dependsOnTaskId"]["type"] == "integer"
+    update_task = variants[0]
+    reminder_array = next(option for option in update_task["properties"]["reminders"]["anyOf"] if option["type"] == "array")
+    reminder_variants = reminder_array["items"]["anyOf"]
+    absolute_reminder = next(variant for variant in reminder_variants if variant["properties"]["kind"]["enum"] == ["absolute"])
+    relative_reminder = next(variant for variant in reminder_variants if variant["properties"]["kind"]["enum"] == ["deadline_relative"])
+    assert "at" in absolute_reminder["required"]
+    assert {"daysBefore", "time", "timezone"}.issubset(relative_reminder["required"])
 
     provider_shape = {
         "intent": "improve",
@@ -780,6 +787,15 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     assert "revisitAt" not in normalized["changes"][0]
     assert "reminders" not in normalized["changes"][0]
 
+    clear_date_shape = {**provider_shape, "changes": [{
+        "kind": "update_task", "targetId": 12, "clearScheduledDate": True,
+        "clearDueDate": True, "clearRevisitAt": True, "rationale": "Remove obsolete dates.",
+    }]}
+    cleared = _normalize_ai_result(clear_date_shape, "work_refinement", WORK_REFINEMENT_STRUCTURE)["changes"][0]
+    assert cleared["clearScheduledDate"] is True
+    assert cleared["clearDueDate"] is True
+    assert cleared["clearRevisitAt"] is True
+
 
 def test_work_refinement_adapter_preserves_planning_presence_and_reminder_shapes():
     proposal = {
@@ -791,7 +807,7 @@ def test_work_refinement_adapter_preserves_planning_presence_and_reminder_shapes
             },
             {
                 "kind": "create_child", "parentTaskId": 12, "title": "Restore the first container",
-                "scheduledDate": "2026-10-13", "dueDate": "2026-10-19", "revisitAt": None,
+                "scheduledDate": "2026-10-13", "dueDate": "2026-10-19", "clearRevisitAt": True,
                 "reminders": [
                     {"kind": "absolute", "at": "2026-10-12T05:00:00Z", "daysBefore": None, "time": None, "timezone": None},
                     {"kind": "deadline_relative", "at": None, "daysBefore": 1, "time": "07:00", "timezone": "Europe/Berlin"},
@@ -808,7 +824,7 @@ def test_work_refinement_adapter_preserves_planning_presence_and_reminder_shapes
     assert "reminders" not in first
     assert second["scheduledDate"] == "2026-10-13"
     assert second["dueDate"] == "2026-10-19"
-    assert second["revisitAt"] is None
+    assert second["clearRevisitAt"] is True
     assert second["reminders"] == [
         {"kind": "absolute", "at": "2026-10-12T05:00:00Z"},
         {"kind": "deadline_relative", "daysBefore": 1, "time": "07:00", "timezone": "Europe/Berlin"},
@@ -817,12 +833,40 @@ def test_work_refinement_adapter_preserves_planning_presence_and_reminder_shapes
     explicit_clear = {**proposal, "changes": [{"kind": "update_task", "targetId": 12, "reminders": [], "rationale": "Remove old reminders."}]}
     assert _normalize_ai_result(explicit_clear, "work_refinement", WORK_REFINEMENT_STRUCTURE)["changes"][0]["reminders"] == []
 
+    date_clear = {**proposal, "changes": [{
+        "kind": "update_task", "targetId": 12, "clearScheduledDate": True,
+        "clearDueDate": True, "clearRevisitAt": True, "rationale": "Remove the obsolete dates.",
+    }]}
+    normalized_clear = _normalize_ai_result(date_clear, "work_refinement", WORK_REFINEMENT_STRUCTURE)["changes"][0]
+    assert normalized_clear["clearScheduledDate"] is True
+    assert normalized_clear["clearDueDate"] is True
+    assert normalized_clear["clearRevisitAt"] is True
 
-@pytest.mark.parametrize("reminders", [None, [{"kind": "absolute", "at": None}], [{"kind": "unknown", "at": "2026-10-13T07:00:00+02:00"}]])
+
+def test_work_refinement_adapter_treats_null_reminder_array_as_provider_placeholder():
+    provider_shape = {
+        "intent": "improve", "summary": "No reminder change", "disposition": "changes", "question": None,
+        "changes": [{"kind": "create_child", "parentTaskId": 12, "title": "Work", "reminders": None, "rationale": "Keep unchanged."}],
+    }
+    normalized = _normalize_ai_result(provider_shape, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert "reminders" not in normalized["changes"][0]
+
+
+@pytest.mark.parametrize("reminders", [[{"kind": "absolute", "at": None}], [{"kind": "unknown", "at": "2026-10-13T07:00:00+02:00"}]])
 def test_work_refinement_adapter_rejects_malformed_planning_reminders(reminders):
     malformed = {
         "intent": "improve", "summary": "Bad reminder", "disposition": "changes", "question": None,
         "changes": [{"kind": "create_child", "parentTaskId": 12, "title": "Work", "reminders": reminders, "rationale": "Invalid."}],
+    }
+    with pytest.raises(AdapterError) as err:
+        _normalize_ai_result(malformed, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert err.value.code == "ai_task_invalid_response"
+
+
+def test_work_refinement_adapter_rejects_conflicting_explicit_date_clear():
+    malformed = {
+        "intent": "improve", "summary": "Conflicting date", "disposition": "changes", "question": None,
+        "changes": [{"kind": "update_task", "targetId": 12, "scheduledDate": "2026-10-13", "clearScheduledDate": True, "rationale": "Conflicting."}],
     }
     with pytest.raises(AdapterError) as err:
         _normalize_ai_result(malformed, "work_refinement", WORK_REFINEMENT_STRUCTURE)

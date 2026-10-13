@@ -27,6 +27,9 @@ const refinementChangeFields = [
   "scheduledDate",
   "dueDate",
   "revisitAt",
+  "clearScheduledDate",
+  "clearDueDate",
+  "clearRevisitAt",
   "reminders",
   "waitingFor",
   "outcome",
@@ -38,12 +41,24 @@ const providerNullPlaceholderFields: Record<string, ReadonlySet<string>> = {
   update_task: new Set(["scheduledDate", "dueDate", "revisitAt", "reminders"]),
   create_child: new Set(["scheduledDate", "dueDate", "revisitAt", "reminders"]),
 };
+const explicitDateClearFields: Record<string, Readonly<Record<string, string>>> = {
+  update_task: {
+    scheduledDate: "clearScheduledDate",
+    dueDate: "clearDueDate",
+    revisitAt: "clearRevisitAt",
+  },
+  create_child: {
+    scheduledDate: "clearScheduledDate",
+    dueDate: "clearDueDate",
+    revisitAt: "clearRevisitAt",
+  },
+};
 
 const allowedRefinementChangeFields: Record<string, ReadonlySet<string>> = {
-  update_task: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "reminders"]),
+  update_task: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"]),
   update_project: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes"]),
   convert_task_to_project: new Set(["kind", "rationale", "accepted", "targetId"]),
-  create_child: new Set(["kind", "rationale", "accepted", "parentTaskId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "reminders"]),
+  create_child: new Set(["kind", "rationale", "accepted", "parentTaskId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"]),
   move_task: new Set(["kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"]),
   add_dependency: new Set(["kind", "rationale", "accepted", "taskId", "dependsOnTaskId"]),
   update_wait: new Set(["kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"]),
@@ -115,9 +130,21 @@ export function normalizeWorkRefinementProposalInput(value: unknown): unknown {
       const kind = change.kind;
       const allowed = typeof kind === "string" ? allowedRefinementChangeFields[kind] : undefined;
       const normalized = { ...change };
+      const explicitlyCleared = new Set<string>();
+      for (const [field, clearField] of Object.entries(explicitDateClearFields[kind as string] ?? {})) {
+        if (normalized[clearField] === true) {
+          if (normalized[field] !== undefined && normalized[field] !== null) continue;
+          normalized[field] = null;
+          explicitlyCleared.add(field);
+          delete normalized[clearField];
+        } else if (normalized[clearField] === false || normalized[clearField] === null) {
+          delete normalized[clearField];
+        }
+      }
       if (allowed) {
         for (const field of refinementChangeFields) {
           if (normalized[field] !== null) continue;
+          if (explicitlyCleared.has(field)) continue;
           if (!allowed.has(field) || optionalNonNullableRefinementChangeFields.has(field) || providerNullPlaceholderFields[kind as string]?.has(field)) {
             delete normalized[field];
           }

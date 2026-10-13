@@ -277,6 +277,31 @@ describe("WorkRefinementReview", () => {
     expect(screen.getByLabelText("Wiedervorlage-Uhrzeit")).toHaveValue("02:30");
   });
 
+  it("preserves unfinished revisit and reminder editor input through a conflicting proposal refresh", async () => {
+    const current = record();
+    current.refinement!.proposal = {
+      intent: "improve", summary: "Plan the task", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: 4, title: "Kita-Formular", rationale: "Clarify the next action.", accepted: false }],
+    };
+    const { rerender, container } = renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Wiedervorlage-Datum"), { target: { value: "2026-03-29" } });
+    fireEvent.change(screen.getByLabelText("Wiedervorlage-Uhrzeit"), { target: { value: "02:30" } });
+    await userEvent.click(screen.getByRole("button", { name: "+ Erinnerung" }));
+    await userEvent.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
+    const reminderDate = container.querySelector<HTMLInputElement>("#reminder-date-new");
+    expect(reminderDate).not.toBeNull();
+    fireEvent.change(reminderDate!, { target: { value: "20.10.2026" } });
+
+    rerender(<WorkRefinementReview record={withProposalTitle(current, "Remote title change")} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText("Der Vorschlag wurde inzwischen geändert. Deine lokalen Änderungen bleiben erhalten. Prüfe sie und speichere sie erneut.")).toBeInTheDocument());
+    expect(screen.getByDisplayValue("Kita-Formular")).toBeInTheDocument();
+    expect(screen.getByLabelText("Wiedervorlage-Datum")).toHaveValue("2026-03-29");
+    expect(screen.getByLabelText("Wiedervorlage-Uhrzeit")).toHaveValue("02:30");
+    expect(container.querySelector<HTMLInputElement>("#reminder-date-new")).toHaveValue("20.10.2026");
+  });
+
   it("requires an answer to a clarification before it can be applied", async () => {
     const current = record("clarification");
     mockedApi.retryIntake.mockResolvedValue({ ...current, status: "queued", revision: 3 } as IntakeRecord);

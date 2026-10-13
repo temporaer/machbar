@@ -73,6 +73,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const [operation, setOperation] = useState<"save" | "apply" | "regenerate" | "discard" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revisitDrafts, setRevisitDrafts] = useState<Record<number, { date: string; time: string }>>({});
+  const [editorResetGeneration, setEditorResetGeneration] = useState(0);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const incomingProposalSignature = semanticSignature(serverProposal);
   const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
@@ -118,15 +119,14 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     };
     const previous = serverBaselineRef.current;
 
-    if (incomingProposalSignature !== previous.signature) {
-      setActivationPrompt(null);
-      setRevisitDrafts({});
-    }
+    if (incomingProposalSignature !== previous.signature) setActivationPrompt(null);
 
     if (previous.recordId !== record.id) {
       serverBaselineRef.current = incomingBaseline;
       latestObservedRevisionRef.current = record.revision;
       setDraft(serverProposal, false);
+      setRevisitDrafts({});
+      setEditorResetGeneration((generation) => generation + 1);
       setConflict(false);
       setAnswer("");
       setError(null);
@@ -138,6 +138,8 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
       allowServerReplacementRef.current = false;
       serverBaselineRef.current = incomingBaseline;
       setDraft(serverProposal, false);
+      setRevisitDrafts({});
+      setEditorResetGeneration((generation) => generation + 1);
       setConflict(false);
       return;
     }
@@ -156,6 +158,10 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
 
     if (!draftIsDirty) {
       setDraft(serverProposal, false);
+      if (incomingProposalSignature !== previous.signature) {
+        setRevisitDrafts({});
+        setEditorResetGeneration((generation) => generation + 1);
+      }
       setConflict(false);
       return;
     }
@@ -409,7 +415,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
               update(index, { revisitAt: null });
             }}>{strings.clearNotBefore}</button></div></fieldset>
             <div className="stack"><strong>{strings.refinementReminders}</strong><small>{strings.refinementCurrent}: {reminderSummary(existing?.reminders ?? [])} → {strings.refinementProposed}: {reminderSummary(reminders)}</small><TaskRemindersEditor
-              key={`${record.id}:${incomingProposalSignature}:${index}`}
+              key={`${record.id}:${editorResetGeneration}:${index}`}
               ref={(editor) => { if (editor) reminderEditors.current.set(index, editor); else reminderEditors.current.delete(index); }}
               reminders={reminders}
               dueDate={dueDate}
