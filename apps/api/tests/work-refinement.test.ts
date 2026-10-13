@@ -14,7 +14,7 @@ import {
   unacceptedWorkRefinementProposal,
   workRefinementProposalSchema,
 } from "@machbar/shared";
-import type { ProjectActivationResolution } from "@machbar/shared";
+import type { ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
 import { closeTestContext, createTestContext, insertTestProject, type TestContext } from "./helpers.js";
 
 describe("AI work refinement proposals", () => {
@@ -89,6 +89,77 @@ describe("AI work refinement proposals", () => {
     });
     expect(proposal.changes[0]).toMatchObject({ kind: "cancel_task", accepted: false });
     expect(proposal.changes[0]).not.toHaveProperty("descendantsPolicy");
+  });
+
+  it("atomically converts a task, applies its reviewed title and notes, and creates two children", () => {
+    const task = createTask(ctx.handle.db, { title: "Neue Haustür klären", notes: "Ursprüngliche Notiz", status: "captured" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    const proposal = {
+      intent: "structure", summary: "Aus der Auswahl wird ein umsetzbares Projekt.", disposition: "changes", question: null,
+      changes: [
+        { kind: "convert_task_to_project", targetId: task.id, rationale: "Mehrere Schritte sind nötig.", accepted: true },
+        { kind: "update_task", targetId: task.id, title: "Haustür auswählen und montieren", notes: "Öffnung vor der Auswahl ausmessen.", rationale: "Der Projekttitel beschreibt das Ergebnis.", accepted: true },
+        { kind: "create_child", parentTaskId: task.id, title: "Öffnung ausmessen", notes: null, rationale: "Die Maße werden für die Auswahl benötigt.", accepted: true },
+        { kind: "create_child", parentTaskId: task.id, title: "Passende Haustür auswählen", notes: null, rationale: "Die Auswahl folgt auf die Maße.", accepted: true },
+      ],
+    };
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
+      refinementIntent: "structure", refinementSnapshotJson: snapshot, refinementJson: JSON.stringify(proposal),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
+
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get();
+    expect(project).toMatchObject({ id: task.id, role: "story", title: "Haustür auswählen und montieren", notes: "Öffnung vor der Auswahl ausmessen.", status: "backlog" });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all())
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ title: "Öffnung ausmessen", role: "task" }),
+        expect.objectContaining({ title: "Passende Haustür auswählen", role: "task" }),
+      ]));
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()).toHaveLength(2);
+    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "applied", refinement: { targetId: task.id } });
+  });
+
+  it("rejects unsupported conversion combinations and duplicate title writes before mutation", () => {
+    const task = createTask(ctx.handle.db, { title: "Haustür", status: "captured" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const base = { intent: "structure" as const, summary: "Projekt mit einem nächsten Schritt.", disposition: "changes" as const, question: null };
+    const conversion = { kind: "convert_task_to_project" as const, targetId: task.id, rationale: "Die Arbeit hat mehrere Schritte.", accepted: true };
+    const unsupported: Array<WorkRefinementProposal["changes"][number]> = [
+      { kind: "update_task", targetId: task.id, dueDate: "2026-11-01", rationale: "Eine Frist setzen.", accepted: true },
+      { kind: "update_wait", taskId: task.id, waitingFor: "Rückmeldung", rationale: "Die Arbeit wartet.", accepted: true },
+      { kind: "resolve_wait", taskId: task.id, rationale: "Das Warten beenden.", accepted: true },
+      { kind: "move_task", targetId: task.id, parentTaskId: null, projectId: null, position: 0, rationale: "Die Aufgabe verschieben.", accepted: true },
+      { kind: "cancel_task", targetId: task.id, rationale: "Die Aufgabe abbrechen.", accepted: true },
+      { kind: "add_dependency", taskId: task.id, dependsOnTaskId: task.id + 1, rationale: "Eine Voraussetzung ergänzen.", accepted: true },
+    ];
+    for (const conflictingChange of unsupported) {
+      const proposal = workRefinementProposalSchema.parse({ ...base, changes: [conversion, conflictingChange] });
+      const expectedConflict = conflictingChange.kind === "update_task" ? "conversion_task_fields" : "conversion_operation";
+      expect(() => assertRefinementContext(proposal, "task", task.id, snapshot, true)).toThrow(expect.objectContaining({
+        code: "intake_draft_invalid", details: expect.objectContaining({ refinementConflict: expectedConflict, targetId: task.id }),
+      }));
+    }
+    const taskFieldConflict = workRefinementProposalSchema.parse({ ...base, changes: [
+      conversion,
+      { kind: "update_task", targetId: task.id, title: "Haustür kaufen", scheduledDate: "2026-11-01", rationale: "Planung gehört zur Aufgabe.", accepted: true },
+    ] });
+    expect(() => assertRefinementContext(taskFieldConflict, "task", task.id, snapshot, true)).toThrow(expect.objectContaining({
+      code: "intake_draft_invalid", details: expect.objectContaining({ refinementConflict: "conversion_task_fields", targetId: task.id }),
+    }));
+    const duplicateTitle = workRefinementProposalSchema.parse({ ...base, changes: [
+      { kind: "update_task", targetId: task.id, title: "Haustür auswählen", rationale: "Konkretisieren.", accepted: true },
+      { kind: "update_task", targetId: task.id, title: "Haustür montieren", rationale: "Anders konkretisieren.", accepted: true },
+    ] });
+    expect(() => assertRefinementContext(duplicateTitle, "task", task.id, snapshot, true)).toThrow(expect.objectContaining({
+      code: "intake_draft_invalid", details: { refinementConflict: "duplicate_text_field", targetId: task.id, field: "title" },
+    }));
+    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ title: "Haustür", status: "captured", children: [] });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()?.role).toBe("task");
   });
 
   it("rejects unknown and cyclic proposal-local parent references", () => {

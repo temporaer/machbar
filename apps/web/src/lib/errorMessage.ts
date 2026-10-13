@@ -128,6 +128,16 @@ export function localizedErrorMessage(
   strings: Strings,
 ): string {
   if (isApiError(error)) {
+    if (error.code === "intake_draft_invalid") {
+      const refinementConflict = stringDetail(error.details, "refinementConflict");
+      if (refinementConflict === "conversion_task_fields" || error.message === "A role conversion cannot be combined with an edit to the same item.") {
+        return strings.refinementConversionEditConflict;
+      }
+      if (refinementConflict === "conversion_operation") return strings.refinementConversionOperationConflict;
+      if (refinementConflict === "duplicate_text_field" || refinementConflict === "duplicate_field") {
+        return strings.refinementDuplicateEditConflict;
+      }
+    }
     if (
       error.code &&
       Object.prototype.hasOwnProperty.call(strings.apiErrorMessages, error.code)

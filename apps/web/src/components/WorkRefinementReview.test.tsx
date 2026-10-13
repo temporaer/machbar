@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { workRefinementProposalSchema, type IntakeRecord } from "@machbar/shared";
-import { api } from "../lib/api";
+import { api, ApiError, request } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { WorkRefinementReview } from "./WorkRefinementReview";
 
@@ -53,6 +53,7 @@ function withProposalTitle(current: IntakeRecord, title: string, revision = 3): 
 
 describe("WorkRefinementReview", () => {
   beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.unstubAllGlobals());
 
   it("shows a compact title-only proposal without empty planning controls", () => {
     renderWithProviders(<WorkRefinementReview record={record()} onChange={vi.fn()} />);
@@ -60,6 +61,98 @@ describe("WorkRefinementReview", () => {
     expect(screen.queryByLabelText("Geplantes Datum")).not.toBeInTheDocument();
     expect(document.querySelector(".refinement-compact-summary")?.textContent).not.toMatch(/Keine → Vorgeschlagen: Keine/);
     expect(screen.getByRole("button", { name: "Details bearbeiten" })).toBeInTheDocument();
+  });
+
+  it("shows the edited title as the resulting project title during conversion", () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Kita-Formular", status: "captured", kind: "action", children: [] });
+    current.refinement!.proposal = {
+      intent: "structure", summary: "Ein kleines Projekt mit klaren Schritten.", disposition: "changes", question: null,
+      changes: [
+        { kind: "convert_task_to_project", targetId: 4, rationale: "Mehrere konkrete Schritte sollen koordiniert werden.", accepted: true },
+        { kind: "update_task", targetId: 4, title: "Kita-Unterlagen zusammenstellen", notes: "Das Formular liegt bei Sarah.", rationale: "Der Titel benennt das gewünschte Ergebnis.", accepted: true },
+        { kind: "create_child", parentTaskId: 4, title: "Formular bei Sarah abholen", rationale: "Die Unterlagen werden zuerst benötigt.", accepted: true },
+        { kind: "create_child", parentTaskId: 4, title: "Formular im Sekretariat abgeben", rationale: "Danach kann es eingereicht werden.", accepted: true },
+      ],
+    };
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    const conversionCard = screen.getByText("In ein Projekt umwandeln").closest("article");
+    expect(conversionCard).toHaveTextContent("Kita-Formular → Kita-Unterlagen zusammenstellen");
+    expect(conversionCard).toHaveTextContent("Wird Backlog-Projekt.");
+    expect(screen.getAllByText("Formular bei Sarah abholen")).toHaveLength(1);
+  });
+
+  it("flags and blocks incompatible selected conversion edits before saving or applying", async () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Kita-Formular", status: "captured", kind: "action", children: [] });
+    current.refinement!.proposal!.changes = [
+      { kind: "convert_task_to_project", targetId: 4, rationale: "Mehrere Schritte koordinieren.", accepted: true },
+      { kind: "update_task", targetId: 4, title: "Kita-Abgabe", scheduledDate: "2026-11-01", rationale: "Die Arbeit ist geplant.", accepted: true },
+    ];
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Bei einer Umwandlung in ein Projekt dürfen Titel und Notizen mitgeändert werden");
+    expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    expect(mockedApi.updateWorkRefinement).not.toHaveBeenCalled();
+    expect(mockedApi.applyWorkRefinement).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getAllByRole("checkbox")[1]!);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeEnabled();
+  });
+
+  it("surfaces the reported HTTP 400 envelope, keeps the accepted draft, and allows a successful retry", async () => {
+    const current = record();
+    current.text = JSON.stringify({ id: 4, title: "Kita-Formular", status: "captured", kind: "action", children: [] });
+    current.refinement!.proposal!.changes = [
+      { kind: "convert_task_to_project", targetId: 4, rationale: "Mehrere Schritte koordinieren.", accepted: true },
+      { kind: "update_task", targetId: 4, title: "Kita-Unterlagen zusammenstellen", notes: "Formular liegt bei Sarah.", rationale: "Das Ergebnis wird klarer.", accepted: true },
+      { kind: "create_child", parentTaskId: 4, title: "Formular abholen", rationale: "Zuerst das Formular beschaffen.", accepted: true },
+    ];
+    const failedResponse = {
+      ok: false, status: 400, statusText: "Bad Request",
+      json: async () => ({ error: { code: "intake_draft_invalid", message: "A role conversion cannot be combined with an edit to the same item." } }),
+    } as Response;
+    vi.stubGlobal("fetch", vi.fn(async () => failedResponse));
+    const reportedError = await request("/intake/job/refinement/apply", { method: "POST", body: "{}" }).catch((cause) => cause);
+    expect(reportedError).toMatchObject({ status: 400, code: "intake_draft_invalid", message: "A role conversion cannot be combined with an edit to the same item." });
+    mockedApi.updateWorkRefinement.mockResolvedValue({ ...current, revision: 3 } as IntakeRecord);
+    mockedApi.applyWorkRefinement.mockRejectedValueOnce(reportedError)
+      .mockResolvedValueOnce({ ...current, status: "applied", revision: 4 } as IntakeRecord);
+    const onChange = vi.fn();
+    renderWithProviders(<WorkRefinementReview record={current} onChange={onChange} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Bei einer Umwandlung in ein Projekt dürfen Titel und Notizen mitgeändert werden");
+    expect(alert).toHaveFocus();
+    expect(screen.getAllByRole("checkbox").every((checkbox) => (checkbox as HTMLInputElement).checked)).toBe(true);
+    expect(screen.getByText("Formular abholen")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ status: "applied" })));
+    expect(mockedApi.applyWorkRefinement).toHaveBeenCalledTimes(2);
+  });
+
+  it("announces stale apply failures in the foreground and allows retry", async () => {
+    const current = record();
+    const onChange = vi.fn();
+    mockedApi.updateWorkRefinement.mockImplementation(async (_id, body) => ({
+      ...current, revision: 3, refinement: { ...current.refinement!, proposal: body.proposal },
+    } as IntakeRecord));
+    mockedApi.applyWorkRefinement.mockRejectedValueOnce(new ApiError(409, "The proposal changed before apply.", "stale_write_conflict"))
+      .mockResolvedValueOnce({ ...current, status: "applied", revision: 4 } as IntakeRecord);
+    renderWithProviders(<WorkRefinementReview record={current} onChange={onChange} />);
+
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Dieser Eintrag wurde auf einem anderen Gerät geändert");
+    expect(alert).toHaveFocus();
+    expect(screen.getByRole("checkbox")).toBeChecked();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ status: "applied" })));
   });
 
   it("shows proposed dates and reminders together in household-local time", () => {
@@ -571,6 +664,7 @@ describe("WorkRefinementReview", () => {
     await userEvent.click(screen.getByRole("checkbox"));
     await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
     const nextAction = await screen.findByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?");
+    expect(document.activeElement).toHaveAttribute("tabindex", "-1");
     await userEvent.type(nextAction, "Montage-Termin abstimmen");
     await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
     await waitFor(() => expect(mockedApi.applyWorkRefinement).toHaveBeenCalledTimes(2));
