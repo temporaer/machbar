@@ -73,6 +73,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const [operation, setOperation] = useState<"save" | "apply" | "regenerate" | "discard" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revisitDrafts, setRevisitDrafts] = useState<Record<number, { date: string; time: string }>>({});
+  const [pendingReminderEditors, setPendingReminderEditors] = useState<Record<number, boolean>>({});
   const [editorResetGeneration, setEditorResetGeneration] = useState(0);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const incomingProposalSignature = semanticSignature(serverProposal);
@@ -126,6 +127,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
       latestObservedRevisionRef.current = record.revision;
       setDraft(serverProposal, false);
       setRevisitDrafts({});
+      setPendingReminderEditors({});
       setEditorResetGeneration((generation) => generation + 1);
       setConflict(false);
       setAnswer("");
@@ -139,6 +141,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
       serverBaselineRef.current = incomingBaseline;
       setDraft(serverProposal, false);
       setRevisitDrafts({});
+      setPendingReminderEditors({});
       setEditorResetGeneration((generation) => generation + 1);
       setConflict(false);
       return;
@@ -153,7 +156,9 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     }
 
     const currentDraftSignature = semanticSignature(proposalDraftRef.current);
-    const draftIsDirty = currentDraftSignature !== previous.signature;
+    const draftIsDirty = currentDraftSignature !== previous.signature ||
+      Object.keys(revisitDrafts).length > 0 ||
+      Object.values(pendingReminderEditors).some(Boolean);
     serverBaselineRef.current = incomingBaseline;
 
     if (!draftIsDirty) {
@@ -180,6 +185,8 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     incomingProposalSignature,
     record.id,
     record.revision,
+    revisitDrafts,
+    pendingReminderEditors,
     setDraft,
   ]);
 
@@ -421,6 +428,9 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
               dueDate={dueDate}
               householdTimezoneAbsoluteLabels
               disabled={editorLocked}
+              onPendingChange={(pending) => setPendingReminderEditors((current) => current[index] === pending
+                ? current
+                : { ...current, [index]: pending })}
               onChange={(next) => update(index, { reminders: next })}
             /></div>
           </section>;

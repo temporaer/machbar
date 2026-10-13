@@ -752,11 +752,9 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     assert dependency["properties"]["dependsOnTaskId"]["type"] == "integer"
     update_task = variants[0]
     reminder_array = next(option for option in update_task["properties"]["reminders"]["anyOf"] if option["type"] == "array")
-    reminder_variants = reminder_array["items"]["anyOf"]
-    absolute_reminder = next(variant for variant in reminder_variants if variant["properties"]["kind"]["enum"] == ["absolute"])
-    relative_reminder = next(variant for variant in reminder_variants if variant["properties"]["kind"]["enum"] == ["deadline_relative"])
-    assert "at" in absolute_reminder["required"]
-    assert {"daysBefore", "time", "timezone"}.issubset(relative_reminder["required"])
+    reminder_item = reminder_array["items"]
+    assert reminder_item["properties"]["kind"]["enum"] == ["absolute", "deadline_relative"]
+    assert set(reminder_item["properties"]) == {"kind", "at", "daysBefore", "time", "timezone"}
 
     provider_shape = {
         "intent": "improve",
@@ -852,7 +850,12 @@ def test_work_refinement_adapter_treats_null_reminder_array_as_provider_placehol
     assert "reminders" not in normalized["changes"][0]
 
 
-@pytest.mark.parametrize("reminders", [[{"kind": "absolute", "at": None}], [{"kind": "unknown", "at": "2026-10-13T07:00:00+02:00"}]])
+@pytest.mark.parametrize("reminders", [
+    [{"kind": "absolute", "at": None}],
+    [{"kind": "absolute", "at": "2026-10-13T07:00:00+02:00", "time": "08:00"}],
+    [{"kind": "deadline_relative", "daysBefore": 1, "time": "08:00"}],
+    [{"kind": "unknown", "at": "2026-10-13T07:00:00+02:00"}],
+])
 def test_work_refinement_adapter_rejects_malformed_planning_reminders(reminders):
     malformed = {
         "intent": "improve", "summary": "Bad reminder", "disposition": "changes", "question": None,
