@@ -467,6 +467,12 @@ export function TaskDetailSheet() {
       headerActions={
         task ? (
           <>
+            <IconActionButton
+              kind="sparkles"
+              label={strings.workRefinement}
+              disabled={taskMutationPending || savingTextFields || classificationBusy || deleting}
+              onClick={() => dispatch({ type: "task.refine", taskId: task.id })}
+            />
             <NativeShareButton
               title={task.title}
               text={serializeTaskForShare(task, locale)}

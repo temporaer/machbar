@@ -429,17 +429,21 @@ export function ProjectDetailPage() {
                     </div>
                   </div>
                 ) : (
-                  <h1>
-                    {project.title}
-                    <IconActionButton
-                      kind="edit"
-                      label={strings.edit}
-                      disabled={projectMutationPending}
-                      onClick={() => setTitleEditing(true)}
-                    />
-                  </h1>
+                  <h1>{project.title}</h1>
                 )}
                 <div className="row project-page-actions">
+                  <IconActionButton
+                    kind="edit"
+                    label={strings.edit}
+                    disabled={projectMutationPending || titleEditing}
+                    onClick={() => setTitleEditing(true)}
+                  />
+                  <IconActionButton
+                    kind="sparkles"
+                    label={strings.workRefinement}
+                    disabled={projectMutationPending || projectWorkflowOpen}
+                    onClick={() => dispatch({ type: "story.refine", story: project })}
+                  />
                   <NativeShareButton
                     title={project.title}
                     text={serializeProjectForShare(project, locale)}
