@@ -31,7 +31,9 @@ describe("intake AI instructions", () => {
       refinement: { targetType: "project", intent: "structure", context: "{}" },
     });
     expect(prompt).toContain("only when both tasks already exist");
-    expect(prompt).toContain("Never reference a newly proposed create_child");
+    expect(prompt).toContain("parentProposalKey");
+    expect(prompt).toContain("resolve_wait");
+    expect(prompt).toContain("Machbar must show the affected open descendants");
     expect(prompt).toContain("position only there");
     expect(prompt).toContain("update_project_outcome for acceptance criteria with outcome");
     expect(prompt).toContain("convert_task_to_project only for the role change");
@@ -45,7 +47,7 @@ describe("intake AI instructions", () => {
         previousProposal: '{"summary":"Earlier idea","changes":[{"title":"First suggestion","accepted":false}]}',
         feedback: "Keep the first suggestion but replace the third",
         validationFeedback: [{ path: ["changes", 0], code: "schema_invalid", message: "Use a valid target." }],
-        validationMessage: "A captured task needs an accepted project conversion before adding children.",
+        validationMessage: "A captured task can receive a child through the canonical task-with-steps transition.",
       },
     });
     expect(instructions).toContain("complete replacement proposal, never a patch");
@@ -54,7 +56,8 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("First suggestion");
     expect(instructions).toContain("Keep the first suggestion but replace the third");
     expect(instructions).toContain("changes[0] | schema_invalid | Use a valid target.");
-    expect(instructions).toContain("A captured task needs an accepted project conversion");
+    expect(instructions).toContain("A captured task can receive a child through the canonical task-with-steps transition");
+    expect(instructions).toContain("A captured task may receive a child through ordinary task structure");
   });
   it("shares quality guidance and adds bounded editing semantics for task breakdown", () => {
     const input = { today: "2026-10-10", memberNames: ["Alex"], hasText: true, attachmentCount: 0,
@@ -68,6 +71,9 @@ describe("intake AI instructions", () => {
       expect(prompt).toContain("no web research capability");
       expect(prompt).toContain("Prefer 20-minute steps");
     }
+    expect(breakdown).toContain("A captured task can keep root kind action when adding child steps");
+    expect(breakdown).toContain("keeps its existing commitments on the preserved action step");
+    expect(breakdown).not.toContain("Task-only waits, dependencies, recurrence, and reminders can block conversion");
     expect(breakdown).toContain('key "existing-task"');
     expect(breakdown).toContain("must not be emitted as new items");
     expect(breakdown).toContain("Make this a project");
@@ -161,6 +167,20 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("explicit user instructions, and domain rules take precedence");
     expect(instructions).toContain("Clarify who hands over the form.");
     expect(instructions).toContain("Keep the title suggestion and adjust the rest.");
+  });
+
+  it("guides refinement planning fields with household-local time and presence semantics", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-10-12", timezone: "Europe/Berlin", currentLocalDateTime: "2026-10-12T12:00:00",
+      memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: { targetType: "project", intent: "structure", context: "{}", today: "2026-10-12", timezone: "Europe/Berlin", currentLocalDateTime: "2026-10-12T12:00:00" },
+    });
+    expect(instructions).toContain("Today is 2026-10-12 in Europe/Berlin");
+    expect(instructions).toContain("scheduledDate only for an explicit intended work date");
+    expect(instructions).toContain("absolute reminders require an ISO datetime with the correct timezone offset");
+    expect(instructions).toContain("set the corresponding clearScheduledDate, clearDueDate, or clearRevisitAt flag to true");
+    expect(instructions).toContain("An empty reminders array means explicitly clear reminders");
+    expect(instructions).toContain("Omit fields that should remain unchanged");
   });
 
   it("omits the household context section from refinement when all configured fields are empty", () => {

@@ -29,6 +29,7 @@ import { deletePendingTaskReminderEvents } from "../notifications/outbox.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { assertReferenceCapableInput } from "./taskKindGuard.js";
 import { assertActionTask } from "./taskKindGuard.js";
+import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import { insertTaskRow, nextTaskPosition, storedTaskStatus } from "./taskRowInsert.js";
 import {
@@ -403,7 +404,7 @@ function insertTask(
       ? "captured"
       : normalizeTaskStatus(
           input.status,
-          input.needsClarification,
+          input.status === undefined ? input.needsClarification : undefined,
           projectId === null && parentTaskId === null ? "captured" : "actionable",
         );
   const executionCommitment = hasExecutionCommitment({
@@ -453,6 +454,9 @@ function insertTask(
     title: input.title,
     notes: input.notes,
     status,
+    needsClarification: kind !== "reference" && status === "captured"
+      ? true
+      : input.needsClarification ?? false,
     scope,
     ownerMemberId: input.ownerMemberId,
     ownerInheritanceMode: input.ownerInheritanceMode,
@@ -852,6 +856,8 @@ export interface UpdateTaskInput {
   notes?: string;
   status?: TaskStatus;
   needsClarification?: boolean;
+  clarificationRevisitDate?: string | null;
+  discussionRequested?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: InheritanceMode;
   contextInheritanceMode?: InheritanceMode;
@@ -884,6 +890,7 @@ export function updateTask(
   id: number,
   input: UpdateTaskInput,
   context?: MutationContext,
+  options: { activateCommitment?: boolean } = {},
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -932,18 +939,11 @@ export function updateTask(
       patch.notes = input.notes;
       changedFields.push("notes");
     }
-    let nextStatus =
-      input.status !== undefined
-        ? normalizeTaskStatus(
-            input.status,
-            input.needsClarification,
-            "actionable",
-          )
-        : input.needsClarification === true
-          ? "captured"
-          : input.needsClarification === false && currentTask.status === "captured"
-            ? "actionable"
-            : undefined;
+    let nextStatus = input.status !== undefined
+      ? normalizeTaskStatus(input.status, undefined, "actionable")
+      : input.needsClarification === false && currentTask.status === "captured"
+        ? "actionable"
+        : undefined;
     const nextRepeatAfterDays =
       input.repeatAfterDays !== undefined
         ? input.repeatAfterDays
@@ -1124,13 +1124,23 @@ export function updateTask(
     }
     const statusChanged =
       nextStatus !== undefined && nextStatus !== currentTask.status;
+    if (statusChanged && nextStatus === "done") {
+      assertAcceptanceCriteriaChecked(txDb, id);
+    }
     const removingExternalWait =
       currentExternalWait !== undefined &&
       (input.externalWait === null ||
         (statusChanged && nextStatus !== "actionable"));
     if (statusChanged && nextStatus !== undefined && !recurringCompletion) {
       patch.status = storedTaskStatus(nextStatus);
-      patch.needsClarification = nextStatus === "captured";
+      // Lifecycle and the clarification request are independent. Entering
+      // capture requests clarification; other lifecycle transitions preserve
+      // an existing request unless the caller explicitly resolves it.
+      if (nextStatus === "captured") patch.needsClarification = true;
+      else if (
+        currentTask.status === "captured" &&
+        input.needsClarification === undefined
+      ) patch.needsClarification = false;
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
       patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;
       if (nextStatus === "done" || nextStatus === "cancelled") {
@@ -1140,6 +1150,61 @@ export function updateTask(
       if (removingExternalWait) {
         changedFields.push("externalWait");
       }
+    }
+    if (
+      input.needsClarification !== undefined &&
+      input.needsClarification !== currentTask.needsClarification
+    ) {
+      patch.needsClarification = nextStatus === "captured"
+        ? true
+        : input.needsClarification;
+      changedFields.push("needsClarification");
+    }
+    const nextNeedsClarification = nextStatus === "captured"
+      ? true
+      : input.needsClarification ?? (
+          currentTask.status === "captured" && nextStatus === "actionable"
+            ? false
+            : currentTask.needsClarification
+        );
+    const clearsClarificationDeferral =
+      input.needsClarification === true ||
+      input.needsClarification === false ||
+      (currentTask.status === "captured" && nextStatus === "actionable" && input.needsClarification === undefined);
+    const nextClarificationRevisitDate = input.clarificationRevisitDate !== undefined
+      ? input.clarificationRevisitDate
+      : clearsClarificationDeferral
+        ? null
+        : currentTask.clarificationRevisitDate;
+    // A recurring completion records the current occurrence, then leaves the
+    // task open for its next scheduled occurrence. Its clarification state
+    // therefore remains valid even though the requested transition is `done`.
+    const resultingStatus = recurringCompletion
+      ? "actionable"
+      : nextStatus ?? currentTask.status;
+    if (
+      nextClarificationRevisitDate !== null &&
+      (!nextNeedsClarification ||
+        ((resultingStatus === "done" || resultingStatus === "cancelled") &&
+          input.clarificationRevisitDate !== undefined &&
+          input.clarificationRevisitDate !== null))
+    ) {
+      throw AppError.conflict(
+        "clarification_revisit_invalid",
+        "Only work marked for clarification can be deferred, and terminal work cannot receive a new clarification revisit date.",
+        { taskId: id },
+      );
+    }
+    if (nextClarificationRevisitDate !== currentTask.clarificationRevisitDate) {
+      patch.clarificationRevisitDate = nextClarificationRevisitDate;
+      changedFields.push("clarificationRevisitDate");
+    }
+    if (
+      input.discussionRequested !== undefined &&
+      input.discussionRequested !== currentTask.discussionRequested
+    ) {
+      patch.discussionRequested = input.discussionRequested;
+      changedFields.push("discussionRequested");
     }
     if (
       input.ownerMemberId !== undefined &&
@@ -1271,7 +1336,6 @@ export function updateTask(
         nextRepeatAfterDays!,
       );
       patch.status = "active";
-      patch.needsClarification = false;
       patch.completedAt = null;
       patch.cancelledAt = null;
       patch.scheduledDate = followingScheduledDate;
@@ -1762,6 +1826,7 @@ export function updateTask(
       });
     }
     if (
+      options.activateCommitment !== false &&
       updated.projectId !== null &&
       updated.status !== "done" &&
       updated.status !== "cancelled" &&

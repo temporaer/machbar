@@ -16,9 +16,10 @@ import {
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { getTaskOrThrow, nextPositionForGroup } from "./taskCrud.js";
-import { insertTaskRow } from "./taskRowInsert.js";
+import { insertTaskRow, storedTaskStatus } from "./taskRowInsert.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import { hasExecutionCommitment } from "./commitmentTransition.js";
+import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
 import {
   MutationContext,
   actor,
@@ -478,26 +479,59 @@ export function convertStoryToTask(
       project.revision,
       input.expectedRevision,
     );
-    const hasChild = repoGetDescendantIds(txDb, projectId).length > 0;
-    if (hasChild) {
+    if (project.parentId !== null) {
       throw AppError.conflict(
         "role_conversion_invalid",
-        "A story with tasks cannot be converted back to a single task.",
-        { projectId, reason: "has_children" },
+        "A nested project cannot be converted to a standalone task.",
+        { projectId, reason: "nested_project" },
       );
     }
-    const hasAcceptanceCriterion = tx
-      .select({ id: schema.workItemAcceptanceCriteria.id })
-      .from(schema.workItemAcceptanceCriteria)
-      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
-      .get();
-    if (hasAcceptanceCriterion) {
+    const descendants = repoGetDescendantIds(txDb, projectId);
+    const nestedProject = descendants.length > 0
+      ? txDb.select({ id: schema.workItems.id })
+          .from(schema.workItems)
+          .where(and(inArray(schema.workItems.id, descendants), eq(schema.workItems.role, "story")))
+          .get()
+      : undefined;
+    if (nestedProject) {
       throw AppError.conflict(
         "role_conversion_invalid",
-        "A story with acceptance criteria cannot be converted back to a single task.",
-        { projectId, reason: "has_acceptance_criteria" },
+        "A project containing a nested project cannot be converted into a task.",
+        { projectId, reason: "nested_projects" },
       );
     }
+    const sourceRow = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, projectId)).get()!;
+    const externalWait = txDb.select().from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, projectId)).get();
+    if (project.status === "archived") {
+      throw AppError.conflict(
+        "role_conversion_invalid",
+        "Restore an archived project before converting it into a task.",
+        { projectId, reason: "archived_status_requires_restore" },
+      );
+    }
+    if (externalWait && sourceRow.repeatAfterDays !== null) {
+      throw AppError.conflict(
+        "role_conversion_invalid",
+        "Resolve the external wait or recurrence before converting this project.",
+        { projectId, reason: "incompatible_wait_and_recurrence" },
+      );
+    }
+    if (sourceRow.repeatAfterDays !== null && descendants.length > 0) {
+      throw AppError.conflict(
+        "role_conversion_invalid",
+        "A recurring project cannot be converted while it has subtasks.",
+        { projectId, reason: "recurrence_requires_leaf_task" },
+      );
+    }
+    if (project.status === "completed" && sourceRow.repeatAfterDays !== null) {
+      throw AppError.conflict(
+        "role_conversion_invalid",
+        "A completed project cannot become a completed recurrence occurrence.",
+        { projectId, reason: "completed_recurrence_mapping_unsupported" },
+      );
+    }
+    if (project.status === "completed") assertAcceptanceCriteriaChecked(txDb, projectId, "project");
     const title = input.title?.trim() ?? project.title;
     if (title === "") {
       throw AppError.badRequest(
@@ -505,13 +539,70 @@ export function convertStoryToTask(
         "The task title must not be empty.",
       );
     }
-    const status: TaskStatus =
+    const mappedStatus: TaskStatus =
       project.status === "active"
         ? "actionable"
         : project.status === "completed"
           ? "done"
           : "someday";
+    const executionCommitment = hasExecutionCommitment({
+      kind: "action",
+      dueDate: project.dueDate,
+      scheduledDate: project.scheduledDate,
+      revisitAt: project.revisitAt,
+      reminders: txDb.select({ id: schema.taskReminders.id })
+        .from(schema.taskReminders)
+        .where(eq(schema.taskReminders.taskId, projectId))
+        .all(),
+    }) || sourceRow.repeatAfterDays !== null;
+    const status = project.status === "backlog" && executionCommitment
+      ? "actionable"
+      : mappedStatus;
     const position = nextPositionForGroup(txDb, null, null);
+
+    // A backlog project parks its ordinary open outline. When its root becomes
+    // a Someday task, keep that effective state for unplanned descendants too;
+    // concrete dates, reminders, recurrence and external waits remain active.
+    if (project.status === "backlog" && status === "someday" && descendants.length > 0) {
+      const descendantRows = txDb.select().from(schema.workItems)
+        .where(and(inArray(schema.workItems.id, descendants), eq(schema.workItems.role, "task")))
+        .all();
+      const remindersByTask = new Map<number, typeof schema.taskReminders.$inferSelect[]>();
+      for (const reminder of txDb.select().from(schema.taskReminders)
+        .where(inArray(schema.taskReminders.taskId, descendants)).all()) {
+        const rows = remindersByTask.get(reminder.taskId) ?? [];
+        rows.push(reminder);
+        remindersByTask.set(reminder.taskId, rows);
+      }
+      const externalWaitTaskIds = new Set(txDb.select({ taskId: schema.taskExternalWaits.taskId })
+        .from(schema.taskExternalWaits)
+        .where(inArray(schema.taskExternalWaits.taskId, descendants))
+        .all()
+        .map(({ taskId }) => taskId));
+      for (const child of descendantRows) {
+        if (child.status !== storedTaskStatus("actionable") || child.taskKind !== "action") continue;
+        const keepsCommitment = hasExecutionCommitment({
+          kind: "action",
+          dueDate: child.dueDate,
+          scheduledDate: child.scheduledDate,
+          revisitAt: child.revisitAt,
+          reminders: remindersByTask.get(child.id) ?? [],
+        }) || child.repeatAfterDays !== null || externalWaitTaskIds.has(child.id) || child.additionalNextAction;
+        if (keepsCommitment) continue;
+        txDb.update(schema.workItems)
+          .set({ status: storedTaskStatus("someday"), revision: sql`${schema.workItems.revision} + 1`, updatedAt: nowIso() })
+          .where(eq(schema.workItems.id, child.id))
+          .run();
+        recordActivity(txDb, {
+          actorMemberId: actor(context),
+          kind: "task_status_changed",
+          entityType: "task",
+          entityTitle: child.title,
+          taskId: child.id,
+          metadata: { changedFields: ["status"], before: { status: "actionable" }, after: { status: "someday" } },
+        });
+      }
+    }
 
     tx.update(schema.workItems)
       .set({
@@ -525,27 +616,16 @@ export function convertStoryToTask(
         needsClarification: false,
         ownerMemberId: project.ownerMemberId,
         ownerInheritanceMode: project.ownerMemberId !== null ? "explicit" : "none",
-        scheduledDate: null,
-        revisitAt: null,
-        notBeforeAt: null,
-        notBeforeDate: null,
+        scheduledDate: project.scheduledDate,
+        revisitAt: project.revisitAt,
         position,
-        completedAt: status === "done" ? project.updatedAt : null,
+        completedAt: status === "done" ? sourceRow.completedAt : null,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
       .where(eq(schema.workItems.id, projectId))
       .run();
 
-    tx.update(schema.activityEvents)
-      .set({ entityType: "task" })
-      .where(
-        and(
-          eq(schema.activityEvents.entityType, "project"),
-          eq(schema.activityEvents.entityId, projectId),
-        ),
-      )
-      .run();
     tx.update(schema.notificationEvents)
       .set({ entityType: "task" })
       .where(

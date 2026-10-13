@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import type { Task } from "@machbar/shared";
 import type { ProjectWithActions } from "./api";
 import type { WorkItemCommand } from "./commands";
 import { lifecyclePrerequisite } from "./projectWorkflow";
@@ -28,13 +29,13 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.open":
     case "task.plan":
     case "task.availability":
+    case "task.deferClarification":
     case "task.shape":
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
     case "task.startToday":
     case "task.endWaiting":
-    case "task.breakdown":
     case "task.refine":
     case "task.split":
     case "task.assignOwner":
@@ -50,6 +51,8 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
     case "task.makeAction":
+    case "task.setDiscussion":
+    case "task.setClarification":
       return "task" in command ? command.task.id : command.taskId;
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -73,6 +76,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
+    case "story.setDiscussion":
       return command.story.id;
     case "outline.collapse":
     case "outline.expand":
@@ -91,13 +95,13 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.open":
     case "task.plan":
     case "task.availability":
+    case "task.deferClarification":
     case "task.shape":
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
     case "task.startToday":
     case "task.endWaiting":
-    case "task.breakdown":
     case "task.refine":
     case "task.split":
     case "task.assignOwner":
@@ -113,6 +117,8 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
     case "task.makeAction":
+    case "task.setDiscussion":
+    case "task.setClarification":
       return "task";
     case "story.activate":
     case "story.deferProject":
@@ -130,6 +136,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
+    case "story.setDiscussion":
       return "story";
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -187,11 +194,8 @@ export function useWorkItemCommands() {
       ownerMemberId?: number | null,
     ): boolean => {
       switch (lifecyclePrerequisite(story, action, ownerMemberId)) {
-        case "openCriteria":
-          projectWorkflow.open("completeWithCriteria", story.id);
-          return true;
-        case "openTasks":
-          projectWorkflow.open("completeWithOpenTasks", story.id);
+        case "completionDecisions":
+          projectWorkflow.open("completeWithDecisions", story.id);
           return true;
         case "progressPath":
           projectWorkflow.open(
@@ -225,6 +229,18 @@ export function useWorkItemCommands() {
     [projectActions, projectWorkflow, resolveStoryPrerequisite],
   );
 
+  const requestTaskCompletion = useCallback((task: Task) => {
+    if (task.status === "done" || task.status === "cancelled") {
+      taskActions.requestToggle(task);
+      return;
+    }
+    if (task.acceptanceCriteria.some((criterion) => !criterion.checked)) {
+      taskWorkflow.open("completeWithCriteria", task.id);
+      return;
+    }
+    taskActions.requestToggle(task);
+  }, [taskActions, taskWorkflow]);
+
   const dispatch = useCallback(
     (command: WorkItemCommand) => {
       const workItemId = commandWorkItemId(command);
@@ -245,6 +261,9 @@ export function useWorkItemCommands() {
           return;
         case "task.availability":
           taskWorkflow.open("availability", command.taskId, "availability");
+          return;
+        case "task.deferClarification":
+          taskWorkflow.open("deferClarification", command.taskId);
           return;
         case "task.shape":
           taskWorkflow.open("shape", command.taskId);
@@ -274,9 +293,6 @@ export function useWorkItemCommands() {
         }
         case "task.endWaiting":
           void taskActions.resolveExternalWait(command.task);
-          return;
-        case "task.breakdown":
-          taskWorkflow.open("breakdown", command.taskId);
           return;
         case "task.refine":
           taskWorkflow.open("refinement", command.taskId);
@@ -324,7 +340,7 @@ export function useWorkItemCommands() {
             return;
           }
           if (next === "done") {
-            taskActions.requestToggle(command.task);
+            requestTaskCompletion(command.task);
             return;
           }
           if (next === "cancelled") {
@@ -339,7 +355,7 @@ export function useWorkItemCommands() {
           return;
         }
         case "task.toggleDone":
-          taskActions.requestToggle(command.task);
+          requestTaskCompletion(command.task);
           return;
         case "task.toggleAdditionalNextAction": {
           const nextValue = !command.task.additionalNextAction;
@@ -353,11 +369,31 @@ export function useWorkItemCommands() {
         case "task.primaryAction":
           // The configured primary swipe action (someday/cancel/complete);
           // `requestPrimarySwipe` already resolves reopen/clarify first.
-          taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
+          if (
+            primarySwipeAction === "complete" &&
+            command.task.status !== "captured" &&
+            command.task.status !== "done" &&
+            command.task.status !== "cancelled"
+          ) requestTaskCompletion(command.task);
+          else taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
           return;
         case "task.makeAction":
           void taskActions.makeAction(command.task);
           return;
+        case "task.setDiscussion":
+          return taskActions.update(
+            command.task,
+            { discussionRequested: command.requested },
+            { discussionRequested: command.requested },
+            true,
+          );
+        case "task.setClarification":
+          return taskActions.update(
+            command.task,
+            { needsClarification: command.requested },
+            { needsClarification: command.requested, clarificationRevisitDate: null },
+            true,
+          );
         case "workItem.schedule":
           return taskActions.update(
             command.item.task,
@@ -423,7 +459,7 @@ export function useWorkItemCommands() {
           continueStoryLifecycle(command.story, "activate", command.ownerMemberId);
           return;
         case "story.deferProject":
-          if (command.story.status === "active") {
+          if (command.story.status === "active" || command.story.status === "archived") {
             projectWorkflow.open("defer", command.story.id);
           } else {
             void projectActions.runAction(command.story, "return_to_backlog");
@@ -473,6 +509,13 @@ export function useWorkItemCommands() {
         case "story.lifecycle":
           scope?.setOpenLifecycle(command.story.id);
           return;
+        case "story.setDiscussion":
+          return projectActions.update(
+            command.story,
+            { discussionRequested: command.requested },
+            { discussionRequested: command.requested },
+            true,
+          );
         case "outline.collapse":
           scope?.setCollapsed(command.workItemId, true);
           return;
@@ -516,6 +559,7 @@ export function useWorkItemCommands() {
       scope,
       resolveStoryPrerequisite,
       continueStoryLifecycle,
+      requestTaskCompletion,
     ],
   );
 

@@ -52,11 +52,7 @@ export function makeTag(overrides: Partial<Tag> = {}): Tag {
 
 export function makeTask(overrides: Partial<Task> = {}): Task {
   const id = overrides.id ?? nextId();
-  const status =
-    overrides.needsClarification === true &&
-    (overrides.status === undefined || overrides.status === "actionable")
-      ? "captured"
-      : overrides.status ?? "actionable";
+  const status = overrides.status ?? (overrides.needsClarification === true ? "captured" : "actionable");
   return {
     id,
     revision: 1,
@@ -104,6 +100,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     executable: status === "actionable",
     nextBlockerAttentionDate: null,
     blockers: [],
+    acceptanceCriteria: [],
     dependencies: [],
     incomingDependencies: [],
     children: [],
@@ -112,7 +109,9 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     projectDueDate: null,
     ...overrides,
     status,
-    needsClarification: status === "captured",
+    needsClarification: overrides.needsClarification ?? status === "captured",
+    clarificationRevisitDate: overrides.clarificationRevisitDate ?? null,
+    discussionRequested: overrides.discussionRequested ?? false,
   };
 }
 
@@ -127,6 +126,7 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
     title: "Beispielprojekt",
     notes: "",
     status,
+    discussionRequested: false,
     archivedAt: status === "archived" ? new Date("2026-01-01T09:00:00Z").toISOString() : null,
     ownerMemberId: null,
     scope: "household",
@@ -170,7 +170,8 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
 export function makeCriterion(overrides: Partial<AcceptanceCriterion> = {}): AcceptanceCriterion {
   return {
     id: nextId(),
-    projectId: 0,
+    workItemId: overrides.workItemId ?? overrides.projectId ?? 0,
+    ...(overrides.projectId !== undefined ? { projectId: overrides.projectId } : {}),
     text: "Beispielkriterium",
     checked: false,
     position: 0,

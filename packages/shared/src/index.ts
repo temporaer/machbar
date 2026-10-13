@@ -41,6 +41,10 @@ export const activityEventKinds = [
   "project_acceptance_criterion_updated",
   "project_acceptance_criterion_checked",
   "project_acceptance_criterion_removed",
+  "task_acceptance_criterion_added",
+  "task_acceptance_criterion_updated",
+  "task_acceptance_criterion_checked",
+  "task_acceptance_criterion_removed",
   "work_item_role_converted",
   "task_kind_changed",
 ] as const;
@@ -115,6 +119,7 @@ export type ApiErrorCode =
   | "acceptance_criteria_order_invalid"
   | "acceptance_criterion_not_found"
   | "acceptance_criterion_text_required"
+  | "completion_criteria_invalid"
   | "activity_actor_invalid"
   | "activity_actor_not_found"
   | "activity_cursor_invalid"
@@ -173,8 +178,12 @@ export type ApiErrorCode =
   | "project_driver_required"
   | "project_activation_not_ready"
   | "project_commitment_resolution_required"
+  | "project_commitments_prevent_parking"
+  | "project_completion_resolution_required"
+  | "project_completion_resolution_invalid"
   | "task_reopen_required"
   | "project_completion_criteria_incomplete"
+  | "task_completion_criteria_incomplete"
   | "project_not_found"
   | "project_title_required"
   | "project_transition_invalid"
@@ -210,6 +219,7 @@ export type ApiErrorCode =
   | "task_not_found"
   | "task_schedule_before_available"
   | "task_availability_date_required"
+  | "clarification_revisit_invalid"
   | "task_parent_self"
   | "task_promotion_invalid"
   | "task_step_batch_invalid"
@@ -219,6 +229,7 @@ export type ApiErrorCode =
   | "role_conversion_invalid"
   | "task_title_required"
   | "external_wait_reason_required"
+  | "external_wait_followup_content_required"
   | "external_task_title_required"
   | "waiting_query_invalid"
   | "inbox_query_invalid"
@@ -651,7 +662,9 @@ export interface ContextAvailability {
 
 export interface AcceptanceCriterion {
   id: number;
-  projectId: number;
+  workItemId: number;
+  /** @deprecated Use workItemId; retained for older project-facing clients. */
+  projectId?: number;
   text: string;
   checked: boolean;
   position: number;
@@ -700,6 +713,8 @@ export interface Project {
   title: string;
   notes: string;
   status: ProjectStatus;
+  /** Shared, persistent nomination for a future conversation. */
+  discussionRequested: boolean;
   archivedAt: string | null;
   ownerMemberId: number | null;
   scope: WorkItemScope;
@@ -785,26 +800,6 @@ export type TaskReminder =
       timezone: string;
     };
 
-/**
- * Same shape as `TaskReminder`, but `id` is optional: a reminder being
- * added in this write has no id yet, while a reminder carried over
- * unchanged (or edited) from `Task.reminders` keeps its existing id so
- * the server can diff instead of delete-and-recreate. See `taskCrud.ts`.
- */
-export type TaskReminderInput =
-  | {
-      id?: number;
-      kind: "absolute";
-      at: string;
-    }
-  | {
-      id?: number;
-      kind: "deadline_relative";
-      daysBefore: number;
-      time: string;
-      timezone: string;
-    };
-
 export interface Task {
   /** Legacy upgrade/input compatibility; current API projections omit these. */
   notBeforeAt?: string | null;
@@ -820,6 +815,10 @@ export interface Task {
    * material. See TaskKind. */
   kind: TaskKind;
   needsClarification: boolean;
+  /** Date on which a deferred clarification request re-enters the Inbox. */
+  clarificationRevisitDate: string | null;
+  /** Shared, persistent nomination for a future conversation. */
+  discussionRequested: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   contextInheritanceMode: InheritanceMode;
@@ -860,6 +859,7 @@ export interface Task {
   executable: boolean;
   nextBlockerAttentionDate: string | null;
   blockers: TaskBlockerSummary[];
+  acceptanceCriteria: AcceptanceCriterion[];
   dependencies: Dependency[];
   children: Task[];
   projectTitle?: string | null;
@@ -1089,6 +1089,7 @@ export type WeekWorkItemRole = "task" | "story";
 
 export * from "./intake.js";
 export * from "./workRefinement.js";
+export * from "./taskReminder.js";
 export * from "./cleanupRound.js";
 export * from "./inputNormalization.js";
 export * from "./revisit.js";

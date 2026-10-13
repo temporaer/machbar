@@ -277,6 +277,24 @@ describe("api request() Content-Type handling", () => {
     });
   });
 
+  it("sends revisions for prerequisite add and remove operations", async () => {
+    const addFetch = mockFetchOnce();
+    await api.addDependency(12, 18, 7);
+    expect(addFetch.mock.calls[0]?.[0]).toBe("/api/tasks/12/dependencies");
+    expect(addFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ dependsOnTaskId: 18, expectedRevision: 7 }),
+    });
+
+    const removeFetch = mockFetchOnce();
+    await api.removeDependency(12, 18, 8);
+    expect(removeFetch.mock.calls[0]?.[0]).toBe("/api/tasks/12/dependencies/18");
+    expect(removeFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision: 8 }),
+    });
+  });
+
   it("sends revision-safe task lifecycle commands", async () => {
     const fetchMock = mockFetchOnce();
 
@@ -484,11 +502,11 @@ describe("api project workflow/criteria/refinement contracts", () => {
 
   it("hits the ordered acceptance-criteria endpoints", async () => {
     const fetchMock = mockFetchOnce({ text: async () => JSON.stringify({}) });
-    await api.addCriterion(1, "Kisten gepackt");
-    await api.updateCriterion(1, 9, "Kisten sind gepackt");
-    await api.checkCriterion(1, 9, true);
-    await api.reorderCriteria(1, [9, 8]);
-    await api.removeCriterion(1, 9);
+    await api.addCriterion("project", 1, "Kisten gepackt");
+    await api.updateCriterion("project", 1, 9, "Kisten sind gepackt");
+    await api.checkCriterion("project", 1, 9, true);
+    await api.reorderCriteria("project", 1, [9, 8]);
+    await api.removeCriterion("project", 1, 9);
 
     const calls = fetchMock.mock.calls as [string, RequestInit][];
     expect(calls.map(([url, init]) => [url, init.method])).toEqual([

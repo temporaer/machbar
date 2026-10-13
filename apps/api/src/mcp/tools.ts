@@ -1001,10 +1001,11 @@ export function createMachbarMcpServer({
           .enum(["leave_open", "complete_children", "cancel_children"])
           .optional(),
         completedOn: calendarDate,
+        criteriaToCheck: z.array(z.number().int().positive()).optional(),
       },
       annotations: { destructiveHint: true },
     },
-    async ({ taskId, descendantsPolicy, completedOn, expectedRevision }) => {
+    async ({ taskId, descendantsPolicy, completedOn, expectedRevision, criteriaToCheck }) => {
       scopedTaskOrThrow(taskId);
       completeTask(
         db,
@@ -1013,6 +1014,7 @@ export function createMachbarMcpServer({
         mutationContext,
         completedOn,
         expectedRevision,
+        criteriaToCheck,
       );
        return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
@@ -1310,10 +1312,15 @@ export function createMachbarMcpServer({
         ]),
         expectedRevision,
         ownerMemberId: z.number().int().positive().nullable().optional(),
+        revisitAt: z.string().datetime({ offset: true }).nullable().optional(),
+        withdrawCommitments: z.boolean().optional(),
+        expectedTaskRevisions: z.array(z.object({ taskId: z.number().int().positive(), revision: z.number().int().positive() })).optional(),
+        criteriaToCheck: z.array(z.number().int().positive()).optional(),
+        descendantResolutions: z.array(z.object({ taskId: z.number().int().positive(), action: z.enum(["cancel", "move_to_inbox"]), expectedRevision: z.number().int().positive() })).optional(),
       },
       annotations: { destructiveHint: true },
     },
-    async ({ projectId, action, expectedRevision, ownerMemberId }) => {
+    async ({ projectId, action, expectedRevision, ownerMemberId, revisitAt, withdrawCommitments, expectedTaskRevisions, criteriaToCheck, descendantResolutions }) => {
       scopedProjectOrThrow(projectId);
       if (
         agentScope === "household" &&
@@ -1341,10 +1348,13 @@ export function createMachbarMcpServer({
             projectId,
             mutationContext,
             expectedRevision,
+            revisitAt,
+            withdrawCommitments,
+            expectedTaskRevisions,
           );
           break;
         case "complete":
-          completeProject(db, projectId, mutationContext, expectedRevision);
+          completeProject(db, projectId, mutationContext, expectedRevision, { criteriaToCheck, expectedTaskRevisions, descendantResolutions });
           break;
         case "reopen":
           reopenProject(

@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  isoCalendarDateSchema,
+  isoDateTimeSchema,
+  taskReminderCreateSchema,
+  taskRemindersSchema,
+} from "./taskReminder.js";
 
 export const workRefinementIntentSchema = z.enum(["improve", "next_action", "structure"]);
 export type WorkRefinementIntent = z.infer<typeof workRefinementIntentSchema>;
@@ -13,39 +19,70 @@ const refinementChangeFields = [
   "targetId",
   "taskId",
   "parentTaskId",
+  "proposalKey",
+  "parentProposalKey",
   "projectId",
   "dependsOnTaskId",
   "position",
   "title",
   "notes",
-  "waitingFor",
+  "scheduledDate",
+  "dueDate",
   "revisitAt",
+  "clearScheduledDate",
+  "clearDueDate",
+  "clearRevisitAt",
+  "reminders",
+  "waitingFor",
+  "descendantsPolicy",
   "outcome",
   "criterionId",
   "affectedIds",
 ] as const;
-const optionalNonNullableRefinementChangeFields = new Set(["title", "criterionId"]);
+const optionalNonNullableRefinementChangeFields = new Set(["title", "criterionId", "proposalKey", "parentProposalKey", "descendantsPolicy"]);
+const providerNullPlaceholderFields: Record<string, ReadonlySet<string>> = {
+  update_task: new Set(["scheduledDate", "dueDate", "revisitAt", "reminders"]),
+  create_child: new Set(["scheduledDate", "dueDate", "revisitAt", "reminders"]),
+  update_wait: new Set(["revisitAt"]),
+};
+const explicitDateClearFields: Record<string, Readonly<Record<string, string>>> = {
+  update_task: {
+    scheduledDate: "clearScheduledDate",
+    dueDate: "clearDueDate",
+    revisitAt: "clearRevisitAt",
+  },
+  create_child: {
+    scheduledDate: "clearScheduledDate",
+    dueDate: "clearDueDate",
+    revisitAt: "clearRevisitAt",
+  },
+  update_wait: { revisitAt: "clearRevisitAt" },
+};
 
 const allowedRefinementChangeFields: Record<string, ReadonlySet<string>> = {
-  update_task: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes"]),
+  update_task: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"]),
   update_project: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes"]),
   convert_task_to_project: new Set(["kind", "rationale", "accepted", "targetId"]),
-  create_child: new Set(["kind", "rationale", "accepted", "parentTaskId", "title", "notes"]),
+  create_child: new Set(["kind", "rationale", "accepted", "parentTaskId", "proposalKey", "parentProposalKey", "title", "notes", "scheduledDate", "dueDate", "revisitAt", "clearScheduledDate", "clearDueDate", "clearRevisitAt", "reminders"]),
   move_task: new Set(["kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"]),
   add_dependency: new Set(["kind", "rationale", "accepted", "taskId", "dependsOnTaskId"]),
-  update_wait: new Set(["kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"]),
+  update_wait: new Set(["kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt", "clearRevisitAt"]),
+  resolve_wait: new Set(["kind", "rationale", "accepted", "taskId"]),
+  cancel_task: new Set(["kind", "rationale", "accepted", "targetId", "descendantsPolicy"]),
   update_project_outcome: new Set(["kind", "rationale", "accepted", "projectId", "criterionId", "outcome"]),
   advisory: new Set(["kind", "rationale", "accepted", "affectedIds", "title"]),
 };
 
 export const workRefinementChangeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("update_task"), targetId: z.number().int().positive(), title: title.optional(), notes: note.nullable().optional(), ...changeBase }).strict(),
+  z.object({ kind: z.literal("update_task"), targetId: z.number().int().positive(), title: title.optional(), notes: note.nullable().optional(), scheduledDate: isoCalendarDateSchema.nullable().optional(), dueDate: isoCalendarDateSchema.nullable().optional(), revisitAt: isoDateTimeSchema.nullable().optional(), reminders: taskRemindersSchema.optional(), ...changeBase }).strict(),
   z.object({ kind: z.literal("update_project"), targetId: z.number().int().positive(), title: title.optional(), notes: note.nullable().optional(), ...changeBase }).strict(),
   z.object({ kind: z.literal("convert_task_to_project"), targetId: z.number().int().positive(), ...changeBase }).strict(),
-  z.object({ kind: z.literal("create_child"), parentTaskId: z.number().int().positive(), title, notes: note.nullable().optional(), ...changeBase }).strict(),
+  z.object({ kind: z.literal("create_child"), parentTaskId: z.number().int().positive().optional(), proposalKey: z.string().trim().min(1).max(80).optional(), parentProposalKey: z.string().trim().min(1).max(80).optional(), title, notes: note.nullable().optional(), scheduledDate: isoCalendarDateSchema.nullable().optional(), dueDate: isoCalendarDateSchema.nullable().optional(), revisitAt: isoDateTimeSchema.nullable().optional(), reminders: taskReminderCreateSchema.optional(), ...changeBase }).strict(),
   z.object({ kind: z.literal("move_task"), targetId: z.number().int().positive(), parentTaskId: z.number().int().positive().nullable(), projectId: z.number().int().positive().nullable(), position: z.number().int().min(0), ...changeBase }).strict(),
   z.object({ kind: z.literal("add_dependency"), taskId: z.number().int().positive(), dependsOnTaskId: z.number().int().positive(), ...changeBase }).strict(),
-  z.object({ kind: z.literal("update_wait"), taskId: z.number().int().positive(), waitingFor: z.string().trim().min(1).max(500), revisitAt: z.string().datetime({ offset: true }).nullable().optional(), ...changeBase }).strict(),
+  z.object({ kind: z.literal("update_wait"), taskId: z.number().int().positive(), waitingFor: z.string().trim().min(1).max(500), revisitAt: z.string().datetime({ offset: true }).nullable().optional(), clearRevisitAt: z.boolean().optional(), ...changeBase }).strict(),
+  z.object({ kind: z.literal("resolve_wait"), taskId: z.number().int().positive(), ...changeBase }).strict(),
+  z.object({ kind: z.literal("cancel_task"), targetId: z.number().int().positive(), descendantsPolicy: z.enum(["leave_open", "complete_children", "cancel_children"]).optional(), ...changeBase }).strict(),
   z.object({ kind: z.literal("update_project_outcome"), projectId: z.number().int().positive(), criterionId: z.number().int().positive().optional(), outcome: z.string().trim().min(1).max(4_000), ...changeBase }).strict(),
   z.object({ kind: z.literal("advisory"), affectedIds: z.array(z.number().int().positive()).max(20), title, ...changeBase }).strict(),
 ]);
@@ -58,6 +95,19 @@ export const workRefinementProposalSchema = z.object({
   question: z.string().trim().max(500).nullable(),
   changes: z.array(workRefinementChangeSchema).max(12),
 }).strict().superRefine((proposal, context) => {
+  const proposalKeys = proposal.changes.flatMap((change) => change.kind === "create_child" && change.proposalKey ? [change.proposalKey] : []);
+  if (new Set(proposalKeys).size !== proposalKeys.length) {
+    context.addIssue({ code: "custom", path: ["changes"], message: "Proposal-local child keys must be unique." });
+  }
+  proposal.changes.forEach((change, index) => {
+    if (change.kind !== "create_child") return;
+    if ((change.parentTaskId === undefined) === (change.parentProposalKey === undefined)) {
+      context.addIssue({ code: "custom", path: ["changes", index, "parentTaskId"], message: "A child needs exactly one existing or proposed parent." });
+    }
+    if (change.parentProposalKey !== undefined && change.proposalKey === undefined) {
+      context.addIssue({ code: "custom", path: ["changes", index, "proposalKey"], message: "Nested child proposals need a proposal-local key." });
+    }
+  });
   if (proposal.disposition === "clarification" && !proposal.question) {
     context.addIssue({ code: "custom", path: ["question"], message: "A clarification proposal needs a question." });
   }
@@ -102,13 +152,39 @@ export function normalizeWorkRefinementProposalInput(value: unknown): unknown {
       const kind = change.kind;
       const allowed = typeof kind === "string" ? allowedRefinementChangeFields[kind] : undefined;
       const normalized = { ...change };
+      if (kind === "create_child" && normalized.parentTaskId === null) delete normalized.parentTaskId;
+      const explicitlyCleared = new Set<string>();
+      for (const [field, clearField] of Object.entries(explicitDateClearFields[kind as string] ?? {})) {
+        if (normalized[clearField] === true) {
+          if (normalized[field] !== undefined && normalized[field] !== null) continue;
+          normalized[field] = null;
+          explicitlyCleared.add(field);
+          delete normalized[clearField];
+        } else if (normalized[clearField] === false || normalized[clearField] === null) {
+          delete normalized[clearField];
+        }
+      }
       if (allowed) {
         for (const field of refinementChangeFields) {
           if (normalized[field] !== null) continue;
-          if (!allowed.has(field) || optionalNonNullableRefinementChangeFields.has(field)) {
+          if (explicitlyCleared.has(field)) continue;
+          if (!allowed.has(field) || optionalNonNullableRefinementChangeFields.has(field) || providerNullPlaceholderFields[kind as string]?.has(field)) {
             delete normalized[field];
           }
         }
+      }
+      if (Array.isArray(normalized.reminders)) {
+        normalized.reminders = normalized.reminders.map((rawReminder) => {
+          if (rawReminder === null || typeof rawReminder !== "object" || Array.isArray(rawReminder)) return rawReminder;
+          const reminder = { ...(rawReminder as Record<string, unknown>) };
+          const irrelevant = reminder.kind === "absolute"
+            ? ["daysBefore", "time", "timezone"]
+            : reminder.kind === "deadline_relative"
+              ? ["at"]
+              : [];
+          for (const field of [...irrelevant, "id"]) if (reminder[field] === null) delete reminder[field];
+          return reminder;
+        });
       }
       normalized.accepted = false;
       return normalized;
@@ -121,6 +197,13 @@ export function unacceptedWorkRefinementProposal(value: unknown): WorkRefinement
   const candidate = workRefinementProposalSchema.parse(value);
   return {
     ...candidate,
-    changes: candidate.changes.map((change) => ({ ...change, accepted: false })),
+    changes: candidate.changes.map((change) => {
+      if (change.kind === "cancel_task") {
+        const reviewable = { ...change };
+        delete reviewable.descendantsPolicy;
+        return { ...reviewable, accepted: false };
+      }
+      return { ...change, accepted: false };
+    }),
   } as WorkRefinementProposal;
 }

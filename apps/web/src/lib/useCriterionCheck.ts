@@ -12,7 +12,7 @@ import { localizedErrorMessage } from "./errorMessage";
  * surfaces call the same `api.checkCriterion` write and refresh bus rather
  * than each re-implementing the request/error handling.
  */
-export function useCriterionCheck(projectId: number) {
+export function useCriterionCheck(ownerType: "project" | "task", workItemId: number) {
   const { bump } = useRefresh();
   const strings = useStrings();
   const [pendingId, setPendingId] = useState<number | null>(null);
@@ -26,7 +26,7 @@ export function useCriterionCheck(projectId: number) {
       setPendingId(criterionId);
       setError(null);
       try {
-        await api.checkCriterion(projectId, criterionId, checked);
+        await api.checkCriterion(ownerType, workItemId, criterionId, checked);
         bump();
       } catch (err) {
         setError(localizedErrorMessage(err, strings));
@@ -35,7 +35,7 @@ export function useCriterionCheck(projectId: number) {
         setPendingId(null);
       }
     },
-    [projectId, bump, strings],
+    [ownerType, workItemId, bump, strings],
   );
 
   return { check, pendingId, error };

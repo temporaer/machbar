@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import type { Task } from "@machbar/shared";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskActionsProvider } from "../lib/useTaskActions";
@@ -15,6 +15,7 @@ import {
 } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeMember, makePhysicalContext, makeProject, makeTag, makeTask } from "../test/fixtures";
@@ -42,6 +43,7 @@ vi.mock("../lib/api", () => ({
     resolveExternalWait: vi.fn(),
     transitionTaskStatus: vi.fn(),
     clarifyTask: vi.fn(),
+    deferTaskClarification: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
@@ -52,6 +54,7 @@ vi.mock("../lib/api", () => ({
     uploadPaperlessDocument: vi.fn(),
     searchPaperlessDocuments: vi.fn(),
     makeTaskAction: vi.fn(),
+    startWorkRefinement: vi.fn(),
   },
 }));
 
@@ -87,6 +90,31 @@ function QueueOpenerHarness({ taskIds, children }: { taskIds: number[]; children
       {children}
     </div>
   );
+}
+
+function RefinementHandoffHarness({ taskId }: { taskId: number }) {
+  const detail = useTaskDetail();
+  const workflow = useTaskWorkflow();
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <>
+    <Routes>
+      <Route path="/" element={<>
+        <button onClick={() => detail.openQueue([taskId, taskId + 1])}>Open task detail</button>
+        <button onClick={() => workflow.open("refinement", taskId)}>Launch AI refinement</button>
+      </>} />
+      <Route path="/intake/:id" element={<>
+        <p>Intake foreground {JSON.stringify(location.state)}</p>
+        <button onClick={() => {
+          const origin = (location.state as { refinementOrigin?: { originPath: string; taskDetail?: import("../lib/taskDetailContext").TaskDetailHandoff } } | null)?.refinementOrigin;
+          if (origin?.taskDetail) detail.resumeAfterHandoff(origin.taskDetail);
+          navigate(origin?.originPath ?? "/");
+        }}>Return from intake</button>
+      </>} />
+    </Routes>
+    <TaskDetailSheet />
+    <TaskWorkflowHost />
+  </>;
 }
 
 function renderSheet(taskId: number, focusField?: TaskDetailFocusField) {
@@ -171,6 +199,34 @@ describe("TaskDetailSheet", () => {
       originalFileName: "receipt.pdf",
       mimeType: "application/pdf",
     });
+  });
+
+  it("hands refinement started in task details to the foreground intake route", async () => {
+    const task = makeTask({ id: 73, title: "Kita-Tasche vorbereiten", revision: 6 });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.startWorkRefinement.mockResolvedValue({ id: "refinement-job" } as never);
+    renderWithProviders(<RefinementHandoffHarness taskId={task.id} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open task detail" }));
+    expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
+    const notes = await openNotesEditor();
+    fireEvent.change(notes, { target: { value: "Lokale Notiz bleibt erhalten" } });
+    await userEvent.click(screen.getByRole("button", { name: "Launch AI refinement" }));
+    await userEvent.click(screen.getByRole("button", { name: "Vorschlag vorbereiten" }));
+
+    const intake = await screen.findByText(/Intake foreground/);
+    expect(intake).toHaveTextContent('"targetType":"task"');
+    expect(intake).toHaveTextContent('"targetId":73');
+    expect(intake).toHaveTextContent('"entry":"task_detail"');
+    expect(intake).toHaveTextContent('"taskId":73');
+    expect(intake).toHaveTextContent('"queueTaskIds":[74]');
+    expect(intake).toHaveTextContent('"queueActive":true');
+    expect(screen.queryByRole("dialog", { name: "Details" })).not.toBeInTheDocument();
+    expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("task", 73, { expectedRevision: 6, intent: "improve" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Return from intake" }));
+    expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Lokale Notiz bleibt erhalten")).toBeInTheDocument();
   });
 
   it("shows Calendar export beside Share only for a dated Task", async () => {
@@ -564,7 +620,7 @@ describe("TaskDetailSheet", () => {
     await waitFor(() => expect(screen.getByLabelText("Titel")).toHaveFocus());
   });
 
-  it("focuses dependency search after unresolved dependency removal controls", async () => {
+  it("routes dependency focus to the focused prerequisites editor", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
         id: 42,
@@ -584,13 +640,13 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
 
-    const searchInput = await screen.findByLabelText("Aufgabe suchen …");
+    const searchInput = await screen.findByLabelText("Aufgabe suchen, die zuerst erledigt werden muss");
     const removeButton = screen.getByRole("button", { name: "Entfernen" });
     await waitFor(() => expect(searchInput).toHaveFocus());
     expect(removeButton).not.toHaveFocus();
   });
 
-  it("surfaces why a searched task cannot be added as a dependency", async () => {
+  it("surfaces why a searched task cannot be added as a prerequisite", async () => {
     const task = makeTask({ id: 42, title: "Reparaturziel" });
     const candidate = makeTask({ id: 19, title: "Freigabe einholen" });
     const cycleError = Object.assign(
@@ -610,10 +666,10 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Abhängigkeiten", level: 3 }),
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Abhängigkeit hinzufügen" }),
+      screen.getByRole("button", { name: "Voraussetzungen bearbeiten" }),
     );
     await userEvent.type(
-      await screen.findByLabelText("Aufgabe suchen …"),
+      await screen.findByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"),
       "Freigabe",
     );
     const result = await screen.findByRole("button", {
@@ -630,15 +686,10 @@ describe("TaskDetailSheet", () => {
         "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
-      ).closest("li"),
-    ).toContainElement(result);
     expect(result).toBeInTheDocument();
   });
 
-  it("ranks dependency matches before limiting, excludes done candidates, and shows their project context", async () => {
+  it("ranks prerequisite matches before limiting, excludes done candidates, and shows their project context", async () => {
     const existing = makeTask({ id: 18, title: "Schon verknüpft" });
     const task = makeTask({
       id: 42,
@@ -689,10 +740,11 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await userEvent.click(
-      screen.getByRole("button", { name: "Abhängigkeit hinzufügen" }),
+      screen.getByRole("heading", { name: "Abhängigkeiten", level: 3 }),
     );
+    await userEvent.click(screen.getByRole("button", { name: "Voraussetzungen bearbeiten" }));
     await userEvent.type(
-      await screen.findByLabelText("Aufgabe suchen …"),
+      await screen.findByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"),
       "Freigabe",
     );
 
@@ -1764,6 +1816,67 @@ describe("TaskDetailSheet", () => {
       await userEvent.click(screen.getByRole("button", { name: strings.makeAction }));
 
       await waitFor(() => expect(mockedApi.makeTaskAction).toHaveBeenCalledWith(71, 1));
+    });
+
+    it("resolves re-clarification from details without changing an active task's status", async () => {
+      const task = makeTask({
+        id: 72,
+        title: "Geplante Aufgabe erneut klären",
+        status: "actionable",
+        needsClarification: true,
+        scheduledDate: "2026-10-12",
+      });
+      mockedApi.getTask.mockResolvedValue(task);
+      mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, needsClarification: false });
+      renderSheet(72);
+      await userEvent.click(screen.getByText("open"));
+      await waitForTaskTitle("Geplante Aufgabe erneut klären");
+
+      expect(screen.getByRole("button", { name: "Später klären" })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Jetzt klären" }));
+      await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(72, {
+        needsClarification: false,
+        expectedRevision: 1,
+      }));
+      expect(mockedApi.updateTask.mock.calls.at(-1)?.[1]).not.toHaveProperty("status");
+    });
+
+    it("defers only the clarification reminder from details and leaves cancellation untouched", async () => {
+      const task = makeTask({
+        id: 73,
+        title: "Geplante Aufgabe später klären",
+        status: "actionable",
+        needsClarification: true,
+        scheduledDate: "2026-10-12",
+        reminders: [{ id: 9, kind: "absolute", at: "2026-10-13T08:00:00.000Z" }],
+      });
+      mockedApi.getTask.mockResolvedValue(task);
+      mockedApi.deferTaskClarification.mockResolvedValue({
+        ...task,
+        revision: 2,
+        clarificationRevisitDate: "2999-01-01",
+      });
+      renderSheet(73);
+      await userEvent.click(screen.getByText("open"));
+      await waitForTaskTitle("Geplante Aufgabe später klären");
+      await userEvent.click(screen.getByRole("button", { name: "Später klären" }));
+
+      const dialog = screen.getByRole("dialog", { name: "Klärung zurückstellen" });
+      expect(within(dialog).getByText(/Die Aufgabe bleibt wie geplant/)).toBeInTheDocument();
+      const dateInput = within(dialog).getByLabelText("Erneut in den Eingang aufnehmen am");
+      await userEvent.clear(dateInput);
+      await userEvent.type(dateInput, "2999-01-01");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+      expect(mockedApi.deferTaskClarification).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: "Später klären" }));
+      const reopenedDialog = screen.getByRole("dialog", { name: "Klärung zurückstellen" });
+      const reopenedDateInput = within(reopenedDialog).getByLabelText("Erneut in den Eingang aufnehmen am");
+      await userEvent.clear(reopenedDateInput);
+      await userEvent.type(reopenedDateInput, "2999-01-01");
+      await userEvent.click(within(reopenedDialog).getByRole("button", { name: "Speichern" }));
+      await waitFor(() => expect(mockedApi.deferTaskClarification).toHaveBeenCalledWith(73, "2999-01-01", 1));
+      expect(mockedApi.updateTask).not.toHaveBeenCalledWith(73, expect.objectContaining({ revisitAt: expect.anything() }));
     });
   });
 });

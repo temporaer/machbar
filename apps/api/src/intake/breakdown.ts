@@ -1,12 +1,14 @@
 import { eq, inArray } from "drizzle-orm";
-import type { IntakeApplyResults, IntakeDraft, Task } from "@machbar/shared";
+import type { IntakeApplyResults, IntakeDraft, ProjectActivationResolution, Task, TaskStatus } from "@machbar/shared";
 import { canBreakDownTask } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
-import { createChildTask, createTask, updateTask } from "../domain/taskCrud.js";
+import { createChildTaskInTransaction, createTaskInTransaction, updateTask } from "../domain/taskCrud.js";
 import { updateProject } from "../domain/storyCrud.js";
+import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
+import { activateCommittedProjectChain } from "../domain/commitmentActivation.js";
 import {
   beginCommitmentConversion,
   finishCommitmentConversion,
@@ -55,10 +57,9 @@ export function assertBreakdownDraft(draft: IntakeDraft, source?: ReturnType<typ
     || draft.calendarEvents.some((item) => item.enabled) || draft.retainSourceInPaperless) {
     throw AppError.badRequest("intake_draft_invalid", "Keep the existing root and up to 30 immediate action steps; calendar events, references, and nested projects are not supported in a breakdown.");
   }
-  const additions = enabled.filter((item) => item !== root);
-  if (source?.status === "captured" && additions.length > 0 && root.kind !== "project") {
-    throw AppError.badRequest("intake_draft_invalid", "A captured task must be explicitly converted to a project before it can receive steps.");
-  }
+  // Captured actions can receive their first child through the canonical child
+  // mutation, which classifies the parent as an action with steps. Project
+  // conversion remains an explicit, separate choice in the reviewed draft.
   // The existing item's metadata is preserved. Expose only its title, notes,
   // and role in review rather than silently accepting edits to ignored fields.
   if (root.ownerMemberId !== null || root.dueDate !== null || root.scheduledDate !== null
@@ -76,6 +77,7 @@ export function applyBreakdown(
   context: MutationContext,
   viewerMemberId: number | null,
   projectDriverMemberId?: number,
+  activationResolution?: ProjectActivationResolution,
 ): IntakeApplyResults {
   const task = breakdownTask(db, job.breakdownTaskId!, viewerMemberId);
   assertBreakdownDraft(draft, task);
@@ -86,7 +88,22 @@ export function applyBreakdown(
   const converted = root.kind === "project";
   let conversion: ReturnType<typeof beginCommitmentConversion> | null = null;
   if (converted) {
-    conversion = beginCommitmentConversion(db, task.id, projectDriverMemberId, viewerMemberId, context);
+    const acceptedChildren = draft.workItems.filter((item) => item.enabled && item.key !== root.key);
+    const childAddsExecutionCommitment = acceptedChildren.some((item) => hasExecutionCommitment({
+      kind: item.kind === "reference" ? "reference" : "action",
+      dueDate: item.dueDate,
+      scheduledDate: item.scheduledDate,
+      revisitAt: item.revisitAt ?? item.notBeforeAt,
+      reminders: item.reminders,
+    }));
+    conversion = beginCommitmentConversion(
+      db,
+      task.id,
+      activationResolution ? undefined : projectDriverMemberId,
+      childAddsExecutionCommitment,
+      viewerMemberId,
+      context,
+    );
     const project = updateProject(db, task.id, {
       title: root.title, notes: root.notes ?? "", expectedRevision: conversion.projectRevision,
     }, context);
@@ -99,9 +116,14 @@ export function applyBreakdown(
   const results: IntakeApplyResults = { work: [{
     key: root.key, kind: root.kind, workItemId: task.id, role: converted ? "story" : "task",
   }], calendar: [], paperlessDocumentIds: [] };
+  const createdChildren: Task[] = [];
   for (const item of draft.workItems.filter((item) => item.enabled && item.key !== root.key)) {
     const input = {
-      title: item.title, notes: item.notes ?? "", status: "actionable" as const,
+      title: item.title, notes: item.notes ?? "",
+      // Match ordinary step entry: uncommitted additions to parked work stay
+      // parked, while createTask/createChildTask promote dated or otherwise
+      // committed steps through their canonical task rules.
+      status: !converted && task.status === "someday" ? "someday" as const : "actionable" as const,
       ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId, ownerInheritanceMode: "explicit" as const }),
       dueDate: item.dueDate, scheduledDate: item.scheduledDate,
       revisitAt: item.revisitAt ?? item.notBeforeAt,
@@ -109,9 +131,30 @@ export function applyBreakdown(
       createdByMemberId: job.createdByMemberId,
     };
     const child = converted
-      ? createTask(db, { ...input, projectId: task.id }, context)
-      : createChildTask(db, task.id, input, context);
+      ? createTaskInTransaction(db, { ...input, projectId: task.id }, context, { activateCommitment: false })
+      : createChildTaskInTransaction(db, task.id, input, context, { activateCommitment: false });
+    createdChildren.push(child);
     results.work.push({ key: item.key, kind: "action", workItemId: child.id, role: "task" });
+  }
+  const committedChild = createdChildren.find((child) => hasExecutionCommitment({
+    kind: child.kind,
+    dueDate: child.dueDate,
+    scheduledDate: child.scheduledDate,
+    revisitAt: child.revisitAt,
+    reminders: child.reminders,
+  }));
+  if (!conversion && committedChild?.projectId !== null && committedChild?.projectId !== undefined) {
+    activateCommittedProjectChain(db, committedChild.projectId, context, activationResolution, {
+      type: "task",
+      id: committedChild.id,
+      status: committedChild.status as TaskStatus,
+      targetStatus: committedChild.status as TaskStatus,
+      executionCommitment: true,
+      newExecutionCommitment: true,
+      revisitAt: committedChild.revisitAt,
+      recurring: committedChild.repeatAfterDays !== null,
+      explicitlyReopened: false,
+    });
   }
   if (conversion) {
     const project = conversion.projectId;
@@ -120,7 +163,7 @@ export function applyBreakdown(
     finishCommitmentConversion(db, {
       ...conversion,
       projectRevision: current?.revision ?? conversion.projectRevision,
-    }, context);
+    }, context, activationResolution);
   }
   return results;
 }

@@ -35,7 +35,7 @@ describe("AcceptanceCriteriaEditor", () => {
   it("edits text only through explicit Edit and Save, never on blur", async () => {
     mockedApi.updateCriterion.mockResolvedValue(project);
     renderWithProviders(
-      <AcceptanceCriteriaEditor projectId={4} criteria={[criterion]} onError={vi.fn()} />,
+      <AcceptanceCriteriaEditor ownerType="project" workItemId={4} criteria={[criterion]} onError={vi.fn()} />,
     );
     const input = screen.getByDisplayValue("Kisten sind gepackt");
     expect(input).toHaveAttribute("readonly");
@@ -50,6 +50,7 @@ describe("AcceptanceCriteriaEditor", () => {
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() =>
       expect(mockedApi.updateCriterion).toHaveBeenCalledWith(
+        "project",
         4,
         10,
         "Kisten und Möbel sind gepackt",
@@ -60,7 +61,7 @@ describe("AcceptanceCriteriaEditor", () => {
 
   it("restores the original text on Cancel", async () => {
     renderWithProviders(
-      <AcceptanceCriteriaEditor projectId={4} criteria={[criterion]} onError={vi.fn()} />,
+      <AcceptanceCriteriaEditor ownerType="project" workItemId={4} criteria={[criterion]} onError={vi.fn()} />,
     );
     const input = screen.getByDisplayValue("Kisten sind gepackt");
     await userEvent.click(screen.getByRole("button", { name: "Bearbeiten" }));
@@ -77,7 +78,7 @@ describe("AcceptanceCriteriaEditor", () => {
     const onError = vi.fn();
     mockedApi.updateCriterion.mockRejectedValue(new Error("Speichern fehlgeschlagen"));
     renderWithProviders(
-      <AcceptanceCriteriaEditor projectId={4} criteria={[criterion]} onError={onError} />,
+      <AcceptanceCriteriaEditor ownerType="project" workItemId={4} criteria={[criterion]} onError={onError} />,
     );
     const input = screen.getByDisplayValue("Kisten sind gepackt");
     await userEvent.click(screen.getByRole("button", { name: "Bearbeiten" }));
@@ -98,7 +99,7 @@ describe("AcceptanceCriteriaEditor", () => {
       }),
     );
     renderWithProviders(
-      <AcceptanceCriteriaEditor projectId={4} criteria={[criterion]} onError={vi.fn()} />,
+      <AcceptanceCriteriaEditor ownerType="project" workItemId={4} criteria={[criterion]} onError={vi.fn()} />,
     );
     const input = screen.getByDisplayValue("Kisten sind gepackt");
     await userEvent.click(screen.getByRole("button", { name: "Bearbeiten" }));
@@ -120,7 +121,7 @@ describe("AcceptanceCriteriaEditor", () => {
     mockedApi.addCriterion.mockRejectedValue(new Error("Hinzufügen fehlgeschlagen"));
     mockedApi.checkCriterion.mockResolvedValue(project);
     renderWithProviders(
-      <AcceptanceCriteriaEditor projectId={4} criteria={[criterion]} onError={onError} />,
+      <AcceptanceCriteriaEditor ownerType="project" workItemId={4} criteria={[criterion]} onError={onError} />,
     );
     const addInput = screen.getByPlaceholderText("Erledigt, wenn …");
     await userEvent.type(addInput, "Transport ist gebucht");
@@ -130,6 +131,21 @@ describe("AcceptanceCriteriaEditor", () => {
     expect(addInput).toHaveValue("Transport ist gebucht");
 
     await userEvent.click(screen.getByRole("checkbox", { name: "Kisten sind gepackt" }));
-    await waitFor(() => expect(mockedApi.checkCriterion).toHaveBeenCalledWith(4, 10, true));
+    await waitFor(() => expect(mockedApi.checkCriterion).toHaveBeenCalledWith("project", 4, 10, true));
+  });
+
+  it("uses the task criterion routes for criteria retained after conversion", async () => {
+    mockedApi.updateCriterion.mockResolvedValue(project);
+    renderWithProviders(
+      <AcceptanceCriteriaEditor ownerType="task" workItemId={404} criteria={[criterion]} onError={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten" }));
+    const input = screen.getByDisplayValue("Kisten sind gepackt");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Kisten sind beschriftet");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateCriterion).toHaveBeenCalledWith(
+      "task", 404, 10, "Kisten sind beschriftet",
+    ));
   });
 });

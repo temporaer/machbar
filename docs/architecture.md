@@ -30,7 +30,7 @@ reminder while a revisit is present does not promote the task. Healthy waits
 and future revisits retain their readiness meaning. Project activation does
 not bypass task blockers or future-date agenda eligibility.
 
-## Reviewed task breakdown
+## AI clarification and reviewed application
 
 `canBreakDownTask` in the shared intake contract owns target eligibility for
 both the structure menu and API: recurring actions and captured actions nested
@@ -38,11 +38,15 @@ under tasks or projects cannot start proposals. Apply selects only the enabled
 reserved root. After a recoverable Apply failure, review refreshes the recovered
 job revision before allowing another edit.
 
-`task.breakdown` opens `TaskBreakdownSheet` through `TaskWorkflowHost`.
-`useTaskBreakdown` starts a proposal at `POST /api/intake/task/:taskId` with
-free-form instructions and the task revision. The endpoint checks viewer access
-and open-action eligibility, then creates an ordinary intake job bound to that
-task, storing its subtree snapshot and editing instructions.
+`task.refine` and `story.refine` open the shared `WorkClarificationSheet` through
+their canonical workflow hosts. Its default is general improvement; next
+action and structure are available for both roles. For eligible tasks,
+“In kleinere Schritte aufteilen” reuses the existing
+`POST /api/intake/task/:taskId` proposal contract. The selected action and
+optional focus are kept in one entry flow instead of separate AI launchers.
+The endpoint checks viewer access and open-action eligibility, then creates an
+ordinary intake job bound to the task, storing its subtree snapshot and
+instructions.
 
 Generation reuses Home Assistant `intake_analyze` and the structured intake plan.
 Intake, breakdown, and cleanup-round prompts share actionability, sizing, and
@@ -50,10 +54,11 @@ finite-outcome guidance from `aiWorkGuidance.ts`, plus household AI context.
 Source notes and existing children are data, not instructions. No web research
 is assumed.
 
-The proposal contains one reserved `existing-task` root and 1–30 immediate
-action steps. Review supports title/notes edits and a task/project choice for
-the original root; children use the existing proposal editors. Existing children
-remain untouched. Calendar events, references, and deeper nesting are rejected.
+The smaller-steps proposal contains one reserved `existing-task` root and zero
+or more immediate action steps. Review supports title/notes edits and a
+task/project choice for the original root; children use the existing proposal
+editors. Existing children remain untouched. Calendar events, references, and
+deeper nesting are rejected.
 
 Apply rechecks visibility and the persisted subtree snapshot, then edits or
 converts the original and appends accepted steps through canonical domain
@@ -62,6 +67,17 @@ restrictions, and creates a backlog project. Conversion retains and clears
 fields according to the usual role-conversion rules. Failed transactions return
 the proposal to editable state; repeated Apply cannot duplicate steps.
 Regeneration refreshes source context and the snapshot, requiring a new review.
+
+Typed refinement changes can also set or clear a task's scheduled date,
+deadline, revisit instant, and reminders. Omitted fields preserve existing
+values; provider null-envelope placeholders are removed before proposal
+validation, while explicit date clears and an empty reminder list remain
+reviewable user-selected changes. New actions use canonical task creation
+defaults. The review displays current and proposed planning values, uses the
+household timezone for revisit and reminder editing, and commits those values
+with the other accepted changes. Execution commitments run through the shared
+activation requirement/decision continuation in the same transaction; a
+revisit alone remains a reconsideration point rather than execution work.
 
 This document is the technical deep dive for contributors. For product
 concepts, start with the [household workflow](workflow.md). For operating the
@@ -263,6 +279,12 @@ WorkItem(role=story) ─── WorkItem(role=task)
 - **WorkItems are one physical hierarchy.** `work_items.role = 'task'` means
   executable work; `role = 'story'` means an outcome planned through child
   progress. Stories may contain stories and/or tasks at arbitrary depth.
+- **Besprechen is a shared nomination.** The `discussion_requested` boolean
+  lives on `work_items` for both roles and is changed only through the
+  canonical task/project update mutations. `GET /api/discussion` projects
+  only viewer-visible work; the More page reuses the normal task/project row
+  workflows. The flag does not affect status, agenda, review acknowledgement,
+  or any other work property.
 - **Projects are the story UI/API adapter.** The German UI may still call a
   story a “Projekt”. A story has one responsible person, optional
   due/scheduled dates, free-form `notes`, and an ordered
@@ -499,8 +521,13 @@ decision. Project dates never become task dates.
   reminders, external waits, recurrence history and dependencies by moving
   them to a retained action step, with optional per-dependency assignment to
   an existing open action. It preserves the project deadline and existing
-  children. Reverse conversion remains conservative until its criteria and
-  child obligations are executable on action tasks.
+  children. Reverse conversion retains task descendants, the existing task
+  identity, tags/contexts, planning dates, external waits, reminders,
+  recurrence state, occurrence history, and criteria. Criteria remain
+  editable/checkable on the converted task and task completion rejects any
+  unchecked criterion; unsupported nested-project, archived-status, and
+  conflicting work-plan/revisit mappings roll back without changing the
+  project.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
   change its description and its own revisit date atomically; resolving it
@@ -626,7 +653,14 @@ captured ──► actionable ──► done
 ```
 
 `TaskStatus` is `captured | actionable | someday | done | cancelled`.
-`captured` is the current clarification state and appears in **Eingang**.
+`captured` identifies unclassified work and appears in **Eingang**. The stored
+`needs_clarification` flag is independent: a task can remain active, scheduled,
+or waiting while it is explicitly queued for another clarification pass.
+Clarifying a flagged active task clears only the flag; clarifying a captured
+task also promotes it to actionable. The separate `clarification_revisit_date`
+defers only the clarification queue; ordinary `revisit_at`, scheduled work,
+reminders, external waits, and lifecycle are unchanged. Agenda eligibility for
+a re-clarified task follows the same execution-commitment rules as other work.
 Project and child creation can start as already clarified actionable work.
 Captured tasks stay visible in project trees but are excluded from Heute,
 next-action selection, and blocker classification.
@@ -672,8 +706,33 @@ archived ◄──archive── (backlog | active | completed)
   through the dedicated workflow endpoints (`/activate`, `/complete`,
   `/reopen`, `/return-to-backlog`, `/archive`).
 - Nothing auto-completes a story; completion is always an explicit human decision.
-- Acceptance criteria are optional. When none exist, completion is allowed;
-  when one or more exist, every remaining criterion must be checked first.
+- Acceptance criteria are optional on projects and converted action tasks.
+  When none exist, completion is allowed; when one or more exist, every
+  remaining criterion must be checked first. Project criteria remain attached
+  through Project → Task conversion and use the same editor/check API after
+  conversion.
+- `completeProject()` accepts revision-bound criterion checks and open-task
+  branch dispositions as one decision set. It validates that set before using
+  the canonical task cancel/move commands and completing the project inside
+  the enclosing transaction. Missing choices, stale descendants, or failed
+  criteria roll the whole operation back; the focused sheet does not persist
+  choices before confirmation.
+- `completeTask()` applies any completion-time criterion checks in the same
+  transaction as the existing task lifecycle transition. With no missing
+  criteria, ordinary completion remains a direct action. Task criteria
+  retained through project conversion continue to be enforced by the same
+  completion guard.
+- Returning a project to backlog does not silently withdraw execution
+  commitments. The command checks project deadlines and descendant plans,
+  recurrence and reminders. When explicitly requested, it revision-checks the
+  descendant tasks and clears those commitments atomically with parking while
+  preserving wait and revisit information.
+- Task Planning is also the focused editor for prerequisite relationships.
+  External waiting remains separate state: ending a wait removes only the
+  external-wait row and revisit date, leaving dependency edges in place.
+  Follow-up outcome text and the continue/end decision are written by one
+  revision-checked domain operation. Dependency add/remove requests carry the
+  task revision and use the existing cycle and task-kind guards.
 - `archived` only exposes `return_to_backlog`; there is no `archived → active`
   transition. Reactivating an archived project always goes through backlog
   first.
@@ -970,6 +1029,11 @@ nicht aktiv** section, and completed/archived stories remain folded.
   `task.changeProject` command) before the primary "Projekt abschließen"
   action becomes enabled. Every entry point still dispatches the same semantic
   `story.complete` command.
+- Task completion with retained criteria is resolved centrally in
+  `useWorkItemCommands()`: unchecked criteria open the shared
+  `CompleteWithCriteriaSheet`, then dispatch the same `task.toggleDone`
+  command after the criteria are checked. The API independently validates
+  criteria inside the canonical task completion transaction.
 - Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
 
 #### Filtering and ordering the list
@@ -1105,9 +1169,9 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `TaskOwnerChoiceGroup` | Task-owner chips for inherited owner, shared/unassigned, and explicit members |
 | `MemberSelectionSheet` | Reusable household-member picker for project-driver and other non-inheritable member choices |
 | `MemberChoiceGroup` | The tap-chip choice group rendered by assignment surfaces |
-| `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` |
+| `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` and the task-detail criteria disclosure |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
-| `CompleteWithCriteriaSheet` | Focused `story.complete` continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` check/uncheck UI and commits the same completion transition once all criteria are checked |
+| `CompleteWithCriteriaSheet` | Focused project/task completion continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` and commits the canonical completion command after the user checks all criteria |
 | `CompleteWithOpenTasksSheet` | Focused `story.complete` continuation when criteria are satisfied/absent but open child tasks remain: lets the driver cancel or move each task (reusing `useTaskActions().requestCancel` and `task.changeProject`) and commits the same completion transition once no open tasks remain |
 | `ProjectDeferSheet` | Canonical backlog-project Wiedervorlage (`scheduledDate`) editor |
 | `ProjectDeadlineSheet` | Project deadline (`dueDate`) only |
@@ -1401,13 +1465,22 @@ dependent item is not visible to the current viewer. Active commitments and
 explicit activation use the shared project-readiness transition, and the
 conversion transaction rolls back if the required driver, path, mapping, or
 revision is missing. Reverse conversion (story → task) remains conservative
-until retained criteria can be checked by task completion; it must not erase
-children or criteria. Routes:
+while retaining all task children and acceptance criteria on the same row.
+When a backlog project becomes a Someday task, unplanned actionable descendants
+are parked with it; dated, reminded, recurring, explicitly selected next-action,
+and externally waiting descendants retain their existing operational state.
+Completed tasks retain the project's recorded `completed_at`, even when its
+title or notes changed after completion.
+The converted action task exposes the criteria in its detail and completion
+sheet, edits/checks them through the shared work-item criteria domain, and
+cannot complete with an unchecked criterion. Nested projects, archived
+projects, recurrence with children, and conflicting schedule/revisit mappings
+are rejected atomically. Routes:
 `POST /api/tasks/:id/convert-to-story`, `POST /api/projects/:id/convert-to-task`.
-The web workflow is opened by `story.convertToTask`; it preflights those
-project-only structures and routes blocked cases to the existing structure or
-goal editor instead of discarding data. A clean project can edit its title and
-notes before calling the canonical conversion endpoint.
+The web workflow is opened by `story.convertToTask`; its review identifies
+which child tasks and criteria will remain. It keeps title and notes drafts on
+revision conflicts and calls the canonical conversion endpoint only after
+explicit acceptance.
 
 **Semantic commands.** `apps/web/src/lib/commands.ts` defines a pure,
 React-free `WorkItemCommand` union (`task.*`, `story.*`, `outline.*`,
@@ -1509,6 +1582,14 @@ because their domain content differs, but they present current scalar values
 as direct actions, omit empty optional metadata, and keep substantive
 collections as readable sections. Semantic transformations continue through
 the shared command/action paths and focused sheets.
+
+AI refinement launched from `TaskDetailSheet` keeps the existing
+`IntakeReviewPage` as the sole job/status/review surface. After a successful
+job start, `TaskDetailProvider` suspends the mounted detail sheet without
+clearing its text draft, focus or clarification queue. The route carries a
+typed return snapshot; leaving the review restores the task context, while an
+applied task-to-project conversion clears the obsolete task sheet and opens
+the project route. Failed starts leave the launcher in place.
 
 **Still two separate rows and two separate detail surfaces.** `TaskRow.tsx`
 and `ProjectStoryRow.tsx` render as fully separate components (they now both

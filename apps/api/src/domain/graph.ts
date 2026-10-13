@@ -106,6 +106,8 @@ interface RawTask {
   status: TaskStatus;
   kind: TaskKind;
   needsClarification: boolean;
+  clarificationRevisitDate: string | null;
+  discussionRequested: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   physicalContextInheritanceMode: InheritanceMode;
@@ -137,6 +139,7 @@ interface RawProject {
   title: string;
   notes: string;
   status: ProjectStatus;
+  discussionRequested: boolean;
   archivedAt: string | null;
   ownerMemberId: number | null;
   scope: WorkItemScope;
@@ -341,6 +344,7 @@ export class Graph {
           row.status as StoredWorkItemStatus,
           row.archivedAt,
         ),
+        discussionRequested: row.discussionRequested,
         archivedAt: row.archivedAt,
         ownerMemberId: row.ownerMemberId,
         scope: row.scope as WorkItemScope,
@@ -367,7 +371,9 @@ export class Graph {
         notes: row.notes,
         status: taskStatusFromStored(row.status as StoredWorkItemStatus),
         kind: (row.taskKind as TaskKind | null) ?? "action",
-        needsClarification: row.status === "captured",
+        needsClarification: row.needsClarification,
+        clarificationRevisitDate: row.clarificationRevisitDate,
+        discussionRequested: row.discussionRequested,
         ownerMemberId: row.ownerMemberId,
         ownerInheritanceMode: row.ownerInheritanceMode as InheritanceMode,
         physicalContextInheritanceMode:
@@ -490,21 +496,24 @@ export class Graph {
       .select()
       .from(schema.workItemAcceptanceCriteria)
       .all();
-    const criteriaByProject = new Map<number, AcceptanceCriterion[]>();
+    const criteriaByWorkItem = new Map<number, AcceptanceCriterion[]>();
     for (const row of criteriaRows) {
-      const list = criteriaByProject.get(row.workItemId) ?? [];
+      const list = criteriaByWorkItem.get(row.workItemId) ?? [];
       list.push({
         id: row.id,
-        projectId: row.workItemId,
+        workItemId: row.workItemId,
+        ...(rawProjects.some((project) => project.id === row.workItemId)
+          ? { projectId: row.workItemId }
+          : {}),
         text: row.text,
         checked: row.checked,
         position: row.position,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       });
-      criteriaByProject.set(row.workItemId, list);
+      criteriaByWorkItem.set(row.workItemId, list);
     }
-    for (const list of criteriaByProject.values()) {
+    for (const list of criteriaByWorkItem.values()) {
       list.sort((a, b) => a.position - b.position);
     }
 
@@ -623,6 +632,7 @@ export class Graph {
         title: p.title,
         notes: p.notes,
         status: p.status,
+        discussionRequested: p.discussionRequested,
         archivedAt: p.archivedAt,
         ownerMemberId: p.ownerMemberId,
         scope: p.scope,
@@ -644,7 +654,7 @@ export class Graph {
             ?.filter((tag) => tag.kind === "area") ?? [],
         ),
         primaryAreaTag: null,
-        acceptanceCriteria: criteriaByProject.get(p.id) ?? [],
+        acceptanceCriteria: criteriaByWorkItem.get(p.id) ?? [],
         availableActions: availableProjectWorkflowActions(p.status),
         activationReadiness: graph.activationReadinessByProject.get(p.id)!,
         childStories: [],
@@ -769,7 +779,9 @@ export class Graph {
         notes: raw.notes,
         status: raw.status,
         kind: raw.kind,
-        needsClarification: raw.status === "captured",
+        needsClarification: raw.needsClarification,
+        clarificationRevisitDate: raw.clarificationRevisitDate,
+        discussionRequested: raw.discussionRequested,
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
         contextInheritanceMode: raw.physicalContextInheritanceMode,
@@ -810,6 +822,7 @@ export class Graph {
         nextBlockerAttentionDate:
           execution?.nextBlockerAttentionDate ?? null,
         blockers,
+        acceptanceCriteria: criteriaByWorkItem.get(raw.id) ?? [],
         dependencies,
         incomingDependencies,
         children: [],

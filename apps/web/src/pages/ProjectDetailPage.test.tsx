@@ -342,7 +342,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
 
     await userEvent.click(await screen.findByRole("checkbox", { name: "Ort steht" }));
-    expect(mockedApi.checkCriterion).toHaveBeenCalledWith(42, 4, true);
+    expect(mockedApi.checkCriterion).toHaveBeenCalledWith("project", 42, 4, true);
 
     const outcome = screen
       .getByRole("heading", { name: /^Ergebnis/, level: 2 })
@@ -483,14 +483,14 @@ describe("ProjectDetailPage task explanations", () => {
     );
     expect(
       await screen.findByRole("dialog", {
-        name: `${strings.workRefinement} Sommerfest planen`,
+        name: `${strings.workRefinement}: Sommerfest planen`,
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("combobox")).toHaveValue("improve");
 
     await userEvent.selectOptions(screen.getByRole("combobox"), "next_action");
     await userEvent.click(
-      screen.getByRole("button", { name: strings.taskBreakdownGenerate }),
+      screen.getByRole("button", { name: strings.workRefinementGenerate }),
     );
     await waitFor(() =>
       expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("project", 42, {

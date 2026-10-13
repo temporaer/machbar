@@ -3,6 +3,7 @@
  * review-acknowledgement timestamp.
  */
 import { eq, sql } from "drizzle-orm";
+import { calendarDateForInstant, DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
 import type { TaskStatus } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -14,6 +15,7 @@ import {
 } from "../repo/index.js";
 import { getTaskOrThrow, listDescendants, updateTask } from "./taskCrud.js";
 import { assertActionTask } from "./taskKindGuard.js";
+import { assertAcceptanceCriteriaChecked, checkCriteriaForCompletion } from "./acceptanceCriteria.js";
 import { Graph } from "./graph.js";
 import {
   MutationContext,
@@ -89,21 +91,24 @@ export function completeTask(
   context?: MutationContext,
   completedOn?: string,
   expectedRevision?: number,
+  criteriaToCheck: readonly number[] = [],
 ) {
   const current = getTaskOrThrow(db, id);
   assertActionTask(current, "complete");
   if (current.repeatAfterDays !== null) {
-    return updateTask(
-      db,
-      id,
-      { status: "done", completedOn, expectedRevision },
-      context,
-    );
+    return db.transaction((tx) => {
+      const txDb = tx as unknown as Db;
+      const task = getTaskOrThrow(txDb, id);
+      assertExpectedRevision("task", id, task.revision, expectedRevision);
+      if (task.status !== "done") checkCriteriaForCompletion(txDb, id, criteriaToCheck, context);
+      return updateTask(txDb, id, { status: "done", completedOn, expectedRevision: task.revision }, context);
+    });
   }
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
     assertExpectedRevision("task", id, task.revision, expectedRevision);
+    if (task.status !== "done") checkCriteriaForCompletion(txDb, id, criteriaToCheck, context);
     const graphBefore = Graph.load(txDb);
     const dependentTaskIds = tx
       .select({ taskId: schema.taskDependencies.taskId })
@@ -152,12 +157,14 @@ export function completeTask(
         },
       );
     }
+    if (descendantsPolicy === "complete_children") {
+      for (const child of openChildren) assertAcceptanceCriteriaChecked(txDb, child.id);
+    }
     const now = nowIso();
     if (!descendantsOnly) {
       tx.update(schema.workItems)
         .set({
           status: "done",
-          needsClarification: false,
           completedAt: now,
           revision: sql`${schema.workItems.revision} + 1`,
           updatedAt: now,
@@ -179,7 +186,6 @@ export function completeTask(
         tx.update(schema.workItems)
           .set({
             status: descendantStatus,
-            needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
             revision: sql`${schema.workItems.revision} + 1`,
@@ -315,7 +321,6 @@ export function cancelTask(
       tx.update(schema.workItems)
         .set({
           status: "cancelled",
-          needsClarification: false,
           cancelledAt: now,
           revision: sql`${schema.workItems.revision} + 1`,
           updatedAt: now,
@@ -337,7 +342,6 @@ export function cancelTask(
         tx.update(schema.workItems)
           .set({
             status: descendantStatus,
-            needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
             revision: sql`${schema.workItems.revision} + 1`,
@@ -427,7 +431,6 @@ export function reopenTask(
     tx.update(schema.workItems)
       .set({
         status: "active",
-        needsClarification: false,
         completedAt: null,
         cancelledAt: null,
         revision: sql`${schema.workItems.revision} + 1`,
@@ -464,10 +467,37 @@ export function clarifyTask(
   expectedRevision?: number,
   context?: MutationContext,
 ) {
+  // Resolving a clarification only promotes captured work. An active,
+  // scheduled or waiting commitment keeps its lifecycle while its separate
+  // clarification flag is cleared.
+  return updateTask(db, id, { needsClarification: false, expectedRevision }, context);
+}
+
+/** Defer only the clarification queue entry; execution planning is untouched. */
+export function deferTaskClarification(
+  db: Db,
+  id: number,
+  clarificationRevisitDate: string,
+  expectedRevision: number,
+  context?: MutationContext,
+) {
+  const timezone = db
+    .select({ value: schema.householdSettings.value })
+    .from(schema.householdSettings)
+    .where(eq(schema.householdSettings.key, "timezone"))
+    .get()?.value ?? DEFAULT_HOUSEHOLD_TIMEZONE;
+  const today = calendarDateForInstant(nowIso(), timezone);
+  if (today !== null && clarificationRevisitDate <= today) {
+    throw AppError.badRequest(
+      "clarification_revisit_invalid",
+      "Choose a clarification revisit date after today.",
+      { taskId: id, clarificationRevisitDate, today },
+    );
+  }
   return updateTask(
     db,
     id,
-    { status: "actionable", expectedRevision },
+    { clarificationRevisitDate, expectedRevision },
     context,
   );
 }

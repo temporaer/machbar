@@ -17,7 +17,7 @@ import {
   contextAvailabilityForHousehold,
   contextAvailabilityForMember,
 } from "../integrations/homeAssistant.js";
-import { DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
+import { calendarDateForInstant, DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
 
 function householdTimezone(db: Db): string {
   return (
@@ -205,45 +205,57 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
           ? "all"
           : "mine";
     // Mine/Household/Work toggle, matching Today/Week/Waiting: a resolved
-    // viewer sees their own household captured items (or, in Work scope,
-    // only their own work-scope captured items). Unlike Review and
+    // viewer sees their own household clarification items (captured or
+    // explicitly requested again; or, in Work scope, only their own private
+    // items). Unlike Review and
     // /more-counts (which have no scope selector at all and stay
     // unconditionally household-only, see their comments above), Inbox
-    // needs a real viewer so a captured work item is reachable by its own
+    // needs a real viewer so a private work item is reachable by its own
     // owner instead of vanishing everywhere.
     const graph = Graph.load(db, undefined, viewerMemberId);
     const selection = createAgendaSelection(graph, { memberId, scope });
+    const householdToday = calendarDateForInstant(
+      new Date().toISOString(),
+      householdTimezone(db),
+    ) ?? new Date().toISOString().slice(0, 10);
     const projectStatusById = new Map(
       [...graph.projectsById.values()].map((project) => [
         project.id,
         project.status,
       ]),
     );
-    const captured = graph
+    const clarificationTasks = graph
       .allTasks()
       .filter(
         (task) =>
           task.kind === "action" &&
-          task.status === "captured" &&
+          (task.status === "captured" || task.needsClarification) &&
+          task.status !== "done" &&
+          task.status !== "cancelled" &&
+          // "Später klären" is an explicit revisit, not a sheet dismissal.
+          // It hides the item from this clarification queue until that time,
+          // while leaving its lifecycle/agenda commitments untouched.
+          !(task.clarificationRevisitDate && task.clarificationRevisitDate > householdToday) &&
+          !(task.revisitAt && Date.parse(task.revisitAt) > Date.now()) &&
           isTaskInWorkingSystem(task, projectStatusById) &&
           selection.matchesScope(task) &&
           selection.matchesOwner(task),
       );
-    const capturedIds = new Set(captured.map((task) => task.id));
-    const cloneCaptured = (task: (typeof captured)[number]): (typeof captured)[number] => ({
+    const clarificationIds = new Set(clarificationTasks.map((task) => task.id));
+    const cloneClarificationTask = (task: (typeof clarificationTasks)[number]): (typeof clarificationTasks)[number] => ({
       ...task,
       children: task.children
-        .filter((child) => capturedIds.has(child.id))
-        .map(cloneCaptured),
+        .filter((child) => clarificationIds.has(child.id))
+        .map(cloneClarificationTask),
     });
 
-    return captured
+    return clarificationTasks
       .filter(
         (task) =>
-          task.parentTaskId === null || !capturedIds.has(task.parentTaskId),
+          task.parentTaskId === null || !clarificationIds.has(task.parentTaskId),
       )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .map(cloneCaptured);
+      .map(cloneClarificationTask);
   });
 
   app.get("/api/waiting", async (request) => {
@@ -281,5 +293,29 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
           ? contextAvailabilityForHousehold(db, task.effectiveContexts)
           : contextAvailabilityForMember(db, task.effectiveContexts, target),
     });
+  });
+
+  // Besprechen is a quiet shared nomination, not a workflow/review signal.
+  // Resolve visibility only from authenticated/request activity identity;
+  // a query-string member id must never expose another member's private work.
+  app.get("/api/discussion", async (request) => {
+    const viewerMemberId = request.authMember?.id ?? request.activityActor?.id;
+    const graph = Graph.load(db, undefined, viewerMemberId);
+    const tasks = graph.allTasks().filter((task) => task.discussionRequested);
+    const taskIds = new Set(tasks.map((task) => task.id));
+    const cloneTask = (task: (typeof tasks)[number]): (typeof tasks)[number] => ({
+      ...task,
+      children: task.children.filter((child) => taskIds.has(child.id)).map(cloneTask),
+    });
+    const projects = [...graph.projectsById.values()]
+      .filter((project) => project.discussionRequested)
+      .sort((a, b) => a.title.localeCompare(b.title));
+    return {
+      tasks: tasks
+        .filter((task) => task.parentTaskId === null || !taskIds.has(task.parentTaskId))
+        .sort((a, b) => a.title.localeCompare(b.title))
+        .map(cloneTask),
+      projects,
+    };
   });
 }

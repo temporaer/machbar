@@ -44,15 +44,13 @@ import { buildTaskShareUrl } from "../lib/shareUrls";
 import { RecentActivity } from "./RecentActivity";
 import { useLocale } from "../lib/locale";
 import {
-  hasApiErrorCode,
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
 import {
   sortDependencies,
-  sortDependencyCandidates,
 } from "../lib/sortOrder";
-import { recencyRankLookup, recordRecentlyViewed } from "../lib/recentlyViewed";
+import { recordRecentlyViewed } from "../lib/recentlyViewed";
 import {
   containsPaperlessReference,
   extractPaperlessReferences,
@@ -61,6 +59,7 @@ import { appendTextBlock } from "../lib/shareTarget";
 import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
+import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { ActionTileGrid } from "./ActionTileGrid";
 import { formatReminderSummary } from "../lib/reminderLabels";
 import { parseReferenceContent } from "../lib/referenceContent";
@@ -105,28 +104,22 @@ export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
   const navigate = useNavigate();
-  const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
-  const [depQuery, setDepQuery] = useState("");
-  const [depResults, setDepResults] = useState<Task[]>([]);
-  const [dependencyError, setDependencyError] = useState<{
-    candidateTaskId: number | null;
-    message: string;
-  } | null>(null);
-  const [addingDependencyId, setAddingDependencyId] = useState<number | null>(null);
+  const suspended = detailSuspended;
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [criteriaError, setCriteriaError] = useState<string | null>(null);
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
-  const [addingDependency, setAddingDependency] = useState(false);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -140,7 +133,6 @@ export function TaskDetailSheet() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
-  const dependencyInputRef = useRef<HTMLInputElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
   const workflowKind = taskWorkflow.current?.kind ?? null;
@@ -204,12 +196,9 @@ export function TaskDetailSheet() {
       setTitleEditing(false);
       setNotesEditing(false);
       setAttachmentOpen(false);
-      setAddingDependency(false);
       setLifecycleOpen(false);
       setDeleting(false);
       setShareStatus(null);
-      setDependencyError(null);
-      setAddingDependencyId(null);
       setConvertedProject(null);
     }
     const hasUnsavedEdits =
@@ -260,8 +249,9 @@ export function TaskDetailSheet() {
       clearFocusField();
       return;
     }
-    if (focusField === "dependencies" && !addingDependency) {
-      setAddingDependency(true);
+    if (focusField === "dependencies") {
+      dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" });
+      clearFocusField();
       return;
     }
     const scrollTarget =
@@ -275,7 +265,7 @@ export function TaskDetailSheet() {
         ? titleInputRef.current
         : focusField === "notes"
           ? notesRef.current
-          : dependencyInputRef.current;
+          : null;
     if (scrollTarget) {
       if (typeof scrollTarget.scrollIntoView === "function") {
         scrollTarget.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -289,10 +279,10 @@ export function TaskDetailSheet() {
     clearFocusField,
     notesEditing,
     titleEditing,
-    addingDependency,
+    dispatch,
   ]);
 
-  if (openTaskId === null) return null;
+  if (openTaskId === null || suspended) return null;
 
   const titleIsValid = titleDraft.trim().length > 0;
   const titleDirty =
@@ -395,57 +385,6 @@ export function TaskDetailSheet() {
     }
   };
 
-  const runDependencySearch = async (value: string) => {
-    setDepQuery(value);
-    setDependencyError(null);
-    if (!value.trim()) {
-      setDepResults([]);
-      return;
-    }
-    try {
-      const results = await api.searchTasks({
-        text: value,
-        kinds: ["action"],
-      });
-      setDepResults(
-        task
-          ? sortDependencyCandidates(results, task, value, locale, {
-              recencyRank: recencyRankLookup("task"),
-            }).slice(0, 8)
-          : [],
-      );
-    } catch (err) {
-      setDepResults([]);
-      setDependencyError({
-        candidateTaskId: null,
-        message: localizedErrorMessage(err, strings),
-      });
-    }
-  };
-
-  const addTaskDependency = async (dependsOnTask: Task) => {
-    if (!task || addingDependencyId !== null) return;
-    setAddingDependencyId(dependsOnTask.id);
-    setDependencyError(null);
-    try {
-      await api.addDependency(task.id, dependsOnTask.id);
-      setDepQuery("");
-      setDepResults([]);
-      setAddingDependency(false);
-      bump();
-      reload();
-    } catch (err) {
-      setDependencyError({
-        candidateTaskId: dependsOnTask.id,
-        message: hasApiErrorCode(err, "task_dependency_cycle")
-          ? strings.dependencyCycleExplanation(dependsOnTask.title, task.title)
-          : localizedErrorMessage(err, strings),
-      });
-    } finally {
-      setAddingDependencyId(null);
-    }
-  };
-
   const isReference = task?.kind === "reference";
   const taskIsCapturedInboxItem = task && !isReference ? isCapturedInboxItem(task) : false;
   const taskMutationPending = task ? taskActions.isPending(task.id) : false;
@@ -491,6 +430,7 @@ export function TaskDetailSheet() {
       | "task.lifecycle"
       | "task.assignOwner"
       | "task.availability"
+      | "task.deferClarification"
       | "task.plan"
       | "task.reminders"
       | "task.waitingLifecycle"
@@ -678,6 +618,31 @@ export function TaskDetailSheet() {
               status={task.status}
               {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })}
             />
+            {!taskIsCapturedInboxItem && !isReference ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={taskMutationPending}
+                onClick={() => void taskActions.update(
+                  task,
+                  { needsClarification: !task.needsClarification },
+                  { needsClarification: !task.needsClarification },
+                  true,
+                )}
+              >
+                {task.needsClarification ? strings.clarifyNow : strings.clarifyAgain}
+              </button>
+            ) : null}
+            {task.needsClarification && !isReference ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={taskMutationPending}
+                onClick={() => runCommand("task.deferClarification")}
+              >
+                {strings.clarifyLater}
+              </button>
+            ) : null}
             {task.projectId !== null && task.projectTitle ? (
               <span className="detail-meta-static">
                 <span className="detail-meta-label">{strings.project}</span>
@@ -947,6 +912,26 @@ export function TaskDetailSheet() {
             )}
           </section>
 
+          {!isReference && task.acceptanceCriteria.length > 0 ? (
+            <WorkItemDetailDisclosure
+              title={strings.taskCriteria}
+              summary={strings.taskCriteriaSummary(
+                task.acceptanceCriteria.filter((criterion) => criterion.checked).length,
+                task.acceptanceCriteria.length,
+              )}
+              defaultOpen
+              resetKey={task.id}
+            >
+              {criteriaError ? <p role="alert" className="capture-error">{criteriaError}</p> : null}
+              <AcceptanceCriteriaEditor
+                ownerType="task"
+                workItemId={task.id}
+                criteria={task.acceptanceCriteria}
+                onError={setCriteriaError}
+              />
+            </WorkItemDetailDisclosure>
+          ) : null}
+
           <WorkItemDetailDisclosure
             title={strings.subtasks}
             summary={
@@ -972,7 +957,7 @@ export function TaskDetailSheet() {
                         className={`task-row-checkbox${child.status === "done" ? " done" : ""}${child.status === "cancelled" ? " cancelled" : ""}`}
                         aria-label={child.status === "done" || child.status === "cancelled" ? strings.reopen : strings.done}
                         onClick={() => {
-                          taskActions.requestToggle(child);
+                          dispatch({ type: "task.toggleDone", task: child });
                           reload();
                         }}
                       >
@@ -1020,89 +1005,19 @@ export function TaskDetailSheet() {
                 {sortDependencies(task.dependencies, locale).map((dep) => (
                   <li key={dep.id} className="row-between">
                     <span>{dep.title ?? `#${dep.dependsOnTaskId}`}</span>
-                    <span className="row">
-                      <span className="text-muted">
-                        {dep.resolved ? strings.resolved : strings.unresolved}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost"
-                        onClick={() =>
-                          void api
-                            .removeDependency(task.id, dep.dependsOnTaskId)
-                            .then(() => {
-                              bump();
-                              reload();
-                            })
-                        }
-                      >
-                        {strings.removeDependency}
-                      </button>
+                    <span className="text-muted">
+                      {dep.resolved ? strings.resolved : strings.unresolved}
                     </span>
                   </li>
                 ))}
               </ul>
-              {addingDependency ? (
-                <div className="stack task-dependency-search">
-                  <input
-                    ref={dependencyInputRef}
-                    aria-label={strings.searchDependency}
-                    placeholder={strings.searchDependency}
-                    value={depQuery}
-                    onChange={(event) =>
-                      void runDependencySearch(event.target.value)
-                    }
-                  />
-                  {depResults.length > 0 ? (
-                    <ul className="list" style={{ padding: 0, margin: 0 }}>
-                      {depResults.map((candidate) => (
-                        <li key={candidate.id} className="stack">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-block"
-                            disabled={addingDependencyId !== null}
-                            onClick={() => void addTaskDependency(candidate)}
-                          >
-                            {strings.addDependency}: {candidate.title}
-                            {candidate.projectTitle ? (
-                              <span className="text-muted">
-                                {" "}
-                                · {candidate.projectTitle}
-                              </span>
-                            ) : null}
-                          </button>
-                          {dependencyError?.candidateTaskId === candidate.id ? (
-                            <WorkItemInlineError message={dependencyError.message} />
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {dependencyError?.candidateTaskId === null ? (
-                    <WorkItemInlineError message={dependencyError.message} />
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      setAddingDependency(false);
-                      setDepQuery("");
-                      setDepResults([]);
-                      setDependencyError(null);
-                    }}
-                  >
-                    {strings.cancel}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => setAddingDependency(true)}
-                >
-                  {strings.addDependency}
-                </button>
-              )}
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" })}
+              >
+                {strings.editPrerequisites}
+              </button>
             </div>
           </WorkItemDetailDisclosure>
           ) : null}

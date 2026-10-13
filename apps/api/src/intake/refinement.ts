@@ -1,14 +1,15 @@
 import { and, eq } from "drizzle-orm";
-import type { IntakeApplyResults, WorkRefinementProposal } from "@machbar/shared";
+import type { IntakeApplyResults, ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
-import { updateTask, createChildTask, createTask } from "../domain/taskCrud.js";
+import { updateTask, createChildTaskInTransaction, createTaskInTransaction, getTaskOrThrow } from "../domain/taskCrud.js";
 import { updateProject } from "../domain/storyCrud.js";
-import { addCriterion, updateCriterionText } from "../domain/storyCapabilities.js";
+import { addCriterion, updateCriterionText } from "../domain/acceptanceCriteria.js";
 import { moveTask } from "../domain/structuralMoves.js";
-import { addDependency, upsertExternalWait } from "../domain/taskCapabilities.js";
+import { addDependency, resolveExternalWait, upsertExternalWait } from "../domain/taskCapabilities.js";
+import { cancelTask } from "../domain/taskWorkflow.js";
 import {
   beginCommitmentConversion,
   finishCommitmentConversion,
@@ -16,6 +17,8 @@ import {
 import type { MutationContext } from "../domain/workItemShared.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { workRefinementProposalSchema } from "@machbar/shared";
+import { activateCommittedProjectChain } from "../domain/commitmentActivation.js";
+import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
 
 function idsFromSnapshot(snapshot: unknown, result = new Map<number, number>()): Map<number, number> {
   if (!snapshot || typeof snapshot !== "object") return result;
@@ -25,7 +28,7 @@ function idsFromSnapshot(snapshot: unknown, result = new Map<number, number>()):
   return result;
 }
 
-export function assertRefinementContext(proposal: WorkRefinementProposal, targetType: "task" | "project", targetId: number, snapshot: unknown, acceptedOnly = false, db?: Db): void {
+export function assertRefinementContext(proposal: WorkRefinementProposal, targetType: "task" | "project", targetId: number, snapshot: unknown, acceptedOnly = false): void {
   const nodes = new Map<number, Record<string, unknown>>();
   const collect = (value: unknown, role?: "task" | "project") => {
     if (!value || typeof value !== "object") return;
@@ -44,6 +47,74 @@ export function assertRefinementContext(proposal: WorkRefinementProposal, target
     if (!value) throw AppError.badRequest("intake_plan_invalid", "A recommendation references work outside the supplied context.");
     return value;
   };
+  const allCreations = proposal.changes.filter((change) => change.kind === "create_child");
+  const creations = allCreations.filter((change) => !acceptedOnly || change.accepted);
+  const byKey = new Map(allCreations.flatMap((change) => change.proposalKey ? [[change.proposalKey, change] as const] : []));
+  const waitChanges = new Map<number, string>();
+  const proposedParentId = (change: Extract<WorkRefinementProposal["changes"][number], { kind: "create_child" }>): number | null => {
+    let current = change;
+    const seen = new Set<string>();
+    while (current.parentProposalKey) {
+      if (seen.has(current.parentProposalKey)) return null;
+      seen.add(current.parentProposalKey);
+      const parent = byKey.get(current.parentProposalKey);
+      if (!parent) return null;
+      current = parent;
+    }
+    return current.parentTaskId ?? null;
+  };
+  const existingUnder = (id: number, ancestorId: number) => {
+    let current: Record<string, unknown> | undefined = nodes.get(id);
+    const seen = new Set<number>();
+    while (current && typeof current.id === "number" && !seen.has(current.id)) {
+      if (current.id === ancestorId) return true;
+      seen.add(current.id);
+      current = typeof current.parentTaskId === "number" ? nodes.get(current.parentTaskId) : undefined;
+    }
+    return false;
+  };
+  for (const change of proposal.changes) {
+    if (acceptedOnly && !change.accepted) continue;
+    if (change.kind === "update_wait" || change.kind === "resolve_wait") {
+      if (waitChanges.has(change.taskId)) throw AppError.badRequest("intake_plan_invalid", "A task cannot start, update, and resolve an external wait in the same accepted proposal.");
+      waitChanges.set(change.taskId, change.kind);
+    }
+    if (change.kind === "cancel_task") {
+      const item = node(change.targetId);
+      if (item._role !== "task" || item.kind === "reference") throw AppError.badRequest("intake_plan_invalid", "Only an existing action can be cancelled.");
+      for (const candidate of proposal.changes) {
+        if (!candidate.accepted || candidate === change) continue;
+        const editedId = candidate.kind === "update_task" || candidate.kind === "move_task" ? candidate.targetId
+          : candidate.kind === "update_wait" || candidate.kind === "resolve_wait" ? candidate.taskId
+            : candidate.kind === "cancel_task" ? candidate.targetId : null;
+        if (editedId !== null && existingUnder(editedId, change.targetId)) {
+          throw AppError.badRequest("intake_plan_invalid", "A task or descendant cannot be edited and cancelled in the same accepted proposal.");
+        }
+        if (candidate.kind === "create_child") {
+          const parentId = proposedParentId(candidate);
+          if (parentId !== null && existingUnder(parentId, change.targetId)) {
+            throw AppError.badRequest("intake_plan_invalid", "New work cannot be created under a task or descendant that is also being cancelled.");
+          }
+        }
+      }
+    }
+  }
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visitCreation = (change: Extract<WorkRefinementProposal["changes"][number], { kind: "create_child" }>) => {
+    if (!change.proposalKey || visited.has(change.proposalKey)) return;
+    if (visiting.has(change.proposalKey)) throw AppError.badRequest("intake_plan_invalid", "The proposed child hierarchy contains a cycle.");
+    visiting.add(change.proposalKey);
+    if (change.parentProposalKey) {
+      const parent = byKey.get(change.parentProposalKey);
+      if (!parent) throw AppError.badRequest("intake_plan_invalid", "A nested step references an unknown proposed parent.");
+      if (acceptedOnly && !parent.accepted) throw AppError.badRequest("intake_plan_invalid", "Accept the proposed parent step or reassign its child before applying.");
+      visitCreation(parent);
+    }
+    visiting.delete(change.proposalKey);
+    visited.add(change.proposalKey);
+  };
+  for (const creation of creations) visitCreation(creation);
   for (const change of proposal.changes) {
     if (acceptedOnly && !change.accepted) continue;
     switch (change.kind) {
@@ -51,21 +122,23 @@ export function assertRefinementContext(proposal: WorkRefinementProposal, target
       case "update_project": if (node(change.targetId)._role !== "project") throw AppError.badRequest("intake_plan_invalid", "A project edit references a task."); break;
       case "convert_task_to_project": {
         const item = node(change.targetId);
-        const hasRecurrenceHistory = db?.select({ id: schema.taskRecurrenceOccurrences.id }).from(schema.taskRecurrenceOccurrences).where(eq(schema.taskRecurrenceOccurrences.taskId, change.targetId)).get() !== undefined;
-        if (change.targetId !== targetId || item._role !== "task" || item.kind === "reference" || item.parentTaskId != null || item.projectId != null || !["captured", "actionable", "someday"].includes(String(item.status)) || item.externalWait != null || (Array.isArray(item.dependencies) && item.dependencies.length > 0) || (Array.isArray(item.reminders) && item.reminders.length > 0) || item.repeatAfterDays != null || hasRecurrenceHistory) {
+        if (change.targetId !== targetId || item._role !== "task" || item.kind === "reference" || item.parentTaskId != null || item.projectId != null || !["captured", "actionable", "someday"].includes(String(item.status))) {
           throw AppError.badRequest("intake_plan_invalid", "The proposed project conversion violates known task structure restrictions.");
         }
         break;
       }
       case "create_child": {
-        const parent = node(change.parentTaskId);
-        const isProject = parent._role === "project" || (parent._role === "task" && convertTargets.has(change.parentTaskId));
-        if (parent._role === "project" && ["completed", "archived"].includes(String(parent.status))) throw AppError.badRequest("intake_plan_invalid", "New work cannot be proposed under a completed or archived project.");
-        if (parent._role === "task" && parent.status === "captured" && !convertTargets.has(change.parentTaskId)) {
-          throw AppError.badRequest("intake_plan_invalid", "Adding a step to a captured task requires accepting its project conversion.");
+        if (change.parentProposalKey) {
+          const parent = byKey.get(change.parentProposalKey);
+          if (!parent) throw AppError.badRequest("intake_plan_invalid", "A nested step references an unknown proposed parent.");
+          if (acceptedOnly && !parent.accepted) throw AppError.badRequest("intake_plan_invalid", "Accept the proposed parent step or reassign its child before applying.");
+          break;
         }
-        if (parent._role === "task" && parent.repeatAfterDays != null) throw AppError.badRequest("intake_plan_invalid", "Recurring tasks cannot receive child steps.");
-        if (!isProject && (parent._role !== "task" || parent.kind === "reference" || ["captured", "done", "cancelled"].includes(String(parent.status)))) {
+        const parent = node(change.parentTaskId!);
+        const isProject = parent._role === "project" || (parent._role === "task" && convertTargets.has(change.parentTaskId!));
+        if (parent._role === "project" && ["completed", "archived"].includes(String(parent.status))) throw AppError.badRequest("intake_plan_invalid", "New work cannot be proposed under a completed or archived project.");
+        if (!isProject && parent._role === "task" && parent.repeatAfterDays != null) throw AppError.badRequest("intake_plan_invalid", "Recurring tasks cannot receive child steps unless the accepted proposal first converts the task into a project.");
+        if (!isProject && (parent._role !== "task" || parent.kind === "reference" || ["done", "cancelled"].includes(String(parent.status)))) {
           throw AppError.badRequest("intake_plan_invalid", "The proposed child action has a structurally incompatible parent.");
         }
         break;
@@ -99,6 +172,12 @@ export function assertRefinementContext(proposal: WorkRefinementProposal, target
       case "update_wait":
         if (node(change.taskId)._role !== "task" || node(change.taskId).status !== "actionable") throw AppError.badRequest("intake_plan_invalid", "Waiting details can only be updated for actionable tasks.");
         if (node(change.taskId).repeatAfterDays != null) throw AppError.badRequest("intake_plan_invalid", "Recurring tasks cannot use external waits.");
+        break;
+      case "resolve_wait":
+        if (node(change.taskId)._role !== "task" || node(change.taskId).status !== "actionable" || node(change.taskId).repeatAfterDays != null || !node(change.taskId).externalWait) throw AppError.badRequest("intake_plan_invalid", "Only a currently waiting, non-recurring action can resolve an external wait.");
+        break;
+      case "cancel_task":
+        if (node(change.targetId)._role !== "task" || node(change.targetId).kind === "reference") throw AppError.badRequest("intake_plan_invalid", "Only an existing action can be cancelled.");
         break;
       case "update_project_outcome": {
         const project = node(change.projectId);
@@ -146,7 +225,7 @@ export function updateWorkRefinement(db: Db, id: string, viewerId: number | null
   if (!(["ready", "analysis_failed"].includes(job.status)) || job.revision !== expectedRevision || (job.status === "analysis_failed" && !job.refinementJson)) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before saving.");
   const proposal = workRefinementProposalSchema.parse(value);
   if (proposal.intent !== job.refinementIntent) throw AppError.badRequest("intake_draft_invalid", "The refinement intent cannot be changed.");
-  assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false, db);
+  assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false);
   const result = db.update(schema.intakeJobs).set({ refinementJson: JSON.stringify(proposal), status: "ready", errorJson: null, revision: job.revision + 1, updatedAt: nowIso() })
     .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, expectedRevision), eq(schema.intakeJobs.status, job.status))).run();
   if (result.changes !== 1) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before saving.");
@@ -158,7 +237,7 @@ export function applyWorkRefinement(
   viewerId: number | null,
   expectedRevision: number,
   context: MutationContext,
-  projectDriverMemberId?: number,
+  activationResolution?: ProjectActivationResolution,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -167,17 +246,45 @@ export function applyWorkRefinement(
     if (job.status !== "ready" || job.revision !== expectedRevision || !job.refinementJson) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before applying.");
     const proposal = workRefinementProposalSchema.parse(JSON.parse(job.refinementJson));
     const { allowed, snapshot } = assertFresh(txDb, job, viewerId);
-    assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, snapshot, true, txDb);
+    assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, snapshot, true);
     const changes = proposal.changes.filter((change) => change.accepted);
     if (changes.some((change) => change.kind === "advisory")) throw AppError.badRequest("intake_draft_invalid", "Advisory recommendations require manual resolution.");
     // Validate the selected set as a whole before making any domain mutation.
-    // In particular, a captured-task child depends on its explicit conversion.
-    assertRefinementContext({ ...proposal, changes }, job.refinementTargetType, job.refinementTargetId!, snapshot, true, txDb);
-    const priority: Record<string, number> = { convert_task_to_project: 0, update_task: 1, update_project: 1, create_child: 2, move_task: 3, add_dependency: 4, update_wait: 5, update_project_outcome: 6, advisory: 7 };
-    const orderedChanges = [...changes].sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99));
+    assertRefinementContext({ ...proposal, changes }, job.refinementTargetType, job.refinementTargetId!, snapshot, true);
+    const priority: Record<string, number> = { convert_task_to_project: 0, update_task: 1, update_project: 1, create_child: 2, move_task: 3, add_dependency: 4, update_wait: 5, resolve_wait: 5, cancel_task: 5, update_project_outcome: 6, advisory: 7 };
+    const childByKey = new Map(changes.flatMap((change) => change.kind === "create_child" && change.proposalKey ? [[change.proposalKey, change] as const] : []));
+    const orderedChildren: typeof changes = [];
+    const emittedKeys = new Set<string>();
+    const emitChild = (change: typeof changes[number]) => {
+      if (change.kind !== "create_child") return;
+      if (change.parentProposalKey) {
+        const parent = childByKey.get(change.parentProposalKey);
+        if (!parent) throw AppError.badRequest("intake_plan_invalid", "A nested step references an unknown proposed parent.");
+        emitChild(parent);
+      }
+      if (change.proposalKey && emittedKeys.has(change.proposalKey)) return;
+      if (change.proposalKey) emittedKeys.add(change.proposalKey);
+      orderedChildren.push(change);
+    };
+    changes.filter((change) => change.kind === "create_child").forEach(emitChild);
+    const orderedChanges = [...changes].sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99) || (a.kind === "create_child" && b.kind === "create_child" ? orderedChildren.indexOf(a) - orderedChildren.indexOf(b) : 0));
     const changedRoleIds = new Set<number>();
     const conversions = new Map<number, ReturnType<typeof beginCommitmentConversion>>();
+    const projectsToActivate = new Set<number>();
+    const createdIdsByKey = new Map<string, number>();
     const fieldWrites = new Map<string, string>();
+    const proposedRootParent = (creation: Extract<WorkRefinementProposal["changes"][number], { kind: "create_child" }>) => {
+      let current = creation;
+      const seen = new Set<string>();
+      while (current.parentProposalKey) {
+        if (seen.has(current.parentProposalKey)) return null;
+        seen.add(current.parentProposalKey);
+        const parent = childByKey.get(current.parentProposalKey);
+        if (!parent) return null;
+        current = parent;
+      }
+      return current.parentTaskId ?? null;
+    };
     for (const change of orderedChanges) {
       if (change.kind === "convert_task_to_project") changedRoleIds.add(change.targetId);
       if ((change.kind === "update_task" || change.kind === "update_project") && changedRoleIds.has(change.targetId)) {
@@ -186,6 +293,11 @@ export function applyWorkRefinement(
       const writes: Array<[number, string, unknown]> = [];
       if (change.kind === "update_task" || change.kind === "update_project") {
         for (const field of ["title", "notes"] as const) if (change[field] !== undefined) writes.push([change.targetId, field, change[field]]);
+        if (change.kind === "update_task") {
+          for (const field of ["scheduledDate", "dueDate", "revisitAt", "reminders"] as const) {
+            if (change[field] !== undefined) writes.push([change.targetId, field, change[field]]);
+          }
+        }
       } else if (change.kind === "convert_task_to_project") writes.push([change.targetId, "role", "project"]);
       else if (change.kind === "move_task") {
         writes.push([change.targetId, "move", JSON.stringify([change.parentTaskId, change.projectId, change.position])]);
@@ -235,7 +347,18 @@ export function applyWorkRefinement(
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task target.");
-          updateTask(txDb, task.id, { ...(change.title !== undefined ? { title: change.title } : {}), ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}), expectedRevision: task.revision }, context); break;
+          const taskBefore = getTaskOrThrow(txDb, task.id);
+          const updated = updateTask(txDb, task.id, {
+            ...(change.title !== undefined ? { title: change.title } : {}),
+            ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}),
+            ...(change.scheduledDate !== undefined ? { scheduledDate: change.scheduledDate } : {}),
+            ...(change.dueDate !== undefined ? { dueDate: change.dueDate } : {}),
+            ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}),
+            ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
+            expectedRevision: task.revision,
+          }, context, { activateCommitment: false });
+          if (updated.projectId !== null && !hasExecutionCommitment(taskBefore) && hasExecutionCommitment(updated)) projectsToActivate.add(updated.projectId);
+          break;
         }
         case "update_project": {
           ensure(change.targetId);
@@ -247,19 +370,39 @@ export function applyWorkRefinement(
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
+          const additionalCommitment = orderedChanges.some((candidate) => candidate.kind === "create_child" && proposedRootParent(candidate) === task.id && hasExecutionCommitment({
+            kind: "action",
+            dueDate: candidate.dueDate ?? null,
+            scheduledDate: candidate.scheduledDate ?? null,
+            revisitAt: candidate.revisitAt ?? null,
+            reminders: candidate.reminders ?? [],
+          }));
           conversions.set(
             task.id,
-            beginCommitmentConversion(txDb, task.id, projectDriverMemberId, viewerId, context),
+            beginCommitmentConversion(txDb, task.id, undefined, additionalCommitment, viewerId, context),
           );
           break;
         }
         case "create_child": {
-          ensure(change.parentTaskId);
-          const parent = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.parentTaskId)).get();
+          const parentId = change.parentTaskId ?? (change.parentProposalKey ? createdIdsByKey.get(change.parentProposalKey) : undefined);
+          if (!parentId) throw AppError.badRequest("intake_plan_invalid", "The proposed parent step was not created.");
+          if (change.parentTaskId !== undefined) ensure(change.parentTaskId);
+          const parent = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, parentId)).get();
           if (!parent) throw AppError.badRequest("intake_draft_invalid", "Invalid child parent.");
-          const input = { title: change.title, notes: change.notes ?? "", createdByMemberId: job.createdByMemberId };
-          if (parent.role === "story") createTask(txDb, { ...input, projectId: parent.id }, context);
-          else createChildTask(txDb, parent.id, input, context);
+          const input = {
+            title: change.title,
+            notes: change.notes ?? "",
+            createdByMemberId: job.createdByMemberId,
+            ...(change.scheduledDate !== undefined ? { scheduledDate: change.scheduledDate } : {}),
+            ...(change.dueDate !== undefined ? { dueDate: change.dueDate } : {}),
+            ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}),
+            ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
+          };
+          const created = parent.role === "story"
+            ? createTaskInTransaction(txDb, { ...input, projectId: parent.id }, context, { activateCommitment: false })
+            : createChildTaskInTransaction(txDb, parent.id, input, context, { activateCommitment: false });
+          if (change.proposalKey) createdIdsByKey.set(change.proposalKey, created.id);
+          if (created.projectId !== null && hasExecutionCommitment(created)) projectsToActivate.add(created.projectId);
           break;
         }
         case "move_task": {
@@ -279,6 +422,20 @@ export function applyWorkRefinement(
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid waiting task.");
           upsertExternalWait(txDb, task.id, { waitingFor: change.waitingFor, ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}), expectedRevision: task.revision }, context); break;
         }
+        case "resolve_wait": {
+          ensure(change.taskId);
+          const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.taskId)).get();
+          if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid external-wait target.");
+          resolveExternalWait(txDb, task.id, task.revision, context);
+          break;
+        }
+        case "cancel_task": {
+          ensure(change.targetId);
+          const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
+          if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid cancellation target.");
+          cancelTask(txDb, task.id, change.descendantsPolicy, context, task.revision);
+          break;
+        }
         case "update_project_outcome": {
           ensure(change.projectId);
           if (change.criterionId !== undefined) updateCriterionText(txDb, change.projectId, change.criterionId, change.outcome, context);
@@ -294,8 +451,10 @@ export function applyWorkRefinement(
       finishCommitmentConversion(txDb, {
         ...conversion,
         projectRevision: current?.revision ?? conversion.projectRevision,
-      }, context);
+      }, context, activationResolution);
+      projectsToActivate.delete(conversion.projectId);
     }
+    for (const projectId of projectsToActivate) activateCommittedProjectChain(txDb, projectId, context, activationResolution);
     const target = tx.select({
       role: schema.workItems.role,
     }).from(schema.workItems).where(eq(schema.workItems.id, job.refinementTargetId!)).get();

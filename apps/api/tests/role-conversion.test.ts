@@ -766,7 +766,7 @@ describe("task <-> story role conversion", () => {
     expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(3);
   });
 
-  it("converts a story back to a task, preserving identity and history, when the story has no children or acceptance criteria", async () => {
+  it("converts a story back to a task, preserving identity, history, and a project work plan", async () => {
     const project = (
       await post("/api/projects", {
         title: "Wieder zur Aufgabe",
@@ -778,14 +778,6 @@ describe("task <-> story role conversion", () => {
       .set({ dueDate: "2026-10-10", scheduledDate: "2026-09-15" })
       .where(eq(schema.workItems.id, project.id))
       .run();
-    ctx.handle.db
-      .update(schema.workItems)
-      .set({
-        notBeforeAt: "2026-09-14T08:00:00.000Z",
-        notBeforeDate: "2026-09-14",
-      })
-      .where(eq(schema.workItems.id, project.id))
-      .run();
     const reverted = await post(`/api/projects/${project.id}/convert-to-task`, {
       expectedRevision: project.revision,
     });
@@ -793,9 +785,9 @@ describe("task <-> story role conversion", () => {
     expect(reverted.json()).toMatchObject({
       id: project.id,
       title: "Wieder zur Aufgabe",
-      status: "someday",
+      status: "actionable",
       dueDate: "2026-10-10",
-      scheduledDate: null,
+      scheduledDate: "2026-09-15",
     });
     const revertedRow = ctx.handle.sqlite
       .prepare("SELECT role, task_kind FROM work_items WHERE id = ?")
@@ -815,37 +807,213 @@ describe("task <-> story role conversion", () => {
     expect(activity.filter((e) => e.kind === "work_item_role_converted")).toHaveLength(1);
   });
 
-  it("rejects converting a story with tasks or acceptance criteria back to a task", async () => {
+  it("keeps recurrence, reminder, dependency, and occurrence identities when converting a project", async () => {
+    const project = (await post("/api/projects", { title: "Wiederkehrende Wartung", status: "backlog" })).json();
+    const prerequisite = (await post("/api/tasks", { title: "Zugang erhalten", status: "actionable" })).json();
+    const reminder = ctx.handle.db.insert(schema.taskReminders).values({
+      taskId: project.id,
+      kind: "absolute",
+      at: "2027-03-12T08:00:00.000Z",
+    }).returning().get();
+    const occurrence = ctx.handle.db.insert(schema.taskRecurrenceOccurrences).values({
+      taskId: project.id,
+      scheduledDate: "2026-09-01",
+      deadlineDate: "2026-09-01",
+      completedOn: "2026-09-01",
+      completedAt: "2026-09-01T09:00:00.000Z",
+      result: "hit",
+    }).returning().get();
+    const dependency = ctx.handle.db.insert(schema.taskDependencies).values({
+      taskId: project.id,
+      dependsOnTaskId: prerequisite.id,
+    }).returning().get();
+    ctx.handle.db.update(schema.workItems)
+      .set({ repeatAfterDays: 30, allowedDeviationDays: 3 })
+      .where(eq(schema.workItems.id, project.id)).run();
+    const oldActivity = ctx.handle.db.insert(schema.activityEvents).values({
+      kind: "task_status_changed",
+      entityType: "project",
+      entityId: project.id,
+      entityTitle: project.title,
+      metadata: { previousStatus: "backlog", nextStatus: "active" },
+    }).returning().get();
+
+    const converted = await post(`/api/projects/${project.id}/convert-to-task`, {
+      expectedRevision: project.revision,
+    });
+
+    expect(converted.statusCode).toBe(201);
+    expect(converted.json()).toMatchObject({
+      id: project.id,
+      status: "actionable",
+      repeatAfterDays: 30,
+      allowedDeviationDays: 3,
+      reminders: [expect.objectContaining({ id: reminder.id, at: "2027-03-12T08:00:00.000Z" })],
+      dependencies: [expect.objectContaining({ id: dependency.id, dependsOnTaskId: prerequisite.id })],
+    });
+    expect(ctx.handle.db.select().from(schema.taskRecurrenceOccurrences)
+      .where(eq(schema.taskRecurrenceOccurrences.taskId, project.id)).all()).toEqual([occurrence]);
+    expect(ctx.handle.db.select().from(schema.activityEvents)
+      .where(eq(schema.activityEvents.id, oldActivity.id)).get()).toMatchObject({ entityType: "project", entityId: project.id });
+    expect(ctx.handle.db.select().from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.id, dependency.id)).get()).toEqual(dependency);
+  });
+
+  it("preserves child tasks and editable acceptance criteria when converting a story", async () => {
     const root = (await post("/api/tasks", { title: "Mit Unterschritten" })).json();
     const converted = (
       await post(`/api/tasks/${root.id}/convert-to-story`, { status: "backlog" })
     ).json();
     await post(`/api/tasks`, { title: "Schritt", projectId: converted.id });
 
-    const withChildren = await post(
-      `/api/projects/${converted.id}/convert-to-task`,
-      {},
-    );
-    expect(withChildren.statusCode).toBe(409);
-    expect(withChildren.json().error.code).toBe("role_conversion_invalid");
-
-    const emptyRoot = (
-      await post("/api/tasks", { title: "Ohne Unterschritte" })
-    ).json();
-    const emptyPromoted = (
-      await post(`/api/tasks/${emptyRoot.id}/convert-to-story`, {
-        status: "backlog",
-      })
-    ).json();
-    await post(`/api/projects/${emptyPromoted.id}/criteria`, {
+    const criterion = await post(`/api/projects/${converted.id}/criteria`, {
       text: "Fertig, wenn alles sauber ist",
     });
 
-    const withCriteria = await post(
-      `/api/projects/${emptyPromoted.id}/convert-to-task`,
-      {},
-    );
-    expect(withCriteria.statusCode).toBe(409);
-    expect(withCriteria.json().error.code).toBe("role_conversion_invalid");
+    const before = (await ctx.app.inject({ method: "GET", url: `/api/projects/${converted.id}` })).json();
+    const convertedTask = await post(`/api/projects/${converted.id}/convert-to-task`, {
+      expectedRevision: before.revision,
+    });
+    expect(convertedTask.statusCode).toBe(201);
+    expect(convertedTask.json()).toMatchObject({
+      id: converted.id,
+      kind: "action",
+      acceptanceCriteria: [expect.objectContaining({ text: "Fertig, wenn alles sauber ist", checked: false })],
+      children: [expect.objectContaining({ title: "Schritt", parentTaskId: converted.id })],
+    });
+
+    const blockedCompletion = await post(`/api/tasks/${converted.id}/complete`, {});
+    expect(blockedCompletion.statusCode).toBe(409);
+    expect(blockedCompletion.json().error).toMatchObject({
+      code: "task_completion_criteria_incomplete",
+      details: { taskId: converted.id, incompleteCriterionIds: [criterion.json().acceptanceCriteria[0].id] },
+    });
+
+    const edited = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${converted.id}/criteria/${criterion.json().acceptanceCriteria[0].id}`,
+      payload: { text: "Fertig, wenn Küche und Flur sauber sind" },
+    });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json().acceptanceCriteria[0].text).toBe("Fertig, wenn Küche und Flur sauber sind");
+    const checked = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${converted.id}/criteria/${criterion.json().acceptanceCriteria[0].id}/check`,
+      payload: { checked: true },
+    });
+    expect(checked.statusCode).toBe(200);
+    const completed = await post(`/api/tasks/${converted.id}/complete`, { descendantsPolicy: "leave_open" });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [expect.objectContaining({ checked: true })] });
+  });
+
+  it("keeps an unplanned backlog outline parked but preserves child commitments", async () => {
+    const source = (await post("/api/projects", { title: "Geparktes Projekt", status: "backlog" })).json();
+    ctx.handle.db.update(schema.workItems).set({ status: "active" })
+      .where(eq(schema.workItems.id, source.id)).run();
+    const unplanned = (await post("/api/tasks", { title: "Undatierter Schritt", projectId: source.id })).json();
+    const dated = (await post("/api/tasks", {
+      title: "Geplanter Schritt",
+      projectId: source.id,
+      scheduledDate: "2030-06-01",
+    })).json();
+    ctx.handle.db.update(schema.workItems)
+      .set({ status: "backlog", revision: source.revision + 1 })
+      .where(eq(schema.workItems.id, source.id)).run();
+    const backlogRevision = ctx.handle.db.select({ revision: schema.workItems.revision })
+      .from(schema.workItems).where(eq(schema.workItems.id, source.id)).get()!.revision;
+
+    const converted = await post(`/api/projects/${source.id}/convert-to-task`, { expectedRevision: backlogRevision });
+
+    expect(converted.statusCode, JSON.stringify(converted.json())).toBe(201);
+    expect(converted.json()).toMatchObject({ id: source.id, status: "someday" });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${unplanned.id}` })).json().status).toBe("someday");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${dated.id}` })).json()).toMatchObject({
+      status: "actionable",
+      scheduledDate: "2030-06-01",
+    });
+
+    const beforeDate = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2030-05-31" })).json();
+    expect(beforeDate.planned.map((task: { id: number }) => task.id)).not.toContain(dated.id);
+    expect(beforeDate.unscheduled.map((task: { id: number }) => task.id)).not.toContain(unplanned.id);
+    const onDate = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2030-06-01" })).json();
+    expect(onDate.planned.map((task: { id: number }) => task.id)).toContain(dated.id);
+    expect(onDate.unscheduled.map((task: { id: number }) => task.id)).not.toContain(unplanned.id);
+
+    const active = (await post("/api/projects", { title: "Aktives Projekt", status: "backlog" })).json();
+    const driver = (await post("/api/members", { name: "Aktiver Treiber" })).json();
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: driver.id, ownerInheritanceMode: "explicit" })
+      .where(eq(schema.workItems.id, active.id)).run();
+    const activeChild = (await post("/api/tasks", { title: "Weiterarbeiten", projectId: active.id })).json();
+    const activeConversion = await post(`/api/projects/${active.id}/convert-to-task`, {
+      expectedRevision: active.revision,
+    });
+    expect(activeConversion.json().status).toBe("actionable");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${activeChild.id}` })).json().status).toBe("actionable");
+    const activeAgenda = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2030-06-01" })).json();
+    expect(activeAgenda.unscheduled.map((task: { id: number }) => task.id)).toContain(activeChild.id);
+  });
+
+  it("preserves the original project completion timestamp after later edits", async () => {
+    const project = (await post("/api/projects", { title: "Abgeschlossen", status: "backlog" })).json();
+    const completedAt = "2026-09-12T08:30:00.000Z";
+    ctx.handle.db.update(schema.workItems)
+      .set({ status: "done", completedAt, updatedAt: "2026-10-01T10:00:00.000Z", revision: project.revision + 1 })
+      .where(eq(schema.workItems.id, project.id)).run();
+    ctx.handle.db.update(schema.workItems)
+      .set({ title: "Nachträglich angepasst", notes: "Ergänzung", updatedAt: "2026-10-10T10:00:00.000Z", revision: project.revision + 2 })
+      .where(eq(schema.workItems.id, project.id)).run();
+    const converted = await post(`/api/projects/${project.id}/convert-to-task`, {
+      expectedRevision: project.revision + 2,
+    });
+
+    expect(converted.statusCode, JSON.stringify(converted.json())).toBe(201);
+    expect(converted.json()).toMatchObject({
+      title: "Nachträglich angepasst",
+      notes: "Ergänzung",
+      status: "done",
+      completedAt,
+    });
+  });
+
+  it("rejects a stale project revision after a criterion changes without converting the item", async () => {
+    const task = (await post("/api/tasks", { title: "Projekt mit Ergebnis" })).json();
+    const project = (await post(`/api/tasks/${task.id}/convert-to-story`, { status: "backlog" })).json();
+    const before = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    const criterion = await post(`/api/projects/${project.id}/criteria`, { text: "Ergebnis sichtbar" });
+    const response = await post(`/api/projects/${project.id}/convert-to-task`, { expectedRevision: before.revision });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("stale_write_conflict");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json()).toMatchObject({
+      id: project.id,
+      acceptanceCriteria: [expect.objectContaining({ id: criterion.json().acceptanceCriteria[0].id })],
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, project.id)).get()).toMatchObject({ role: "story" });
+  });
+
+  it("preserves combined project planning and revisit fields, while rejecting archived status", async () => {
+    const planned = (await post("/api/projects", { title: "Wiedervorlage mit Plan", status: "backlog" })).json();
+    ctx.handle.db.update(schema.workItems).set({ scheduledDate: "2027-02-01", revisitAt: "2027-01-15T09:00:00.000Z" })
+      .where(eq(schema.workItems.id, planned.id)).run();
+    const planningConversion = await post(`/api/projects/${planned.id}/convert-to-task`, {});
+    expect(planningConversion.statusCode).toBe(201);
+    expect(planningConversion.json()).toMatchObject({
+      id: planned.id,
+      status: "actionable",
+      scheduledDate: "2027-02-01",
+      revisitAt: "2027-01-15T09:00:00.000Z",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, planned.id)).get()).toMatchObject({
+      role: "task", scheduledDate: "2027-02-01", revisitAt: "2027-01-15T09:00:00.000Z",
+    });
+
+    const archived = (await post("/api/projects", { title: "Archiviertes Projekt", status: "backlog" })).json();
+    ctx.handle.db.update(schema.workItems).set({ status: "archived", archivedAt: new Date().toISOString() })
+      .where(eq(schema.workItems.id, archived.id)).run();
+    const archivedConflict = await post(`/api/projects/${archived.id}/convert-to-task`, {});
+    expect(archivedConflict.statusCode).toBe(409);
+    expect(archivedConflict.json().error.details.reason).toBe("archived_status_requires_restore");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, archived.id)).get()).toMatchObject({ role: "story", status: "archived" });
   });
 });

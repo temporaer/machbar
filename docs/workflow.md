@@ -16,29 +16,43 @@ activity is unavailable, the response labels the evidence limitation instead
 of treating `updatedAt` as proof of progress. The endpoint does not mutate work
 or infer why work changed.
 
-## Break down a task
+## Clarify work with AI
 
-Choose **Struktur → Mit KI aufteilen…** on an open action task to get a useful
-default proposal. You can add an optional focus, for example: “Make steps I can
-finish in 20 minutes; turn this into a project and add a step to compare
-options.”
+Choose **Struktur → Mit KI klären…** on a task or project. The default is
+**Allgemein verbessern**; you can also find the next action or improve the
+structure. Eligible tasks can be split into smaller steps through the same
+sheet. Instructions are optional, for example: “Focus on preparation and keep
+each step under 20 minutes.”
 
 The paired Home Assistant AI Task prepares an editable proposal, following the
 same actionability, sizing, and project-outcome guidance as other AI workflows,
 including your household preferences. It cannot research the web; it can add
 research as work for you to do.
 
-Review the original task's title and notes, choose whether it stays a task or
-becomes a project, and edit or exclude suggested steps before choosing
-**Geprüfte Änderungen übernehmen**. Existing steps are preserved. Conversion
-uses the usual restrictions and creates a backlog project. Captured Inbox tasks
-must become projects before receiving steps.
+Review the proposed differences, edit or exclude individual changes, and
+choose **Geprüfte Änderungen übernehmen**. For smaller-step proposals, the
+original task remains the root and existing steps are preserved. Any proposed
+project conversion is explicit and uses the usual restrictions; captured Inbox
+tasks are converted only when accepted new steps require it.
+Multi-step proposals can show nested steps; a child is created only when its
+proposed parent is also accepted. External waits can be started or updated
+through structured fields, then resolved separately without completing the
+action. Cancelling an obsolete action uses the normal cancellation command and
+asks for an explicit policy when open descendants are affected.
 
 Nothing changes during generation or when discarding a proposal. Apply is
 atomic. If the original task or its steps changed meanwhile, use **Änderungen
 anfragen** to regenerate and review again. No additional AI credentials are
-needed; the paired Home Assistant integration must support version 0.5.2 or
+needed; the paired Home Assistant integration must support version 0.5.7 or
 newer for AI work refinement.
+
+Refinement proposals start with a compact change summary. Proposed dates and
+reminders are shown with household-local times; title, notes, parent and
+planning editors open only when requested. From task details, successful
+generation hands the existing review route to the foreground and temporarily
+suspends the detail sheet, preserving its text draft and clarification queue.
+Returning restores that task context; applying a task-to-project conversion
+opens the resulting project instead.
 
 Machbar is built around a simple problem: household work is shared, but
 responsibility and next steps are often not.
@@ -112,6 +126,15 @@ Decide what the capture means:
 Clarification is separate from capture so that fast collection does not force
 premature planning.
 
+The clarification need is independent of lifecycle: an active, scheduled, or
+waiting task can be marked **Erneut klären** without losing its commitment.
+Resolving the flag is explicit; opening a task or editing its notes does not
+resolve it. **Später klären** sets a separate clarification revisit date and
+suppresses the task from Eingang until then. It leaves the execution schedule,
+reminders, lifecycle, and external-wait follow-up unchanged. A clarification
+flag by itself does not suppress work with an existing execution commitment
+from the agenda.
+
 When an existing task title already contains a likely date, person, tag, place,
 or simple waiting phrase, the relevant focused editor can offer up to three
 optional **Aus Titel** suggestions. Capture remains free-form and ignoring a
@@ -137,6 +160,16 @@ An inbox item leaves clarification through one explicit classification:
   classification time. From the handoff, or later from the project itself,
   the driver and progress path can be set up and the project started
   explicitly.
+
+### Besprechen
+
+Task and project rows can be marked **Für Besprechung vormerken** from their
+accessible action rail. The shared mark is independent of lifecycle, planning,
+ownership, review acknowledgement, and clarification. The **Besprechen** page
+under **Mehr** lists visible nominated tasks and projects, including backlog
+projects. Clearing the mark removes the item from that list; viewing, editing,
+or completing an item does not clear it. The mark is only a nomination for a
+shared conversation, not a meeting, agenda, or note.
 
 Conversion preserves the item's identity, title, notes, dates, tags, physical
 contexts, and sensible ownership, so activity history and links stay attached.
@@ -367,15 +400,38 @@ Projects move through backlog, active, completed, and archived states. Machbar
 does not automatically complete a project when its tasks are done; a person
 reviews the outcome against its acceptance criteria. Criteria are optional, but
 once present they are binding: every remaining criterion must be checked before
-completion. If open tasks remain when completion is requested, Machbar asks the
+completion. If project criteria remain after Project → Task conversion, the
+same criteria remain editable and are enforced when completing the task.
+If open tasks remain when completion is requested, Machbar asks the
 driver to explicitly cancel or move each one first rather than silently leaving
-inconsistent work attached to a finished project — completion stays
-outcome-based, so not every task must be Done, but nothing open is left behind
-unremarked. Starting a project requires a driver plus an executable progress
-path or intentional healthy future waiting.
+inconsistent work attached to a finished project. These choices and any
+unchecked criteria remain a local draft until the person confirms completion;
+the server applies the selected task moves/cancellations, criterion checks,
+and project completion in one transaction. Closing the sheet or a stale
+revision leaves all work untouched. Completion stays outcome-based, so not
+every task must be Done, but no open task branch is left attached without an
+explicit disposition. Starting a project requires a driver plus an executable
+progress path or intentional healthy future waiting.
+
+Planning keeps two kinds of blockers distinct. “Wartet auf” records an
+external response; “Voraussetzungen” links another Machbar task that must be
+completed first. Both can apply to the same task. A waiting follow-up records
+the outcome together with the choice to continue waiting (and its next
+revisit) or end the external wait. Ending that wait does not remove task
+prerequisites. Prerequisite changes use revision-checked dependency commands;
+a conflict keeps the planning sheet open so the person can retry against the
+refreshed task.
 
 **Backlog** is the one reversible "later / not active" state; normal
 activation rules apply whenever a backlog project is picked back up.
+Returning an active project to backlog preserves its task dates, deadlines,
+recurrence and reminders by default. When any such execution commitments are
+present, the project remains active until the person explicitly selects
+"commitments zurückziehen" in the same defer flow; that choice clears the
+project deadline and the affected task plans, recurrence and reminders
+atomically while keeping task identities, history, wait state and revisit
+information. A project revisit notification alone does not count as an
+execution commitment.
 **Archived** means retired: abandoned or historical work that is not expected
 to return to activity. A completed project may still be archived. Restoring an
 archived project always returns it to backlog first — there is no direct
@@ -440,25 +496,36 @@ contextual capture sheet, and `s`/`a`/`n` jump from the active task to its
 existing planning, assignment, or notes flow. Structural commands are shown only
 inside outlines where structural editing is valid.
 
-## AI-assisted work refinement
+## AI-assisted clarification
 
-Tasks and projects offer **Mit KI verbessern…** from their structure workflow.
-The default intention looks for the single most useful improvement; the same
-sheet can instead find a next action or inspect project structure. Instructions
-are optional. Machbar sends only the selected task/project outline and relevant
-status, dependency, waiting, owner, date, next-action and completion context to
-the configured Home Assistant AI Task. It does not send unrelated household
-work.
+Tasks and projects offer one **Mit KI klären…** action from their structure
+workflow. The default looks for the single most useful improvement; the same
+sheet can instead find a next action or improve structure. Eligible tasks also
+offer a smaller-steps proposal. Instructions are optional. Machbar sends only
+the selected task/project outline and relevant status, dependency, waiting,
+owner, date, next-action and completion context to the configured Home Assistant
+AI Task. It does not send unrelated household work.
 
 AI results are typed proposals attached to the existing intake job. They can
 ask a focused clarification question, recommend no change, propose edits and
 new actions, or surface advisory changes that require manual resolution.
 Nothing changes until the person reviews and accepts specific executable
 changes. Apply checks that the captured outline is still current and uses the
-canonical task/project domain operations in one database transaction. AI does
-not schedule work or perform project lifecycle transitions. Existing
-breakdown remains a specialized action; its original task identity and
-children are preserved.
+canonical task/project domain operations in one database transaction. AI may
+propose explicit task planning dates and reminders, but nothing is scheduled or
+activated until accepted changes and any required project decisions are applied.
+Smaller-step and typed-refinement proposals retain their separate data contracts and focused
+review editors, while sharing the same launch flow, intake job lifecycle and
+canonical domain rules. The original task identity and existing children are
+preserved.
+
+For task refinements, the typed proposal can carry an intended work date,
+deadline, revisit point, and absolute or deadline-relative reminders on an
+existing task or a new child. Omitted values preserve existing planning;
+explicit clears are shown in the review before Apply. The review uses the
+household timezone and applies planning, reminders, content, and accepted
+children atomically through canonical task mutations. Commitment decisions
+remain explicit and are collected from server-provided requirements.
 
 ## Sharing
 

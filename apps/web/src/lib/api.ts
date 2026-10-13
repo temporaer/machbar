@@ -244,6 +244,7 @@ export interface CreateTaskStepBatchResult {
 }
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "projectId">> & {
+  discussionRequested?: boolean;
   externalWait?: { waitingFor: string | null; revisitDate?: string | null } | null;
   additionalNextAction?: boolean;
   excludedTagIds?: number[];
@@ -290,6 +291,7 @@ export interface CreateProjectInput {
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput> & {
+  discussionRequested?: boolean;
   position?: number;
   expectedRevision?: number;
 };
@@ -326,6 +328,11 @@ export type ProjectDetail = ProjectWithActions & {
   externalRefs?: ExternalWorkItemRef[];
 };
 
+export interface DiscussionListResponse {
+  tasks: Task[];
+  projects: ProjectWithActions[];
+}
+
 /** Detail-only task response (`GET /api/tasks/:id`); list/tree tasks never carry ancestors. */
 export type TaskDetail = Task & {
   ancestors?: WorkItemAncestor[];
@@ -347,6 +354,14 @@ export type WeekAgendaResponse = Omit<WeekAgenda, "days" | "unplanned"> & {
 export interface ProjectWorkflowInput {
   expectedRevision: number;
   revisitAt?: string | null;
+  withdrawCommitments?: boolean;
+  expectedTaskRevisions?: Array<{ taskId: number; revision: number }>;
+  criteriaToCheck?: number[];
+  descendantResolutions?: Array<{
+    taskId: number;
+    action: "cancel" | "move_to_inbox";
+    expectedRevision: number;
+  }>;
 }
 
 export interface ActivateProjectInput extends ProjectWorkflowInput {
@@ -407,12 +422,12 @@ export interface ExternalWaitInput {
 export type ExternalWaitFollowUpInput =
   | {
       action: "resolve";
-      content?: string;
+      content: string;
       expectedRevision: number;
     }
   | {
       action: "continue";
-      content?: string;
+      content: string;
       waitingFor?: string | null;
       revisitAt?: string | null;
       /** @deprecated Use revisitAt. */
@@ -544,6 +559,7 @@ export const api = {
       acceptIncomplete?: boolean;
       timezone?: string;
       projectDriverMemberId?: number;
+      activationResolution?: ProjectActivationResolution;
     },
   ) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/apply`, {
@@ -557,7 +573,7 @@ export const api = {
     }),
   updateWorkRefinement: (id: string, body: { expectedRevision: number; proposal: NonNullable<IntakeRecord["refinement"]>["proposal"] }) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement`, { method: "PATCH", body: JSON.stringify(body) }),
-  applyWorkRefinement: (id: string, body: { expectedRevision: number; projectDriverMemberId?: number }) =>
+  applyWorkRefinement: (id: string, body: { expectedRevision: number; activationResolution?: ProjectActivationResolution }) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement/apply`, { method: "POST", body: JSON.stringify(body) }),
   deleteIntake: (id: string) =>
     request<void>(`/intake/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -660,29 +676,29 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  // --- acceptance criteria (ordered, structured; replaces free-text description) ---
-  addCriterion: (projectId: number, text: string) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria`, {
+  // --- acceptance criteria (shared by projects and converted action tasks) ---
+  addCriterion: (ownerType: "project" | "task", workItemId: number, text: string) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria`, {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
-  updateCriterion: (projectId: number, criterionId: number, text: string) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}`, {
+  updateCriterion: (ownerType: "project" | "task", workItemId: number, criterionId: number, text: string) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${criterionId}`, {
       method: "PATCH",
       body: JSON.stringify({ text }),
     }),
-  checkCriterion: (projectId: number, criterionId: number, checked: boolean) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}/check`, {
+  checkCriterion: (ownerType: "project" | "task", workItemId: number, criterionId: number, checked: boolean) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${criterionId}/check`, {
       method: "POST",
       body: JSON.stringify({ checked }),
     }),
-  reorderCriteria: (projectId: number, orderedCriterionIds: number[]) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/reorder`, {
+  reorderCriteria: (ownerType: "project" | "task", workItemId: number, orderedCriterionIds: number[]) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${ownerType === "project" ? "reorder" : "order"}`, {
       method: "POST",
       body: JSON.stringify({ orderedCriterionIds }),
     }),
-  removeCriterion: (projectId: number, criterionId: number) =>
-    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}`, {
+  removeCriterion: (ownerType: "project" | "task", workItemId: number, criterionId: number) =>
+    request<ProjectWithActions | Task>(`/${ownerType === "project" ? "projects" : "tasks"}/${workItemId}/criteria/${criterionId}`, {
       method: "DELETE",
     }),
 
@@ -794,6 +810,7 @@ export const api = {
         scope,
       })}`,
     ),
+  getDiscussion: () => request<DiscussionListResponse>("/discussion"),
   getWaiting: (memberId?: number | null, scope: AgendaScope = "mine") =>
     request<WaitingEntry[]>(
       `/waiting${query({
@@ -883,6 +900,11 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deferTaskClarification: (id: number, clarificationRevisitDate: string, expectedRevision: number) =>
+    request<Task>(`/tasks/${id}/clarification-revisit`, {
+      method: "POST",
+      body: JSON.stringify({ clarificationRevisitDate, expectedRevision }),
+    }),
   convertTaskToStory: (id: number, input: ConvertTaskToStoryInput) =>
     request<ProjectWithActions>(`/tasks/${id}/convert-to-story`, {
       method: "POST",
@@ -948,6 +970,7 @@ export const api = {
     descendantsPolicy: TaskDescendantsPolicy = "leave_open",
     completedOn?: string,
     expectedRevision?: number,
+    criteriaToCheck?: number[],
   ) =>
     request<Task>(`/tasks/${id}/complete`, {
       method: "POST",
@@ -955,6 +978,7 @@ export const api = {
         ...(descendantsPolicy ? { descendantsPolicy } : {}),
         ...(completedOn ? { completedOn } : {}),
         ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+        ...(criteriaToCheck !== undefined ? { criteriaToCheck } : {}),
       }),
     }),
   cancelTask: (
@@ -980,14 +1004,15 @@ export const api = {
   moveTask: (id: number, input: MoveTaskInput) =>
     request<Task>(`/tasks/${id}/move`, { method: "POST", body: JSON.stringify(input) }),
 
-  addDependency: (taskId: number, dependsOnTaskId: number) =>
+  addDependency: (taskId: number, dependsOnTaskId: number, expectedRevision: number) =>
     request<Task>(`/tasks/${taskId}/dependencies`, {
       method: "POST",
-      body: JSON.stringify({ dependsOnTaskId }),
+      body: JSON.stringify({ dependsOnTaskId, expectedRevision }),
     }),
-  removeDependency: (taskId: number, dependsOnTaskId: number) =>
+  removeDependency: (taskId: number, dependsOnTaskId: number, expectedRevision: number) =>
     request<Task>(`/tasks/${taskId}/dependencies/${dependsOnTaskId}`, {
       method: "DELETE",
+      body: JSON.stringify({ expectedRevision }),
     }),
 
   addTag: (taskId: number, tagId: number) =>

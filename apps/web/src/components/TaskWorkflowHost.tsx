@@ -2,21 +2,25 @@ import { useEffect } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskStructureSheet } from "./TaskStructureSheet";
 import { TaskSplitSheet } from "./TaskSplitSheet";
-import { TaskBreakdownSheet } from "./TaskBreakdownSheet";
-import { WorkRefinementSheet } from "./WorkRefinementSheet";
+import { WorkClarificationSheet } from "./WorkClarificationSheet";
 import { TaskPrioritySheet } from "./TaskPrioritySheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
 import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
 import { TaskShapeSheet } from "./TaskShapeSheet";
+import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
+import { TaskClarificationSheet } from "./TaskClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
 
 /**
  * The single host for every focused task workflow reachable through a
@@ -36,6 +40,10 @@ export function TaskWorkflowHost() {
   const strings = useStrings();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
+  const taskDetail = useTaskDetail();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const dispatch = useWorkItemCommands();
   const taskId = workflow.current?.taskId ?? null;
   const { data: fetchedTask, reload } = useAsync(
     () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
@@ -64,6 +72,8 @@ export function TaskWorkflowHost() {
       );
     case "availability":
       return <TaskPlanningSheet task={task} onClose={close} initialTarget="availability" />;
+    case "deferClarification":
+      return <TaskClarificationSheet task={task} onClose={close} />;
     case "shape":
       return <TaskShapeSheet task={task} onClose={close} />;
     case "structure":
@@ -82,10 +92,13 @@ export function TaskWorkflowHost() {
           onClose={close}
         />
       );
-    case "breakdown":
-      return <TaskBreakdownSheet task={task} onClose={close} />;
     case "refinement":
-      return <WorkRefinementSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} onClose={close} />;
+      return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onStarted={(intakeId) => {
+        const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
+        const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
+        close();
+        navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });
+      }} />;
     case "assignOwner":
       return (
         <TaskOwnerSheet
@@ -126,6 +139,18 @@ export function TaskWorkflowHost() {
       return <TaskContextsSheet task={task} onClose={close} />;
     case "convertToProject":
       return <TaskConvertToProjectSheet task={task} onClose={close} />;
+    case "completeWithCriteria":
+      return (
+        <CompleteWithCriteriaSheet
+          workItem={task}
+          workItemType="task"
+          onClose={close}
+          onRefresh={reload}
+          onComplete={async (criteriaToCheck, childPolicy) => {
+            await taskActions.complete(task, childPolicy, criteriaToCheck, true);
+          }}
+        />
+      );
     default:
       return null;
   }

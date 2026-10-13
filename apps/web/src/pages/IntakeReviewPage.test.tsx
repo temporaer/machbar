@@ -1,10 +1,14 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
 import type { IntakeDraft } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { IntakeReviewPage } from "./IntakeReviewPage";
 import { api } from "../lib/api";
+import { useTaskDetail } from "../lib/taskDetailContext";
+import { useNavigate } from "react-router-dom";
 
 const mockedApi = vi.mocked(api, true);
 
@@ -99,13 +103,39 @@ function record(status: string = "ready", error: { code: string; message: string
   };
 }
 
-function renderPage() {
+function renderPage(initialEntry: string | { pathname: string; state?: unknown } = "/intake/i1", bootstrapHandoff = false) {
   return renderWithProviders(
-    <Routes>
-      <Route path="/intake/:id" element={<IntakeReviewPage />} />
-    </Routes>,
-    { initialEntries: ["/intake/i1"] },
+    <>
+      <Routes>
+        <Route path="/intake/:id" element={<IntakeReviewPage />} />
+        <Route path="/today" element={<OriginRestored />} />
+        <Route path="/projects/:id" element={<p>Project detail returned</p>} />
+        <Route path="/tasks/:id" element={<p>Task detail route returned</p>} />
+      </Routes>
+      <BrowserBackControl />
+      {bootstrapHandoff ? <HandoffBootstrap /> : null}
+    </>,
+    { initialEntries: [initialEntry] },
   );
+}
+
+function BrowserBackControl() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>Browser back</button>;
+}
+
+function HandoffBootstrap() {
+  const detail = useTaskDetail();
+  useEffect(() => {
+    detail.openQueue([27, 28], "notes");
+    detail.suspendForHandoff();
+  }, []);
+  return null;
+}
+
+function OriginRestored() {
+  const detail = useTaskDetail();
+  return <p>Origin restored: {detail.openTaskId ?? "none"}, {String(detail.queueActive)}, {String(detail.suspended)}</p>;
 }
 
 async function openEditor(title: string) {
@@ -1662,7 +1692,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByRole("link", { name: "Zu Machbar" })).toHaveAttribute("href", "/today");
   });
 
-  it("shows active conversion and requires a driver for an ownerless actionable breakdown", async () => {
+  it("waits for server activation requirements before asking for a driver", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
       breakdown: {
@@ -1684,12 +1714,11 @@ describe("IntakeReviewPage", () => {
       },
     } as never);
     renderPage();
-    expect(await screen.findByText("Wird aktives Projekt – bleibt in deiner aktiven Arbeit.")).toBeInTheDocument();
-    expect(screen.getByText("Die verantwortliche Person koordiniert und schützt den Fortschritt; sie muss nicht alle Schritte selbst ausführen.")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" })).toBeInTheDocument();
+    expect(await screen.findByText("Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" })).not.toBeInTheDocument();
   });
 
-  it("shows backlog conversion for a someday breakdown without requiring a driver", async () => {
+  it("does not require a driver for an uncommitted someday conversion", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
       breakdown: {
@@ -1711,8 +1740,45 @@ describe("IntakeReviewPage", () => {
       },
     } as never);
     renderPage();
-    expect(await screen.findByText("Wird Backlog-Projekt.")).toBeInTheDocument();
+    expect(await screen.findByText("Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.")).toBeInTheDocument();
     expect(screen.queryByText("Wähle eine verantwortliche Person für das Projekt.")).not.toBeInTheDocument();
+  });
+
+  it("shows the server activation requirement and retries breakdown with the selected driver", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      breakdown: {
+        taskId: 27, instruction: "Make steps", sourceStatus: "captured", sourceOwnerMemberId: null,
+        scheduledDate: null, revisitAt: null, notBeforeAt: null, notBeforeDate: null, priority: null, size: null, existingChildren: [],
+      },
+      draft: {
+        ...draft,
+        workItems: [
+          { ...draft.workItems[0]!, key: "existing-task", kind: "project" },
+          { ...draft.workItems[1]!, parentKey: "existing-task", scheduledDate: "2030-12-01" },
+        ],
+      },
+    } as never);
+    const activationError = Object.assign(new Error("This commitment needs a project driver."), {
+      code: "project_commitment_resolution_required",
+      details: {
+        projects: [{ projectId: 27, title: "Schulfest", ownerMemberId: null, revision: 2, required: ["driver"] }],
+        expectedProjects: [{ projectId: 27, revision: 2 }],
+      },
+    });
+    mockedApi.applyIntake.mockRejectedValueOnce(activationError as never).mockResolvedValueOnce({ ...record("applied"), draft: null } as never);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
+    expect(await screen.findByRole("heading", { name: "Vor dem Start noch entscheiden" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Verantwortlich für „Schulfest“"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({
+      activationResolution: {
+        expectedProjects: [{ projectId: 27, revision: 2 }],
+        drivers: [{ projectId: 27, ownerMemberId: 1 }],
+      },
+    });
   });
 
   it("opens the applied refinement at the resulting project route", async () => {
@@ -1753,6 +1819,119 @@ describe("IntakeReviewPage", () => {
     } as never);
     renderPage();
     expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/tasks/27");
+  });
+
+  it("returns from queued refinement and restores the suspended detail queue", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record("queued"), draft: null } as never);
+    renderPage({
+      pathname: "/intake/i1",
+      state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: "notes" },
+      } },
+    });
+    expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Zurück zur Aufgabe" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+  });
+
+  it("restores a suspended task-detail queue when browser Back leaves intake", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record("queued"), draft: null } as never);
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/intake/:id" element={<IntakeReviewPage />} />
+          <Route path="/today" element={<OriginRestored />} />
+        </Routes>
+        <BrowserBackControl />
+        <HandoffBootstrap />
+      </>,
+      { initialEntries: ["/today", { pathname: "/intake/i1", state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: "notes" },
+      } } }] },
+    );
+    expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+  });
+
+  it("restores the task-detail queue when browser Back leaves a failed refinement", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record("analysis_failed", { code: "ai_error", message: "failed", retryable: true }), draft: null } as never);
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/intake/:id" element={<IntakeReviewPage />} />
+          <Route path="/today" element={<OriginRestored />} />
+        </Routes>
+        <BrowserBackControl />
+        <HandoffBootstrap />
+      </>,
+      { initialEntries: ["/today", { pathname: "/intake/i1", state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: "notes" },
+      } } }] },
+    );
+    expect(await screen.findByRole("heading", { name: /Die Analyse ist fehlgeschlagen/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+  });
+
+  it("discards a smaller-steps proposal through the handoff return path", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("ready"),
+      breakdown: {
+        taskId: 27, instruction: "Smaller steps", sourceStatus: "actionable", sourceOwnerMemberId: null,
+        scheduledDate: null, revisitAt: null, notBeforeAt: null, notBeforeDate: null, priority: null, size: null, existingChildren: [],
+      },
+    } as never);
+    mockedApi.deleteIntake.mockResolvedValue(undefined as never);
+    renderPage({
+      pathname: "/intake/i1",
+      state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: null },
+      } },
+    }, true);
+    await userEvent.click(await screen.findByRole("button", { name: "Verwerfen" }));
+    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+    expect(mockedApi.deleteIntake).toHaveBeenCalledWith("i1");
+  });
+
+  it("keeps the original task and project links on directly opened leave-alone reviews", async () => {
+    const task = {
+      ...record("ready"), draft: null,
+      refinement: { targetType: "task" as const, targetId: 27, intent: "improve" as const, proposal: {
+        intent: "improve" as const, summary: "Passt so.", disposition: "leave_alone" as const, question: null, changes: [],
+      } },
+    };
+    mockedApi.getIntake.mockResolvedValue(task as never);
+    const view = renderPage();
+    expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/tasks/27");
+    view.unmount();
+
+    mockedApi.getIntake.mockResolvedValue({
+      ...task,
+      refinement: { ...task.refinement, targetType: "project", targetId: 42 },
+    } as never);
+    renderPage();
+    expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/projects/42");
+  });
+
+  it("returns applied ordinary tasks to the preserved detail and conversions to the resulting project", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("applied"), draft: null,
+      refinement: { targetType: "task", targetId: 27, intent: "structure", proposal: null },
+      applyResults: { work: [{ key: "refinement-target", kind: "project", workItemId: 27, role: "story" }], calendar: [], paperlessDocumentIds: [] },
+    } as never);
+    renderPage({
+      pathname: "/intake/i1",
+      state: { refinementOrigin: {
+        targetType: "task", targetId: 27, originPath: "/today", entry: "task_detail",
+        taskDetail: { taskId: 27, queueTaskIds: [28], queueActive: true, focusField: null },
+      } },
+    });
+    expect(await screen.findByText("Project detail returned")).toBeInTheDocument();
   });
 
   it("provides an exit for calendar-only applied results with no created work", async () => {

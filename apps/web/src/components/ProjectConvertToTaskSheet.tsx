@@ -1,16 +1,15 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type ProjectDetail, type ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
-import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 import { ErrorState, LoadingState } from "./AsyncStates";
 
 /**
- * Focused `story.convertToTask` workflow. It preflights project-only
- * structure and exposes existing repair surfaces instead of discarding it.
+ * Focused `story.convertToTask` workflow. The work-item id is retained;
+ * task children and checkable acceptance criteria stay attached to it.
  */
 export function ProjectConvertToTaskSheet({
   story,
@@ -21,9 +20,13 @@ export function ProjectConvertToTaskSheet({
 }) {
   const strings = useStrings();
   const { bump } = useRefresh();
-  const dispatch = useWorkItemCommands();
   const [title, setTitle] = useState(story.title);
   const [notes, setNotes] = useState(story.notes ?? "");
+  const [titleEdited, setTitleEdited] = useState(false);
+  const [notesEdited, setNotesEdited] = useState(false);
+  const baseline = useRef({ title: story.title, notes: story.notes ?? "" });
+  const [conflicts, setConflicts] = useState<Array<"title" | "notes">>([]);
+  const [freshProject, setFreshProject] = useState<ProjectDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const {
@@ -33,26 +36,67 @@ export function ProjectConvertToTaskSheet({
     reload,
   } = useAsync<ProjectDetail>(() => api.getProject(story.id), [story.id]);
 
-  const hasChildren = (project?.tasks.length ?? 0) > 0;
-  const hasAcceptanceCriteria = (project?.acceptanceCriteria ?? []).length > 0;
-  const canConvert = project !== undefined && !hasChildren && !hasAcceptanceCriteria;
+  const currentProject = freshProject ?? project;
+
+  useEffect(() => {
+    if (!currentProject) return;
+    if (!titleEdited) {
+      baseline.current.title = currentProject.title;
+      setTitle(currentProject.title);
+    }
+    if (!notesEdited) {
+      baseline.current.notes = currentProject.notes ?? "";
+      setNotes(currentProject.notes ?? "");
+    }
+  }, [currentProject, titleEdited, notesEdited]);
+
+  useEffect(() => {
+    if (freshProject && project && project.revision >= freshProject.revision) {
+      setFreshProject(null);
+    }
+  }, [freshProject, project]);
+
+  const hasChildren = (currentProject?.tasks.length ?? 0) > 0;
+  const hasAcceptanceCriteria = (currentProject?.acceptanceCriteria ?? []).length > 0;
+  const canConvert = currentProject !== null && currentProject !== undefined && currentProject.parentId === null && currentProject.status !== "archived" && (currentProject.childStories?.length ?? 0) === 0;
 
   const convert = async () => {
-    if (busy || !canConvert || !project) return;
+    if (busy || !canConvert || !currentProject || conflicts.length > 0) return;
     setBusy(true);
     setError(null);
     try {
       await api.convertStoryToTask(story.id, {
-        title,
-        notes,
-        expectedRevision: project.revision,
+        ...(titleEdited ? { title } : {}),
+        ...(notesEdited ? { notes } : {}),
+        expectedRevision: currentProject.revision,
       });
       bump();
       onClose();
     } catch (cause) {
       if (isStaleWriteConflict(cause)) {
-        bump();
-        reload();
+        try {
+          const latest = await api.getProject(story.id);
+          setFreshProject(latest);
+          const nextConflicts: Array<"title" | "notes"> = [];
+          if (!titleEdited || latest.title === title) {
+            baseline.current.title = latest.title;
+            if (titleEdited && latest.title === title) setTitleEdited(false);
+            if (!titleEdited) setTitle(latest.title);
+          } else if (latest.title !== baseline.current.title) {
+            nextConflicts.push("title");
+          }
+          const latestNotes = latest.notes ?? "";
+          if (!notesEdited || latestNotes === notes) {
+            baseline.current.notes = latestNotes;
+            if (notesEdited && latestNotes === notes) setNotesEdited(false);
+            if (!notesEdited) setNotes(latestNotes);
+          } else if (latestNotes !== baseline.current.notes) {
+            nextConflicts.push("notes");
+          }
+          setConflicts(nextConflicts);
+        } catch {
+          // Keep the authored draft; the next attempt can reload the current project.
+        }
       }
       setError(localizedErrorMessage(cause, strings));
     } finally {
@@ -75,34 +119,82 @@ export function ProjectConvertToTaskSheet({
             onRetry={reload}
           />
         ) : null}
-        {project ? (
+        {currentProject ? (
           <>
             {canConvert ? (
               <>
                 <p className="text-muted">{strings.convertProjectToTaskReady}</p>
+                {hasChildren ? <p className="text-muted">{strings.convertProjectToTaskChildrenPreserved(currentProject.tasks.length)}</p> : null}
+                {hasAcceptanceCriteria ? <p className="text-muted">{strings.convertProjectToTaskCriteriaPreserved(currentProject.acceptanceCriteria.length)}</p> : null}
                 <label className="field">
                   <span className="field-label">{strings.title}</span>
                   <input
                     className="input"
                     value={title}
-                    onChange={(event) => setTitle(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setTitle(value);
+                      setTitleEdited(value !== baseline.current.title);
+                    }}
                     disabled={busy}
                   />
+                  {conflicts.includes("title") ? (
+                    <div className="stack" role="alert">
+                      <span>{strings.convertProjectToTaskFieldConflict}: {strings.title}</span>
+                      <div className="capture-shape-actions">
+                        <button type="button" className="btn" onClick={() => {
+                          const latest = freshProject?.title ?? currentProject.title;
+                          baseline.current.title = latest;
+                          setTitle(latest);
+                          setTitleEdited(false);
+                          setConflicts((previous) => previous.filter((field) => field !== "title"));
+                        }}>{strings.convertProjectToTaskUseLatest}</button>
+                        <button type="button" className="btn" onClick={() => {
+                          baseline.current.title = freshProject?.title ?? currentProject.title;
+                          setTitleEdited(true);
+                          setConflicts((previous) => previous.filter((field) => field !== "title"));
+                        }}>{strings.convertProjectToTaskKeepMyEdit}</button>
+                      </div>
+                    </div>
+                  ) : null}
                 </label>
                 <label className="field">
                   <span className="field-label">{strings.notes}</span>
                   <textarea
                     className="input"
                     value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setNotes(value);
+                      setNotesEdited(value !== baseline.current.notes);
+                    }}
                     disabled={busy}
                     rows={4}
                   />
+                  {conflicts.includes("notes") ? (
+                    <div className="stack" role="alert">
+                      <span>{strings.convertProjectToTaskFieldConflict}: {strings.notes}</span>
+                      <div className="capture-shape-actions">
+                        <button type="button" className="btn" onClick={() => {
+                          const latest = freshProject?.notes ?? currentProject.notes ?? "";
+                          baseline.current.notes = latest;
+                          setNotes(latest);
+                          setNotesEdited(false);
+                          setConflicts((previous) => previous.filter((field) => field !== "notes"));
+                        }}>{strings.convertProjectToTaskUseLatest}</button>
+                        <button type="button" className="btn" onClick={() => {
+                          baseline.current.notes = freshProject?.notes ?? currentProject.notes ?? "";
+                          setNotesEdited(true);
+                          setConflicts((previous) => previous.filter((field) => field !== "notes"));
+                        }}>{strings.convertProjectToTaskKeepMyEdit}</button>
+                      </div>
+                    </div>
+                  ) : null}
                 </label>
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy || title.trim() === "" || !canConvert}
+                  disabled={busy || title.trim() === "" || !canConvert || conflicts.length > 0}
                   onClick={() => void convert()}
                 >
                   {strings.convertProjectToTask}
@@ -110,37 +202,7 @@ export function ProjectConvertToTaskSheet({
               </>
             ) : (
               <>
-                <p className="text-muted">{strings.convertProjectToTaskBlocked}</p>
-                {hasChildren ? (
-                  <div className="stack">
-                    <p>{strings.convertProjectToTaskHasChildren}</p>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy}
-                      onClick={() =>
-                        dispatch({ type: "story.structure", story })
-                      }
-                    >
-                      {strings.convertProjectToTaskOpenStructure}
-                    </button>
-                  </div>
-                ) : null}
-                {hasAcceptanceCriteria ? (
-                  <div className="stack">
-                    <p>{strings.convertProjectToTaskHasCriteria}</p>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy}
-                      onClick={() =>
-                        dispatch({ type: "story.editOutcome", story })
-                      }
-                    >
-                      {strings.convertProjectToTaskEditGoal}
-                    </button>
-                  </div>
-                ) : null}
+                <p className="text-muted">{strings.convertProjectToTaskUnsupported}</p>
               </>
             )}
           </>

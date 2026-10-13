@@ -339,6 +339,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         >
           <div className="story-row-title">
             {story.title}
+            {story.discussionRequested ? <span className="workitem-discussion-indicator" aria-label={strings.discussionMarked} title={strings.discussionMarked}>◌</span> : null}
             <span className="sr-only">{strings.projectStatus}: </span>
             <span className={`story-row-status-badge story-row-status-badge--${accent}`}>{statusLabel}</span>
             {story.stuckReason ? (
@@ -481,7 +482,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         <SwipeCoachHint primaryAction={primaryLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}
 
-      {chipsOpen && projectRailActions.length > 0 ? (
+      {chipsOpen ? (
         <WorkItemActionRail
           kind="project"
           disabled={busy}
@@ -490,6 +491,13 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
             label,
             onSelect: () => runRailCommand(command),
           }))}
+          secondaryActions={[{
+              label: story.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
+              onSelect: () => {
+                scope?.setOpenRail(null);
+                dispatch({ type: "story.setDiscussion", story, requested: !story.discussionRequested });
+              },
+          }]}
         />
       ) : null}
       {lifecycleOpen ? (

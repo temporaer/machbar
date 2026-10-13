@@ -10,12 +10,13 @@ import {
   type IntakeOmission,
   type IntakeRecord,
 } from "@machbar/shared";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, apiUrl } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
+import { parseWorkRefinementOrigin, useTaskDetail } from "../lib/taskDetailContext";
 import {
   localizedApiErrorMessage,
   localizedErrorMessage,
@@ -27,6 +28,14 @@ import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
 import { WorkRefinementReview } from "../components/WorkRefinementReview";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
+import { ProjectActivationDecisionFields } from "../components/ProjectActivationDecisionFields";
+import { MemberChoiceGroup } from "../components/MemberChoiceGroup";
+import {
+  projectActivationPromptFromError,
+  projectActivationResolutionFromPrompt,
+  projectDriverRequirementFromError,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
 
 function intakeIssuePath(path: readonly (string | number)[]): string {
   return path.reduce<string>((result, segment) =>
@@ -135,8 +144,49 @@ export function IntakeReviewPage() {
   const { id = "" } = useParams();
   const strings = useStrings();
   const navigate = useNavigate();
+  const location = useLocation();
+  const taskDetail = useTaskDetail();
   const { members, membersLoading } = useIdentity();
-  const { version } = useRefresh();
+  const { version, bump } = useRefresh();
+  const refinementOrigin = parseWorkRefinementOrigin((location.state as { refinementOrigin?: unknown } | null)?.refinementOrigin);
+  const refinementHandoffHandledRef = useRef(false);
+  const returnFromRefinement = useCallback((afterApply = false, resultingRole?: "task" | "story") => {
+    refinementHandoffHandledRef.current = true;
+    if (!refinementOrigin) { navigate("/today"); return; }
+    const convertedToProject = afterApply && resultingRole === "story";
+    const taskDetailReturn = refinementOrigin.entry === "task_detail" && !convertedToProject;
+    if (convertedToProject) {
+      taskDetail.close();
+      navigate(`/projects/${refinementOrigin.targetId}`, { replace: true });
+    } else if (taskDetailReturn) {
+      taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail ?? undefined);
+      bump();
+      navigate(refinementOrigin.originPath, { replace: true });
+    } else if (afterApply) {
+      const route = resultingRole === "story" || refinementOrigin.targetType === "project"
+        ? `/projects/${refinementOrigin.targetId}`
+        : `/tasks/${refinementOrigin.targetId}`;
+      bump();
+      navigate(route, { replace: true });
+    } else {
+      if (refinementOrigin.taskDetail) taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail);
+      navigate(refinementOrigin.originPath, { replace: true });
+    }
+  }, [bump, navigate, refinementOrigin, taskDetail]);
+  const refinementHandoffCleanupRef = useRef<() => void>(() => undefined);
+  refinementHandoffCleanupRef.current = () => {
+    if (refinementHandoffHandledRef.current || !refinementOrigin?.taskDetail) return;
+    const current = recordRef.current;
+    const resultingRole = current?.applyResults?.work.find((item) => item.workItemId === refinementOrigin.targetId)?.role;
+    if (current?.status === "applied" && resultingRole === "story") {
+      taskDetail.close();
+      return;
+    }
+    taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail);
+  };
+  useEffect(() => () => refinementHandoffCleanupRef.current(), []);
+  const returnAction = refinementOrigin ? <button className="btn btn-ghost" onClick={() => returnFromRefinement()}>{refinementOrigin.targetType === "task" ? strings.backToTask : strings.backToProject}</button> : null;
+  const returnedAppliedJobRef = useRef<string | null>(null);
   const timezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || INTAKE_TIMEZONE,
     [],
@@ -149,6 +199,8 @@ export function IntakeReviewPage() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [retryHint, setRetryHint] = useState("");
   const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [activationDriverRequirement, setActivationDriverRequirement] = useState<{ projectId: number; title: string } | null>(null);
   const [changeRequestOpen, setChangeRequestOpen] = useState(false);
   const [changeRequest, setChangeRequest] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
@@ -268,13 +320,6 @@ export function IntakeReviewPage() {
   );
   const latestIssuesRef = useRef(issues);
   latestIssuesRef.current = issues;
-  const breakdownRoot = draft?.workItems.find((item) => item.enabled && item.parentKey === null);
-  const breakdownRequiresDriver =
-    Boolean(record?.breakdown) &&
-    record?.breakdown?.sourceStatus === "actionable" &&
-    record?.breakdown?.sourceOwnerMemberId === null &&
-    breakdownRoot?.kind === "project";
-
   useEffect(() => {
     if (state.data) {
       if (!acceptsIntakeRecord(recordRef.current, state.data)) return;
@@ -303,6 +348,13 @@ export function IntakeReviewPage() {
       }
     }
   }, [state.data]);
+
+  useEffect(() => {
+    if (!refinementOrigin || record?.status !== "applied" || returnedAppliedJobRef.current === record.id) return;
+    returnedAppliedJobRef.current = record.id;
+    const appliedRole = record.applyResults?.work.find((item) => item.workItemId === refinementOrigin.targetId)?.role;
+    returnFromRefinement(true, appliedRole === "story" ? "story" : appliedRole === "task" ? "task" : undefined);
+  }, [record?.id, record?.status, record?.applyResults, refinementOrigin, returnFromRefinement]);
 
   const saveCurrentDraft = async (): Promise<boolean> => {
     if (savePromiseRef.current) return savePromiseRef.current;
@@ -387,13 +439,15 @@ export function IntakeReviewPage() {
     (draft?.workItems.filter((item) => item.enabled).length ?? 0);
   if (state.loading && !record) return <LoadingState />;
   if (state.error && !record) {
-    return <section className="card stack" role="alert"><h1>{strings.intakeExpired}</h1><p>{state.error}</p><Link className="btn" to="/today">{strings.toMachbar}</Link></section>;
+    return <section className="card stack" role="alert">{returnAction}<h1>{strings.intakeExpired}</h1><p>{state.error}</p><Link className="btn" to="/today">{strings.toMachbar}</Link></section>;
   }
   if (!record) return null;
   const diagnosticHref = apiUrl(`/intake/${encodeURIComponent(id)}`);
 
   const updateDraft = (next: IntakeDraft) => {
     if (applyingRef.current) return;
+    setActivationPrompt(null);
+    setActivationDriverRequirement(null);
     if (JSON.stringify(next) !== failedSnapshotRef.current) {
       failedSnapshotRef.current = null;
       setSaveError(null);
@@ -474,7 +528,7 @@ export function IntakeReviewPage() {
     }
   };
   const applyInitial = async (acceptIncomplete = false) => {
-    if (record.status !== "ready" || !draft || busy || hasInvalidInputs || applyingRef.current || retryInFlightRef.current || (breakdownRequiresDriver && projectDriverMemberId === null)) return;
+    if (record.status !== "ready" || !draft || busy || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
     if (!acceptIncomplete && selectedIssues.length > 0) return;
     if (acceptIncomplete && !canAcceptIncomplete) return;
     applyingRef.current = true;
@@ -492,6 +546,10 @@ export function IntakeReviewPage() {
       const latestDraft = latestDraftRef.current;
       const expectedRevision = revisionRef.current;
       if (!latestDraft || expectedRevision === null) return;
+      const activationResolution = activationPrompt
+        ? projectActivationResolutionFromPrompt(activationPrompt)
+        : null;
+      if (record.breakdown && activationPrompt && !activationResolution) return;
       if (acceptIncomplete) {
         const latestPreview = prepareIncompleteIntakeDraft(latestDraft, validationOptions);
         if (
@@ -507,6 +565,7 @@ export function IntakeReviewPage() {
         draft: latestDraft,
         timezone,
         ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
+        ...(activationResolution ? { activationResolution } : {}),
         ...(acceptIncomplete ? { acceptIncomplete: true } : {}),
       });
       recordRef.current = nextRecord;
@@ -519,6 +578,13 @@ export function IntakeReviewPage() {
         conflictPendingRef.current = true;
         state.reload();
       } else {
+        if (record.breakdown) {
+          const nextActivationPrompt = projectActivationPromptFromError(cause, activationPrompt);
+          if (nextActivationPrompt) setActivationPrompt(nextActivationPrompt);
+        } else {
+          const driverRequirement = projectDriverRequirementFromError(cause);
+          if (driverRequirement) setActivationDriverRequirement(driverRequirement);
+        }
         setApplyError(localizedErrorMessage(cause, strings));
         if (record.breakdown) {
           // Failed breakdown transactions release their claim and advance the
@@ -566,12 +632,16 @@ export function IntakeReviewPage() {
   };
   const discard = async () => {
     setBusy(true);
-    try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
+    try {
+      await api.deleteIntake(id);
+      if (refinementOrigin) returnFromRefinement();
+      else navigate("/today");
+    } finally { setBusy(false); }
   };
   if (record.status === "analysis_failed" && !draft && !record.refinement?.proposal) {
     const validationIssues = record.error ? intakeErrorIssues(record.error) : [];
     return (
-      <section className="card stack" role="alert">
+      <section className="card stack" role="alert">{returnAction}
         <h1>{strings.intakeAnalysisFailed}</h1>
         <p>{intakeFailureExplanation(record, strings)}</p>
         {validationIssues.length ? (
@@ -614,15 +684,15 @@ export function IntakeReviewPage() {
       </section>
     );
   }
-  if (record.status === "queued" && !draft) return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeQueued}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
-  if (record.status === "analyzing" && !draft) return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;
-  if (record.status === "applying") return <section className="card stack"><h1>{strings.intakeApply}</h1><p>{strings.intakeApplying}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
+  if (record.status === "queued" && !draft) return <section className="card stack">{returnAction}<h1>{strings.intakeProcess}</h1><p>{strings.intakeQueued}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
+  if (record.status === "analyzing" && !draft) return <section className="card stack">{returnAction}<h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;
+  if (record.status === "applying") return <section className="card stack">{returnAction}<h1>{strings.intakeApply}</h1><p>{strings.intakeApplying}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
   if (record.status === "applied" || record.status === "partially_applied") {
     const failedCalendarResults = record.applyResults?.calendar.filter((result) => result.status === "failed") ?? [];
     const hasPartialError = record.status === "partially_applied" && (
       Boolean(record.error) || failedCalendarResults.length > 0 || Boolean(applyError)
     );
-    return <section className="card stack"><h1>{record.status === "applied" ? strings.intakeApplied : strings.intakePartiallyApplied}</h1>
+    return <section className="card stack">{returnAction}<h1>{record.status === "applied" ? strings.intakeApplied : strings.intakePartiallyApplied}</h1>
       {hasPartialError ? (
         <div className="stack intake-error-group">
           {record.error ? <p role="alert">{record.error.message}</p> : null}
@@ -645,7 +715,7 @@ export function IntakeReviewPage() {
     </section>;
   }
   if (record.refinement?.proposal && ["ready", "analysis_failed"].includes(record.status)) {
-    return <WorkRefinementReview record={record} onChange={(next) => { recordRef.current = next; revisionRef.current = next.revision; setRecord(next); }} />;
+    return <WorkRefinementReview record={record} {...(refinementOrigin ? { onReturn: () => returnFromRefinement() } : {})} onChange={(next) => { recordRef.current = next; revisionRef.current = next.revision; setRecord(next); }} />;
   }
   if (!draft) return <LoadingState />;
   return (
@@ -704,16 +774,31 @@ export function IntakeReviewPage() {
           diagnosticHref={diagnosticHref}
           breakdown={Boolean(record.breakdown)}
           existingChildren={record.breakdown?.existingChildren ?? []}
-          sourceStatus={record.breakdown?.sourceStatus ?? "captured"}
-          sourceOwnerMemberId={record.breakdown?.sourceOwnerMemberId ?? null}
-          projectDriverMemberId={projectDriverMemberId}
-          onProjectDriverChange={setProjectDriverMemberId}
-          sourceHasTaskOnlyMetadata={
-            record.breakdown?.priority !== null ||
-            record.breakdown?.size !== null
-          }
         />
       </fieldset>
+      {activationPrompt ? (
+        <ProjectActivationDecisionFields
+          prompt={activationPrompt}
+          disabled={busy || record.status !== "ready"}
+          onChange={setActivationPrompt}
+        />
+      ) : null}
+      {activationDriverRequirement ? (
+        <section className="card stack" aria-label={strings.aiProjectDriverLabel}>
+          <p>{strings.aiProjectWillBeActive}</p>
+          <strong>{activationDriverRequirement.title}</strong>
+          <p>{strings.aiProjectDriverHint}</p>
+          <MemberChoiceGroup
+            label={strings.aiProjectDriverLabel}
+            idPrefix="intake-activation-driver"
+            members={members}
+            value={projectDriverMemberId}
+            onChange={setProjectDriverMemberId}
+            unassignedLabel={null}
+            disabled={busy || record.status !== "ready"}
+          />
+        </section>
+      ) : null}
       {applyError ? (
         <div className="stack intake-error-group">
           <p role="alert">{applyError}</p>
@@ -776,7 +861,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || hasInvalidInputs || breakdownRequiresDriver && projectDriverMemberId === null}
+              disabled={busy || record.status !== "ready" || hasInvalidInputs}
               onClick={() => void applyInitial(true)}
             >
               {strings.intakeAcceptIncomplete}
@@ -785,7 +870,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs || breakdownRequiresDriver && projectDriverMemberId === null}
+              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs || Boolean(record.breakdown && activationPrompt && !projectActivationResolutionFromPrompt(activationPrompt))}
               onClick={() => void applyInitial(false)}
             >
               {record.breakdown ? strings.taskBreakdownApply : strings.intakeApplyCount(enabledProposalCount)}

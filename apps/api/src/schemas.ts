@@ -19,16 +19,14 @@ import {
   taskSizes,
   taskStatuses,
   workItemScopes,
+  isoCalendarDateSchema,
+  isoDateTimeSchema,
+  taskRemindersSchema,
 } from "@machbar/shared";
 import type { IntakeDraft, IntakePlan } from "@machbar/shared";
 
-const isoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD format.");
-const isoDateTime = z
-  .string()
-  .datetime({ offset: true })
-  .transform((value) => new Date(value).toISOString());
+const isoDate = isoCalendarDateSchema;
+const isoDateTime = isoDateTimeSchema;
 const queryBoolean = z
   .union([z.boolean(), z.enum(["true", "false"])])
   .transform((value) => value === true || value === "true");
@@ -73,19 +71,6 @@ const managedDeadlineRemindersSchema = z
     }
   });
 
-export const taskReminderInputSchema = z.discriminatedUnion("kind", [
-  z.object({
-    id: z.number().int().positive().optional(),
-    kind: z.literal("absolute"),
-    at: isoDateTime,
-  }),
-  deadlineRelativeReminderSchema.extend({
-    id: z.number().int().positive().optional(),
-    kind: z.literal("deadline_relative"),
-  }),
-]);
-export const taskRemindersSchema = z.array(taskReminderInputSchema);
-
 export const homeAssistantSyncTaskSchema = z
   .object({
     sourceKey: z.string().min(1),
@@ -113,7 +98,7 @@ export const homeAssistantSyncTaskSchema = z
     }
   });
 
-const projectActivationResolutionSchema = z.object({
+export const projectActivationResolutionSchema = z.object({
   expectedProjects: z.array(z.object({
     projectId: z.number().int().positive(),
     revision: z.number().int().positive(),
@@ -142,6 +127,7 @@ export const createProjectSchema = z.object({
 export const updateProjectSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
+  discussionRequested: z.boolean().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
@@ -170,6 +156,8 @@ export const projectLifecycleSchema = z.object({
 export const returnProjectToBacklogSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
   revisitAt: isoDateTime.nullable().optional(),
+  withdrawCommitments: z.boolean().optional(),
+  expectedTaskRevisions: z.array(z.object({ taskId: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
 });
 
 export const acknowledgeReviewSchema = projectLifecycleSchema;
@@ -294,6 +282,7 @@ export const updateTaskSchema = z.object({
   notes: z.string().optional(),
   status: z.enum(taskStatuses).optional(),
   needsClarification: z.boolean().optional(),
+  discussionRequested: z.boolean().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   ownerInheritanceMode: z.enum(inheritanceModes).optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
@@ -319,6 +308,11 @@ export const updateTaskSchema = z.object({
   contextIds: z.array(z.number().int().positive()).optional(),
   expectedRevision: z.number().int().positive().optional(),
   completedOn: isoDate.optional(),
+});
+
+export const deferTaskClarificationSchema = z.object({
+  clarificationRevisitDate: isoDate,
+  expectedRevision: z.number().int().positive(),
 });
 
 export const transitionTaskStatusSchema = z.object({
@@ -357,6 +351,18 @@ export const completeTaskSchema = z.object({
     .optional(),
   completedOn: isoDate.optional(),
   expectedRevision: z.number().int().positive().optional(),
+  criteriaToCheck: z.array(z.number().int().positive()).optional(),
+});
+
+export const completeProjectSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
+  criteriaToCheck: z.array(z.number().int().positive()).optional(),
+  expectedTaskRevisions: z.array(z.object({ taskId: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
+  descendantResolutions: z.array(z.object({
+    taskId: z.number().int().positive(),
+    action: z.enum(["cancel", "move_to_inbox"]),
+    expectedRevision: z.number().int().positive(),
+  }).strict()).optional(),
 });
 
 export const cancelTaskSchema = z.object({
@@ -379,6 +385,7 @@ export const moveTaskSchema = z.object({
 
 export const dependencySchema = z.object({
   dependsOnTaskId: z.number().int(),
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const upsertExternalWaitSchema = z.object({
@@ -394,7 +401,7 @@ export const resolveExternalWaitSchema = z.object({
 });
 
 const externalWaitFollowUpBaseSchema = z.object({
-  content: z.string().trim().optional(),
+  content: z.string().trim().min(1),
   expectedRevision: z.number().int().positive().optional(),
 });
 

@@ -745,7 +745,8 @@ export function ProjectDetailPage() {
                 </span>
               ) : null}
               <AcceptanceCriteriaChecklist
-                projectId={project.id}
+                ownerType="project"
+                workItemId={project.id}
                 criteria={project.acceptanceCriteria}
               />
             </section>

@@ -1,7 +1,7 @@
 /**
  * Story ("project") CRUD: create/update/delete and free-text notes.
  * Lifecycle transitions live in `storyWorkflow.ts`; acceptance criteria live
- * in `storyCapabilities.ts`.
+ * in `acceptanceCriteria.ts`.
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { ProjectActivationResolution, ProjectStatus, WorkItemScope } from "@machbar/shared";
@@ -204,6 +204,7 @@ export function createProject(
 export interface UpdateProjectInput {
   title?: string;
   notes?: string;
+  discussionRequested?: boolean;
   ownerMemberId?: number | null;
   /** Only legal on a root project (no `parentId`); cascades to the whole
    * subtree. Converting to "work" auto-assigns the acting member as owner
@@ -300,6 +301,13 @@ export function updateProject(
     if (input.notes !== undefined && input.notes !== project.notes) {
       patch.notes = input.notes;
       changedFields.push("notes");
+    }
+    if (
+      input.discussionRequested !== undefined &&
+      input.discussionRequested !== project.discussionRequested
+    ) {
+      patch.discussionRequested = input.discussionRequested;
+      changedFields.push("discussionRequested");
     }
     if (
       input.ownerMemberId !== undefined &&

@@ -320,10 +320,22 @@ describe("household member deletion against seeded, referenced sample data", () 
     for (const project of projectsBefore.filter(
       (candidate) => candidate.status === "active",
     )) {
+      type TaskSnapshot = { id: number; revision: number; children?: TaskSnapshot[] };
+      const detail = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json() as {
+        tasks: TaskSnapshot[];
+      };
+      const taskRevisions: Array<{ taskId: number; revision: number }> = [];
+      const visit = (tasks: TaskSnapshot[]) => {
+        for (const task of tasks) {
+          taskRevisions.push({ taskId: task.id, revision: task.revision });
+          visit(task.children ?? []);
+        }
+      };
+      visit(detail.tasks);
       const response = await ctx.app.inject({
         method: "POST",
         url: `/api/projects/${project.id}/return-to-backlog`,
-        payload: { expectedRevision: project.revision },
+        payload: { expectedRevision: project.revision, withdrawCommitments: true, expectedTaskRevisions: taskRevisions },
       });
       expect(response.statusCode).toBe(200);
     }

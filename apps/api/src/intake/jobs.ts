@@ -342,6 +342,9 @@ export async function createIntakeJob(
               intent: input.refinement.intent,
               ...(input.refinement.instruction ? { instruction: input.refinement.instruction } : {}),
               context: input.refinement.snapshot,
+              today: new Intl.DateTimeFormat("en-CA", { timeZone: promptTimezone }).format(promptNow),
+              timezone: promptTimezone,
+              currentLocalDateTime: intakeLocalDateTime(promptNow, promptTimezone),
             } : undefined,
           }),
           ...(input.refinement ? { analysisMode: "work_refinement" } : {}),
@@ -470,7 +473,7 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
     }
     const proposal = unacceptedWorkRefinementProposal(parsed.data);
     try {
-      assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false, db);
+      assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false);
     } catch (error) {
       db.update(schema.intakeJobs).set({
         status: "analysis_failed",
@@ -744,6 +747,9 @@ export async function retryIntakeAnalysis(
             intent: job.refinementIntent as WorkRefinementIntent,
             ...(job.refinementInstruction ? { instruction: job.refinementInstruction } : {}),
             context: freshRefinementSnapshot?.snapshot ?? "{}",
+            today: new Intl.DateTimeFormat("en-CA", { timeZone: promptTimezone }).format(promptNow),
+            timezone: promptTimezone,
+            currentLocalDateTime: intakeLocalDateTime(promptNow, promptTimezone),
             ...(previousRefinementProposal ? { previousProposal: JSON.stringify(previousRefinementProposal) } : {}),
             ...(retryHint ? { feedback: retryHint } : {}),
             ...(validationIssues.length ? { validationFeedback: validationIssues } : {}),

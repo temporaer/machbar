@@ -140,7 +140,8 @@ export function TaskRow({
   // handle with it — in views whose row order carries no hierarchy meaning.
   const organize = useOutlineOrganizeRow();
   const dispatch = useWorkItemCommands();
-  const { isPending, retained, errors, clearError } = useTaskActions();
+  const taskActions = useTaskActions();
+  const { isPending, retained, errors, clearError } = taskActions;
   const outlineRefreshing = organize?.pendingId !== null;
   const busy = isPending(taskProp.id) || outlineRefreshing;
 
@@ -321,6 +322,7 @@ export function TaskRow({
   const runRailCommand = (
     command:
       | "task.availability"
+      | "task.deferClarification"
       | "task.plan"
       | "task.shape"
       | "task.split"
@@ -523,6 +525,7 @@ export function TaskRow({
                   )}
                   <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
                     {task.title}
+                    {task.discussionRequested ? <span className="workitem-discussion-indicator" aria-label={strings.discussionMarked} title={strings.discussionMarked}>◌</span> : null}
                     {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
                     {task.reminders.length > 0 ? <span aria-label={strings.reminders}> 🔔</span> : null}
                   </div>
@@ -657,8 +660,7 @@ export function TaskRow({
           kind="task"
           disabled={busy}
           groupLabel={strings.moreActions}
-          actions={
-            showTodayRevisitActions && task.externalWait
+          actions={showTodayRevisitActions && task.externalWait
               ? [
                   {
                     label: strings.followUp,
@@ -727,8 +729,28 @@ export function TaskRow({
                       { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
                       { label: strings.railAddStep, onSelect: () => runRailCommand("task.split") },
                       { label: strings.railMove, onSelect: () => runRailCommand("task.changeProject") },
-                    ]
-          }
+                    ]}
+          secondaryActions={[
+            ...(!isReference ? [{
+              label: task.needsClarification ? strings.clarifyNow : strings.clarifyAgain,
+              onSelect: () => {
+                scope.setOpenRail(null);
+                if (task.needsClarification) void taskActions.clarify(task);
+                else dispatch({ type: "task.setClarification", task, requested: true });
+              },
+            }] : []),
+            ...(task.needsClarification && !isReference ? [{
+              label: strings.clarifyLater,
+              onSelect: () => runRailCommand("task.deferClarification"),
+            }] : []),
+            {
+              label: task.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
+              onSelect: () => {
+                scope.setOpenRail(null);
+                dispatch({ type: "task.setDiscussion", task, requested: !task.discussionRequested });
+              },
+            },
+          ]}
         />
       ) : null}
       {lifecycleOpen ? (

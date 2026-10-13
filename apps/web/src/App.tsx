@@ -2,7 +2,7 @@ import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-d
 import type { ReactNode } from "react";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
-import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
+import { TaskDetailProvider } from "./lib/taskDetailContext";
 import { TaskWorkflowProvider } from "./lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "./lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "./lib/swipeSettings";
@@ -22,6 +22,7 @@ import { WaitingPage } from "./pages/WaitingPage";
 import { MorePage } from "./pages/MorePage";
 import { AllPage } from "./pages/AllPage";
 import { ReviewPage } from "./pages/ReviewPage";
+import { DiscussionPage } from "./pages/DiscussionPage";
 import { WeekPage } from "./pages/WeekPage";
 import { TagsPage } from "./pages/TagsPage";
 import { SharePage } from "./pages/SharePage";
@@ -42,8 +43,6 @@ import { HouseholdTimezoneProvider } from "./lib/householdTimezone";
 import { useStrings } from "./lib/strings";
 
 function TaskDetailHost() {
-  const { openTaskId } = useTaskDetail();
-  if (openTaskId === null) return null;
   return <TaskDetailSheet />;
 }
 
@@ -87,6 +86,7 @@ function Shell() {
             <Route path="/more/week" element={<WeekPage />} />
             <Route path="/more/all" element={<AllPage />} />
             <Route path="/more/review" element={<ReviewPage />} />
+            <Route path="/more/discussion" element={<DiscussionPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/activity" element={<ActivityPage />} />
             <Route path="/more/reflection" element={<ReflectionStartPage />} />

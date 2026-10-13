@@ -5,9 +5,9 @@ import type { TaskPlanningTarget } from "./commands";
 /**
  * Every focused task workflow reachable through a canonical `task.*`
  * command (see `commands.ts`) except `task.open`/`task.lifecycle`/
- * `task.toggleDone`/`task.primaryAction`, which are either a direct
- * mutation or already routed through `taskDetailContext`/the interaction
- * scope's status-rail state — see `useWorkItemCommands.ts`.
+ * `task.toggleDone`/`task.primaryAction`, which usually mutate directly or
+ * open the task-criteria completion continuation when required — see
+ * `useWorkItemCommands.ts`.
  *
  * This is the single place any of these commands may open a sheet: no rail,
  * keyboard shortcut, detail-value click, or Review repair may reinterpret
@@ -16,34 +16,32 @@ import type { TaskPlanningTarget } from "./commands";
  * one of the focused sheets below and switches on `kind`.
  *
  * `availability` and `plan` both open the canonical unified planning sheet,
- * with different initial focus. `structure` opens
- * `TaskStructureSheet` (Aufteilen/
- * Verschieben …/Zum Projekt machen), which itself only ever dispatches
- * `task.split`/`task.changeProject`/`task.convertToProject` rather than
- * rendering a sheet of its own.
+ * with different initial focus. `structure` opens `TaskStructureSheet` (AI
+ * clarification, Aufteilen, Verschieben …/Zum Projekt machen), which itself
+ * dispatches semantic commands rather than rendering another sheet.
  */
 export type TaskWorkflowKind =
   | "plan"
   | "availability"
+  | "deferClarification"
   | "shape"
   | "structure"
   | "waitingLifecycle"
   | "split"
-  | "breakdown"
   | "refinement"
   | "assignOwner"
   | "changeProject"
   | "priority"
   | "tags"
   | "contexts"
-  | "convertToProject";
+  | "convertToProject"
+  | "completeWithCriteria";
 
 export interface TaskWorkflowState {
   kind: TaskWorkflowKind;
   taskId: number;
   planningTarget?: TaskPlanningTarget;
 }
-
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
   open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;

@@ -26,10 +26,12 @@ export function ProjectDeferSheet({
   story,
   onClose,
   onSave,
+  onRefresh,
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { revisitAt: string | null }) => Promise<void>;
+  onSave: (patch: { revisitAt: string | null; withdrawCommitments: boolean }) => Promise<void>;
+  onRefresh?: () => void;
 }) {
   const strings = useStrings();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
@@ -43,6 +45,7 @@ export function ProjectDeferSheet({
   );
   const [dateValid, setDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [withdrawCommitments, setWithdrawCommitments] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = () =>
     calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
@@ -62,10 +65,11 @@ export function ProjectDeferSheet({
     setSaving(true);
     setError(null);
     try {
-      await onSave(patch);
+      await onSave({ ...patch, withdrawCommitments });
       onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
+      onRefresh?.();
     } finally {
       setSaving(false);
     }
@@ -86,7 +90,7 @@ export function ProjectDeferSheet({
 
   return (
     <BottomSheet
-      title={story.status === "active" ? strings.deferProject : strings.revisit}
+      title={story.status === "active" ? strings.deferProject : story.status === "archived" ? strings.restoreProjectToBacklog : strings.revisit}
       onClose={() => {
         if (!saving) onClose();
       }}
@@ -173,6 +177,15 @@ export function ProjectDeferSheet({
             </div>
           ) : null}
         </div>
+
+        {story.status === "active" || story.status === "archived" ? (
+          <div className="criteria-checklist-row">
+            <label>
+              <input type="checkbox" checked={withdrawCommitments} disabled={saving} onChange={(event) => setWithdrawCommitments(event.target.checked)} />
+              <span>{strings.withdrawProjectCommitments}</span>
+            </label>
+          </div>
+        ) : null}
 
         {error ? (
           <div className="task-row-error" role="alert">

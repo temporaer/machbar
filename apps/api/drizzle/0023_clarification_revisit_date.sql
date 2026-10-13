@@ -1,0 +1,1 @@
+ALTER TABLE `work_items` ADD `clarification_revisit_date` text;

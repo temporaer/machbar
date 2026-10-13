@@ -9,7 +9,7 @@ import {
   reorderCriteria,
   setCriterionChecked,
   updateCriterionText,
-} from "../domain/storyCapabilities.js";
+} from "../domain/acceptanceCriteria.js";
 import {
   appendProjectNotes,
   createProject,
@@ -33,6 +33,7 @@ import {
   createProjectSchema,
   convertStoryToTaskSchema,
   projectLifecycleSchema,
+  completeProjectSchema,
   reorderCriteriaSchema,
   returnProjectToBacklogSchema,
   updateCriterionSchema,
@@ -201,6 +202,8 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
         body.revisitAt,
+        body.withdrawCommitments,
+        body.expectedTaskRevisions,
       );
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
@@ -211,12 +214,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/complete",
     async (request) => {
       const id = parseId(request.params.id);
-      const body = parseOrThrow(projectLifecycleSchema, request.body ?? {});
+      const body = parseOrThrow(completeProjectSchema, request.body ?? {});
       completeProject(
         db,
         id,
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
+        body,
       );
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);

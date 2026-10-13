@@ -281,6 +281,37 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(unlockedRes.json().blocked).toBe(false);
   });
 
+  it("revision-checks prerequisite edits and rejects a stale second edit", async () => {
+    const target = await createTask({ title: "Prepare documents", status: "actionable" });
+    const first = await createTask({ title: "Request the records", status: "actionable" });
+    const second = await createTask({ title: "Confirm the date", status: "actionable" });
+    const added = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${target.id}/dependencies`,
+      payload: { dependsOnTaskId: first.id, expectedRevision: target.revision },
+    });
+    expect(added.statusCode).toBe(201);
+    expect(added.json().dependencies.map((dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId)).toEqual([first.id]);
+
+    const stale = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${target.id}/dependencies`,
+      payload: { dependsOnTaskId: second.id, expectedRevision: target.revision },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_write_conflict");
+    const current = await ctx.app.inject({ method: "GET", url: `/api/tasks/${target.id}` });
+    expect(current.json().dependencies.map((dependency: { dependsOnTaskId: number }) => dependency.dependsOnTaskId)).toEqual([first.id]);
+
+    const removed = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${target.id}/dependencies/${first.id}`,
+      payload: { expectedRevision: added.json().revision },
+    });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().dependencies).toEqual([]);
+  });
+
   it("defaults projectless successors to actionable", async () => {
     const predecessor = await createTask({
       title: "Globaler Vorgänger",
@@ -319,7 +350,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(projectCapture.needsClarification).toBe(true);
   });
 
-  it("normalizes legacy clarification patches without changing actionable work", async () => {
+  it("keeps clarification requests independent from an actionable task's lifecycle", async () => {
     const actionable = await createTask({ title: "Machbar", status: "actionable" });
     const actionableRes = await ctx.app.inject({
       method: "PATCH",
@@ -345,7 +376,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       payload: { needsClarification: true },
     });
     expect(recapturedRes.json()).toMatchObject({
-      status: "captured",
+      status: "actionable",
       needsClarification: true,
     });
   });
@@ -392,6 +423,50 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(waitingRes.json().completedAt).toBeNull();
     expect(waitingRes.json().cancelledAt).toBeNull();
   });
+
+  it.each([
+    { via: "patch", status: "done" },
+    { via: "command", status: "done" },
+    { via: "patch", status: "cancelled" },
+    { via: "command", status: "cancelled" },
+  ] as const)(
+    "preserves an existing clarification deferral consistently for $via $status transitions",
+    async ({ via, status }) => {
+      const task = await createTask({
+        title: `Deferred ${status} via ${via}`,
+        status: "actionable",
+        needsClarification: true,
+      });
+      const deferred = await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${task.id}/clarification-revisit`,
+        payload: {
+          clarificationRevisitDate: "2999-01-01",
+          expectedRevision: task.revision,
+        },
+      });
+      expect(deferred.statusCode).toBe(200);
+
+      const result = via === "patch"
+        ? await ctx.app.inject({
+            method: "PATCH",
+            url: `/api/tasks/${task.id}`,
+            payload: { status, expectedRevision: deferred.json().revision },
+          })
+        : await ctx.app.inject({
+            method: "POST",
+            url: `/api/tasks/${task.id}/${status === "done" ? "complete" : "cancel"}`,
+            payload: { expectedRevision: deferred.json().revision },
+          });
+
+      expect(result.statusCode, JSON.stringify(result.json())).toBe(200);
+      expect(result.json()).toMatchObject({
+        status,
+        needsClarification: true,
+        clarificationRevisitDate: "2999-01-01",
+      });
+    },
+  );
 
   it("provides an explicit atomic endpoint for direct status transitions", async () => {
     const task = await createTask({ title: "Direkter Status", status: "done" });
@@ -471,6 +546,55 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     // Still not completed after the rejected attempt.
     const stillOpen = await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` });
     expect(stillOpen.json().status).toBe("actionable");
+  });
+
+  it("checks retained task criteria atomically with completion", async () => {
+    const task = await createTask({ title: "Criteria completion", status: "actionable" });
+    const criterion = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/criteria`, payload: { text: "Result geprüft" } });
+    const incomplete = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision } });
+    expect(incomplete.statusCode).toBe(409);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ status: "actionable", acceptanceCriteria: [{ checked: false }] });
+
+    const completed = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision, criteriaToCheck: [criterion.json().acceptanceCriteria[0].id] } });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [{ checked: true }] });
+  });
+
+  it("commits task criteria and the selected open-descendant policy together", async () => {
+    const parent = await createTask({ title: "Konvertierte Aufgabe", status: "actionable" });
+    const childResponse = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/children`, payload: { title: "Offene Teilaufgabe", status: "actionable" },
+    });
+    const child = childResponse.json();
+    const criterionResponse = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/criteria`, payload: { text: "Ergebnis ist abgenommen" },
+    });
+    const criterion = criterionResponse.json().acceptanceCriteria[0];
+    const current = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json();
+
+    const missingPolicy = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/complete`,
+      payload: { expectedRevision: current.revision, criteriaToCheck: [criterion.id] },
+    });
+    expect(missingPolicy.statusCode).toBe(409);
+    expect(missingPolicy.json().error.code).toBe("descendants_policy_required");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json()).toMatchObject({
+      status: "actionable",
+      acceptanceCriteria: [{ checked: false }],
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("actionable");
+
+    const completed = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/complete`,
+      payload: {
+        expectedRevision: current.revision,
+        criteriaToCheck: [criterion.id],
+        descendantsPolicy: "complete_children",
+      },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [{ checked: true }] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("done");
   });
 
   it("leaves children untouched when completing with leave_open", async () => {
@@ -707,7 +831,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(reopenRes.json().completedAt).toBeNull();
   });
 
-  it("reopens a never-clarified task as clarified actionable", async () => {
+  it("reopens a captured task while retaining its unresolved clarification request", async () => {
     const task = await createTask({ title: "Ganz neu" });
     await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/cancel` });
     const reopenRes = await ctx.app.inject({
@@ -715,7 +839,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       url: `/api/tasks/${task.id}/reopen`,
     });
     expect(reopenRes.json().status).toBe("actionable");
-    expect(reopenRes.json().needsClarification).toBe(false);
+    expect(reopenRes.json().needsClarification).toBe(true);
     expect(reopenRes.json().cancelledAt).toBeNull();
   });
 

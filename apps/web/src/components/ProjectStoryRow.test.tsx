@@ -317,29 +317,17 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     const completeButton = within(dialog).getByRole("button", { name: "Projekt abschließen" });
     expect(completeButton).toBeDisabled();
 
-    // The checklist re-reads the project via the refresh bus (`useAsync` +
-    // `bump()`), so the mocked fetch is switched to the now-fully-checked
-    // project before triggering the check, mirroring what the real API
-    // response would look like once the write lands.
-    const allChecked = {
-      ...story,
-      tasks: [],
-      acceptanceCriteria: story.acceptanceCriteria!.map((criterion) => ({
-        ...criterion,
-        checked: true,
-      })),
-    };
-    mockedApi.checkCriterion.mockResolvedValue(allChecked);
-    mockedApi.getProject.mockResolvedValue(allChecked);
-
     await userEvent.click(within(dialog).getByRole("checkbox", { name: "Getränke besorgt" }));
-    expect(mockedApi.checkCriterion).toHaveBeenCalledWith(29, 2, true);
+    expect(mockedApi.checkCriterion).not.toHaveBeenCalled();
 
     await waitFor(() => expect(completeButton).toBeEnabled());
     await userEvent.click(completeButton);
 
     expect(mockedApi.completeProject).toHaveBeenCalledWith(29, {
       expectedRevision: 1,
+      criteriaToCheck: [2],
+      expectedTaskRevisions: [],
+      descendantResolutions: [],
     });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -383,7 +371,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Offene Aufgaben klären: Umzug" });
+    const dialog = await screen.findByRole("dialog", { name: "Projekt abschließen: Umzug" });
     // The structural editor must not open here; this is the task list, not
     // the acceptance-criteria editor.
     expect(within(dialog).queryByPlaceholderText("Neues Kriterium")).not.toBeInTheDocument();
@@ -410,22 +398,22 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Offene Aufgaben klären: Umzug fertig" });
+    const dialog = await screen.findByRole("dialog", { name: "Projekt abschließen: Umzug fertig" });
     const completeButton = within(dialog).getByRole("button", { name: "Projekt abschließen" });
     expect(completeButton).toBeDisabled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Verwerfen" }));
-    await act(async () => {
-      await flushMicrotasks();
-    });
-
     await waitFor(() => expect(within(dialog).getByText("Keine offenen Aufgaben mehr — bereit zum Abschließen.")).toBeInTheDocument());
     expect(completeButton).toBeEnabled();
+    expect(mockedApi.cancelTask).not.toHaveBeenCalled();
 
     await userEvent.click(completeButton);
 
     expect(mockedApi.completeProject).toHaveBeenCalledWith(31, {
       expectedRevision: 1,
+      criteriaToCheck: [],
+      expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
+      descendantResolutions: [{ taskId: task.id, action: "cancel", expectedRevision: task.revision }],
     });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -580,12 +568,17 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
+    const restoreSheet = await screen.findByRole("dialog", { name: "In Backlog zurückholen" });
+    await userEvent.click(within(restoreSheet).getByRole("button", { name: "Ohne Wiedervorlage" }));
     await act(async () => {
       await flushMicrotasks();
     });
 
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(23, {
       expectedRevision: 1,
+      revisitAt: null,
+      withdrawCommitments: false,
+      expectedTaskRevisions: [],
     });
     expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
@@ -785,12 +778,17 @@ describe("ProjectStoryRow – activation preparation", () => {
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
+    const restoreSheet = await screen.findByRole("dialog", { name: "In Backlog zurückholen" });
+    await userEvent.click(within(restoreSheet).getByRole("button", { name: "Ohne Wiedervorlage" }));
     await act(async () => {
       await flushMicrotasks();
     });
 
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(31, {
       expectedRevision: 1,
+      revisitAt: null,
+      withdrawCommitments: false,
+      expectedTaskRevisions: [],
     });
   });
 
@@ -878,6 +876,8 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43, {
       expectedRevision: 1,
       revisitAt: null,
+      withdrawCommitments: false,
+      expectedTaskRevisions: [],
     });
     expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
@@ -940,11 +940,12 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Wartendes Projekt");
 
     const chips = openChips();
-    expect(within(chips).getAllByRole("button").map((button) => button.textContent)).toEqual([
+    expect(within(chips.querySelector(".rail-main-grid")!).getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Planung",
       "Struktur",
       "Nächster Schritt",
     ]);
+    expect(within(chips).getByRole("button", { name: "Für Besprechung vormerken" })).toBeInTheDocument();
 
     await userEvent.click(within(chips).getByRole("button", { name: "Planung" }));
 

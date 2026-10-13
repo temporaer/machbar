@@ -4,7 +4,7 @@ import { useCriterionCheck } from "../lib/useCriterionCheck";
 import { sortByPosition } from "../lib/taskHelpers";
 
 /**
- * The compact, direct-manipulation projection of a project's acceptance
+ * The compact, direct-manipulation projection of a work item's acceptance
  * criteria: check/uncheck only, via the same mutation as the full
  * structural editor (see `useCriterionCheck`). No rename/delete/reorder/add
  * controls live here -- "using criteria is direct, changing the outcome's
@@ -12,14 +12,16 @@ import { sortByPosition } from "../lib/taskHelpers";
  * opened by the caller's own "Ergebnis bearbeiten" action).
  */
 export function AcceptanceCriteriaChecklist({
-  projectId,
+  ownerType,
+  workItemId,
   criteria: criteriaProp,
 }: {
-  projectId: number;
+  ownerType: "project" | "task";
+  workItemId: number;
   criteria: AcceptanceCriterion[];
 }) {
   const strings = useStrings();
-  const { check, pendingId, error } = useCriterionCheck(projectId);
+  const { check, pendingId, error } = useCriterionCheck(ownerType, workItemId);
   const criteria = sortByPosition(criteriaProp);
 
   if (criteria.length === 0) {
