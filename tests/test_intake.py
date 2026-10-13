@@ -1094,3 +1094,33 @@ async def test_async_analyze_rejects_unknown_refinement_kind(hass):
             await async_analyze(hass, None, "ai_task.test", {"taskName": "Machbar", "instructions": "Review", "analysisMode": "work_refinement"})
     assert err.value.code == "ai_task_invalid_response"
     assert err.value.path == ["changes", 0, "kind"]
+
+
+@pytest.mark.parametrize("revisit", [None, "2026-10-16T18:00:00+02:00"])
+def test_normalize_plan_preserves_canonical_revisit_presence(revisit):
+    source = _valid_plan()
+    source["workItems"][0].update({
+        "revisitAt": revisit,
+        "notBeforeDate": "2026-10-16",
+        "notBeforeAt": "2026-10-16T18:00:00+02:00",
+        "scheduledDate": "2026-10-16",
+        "reminders": [{"kind": "absolute", "at": "2026-10-16T17:30:00+02:00"}],
+    })
+    result = normalize_plan(source)["workItems"][0]
+    assert result["revisitAt"] == revisit
+    assert result["reminders"] == [{"kind": "absolute", "at": "2026-10-16T17:30:00+02:00"}]
+    assert result["notBeforeAt"] == "2026-10-16T18:00:00+02:00"
+    del source["workItems"][0]["revisitAt"]
+    legacy = normalize_plan(source)["workItems"][0]
+    assert "revisitAt" not in legacy
+    assert legacy["notBeforeAt"] == result["notBeforeAt"]
+
+
+def test_normalize_plan_keeps_unsupported_planning_for_server_review():
+    source = _valid_plan()
+    source["workItems"][0].update({"kind": "project", "scheduledDate": "2026-10-16", "revisitAt": "2026-10-15T06:00:00+02:00"})
+    project = normalize_plan(source)["workItems"][0]
+    assert project["scheduledDate"] == "2026-10-16"
+    assert project["revisitAt"] == "2026-10-15T06:00:00+02:00"
+    source["workItems"][0]["kind"] = "reference"
+    assert normalize_plan(source)["workItems"][0]["revisitAt"] == "2026-10-15T06:00:00+02:00"

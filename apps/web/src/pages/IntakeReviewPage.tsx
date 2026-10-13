@@ -197,6 +197,13 @@ export function IntakeReviewPage() {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const applyErrorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (applyError) {
+      applyErrorRef.current?.focus();
+      applyErrorRef.current?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [applyError]);
   const [retryHint, setRetryHint] = useState("");
   const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
@@ -586,8 +593,8 @@ export function IntakeReviewPage() {
           if (driverRequirement) setActivationDriverRequirement(driverRequirement);
         }
         setApplyError(localizedErrorMessage(cause, strings));
-        if (record.breakdown) {
-          // Failed breakdown transactions release their claim and advance the
+        {
+          // Failed transactions release their claim and advance the
           // revision. Refresh before enabling edits so the next save is current.
           try {
             const recovered = await api.getIntake(id);
@@ -799,9 +806,10 @@ export function IntakeReviewPage() {
           />
         </section>
       ) : null}
-      {applyError ? (
-        <div className="stack intake-error-group">
-          <p role="alert">{applyError}</p>
+      {applyError || record.error ? (
+        <div className="stack intake-error-group" ref={applyErrorRef} tabIndex={-1} role="alert">
+          <p>{applyError ?? record.error?.message}</p>
+          {intakeErrorIssues(record.error).map((issue, index) => <p key={index}>{intakeIssuePath(issue.path)}: {issue.message}</p>)}
           <IntakeDiagnosticLink href={diagnosticHref} />
         </div>
       ) : null}

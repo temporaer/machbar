@@ -1005,3 +1005,64 @@ describe("intake plan contracts", () => {
     expect(prepared.blockingIssues).toEqual([]);
   });
 });
+
+describe("ordinary intake canonical planning", () => {
+  const options = { memberIds: [], paperlessAvailable: false, hasFiles: false, timezone: "Europe/Berlin" };
+  function plan(values: Partial<IntakePlan["workItems"][number]> = {}): IntakePlan {
+    return { summary: "Anonymous planning", calendarEvents: [], warnings: [], workItems: [{
+      key: "action", kind: "action", title: "Register", notes: null, parentKey: null,
+      ownerName: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null,
+      reminders: [], needsClarification: true, relatedCalendarKeys: [], ...values,
+    }] };
+  }
+
+  it("respects explicit null versus omitted canonical revisit on legacy input", () => {
+    const legacy = { notBeforeDate: "2026-10-16", notBeforeAt: "2026-10-16T18:00:00+02:00" };
+    const explicit = plan({ ...legacy, scheduledDate: "2026-10-16", revisitAt: null,
+      reminders: [{ kind: "absolute", at: "2026-10-16T17:30:00+02:00" }] });
+    expect(intakePlanIssues(normalizeIntakePlan(explicit).plan)).toEqual([]);
+    expect(intakeSelectedDraftIssues(buildDraftFromPlan(explicit, []), options)).toEqual([]);
+    expect(intakePlanIssues(plan(legacy))).toEqual([]);
+    expect(intakePlanIssues(plan({ ...legacy, scheduledDate: "2026-10-16" }))).toContainEqual(
+      expect.objectContaining({ code: "planning_conflict", path: ["workItems", 0, "notBeforeAt"] }));
+  });
+
+  it.each([
+    [{ scheduledDate: "2026-10-16", revisitAt: "2026-10-15T06:00:00+02:00" }, "planning_conflict", "revisitAt"],
+    [{ revisitAt: "not-a-date" }, "invalid_datetime", "revisitAt"],
+    [{ revisitAt: "2026-02-30T06:00:00+01:00" }, "invalid_datetime", "revisitAt"],
+    [{ kind: "reference", needsClarification: false, revisitAt: "2026-10-16T06:00:00+02:00" }, "reference_field_not_allowed", "revisitAt"],
+    [{ kind: "project", needsClarification: false, scheduledDate: "2026-10-16" }, "project_field_not_allowed", "scheduledDate"],
+  ] as const)("diagnoses provider and edited draft planning %j", (values, code, field) => {
+    const source = plan(values);
+    const provider = normalizeIntakePlan(intakePlanStructureSchema.parse(normalizeIntakePlanInput(source)) as IntakePlan).plan;
+    const expected = expect.objectContaining({ code, path: ["workItems", 0, field] });
+    expect(intakePlanIssues(provider)).toContainEqual(expected);
+    const edited = normalizeStoredIntakeDraft(buildDraftFromPlan(source, []))!;
+    expect(intakeSelectedDraftIssues(edited, options)).toContainEqual(expected);
+  });
+
+  it.each([
+    ["2026-10-16T17:30+02:00", "2026-10-16T17:30:00+02:00", null],
+    ["2026-10-16T17:30", "2026-10-16T17:30:00+02:00", null],
+    ["not-a-date", null, "invalid_datetime"],
+    ["2026-03-29T02:30", "2026-03-29T02:30", "nonexistent_datetime"],
+    ["2026-10-25T02:30", "2026-10-25T02:30", "ambiguous_datetime"],
+  ])("prepares canonical revisits with the existing timestamp policy: %s", (value, expected, omission) => {
+    const prepared = prepareIncompleteIntakeDraft(buildDraftFromPlan(plan({ revisitAt: value }), []), options);
+    expect(prepared.draft.workItems[0]!.revisitAt).toBe(expected);
+    if (omission) expect(prepared.omissions).toContainEqual(expect.objectContaining({ code: omission, path: ["workItems", 0, "revisitAt"] }));
+    else expect(prepared.normalizedTimestamps).toContainEqual(expect.objectContaining({ path: ["workItems", 0, "revisitAt"], value: expected }));
+    expect(prepared.blockingIssues.length > 0).toBe(omission === "nonexistent_datetime" || omission === "ambiguous_datetime");
+  });
+
+  it.each([
+    { reminders: [{ kind: "absolute" as const, at: "2026-10-16T17:30:00+02:00" }] },
+    { scheduledDate: "2026-10-16", reminders: [{ kind: "absolute" as const, at: "2026-10-16T17:30:00+02:00" }] },
+    { dueDate: "2026-10-16", reminders: [{ kind: "deadline_relative" as const, daysBefore: 1, time: "17:30", timezone: "Europe/Berlin" }] },
+    { dueDate: "2026-10-16", revisitAt: "2026-10-15T17:30:00+02:00" },
+    { kind: "project" as const, needsClarification: false, dueDate: "2026-10-16", revisitAt: "2026-10-15T17:30:00+02:00" },
+  ])("preserves valid planning %j", (values) => {
+    expect(intakePlanIssues(plan(values))).toEqual([]);
+  });
+});
