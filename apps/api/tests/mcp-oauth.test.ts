@@ -41,7 +41,13 @@ let jwksServer: Server;
 let jwksUri: string;
 let jwksAvailable = true;
 
+// Codex cloud's offline sandbox blocks loopback binds (listen EPERM), so the
+// JWKS server must not start there. CI (GitHub Actions) runs with real
+// loopback and still exercises this coverage.
+const sandboxNetworkDisabled = process.env.CODEX_SANDBOX_NETWORK_DISABLED === "1";
+
 beforeAll(async () => {
+  if (sandboxNetworkDisabled) return;
   const generated = await generateKeyPair("RS256");
   privateKey = generated.privateKey;
   jwks = {
@@ -75,12 +81,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (sandboxNetworkDisabled) return;
   await new Promise<void>((resolve, reject) =>
     jwksServer.close((error) => (error ? reject(error) : resolve())),
   );
 });
 
-describe("MCP OAuth", () => {
+// Skip the suite in Codex cloud's offline sandbox (the JWKS loopback server
+// never starts there); CI runs it with real loopback so coverage is retained.
+describe.skipIf(sandboxNetworkDisabled)("MCP OAuth", () => {
   let ctx: TestContext;
   let provider: McpOAuthProvider;
 
