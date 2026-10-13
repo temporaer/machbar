@@ -71,6 +71,7 @@ def _work_schema() -> vol.Schema:
 
 
 def _reminder_schema() -> vol.Schema:
+    # Keep the regular intake structured-output schema stable.
     return vol.Schema(
         {
             _field("kind", vol.In(["absolute", "deadline_relative"])): vol.In(
@@ -83,6 +84,12 @@ def _reminder_schema() -> vol.Schema:
         },
         extra=vol.PREVENT_EXTRA,
     )
+
+
+def _refinement_reminder_schema() -> vol.Schema:
+    # A single object variant keeps HA's strict schema conversion stable;
+    # _normalize_ai_result enforces the variant-specific required fields.
+    return _reminder_schema()
 
 
 def _warning_schema() -> vol.Schema:
@@ -108,6 +115,13 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "targetId": (True, int),
         "title": (False, vol.Any(str, None)),
         "notes": (False, vol.Any(str, None)),
+        "scheduledDate": (False, vol.Any(str, None)),
+        "dueDate": (False, vol.Any(str, None)),
+        "revisitAt": (False, vol.Any(str, None)),
+        "clearScheduledDate": (False, vol.Any(bool, None)),
+        "clearDueDate": (False, vol.Any(bool, None)),
+        "clearRevisitAt": (False, vol.Any(bool, None)),
+        "reminders": (False, vol.Any(None, [_refinement_reminder_schema()])),
     },
     "update_project": {
         "targetId": (True, int),
@@ -121,6 +135,13 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
         "parentTaskId": (True, int),
         "title": (True, str),
         "notes": (False, vol.Any(str, None)),
+        "scheduledDate": (False, vol.Any(str, None)),
+        "dueDate": (False, vol.Any(str, None)),
+        "revisitAt": (False, vol.Any(str, None)),
+        "clearScheduledDate": (False, vol.Any(bool, None)),
+        "clearDueDate": (False, vol.Any(bool, None)),
+        "clearRevisitAt": (False, vol.Any(bool, None)),
+        "reminders": (False, vol.Any(None, [_refinement_reminder_schema()])),
     },
     "move_task": {
         "targetId": (True, int),
@@ -148,7 +169,11 @@ _REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
     },
 }
 
-_REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId"}
+_REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId", "clearScheduledDate", "clearDueDate", "clearRevisitAt"}
+_REFINEMENT_PLANNING_NULL_PLACEHOLDERS = {
+    "update_task": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
+    "create_child": {"scheduledDate", "dueDate", "revisitAt", "reminders"},
+}
 _REFINEMENT_ALL_FIELDS = {
     "kind",
     "rationale",
@@ -687,18 +712,112 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
         raise _invalid(["changes"], "an array", value=data.get("changes"))
 
     normalized_changes = []
-    for change in data["changes"]:
+    for change_index, change in enumerate(data["changes"]):
         if not isinstance(change, dict):
             normalized_changes.append(change)
             continue
         normalized = dict(change)
         kind = normalized.get("kind")
         allowed = _REFINEMENT_CHANGE_FIELDS.get(kind, {})
+        item_path = ["changes", change_index]
+        clear_fields = (
+            {
+                "scheduledDate": "clearScheduledDate",
+                "dueDate": "clearDueDate",
+                "revisitAt": "clearRevisitAt",
+            }
+            if kind in ("update_task", "create_child")
+            else {}
+        )
+        for field, clear_field in clear_fields.items():
+            if normalized.get(clear_field) is True:
+                if field in normalized and normalized[field] is not None:
+                    raise _invalid(
+                        item_path + [clear_field],
+                        f"omit {field} when explicitly clearing it",
+                        value=normalized[field],
+                    )
+            elif normalized.get(clear_field) is False or normalized.get(clear_field) is None:
+                normalized.pop(clear_field, None)
         for field in _REFINEMENT_ALL_FIELDS:
             if normalized.get(field) is None and (
                 field not in allowed or field in _REFINEMENT_OPTIONAL_NULL_FIELDS
+                or field in _REFINEMENT_PLANNING_NULL_PLACEHOLDERS.get(kind, set())
             ):
                 normalized.pop(field, None)
+        reminders = normalized.get("reminders")
+        if isinstance(reminders, list):
+            normalized_reminders = []
+            for reminder_index, raw_reminder in enumerate(reminders):
+                if not isinstance(raw_reminder, dict):
+                    normalized_reminders.append(raw_reminder)
+                    continue
+                reminder = dict(raw_reminder)
+                reminder_kind = reminder.get("kind")
+                reminder_path = item_path + ["reminders", reminder_index]
+                if reminder_kind == "absolute" and not isinstance(
+                    reminder.get("at"), str
+                ):
+                    raise _invalid(
+                        reminder_path + ["at"],
+                        "an ISO datetime string",
+                        value=reminder.get("at", _MISSING),
+                    )
+                if reminder_kind == "absolute":
+                    for field in ("daysBefore", "time", "timezone"):
+                        if field in reminder and reminder[field] is not None:
+                            raise _invalid(
+                                reminder_path + [field],
+                                "omitted for an absolute reminder",
+                                value=reminder.get(field, _MISSING),
+                            )
+                if reminder_kind == "deadline_relative":
+                    days_before = reminder.get("daysBefore", _MISSING)
+                    if (
+                        not isinstance(days_before, int)
+                        or isinstance(days_before, bool)
+                        or days_before < 0
+                    ):
+                        raise _invalid(
+                            reminder_path + ["daysBefore"],
+                            "a non-negative integer",
+                            value=days_before,
+                        )
+                    if not isinstance(reminder.get("time"), str) or not re.fullmatch(
+                        r"([01]\d|2[0-3]):[0-5]\d", reminder["time"]
+                    ):
+                        raise _invalid(
+                            reminder_path + ["time"],
+                            "a local HH:mm time",
+                            value=reminder.get("time", _MISSING),
+                        )
+                    if (
+                        not isinstance(reminder.get("timezone"), str)
+                        or not reminder["timezone"]
+                    ):
+                        raise _invalid(
+                            reminder_path + ["timezone"],
+                            "a non-empty IANA timezone",
+                            value=reminder.get("timezone", _MISSING),
+                        )
+                    if "at" in reminder and reminder["at"] is not None:
+                        raise _invalid(
+                            reminder_path + ["at"],
+                            "omitted for a deadline-relative reminder",
+                            value=reminder.get("at", _MISSING),
+                        )
+                irrelevant = (
+                    {"daysBefore", "time", "timezone"}
+                    if reminder_kind == "absolute"
+                    else {"at"}
+                    if reminder_kind == "deadline_relative"
+                    else set()
+                )
+                for field in irrelevant | {"id"}:
+                    if reminder.get(field, _MISSING) is None:
+                        reminder.pop(field, None)
+                normalized_reminders.append(reminder)
+            normalized["reminders"] = normalized_reminders
         accepted = normalized.get("accepted", _MISSING)
         if accepted is _MISSING or accepted is None or isinstance(accepted, bool):
             normalized["accepted"] = False
@@ -709,4 +828,25 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
         normalized = structure(candidate)
     except vol.Invalid as err:
         raise _invalid(list(err.path), "the work refinement structure", str(err)) from err
+    # HA's strict structured-output adapter fills every nullable optional
+    # property with null. Compact those placeholders again after validation so
+    # the API receives the canonical reminder variant shape.
+    for change in normalized.get("changes", []):
+        reminders = change.get("reminders") if isinstance(change, dict) else None
+        if not isinstance(reminders, list):
+            continue
+        for reminder in reminders:
+            if not isinstance(reminder, dict):
+                continue
+            reminder_kind = reminder.get("kind")
+            irrelevant = (
+                {"daysBefore", "time", "timezone"}
+                if reminder_kind == "absolute"
+                else {"at"}
+                if reminder_kind == "deadline_relative"
+                else set()
+            )
+            for field in irrelevant | {"id"}:
+                if reminder.get(field, _MISSING) is None:
+                    reminder.pop(field, None)
     return normalized

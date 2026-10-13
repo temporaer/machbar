@@ -4,7 +4,7 @@ import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
-import { updateTask, createChildTask, createTask } from "../domain/taskCrud.js";
+import { updateTask, createChildTaskInTransaction, createTaskInTransaction, getTaskOrThrow } from "../domain/taskCrud.js";
 import { updateProject } from "../domain/storyCrud.js";
 import { addCriterion, updateCriterionText } from "../domain/acceptanceCriteria.js";
 import { moveTask } from "../domain/structuralMoves.js";
@@ -16,6 +16,8 @@ import {
 import type { MutationContext } from "../domain/workItemShared.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { workRefinementProposalSchema } from "@machbar/shared";
+import { activateCommittedProjectChain } from "../domain/commitmentActivation.js";
+import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
 
 function idsFromSnapshot(snapshot: unknown, result = new Map<number, number>()): Map<number, number> {
   if (!snapshot || typeof snapshot !== "object") return result;
@@ -172,6 +174,7 @@ export function applyWorkRefinement(
     const orderedChanges = [...changes].sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99));
     const changedRoleIds = new Set<number>();
     const conversions = new Map<number, ReturnType<typeof beginCommitmentConversion>>();
+    const projectsToActivate = new Set<number>();
     const fieldWrites = new Map<string, string>();
     for (const change of orderedChanges) {
       if (change.kind === "convert_task_to_project") changedRoleIds.add(change.targetId);
@@ -181,6 +184,11 @@ export function applyWorkRefinement(
       const writes: Array<[number, string, unknown]> = [];
       if (change.kind === "update_task" || change.kind === "update_project") {
         for (const field of ["title", "notes"] as const) if (change[field] !== undefined) writes.push([change.targetId, field, change[field]]);
+        if (change.kind === "update_task") {
+          for (const field of ["scheduledDate", "dueDate", "revisitAt", "reminders"] as const) {
+            if (change[field] !== undefined) writes.push([change.targetId, field, change[field]]);
+          }
+        }
       } else if (change.kind === "convert_task_to_project") writes.push([change.targetId, "role", "project"]);
       else if (change.kind === "move_task") {
         writes.push([change.targetId, "move", JSON.stringify([change.parentTaskId, change.projectId, change.position])]);
@@ -230,7 +238,18 @@ export function applyWorkRefinement(
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task target.");
-          updateTask(txDb, task.id, { ...(change.title !== undefined ? { title: change.title } : {}), ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}), expectedRevision: task.revision }, context); break;
+          const taskBefore = getTaskOrThrow(txDb, task.id);
+          const updated = updateTask(txDb, task.id, {
+            ...(change.title !== undefined ? { title: change.title } : {}),
+            ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}),
+            ...(change.scheduledDate !== undefined ? { scheduledDate: change.scheduledDate } : {}),
+            ...(change.dueDate !== undefined ? { dueDate: change.dueDate } : {}),
+            ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}),
+            ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
+            expectedRevision: task.revision,
+          }, context, { activateCommitment: false });
+          if (updated.projectId !== null && !hasExecutionCommitment(taskBefore) && hasExecutionCommitment(updated)) projectsToActivate.add(updated.projectId);
+          break;
         }
         case "update_project": {
           ensure(change.targetId);
@@ -242,9 +261,16 @@ export function applyWorkRefinement(
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
+          const additionalCommitment = orderedChanges.some((candidate) => candidate.kind === "create_child" && candidate.parentTaskId === task.id && hasExecutionCommitment({
+            kind: "action",
+            dueDate: candidate.dueDate ?? null,
+            scheduledDate: candidate.scheduledDate ?? null,
+            revisitAt: candidate.revisitAt ?? null,
+            reminders: candidate.reminders ?? [],
+          }));
           conversions.set(
             task.id,
-            beginCommitmentConversion(txDb, task.id, undefined, false, viewerId, context),
+            beginCommitmentConversion(txDb, task.id, undefined, additionalCommitment, viewerId, context),
           );
           break;
         }
@@ -252,9 +278,19 @@ export function applyWorkRefinement(
           ensure(change.parentTaskId);
           const parent = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.parentTaskId)).get();
           if (!parent) throw AppError.badRequest("intake_draft_invalid", "Invalid child parent.");
-          const input = { title: change.title, notes: change.notes ?? "", createdByMemberId: job.createdByMemberId };
-          if (parent.role === "story") createTask(txDb, { ...input, projectId: parent.id }, context);
-          else createChildTask(txDb, parent.id, input, context);
+          const input = {
+            title: change.title,
+            notes: change.notes ?? "",
+            createdByMemberId: job.createdByMemberId,
+            ...(change.scheduledDate !== undefined ? { scheduledDate: change.scheduledDate } : {}),
+            ...(change.dueDate !== undefined ? { dueDate: change.dueDate } : {}),
+            ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}),
+            ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
+          };
+          const created = parent.role === "story"
+            ? createTaskInTransaction(txDb, { ...input, projectId: parent.id }, context, { activateCommitment: false })
+            : createChildTaskInTransaction(txDb, parent.id, input, context, { activateCommitment: false });
+          if (created.projectId !== null && hasExecutionCommitment(created)) projectsToActivate.add(created.projectId);
           break;
         }
         case "move_task": {
@@ -290,7 +326,9 @@ export function applyWorkRefinement(
         ...conversion,
         projectRevision: current?.revision ?? conversion.projectRevision,
       }, context, activationResolution);
+      projectsToActivate.delete(conversion.projectId);
     }
+    for (const projectId of projectsToActivate) activateCommittedProjectChain(txDb, projectId, context, activationResolution);
     const target = tx.select({
       role: schema.workItems.role,
     }).from(schema.workItems).where(eq(schema.workItems.id, job.refinementTargetId!)).get();

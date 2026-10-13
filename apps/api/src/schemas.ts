@@ -19,16 +19,14 @@ import {
   taskSizes,
   taskStatuses,
   workItemScopes,
+  isoCalendarDateSchema,
+  isoDateTimeSchema,
+  taskRemindersSchema,
 } from "@machbar/shared";
 import type { IntakeDraft, IntakePlan } from "@machbar/shared";
 
-const isoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD format.");
-const isoDateTime = z
-  .string()
-  .datetime({ offset: true })
-  .transform((value) => new Date(value).toISOString());
+const isoDate = isoCalendarDateSchema;
+const isoDateTime = isoDateTimeSchema;
 const queryBoolean = z
   .union([z.boolean(), z.enum(["true", "false"])])
   .transform((value) => value === true || value === "true");
@@ -72,19 +70,6 @@ const managedDeadlineRemindersSchema = z
       keys.add(reminder.key);
     }
   });
-
-export const taskReminderInputSchema = z.discriminatedUnion("kind", [
-  z.object({
-    id: z.number().int().positive().optional(),
-    kind: z.literal("absolute"),
-    at: isoDateTime,
-  }),
-  deadlineRelativeReminderSchema.extend({
-    id: z.number().int().positive().optional(),
-    kind: z.literal("deadline_relative"),
-  }),
-]);
-export const taskRemindersSchema = z.array(taskReminderInputSchema);
 
 export const homeAssistantSyncTaskSchema = z
   .object({

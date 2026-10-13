@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { makeTask } from "../test/fixtures";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
+import { resolveAbsolutePreset } from "../lib/reminderPresets";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -829,6 +830,7 @@ describe("TaskPlanningSheet", () => {
 
   it("keeps concurrently changed reminders when retrying a recurrence-only edit", async () => {
     const user = userEvent.setup();
+    const reminderAt = resolveAbsolutePreset("tomorrowMorning")!;
     const task = makeTask({
       id: 314,
       revision: 5,
@@ -838,7 +840,7 @@ describe("TaskPlanningSheet", () => {
     const latest = {
       ...task,
       revision: 6,
-      reminders: [{ id: 89, kind: "absolute" as const, at: "2026-10-13T08:00:00.000Z" }],
+      reminders: [{ id: 89, kind: "absolute" as const, at: reminderAt }],
     };
     mockedApi.getTask.mockResolvedValue(latest as never);
     mockedApi.updateTask
@@ -852,7 +854,7 @@ describe("TaskPlanningSheet", () => {
     await user.type(interval, "14");
     await user.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
-    expect(within(card("Erinnerungen")).getByRole("button", { name: "Morgen früh · 08:00" })).toBeInTheDocument();
+    expect(within(card("Erinnerungen")).getByRole("button", { name: /^Morgen früh ·/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
@@ -889,7 +891,7 @@ describe("TaskPlanningSheet", () => {
     const plannedDate = screen.getByLabelText("Geplant für");
     fireEvent.change(plannedDate, { target: { value: "16.10.2026" } });
     fireEvent.blur(plannedDate);
-    await user.click(screen.getByRole("button", { name: "Morgen früh" }));
+    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Morgen früh" }));
     await user.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
     expect(screen.getByText(/4 Tage vorher · 15:00/)).toBeInTheDocument();
@@ -897,7 +899,7 @@ describe("TaskPlanningSheet", () => {
     const reminderConflict = (await screen.findByText(/Planungsdaten wurden zwischenzeitlich geändert/)).closest("section") as HTMLElement;
     await user.click(within(reminderConflict).getByRole("button", { name: "Aktuellen Wert übernehmen" }));
     expect(screen.getByRole("button", { name: /4 Tage vorher · 15:00/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Morgen früh · 08:00" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Morgen früh ·/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));

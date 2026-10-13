@@ -484,6 +484,9 @@ describe("reviewed task breakdown", () => {
     expect(initialInstructions).toContain("School and daycare handoffs are shared.");
     expect(initialInstructions).toContain("Keep family logistics calm.");
     expect(initialInstructions).toContain("Prefer small, practical steps.");
+    expect(initialInstructions).toContain("Today is ");
+    expect(initialInstructions).toContain("in Europe/Berlin");
+    expect(initialInstructions).toContain("absolute reminders require an ISO datetime");
     onIntakeAnalyzed(ctx.handle.db, initialJob, {
       intent: "improve", summary: "Formular klarer benennen", disposition: "changes", question: null,
       changes: [{ kind: "update_task", targetId: child.id, title: "Formular ausfüllen und im Sekretariat abgeben", rationale: "Erfasst die geplante Übergabe.", accepted: false }],
@@ -502,6 +505,9 @@ describe("reviewed task breakdown", () => {
     expect(payload.instructions).toContain("School and daycare handoffs are shared.");
     expect(payload.instructions).toContain("Keep family logistics calm.");
     expect(payload.instructions).toContain("Prefer small, practical steps.");
+    expect(payload.instructions).toContain("Today is ");
+    expect(payload.instructions).toContain("in Europe/Berlin");
+    expect(payload.instructions).toContain("absolute reminders require an ISO datetime");
     expect(payload.instructions).toContain("Formular ausfüllen und im Sekretariat abgeben");
     expect(payload.instructions).toContain('"accepted":false');
     expect(JSON.parse(initialRequest.payloadJson).instructions).toContain("Keep the focus on the handoff");

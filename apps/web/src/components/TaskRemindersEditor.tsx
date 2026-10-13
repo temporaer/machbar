@@ -40,6 +40,7 @@ type EditorState =
 
 export interface TaskRemindersEditorHandle {
   getCommitValue(): TaskReminderInput[] | null;
+  hasOpenEditor(): boolean;
 }
 
 interface TaskRemindersEditorProps {
@@ -49,6 +50,7 @@ interface TaskRemindersEditorProps {
   onPendingChange?: (pending: boolean) => void;
   disabled?: boolean;
   autoOpen?: boolean;
+  householdTimezoneAbsoluteLabels?: boolean;
 }
 
 /** Draft-only reminder controls used by the single task-planning workflow. */
@@ -59,6 +61,7 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
   onPendingChange,
   disabled = false,
   autoOpen = false,
+  householdTimezoneAbsoluteLabels = false,
 }, ref) => {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -140,7 +143,10 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
     return draft.map((entry) => entry.reminder);
   };
 
-  useImperativeHandle(ref, () => ({ getCommitValue }), [editor, draft, householdTimezone]);
+  useImperativeHandle(ref, () => ({
+    getCommitValue,
+    hasOpenEditor: () => editor.mode === "customAbsolute" || editor.mode === "customRelative",
+  }), [editor, draft, householdTimezone]);
 
   const openCustomAbsolute = (entry?: DraftReminder) => {
     const reminder = entry?.reminder;
@@ -180,6 +186,9 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
   const editingRowKey = editor.mode === "customAbsolute" || editor.mode === "customRelative"
     ? editor.key
     : undefined;
+  const reminderLabel = (reminder: TaskReminderInput) => householdTimezoneAbsoluteLabels && reminder.kind === "absolute"
+    ? `${calendarDateForInstant(reminder.at, householdTimezone) ?? reminder.at} · ${localTimeForInstant(reminder.at, householdTimezone) ?? ""}`
+    : formatReminderLabel(reminder, dueDate, strings, locale);
 
   const renderEditorRow = (rowKey: string) => {
     if (editor.mode !== "customAbsolute" && editor.mode !== "customRelative") return null;
@@ -253,7 +262,7 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
               className="detail-meta-button reminder-row-label"
               disabled={disabled}
               onClick={() => entry.reminder.kind === "absolute" ? openCustomAbsolute(entry) : openCustomRelative(entry)}
-            >{formatReminderLabel(entry.reminder, dueDate, strings, locale)}</button>
+            >{reminderLabel(entry.reminder)}</button>
             <button
               type="button"
               className="btn btn-sm btn-ghost reminder-row-remove"

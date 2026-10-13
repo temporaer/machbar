@@ -890,6 +890,7 @@ export function updateTask(
   id: number,
   input: UpdateTaskInput,
   context?: MutationContext,
+  options: { activateCommitment?: boolean } = {},
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -1825,6 +1826,7 @@ export function updateTask(
       });
     }
     if (
+      options.activateCommitment !== false &&
       updated.projectId !== null &&
       updated.status !== "done" &&
       updated.status !== "cancelled" &&

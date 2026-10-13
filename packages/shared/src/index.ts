@@ -800,26 +800,6 @@ export type TaskReminder =
       timezone: string;
     };
 
-/**
- * Same shape as `TaskReminder`, but `id` is optional: a reminder being
- * added in this write has no id yet, while a reminder carried over
- * unchanged (or edited) from `Task.reminders` keeps its existing id so
- * the server can diff instead of delete-and-recreate. See `taskCrud.ts`.
- */
-export type TaskReminderInput =
-  | {
-      id?: number;
-      kind: "absolute";
-      at: string;
-    }
-  | {
-      id?: number;
-      kind: "deadline_relative";
-      daysBefore: number;
-      time: string;
-      timezone: string;
-    };
-
 export interface Task {
   /** Legacy upgrade/input compatibility; current API projections omit these. */
   notBeforeAt?: string | null;
@@ -1109,6 +1089,7 @@ export type WeekWorkItemRole = "task" | "story";
 
 export * from "./intake.js";
 export * from "./workRefinement.js";
+export * from "./taskReminder.js";
 export * from "./cleanupRound.js";
 export * from "./inputNormalization.js";
 export * from "./revisit.js";

@@ -68,6 +68,17 @@ fields according to the usual role-conversion rules. Failed transactions return
 the proposal to editable state; repeated Apply cannot duplicate steps.
 Regeneration refreshes source context and the snapshot, requiring a new review.
 
+Typed refinement changes can also set or clear a task's scheduled date,
+deadline, revisit instant, and reminders. Omitted fields preserve existing
+values; provider null-envelope placeholders are removed before proposal
+validation, while explicit date clears and an empty reminder list remain
+reviewable user-selected changes. New actions use canonical task creation
+defaults. The review displays current and proposed planning values, uses the
+household timezone for revisit and reminder editing, and commits those values
+with the other accepted changes. Execution commitments run through the shared
+activation requirement/decision continuation in the same transaction; a
+revisit alone remains a reconsideration point rather than execution work.
+
 This document is the technical deep dive for contributors. For product
 concepts, start with the [household workflow](workflow.md). For operating the
 application, see [deployment](deployment.md) and

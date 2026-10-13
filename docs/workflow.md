@@ -498,12 +498,21 @@ ask a focused clarification question, recommend no change, propose edits and
 new actions, or surface advisory changes that require manual resolution.
 Nothing changes until the person reviews and accepts specific executable
 changes. Apply checks that the captured outline is still current and uses the
-canonical task/project domain operations in one database transaction. AI does
-not schedule work or perform project lifecycle transitions. Smaller-step and
-typed-refinement proposals retain their separate data contracts and focused
+canonical task/project domain operations in one database transaction. AI may
+propose explicit task planning dates and reminders, but nothing is scheduled or
+activated until accepted changes and any required project decisions are applied.
+Smaller-step and typed-refinement proposals retain their separate data contracts and focused
 review editors, while sharing the same launch flow, intake job lifecycle and
 canonical domain rules. The original task identity and existing children are
 preserved.
+
+For task refinements, the typed proposal can carry an intended work date,
+deadline, revisit point, and absolute or deadline-relative reminders on an
+existing task or a new child. Omitted values preserve existing planning;
+explicit clears are shown in the review before Apply. The review uses the
+household timezone and applies planning, reminders, content, and accepted
+children atomically through canonical task mutations. Commitment decisions
+remain explicit and are collected from server-provided requirements.
 
 ## Sharing
 
