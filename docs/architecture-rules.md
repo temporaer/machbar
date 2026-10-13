@@ -79,6 +79,16 @@ Presentation-only wrappers may differ when they do not duplicate mutation
 semantics. Shared optimistic mutations should use `useRetainedMutations` where
 its retention and conflict behavior fit.
 
+### Read invalidation
+
+`refresh.tsx` is the shared invalidation bus; `useAsync.ts` owns query execution.
+Same-query refreshes serialize into one in-flight request and one queued
+revalidation. They must accept the pending result so repeated invalidations
+cannot starve initial loading. Only logical dependency changes and unmount
+invalidate a request's result. External events use a bounded leading/trailing
+cadence; explicit mutation refreshes remain immediate. Do not add per-component
+throttles or another fetching layer to compensate for shared refresh behavior.
+
 ### Task mutations
 
 `taskMutations.ts` owns pure revision-safe task metadata execution and owner
@@ -174,6 +184,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant reverse request bridge | `apps/api/src/integrations/homeAssistantRequests.ts` and `custom_components/machbar/worker.py`; exactly `intake_analyze`, `cleanup_round_analyze`, and `calendar_create`, not an RPC mechanism |
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, and `custom_components/machbar/calendar_bridge.py` |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
+| Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
 | Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
 | Ordinary clarification and shared discussion nomination | Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components/action rails. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |

@@ -36,7 +36,8 @@ function sameDependencies(
  * Fetches `fetcher()` whenever `deps` change or the global refresh bus is
  * bumped. A new logical query enters foreground loading, while reloads of an
  * already resolved query retain its data and revalidate in the background.
- * Guards against setting state after unmount or after a newer request.
+ * Same-query invalidations queue one revalidation without discarding the pending
+ * result. Query changes and unmount still discard obsolete results.
  */
 export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unknown> = []): AsyncState<T> {
   const strings = useStrings();
@@ -58,39 +59,50 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
     refreshErrorCause: null,
   });
   const snapshotRef = useRef(snapshot);
-  const requestId = useRef(0);
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+  const requestRefresh = useRef<(() => void) | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 
+  // Only a logical query change cancels this runner. Refreshes share it.
   useEffect(() => {
     let cancelled = false;
-    const id = ++requestId.current;
-    const existing = snapshotRef.current;
-    const background =
-      existing.generation === currentGeneration && existing.hasData;
-    const pending: AsyncSnapshot<T> = background
-      ? {
-          ...existing,
-          loading: false,
-          refreshing: true,
-          errorCause: null,
-          refreshErrorCause: null,
-        }
-      : {
-          generation: currentGeneration,
-          data: null,
-          hasData: false,
-          loading: true,
-          refreshing: false,
-          errorCause: null,
-          refreshErrorCause: null,
-        };
-    snapshotRef.current = pending;
-    setSnapshot(pending);
-    fetcher()
-      .then((result) => {
-        if (cancelled || id !== requestId.current) return;
+    let inFlight = false;
+    let dirty = false;
+    const run = async () => {
+      if (cancelled) return;
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      inFlight = true;
+      const existing = snapshotRef.current;
+      const background =
+        existing.generation === currentGeneration && existing.hasData;
+      const pending: AsyncSnapshot<T> = background
+        ? {
+            ...existing,
+            loading: false,
+            refreshing: true,
+            errorCause: null,
+            refreshErrorCause: null,
+          }
+        : {
+            generation: currentGeneration,
+            data: null,
+            hasData: false,
+            loading: true,
+            refreshing: false,
+            errorCause: null,
+            refreshErrorCause: null,
+          };
+      snapshotRef.current = pending;
+      setSnapshot(pending);
+      try {
+        const result = await fetcherRef.current();
+        if (cancelled || generation.current !== currentGeneration) return;
         const next: AsyncSnapshot<T> = {
           generation: currentGeneration,
           data: result,
@@ -102,13 +114,11 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
         };
         snapshotRef.current = next;
         setSnapshot(next);
-      })
-      .catch((err: unknown) => {
-        if (cancelled || id !== requestId.current) return;
+      } catch (err: unknown) {
+        if (cancelled || generation.current !== currentGeneration) return;
         const next: AsyncSnapshot<T> = background
           ? {
               ...snapshotRef.current,
-              generation: currentGeneration,
               loading: false,
               refreshing: false,
               errorCause: null,
@@ -125,12 +135,32 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
             };
         snapshotRef.current = next;
         setSnapshot(next);
-      });
+      } finally {
+        inFlight = false;
+        if (!cancelled && generation.current === currentGeneration && dirty) {
+          dirty = false;
+          void run();
+        }
+      }
+    };
+    requestRefresh.current = () => {
+      void run();
+    };
+    void run();
     return () => {
       cancelled = true;
+      requestRefresh.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, reloadToken, ...deps]);
+  }, [currentGeneration]);
+
+  const invalidation = useRef({ version, reloadToken });
+  useEffect(() => {
+    const previous = invalidation.current;
+    invalidation.current = { version, reloadToken };
+    if (previous.version !== version || previous.reloadToken !== reloadToken) {
+      requestRefresh.current?.();
+    }
+  }, [version, reloadToken]);
 
   const current: AsyncSnapshot<T> =
     snapshot.generation === currentGeneration
