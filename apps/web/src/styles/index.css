@@ -1427,6 +1427,8 @@ details[open] > .disclosure-summary::after {
 
 .task-planning-actions {
   position: sticky;
+  display: flex;
+  flex-wrap: wrap;
   bottom: 0;
   z-index: 1;
   padding: 10px 0 max(10px, env(safe-area-inset-bottom));
@@ -2787,6 +2789,44 @@ details[open] > .disclosure-summary::after {
 
 .task-planning-card-header .btn {
   flex: 0 0 auto;
+}
+
+.task-planning-card > *,
+.task-planning-card-header > div,
+.task-planning-follow-up,
+.task-planning-inline-hint {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.task-planning-card input:not([type="checkbox"]):not([type="radio"]),
+.task-planning-card select,
+.task-planning-card textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.task-planning-card select {
+  text-overflow: ellipsis;
+}
+
+.task-planning-card .btn {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.task-planning-card-header p,
+.task-planning-card-header h3,
+.task-planning-card .text-muted,
+.task-planning-inline-hint {
+  overflow-wrap: anywhere;
+}
+
+.task-planning-card .row {
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .task-planning-card > * + * {
