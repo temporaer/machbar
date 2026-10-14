@@ -19,6 +19,7 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import {
   getDescendantIds as repoGetDescendantIds,
+  getDirectChildren,
   neutralizeContribution,
   neutralizeEntityContributions,
   recordActivity,
@@ -69,12 +70,12 @@ export function getTaskOrThrow(db: Db, id: number) {
   return task;
 }
 
-/** All descendants (any depth, any status) of a task, flattened. */
+/** Lifecycle task descendants, excluding historical project subtrees. */
 export function listDescendants(db: Db, rootId: number) {
-  const ids = repoGetDescendantIds(db, rootId);
+  const ids = repoGetDescendantIds(db, rootId, true);
   const graph = Graph.load(db);
-  if (ids.some((id) => graph.projectsById.has(id))) {
-    throw AppError.conflict("task_transition_invalid", "Move this task's child projects out before completing or cancelling its outline.", { taskId: rootId, reason: "project_descendants" });
+  if (graph.taskContainsOpenProject(rootId)) {
+    throw AppError.conflict("task_transition_invalid", "Move this task's open child projects out before completing or cancelling its outline.", { taskId: rootId, reason: "project_descendants" });
   }
   return ids.map((id) => graph.tasksById.get(id)!);
 }
@@ -773,16 +774,8 @@ export function createTaskSuccessor(
         ? true
         : projectHasTaskPlan(txDb, predecessor.projectId);
     const successorPosition = predecessor.position + 1;
-    const laterSiblings = tx
-      .select()
-      .from(schema.workItems)
-      .all()
-      .filter(
-        (task) =>
-          task.role === "task" &&
-          task.parentId === (predecessor.parentTaskId ?? predecessor.projectId) &&
-          task.position >= successorPosition,
-      );
+    const laterSiblings = getDirectChildren(txDb, predecessor.parentTaskId ?? predecessor.projectId)
+      .filter((item) => item.position >= successorPosition);
     for (const sibling of laterSiblings) {
       tx
         .update(schema.workItems)

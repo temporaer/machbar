@@ -478,13 +478,22 @@ mixed-role hierarchy breadcrumbs. Project → Task preserves the direct parent
 and position when all descendants are tasks; task descendants and structured
 criteria stay attached. A project with a project anywhere in its subtree is
 still unsupported because task lifecycle/outline commands do not yet represent
-project descendants. Move those child projects out first. A task containing child projects likewise
-requires moving them out before its task completion/cancellation cascade.
-Archived projects and
-the existing incompatible recurrence/wait mappings remain guarded. Active
+project descendants. Move those child projects out first. A task containing open
+child projects likewise requires moving them out before its task
+completion/cancellation cascade. Completed or archived project subtrees stay
+untouched when their containing task completes or is cancelled. Archived projects
+and the existing incompatible recurrence/wait mappings remain guarded. Active
 nested conversion and committed project moves resolve required project ancestor
 activation inside the originating transaction. No merge or compound undo is
 included in this slice (issue #167 phase 6a, original cases 59–61 and 63).
+
+Mixed task/project sibling groups share one direct-parent order. Creation,
+successor insertion and moves count both roles. Reindexing touches only changed
+positions and increments those siblings' revisions, so pending edits or
+conversions cannot overwrite a later reorder. A task containing an open project
+is a container for next-action and ordinary Today selection, including standalone
+tasks; the child project's own next action remains available through that project.
+Terminal project subtrees do not block that task or participate in its cascade.
 
 Responsibility and tags can flow down from a project or parent task. A child
 can override or explicitly exclude inherited values when the general context

@@ -256,6 +256,7 @@ export class Graph {
       number,
       Array<{ taskId: number; availability: "available" | "deferred" }>
     >,
+    private readonly openProjectContainers: Set<number>,
   ) {
     this.stuckReasonByProject = stuckReasonByProject;
     this.nextActionIdsByProject = nextActionIdsByProject;
@@ -296,6 +297,7 @@ export class Graph {
       new Map(),
       nextActionIdsByProject,
       nextActionProjection.ordered,
+      nextActionProjection.openProjectContainers,
     );
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
@@ -907,6 +909,11 @@ export class Graph {
       graph.projectsById.size,
     );
     return graph;
+  }
+
+  /** Canonical container facts from the mixed-role next-action projection. */
+  taskContainsOpenProject(taskId: number): boolean {
+    return this.openProjectContainers.has(taskId);
   }
 
   /** All tasks belonging to a project, flattened regardless of depth,

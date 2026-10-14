@@ -161,6 +161,25 @@ async function waitForTaskTitle(title: string) {
 }
 
 describe("TaskDetailSheet", () => {
+  it("displays task and project siblings together in their committed order", async () => {
+    mockedApi.getTask.mockResolvedValue({
+      ...makeTask({ id: 42, title: "Mixed parent", children: [
+        makeTask({ id: 44, title: "A moved last", position: 2 }),
+        makeTask({ id: 45, title: "C moved first", position: 0 }),
+      ] }),
+      childStories: [makeProject({ id: 43, title: "B project", position: 1 })],
+    });
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    const first = await screen.findByRole("button", { name: "C moved first" });
+    const list = first.closest("ul")!;
+    expect(within(list).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      expect.stringContaining("C moved first"),
+      expect.stringContaining("B project"),
+      expect.stringContaining("A moved last"),
+    ]);
+  });
+
   it("loads an opened task despite repeated refreshes while its first response is pending", async () => {
     const task = makeTask({ id: 42, title: "Slow task", repeatAfterDays: 7 });
     let resolve!: (value: typeof task) => void;

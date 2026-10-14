@@ -2,13 +2,14 @@
  * Canonical task and project hierarchy moves on the unified parent edge.
  */
 import type { ProjectActivationResolution } from "@machbar/shared";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import {
   getDescendantIds as repoGetDescendantIds,
   getAncestorIds,
+  getDirectChildren,
   neutralizeContribution,
   recordActivity,
   recordContribution,
@@ -40,42 +41,19 @@ export interface MoveTaskInput {
   expectedRevision: number;
 }
 
-function reindexGroup(
-  tx: Db,
-  parentTaskId: number | null,
-  projectId: number | null,
-  orderedIds: number[],
-) {
-  orderedIds.forEach((taskId, index) => {
+function reindexGroup(tx: Db, orderedIds: number[], movingId: number) {
+  orderedIds.forEach((id, position) => {
     tx.update(schema.workItems)
       .set({
-        position: index,
+        position,
+        // The moved root was already revision-checked and touched once.
+        // Reindexed siblings must invalidate their own pending mutations too.
+        ...(id === movingId ? {} : { revision: sql`${schema.workItems.revision} + 1` }),
         updatedAt: nowIso(),
       })
-      .where(eq(schema.workItems.id, taskId))
+      .where(and(eq(schema.workItems.id, id), ne(schema.workItems.position, position)))
       .run();
   });
-}
-
-function siblingsOf(
-  tx: Db,
-  parentTaskId: number | null,
-  projectId: number | null,
-  excludeId: number,
-) {
-  const all = db_selectAllTasks(tx);
-  return all
-    .filter(
-      (t) =>
-        t.parentTaskId === parentTaskId &&
-        t.projectId === projectId &&
-        t.id !== excludeId,
-    )
-    .sort((a, b) => a.position - b.position);
-}
-
-function db_selectAllTasks(tx: Db) {
-  return Graph.load(tx).allTasks();
 }
 
 /**
@@ -180,12 +158,8 @@ export function moveTask(
     const movingWithinSameGroup =
       newParentTaskId === task.parentTaskId && newProjectId === task.projectId;
 
-    const destinationSiblings = siblingsOf(
-      txDb,
-      newParentTaskId,
-      newProjectId,
-      taskId,
-    );
+    const destinationSiblings = getDirectChildren(txDb, newParentTaskId ?? newProjectId)
+      .filter((item) => item.id !== taskId);
     const rawIndex = input.position ?? destinationSiblings.length;
     const index = Math.max(0, Math.min(rawIndex, destinationSiblings.length));
     const destinationIds = destinationSiblings.map((t) => t.id);
@@ -203,22 +177,15 @@ export function moveTask(
       .where(eq(schema.workItems.id, taskId))
       .run();
 
-
-
-    reindexGroup(txDb, newParentTaskId, newProjectId, destinationIds);
+    reindexGroup(txDb, destinationIds, taskId);
 
     if (!movingWithinSameGroup) {
-      const sourceSiblings = siblingsOf(
-        txDb,
-        task.parentTaskId,
-        task.projectId,
-        taskId,
-      );
+      const sourceSiblings = getDirectChildren(txDb, task.parentTaskId ?? task.projectId)
+        .filter((item) => item.id !== taskId);
       reindexGroup(
         txDb,
-        task.parentTaskId,
-        task.projectId,
         sourceSiblings.map((t) => t.id),
+        taskId,
       );
     }
 
@@ -354,7 +321,7 @@ export function moveProject(db: Db, projectId: number, input: MoveProjectInput, 
     // Moving inherited work must not silently give it to a different owner.
     const ownersBefore = getEffectiveOwners(txDb);
     const subtreeIds = [projectId, ...descendants];
-    const siblings = txDb.select().from(schema.workItems).all().filter((row) => row.parentId === input.parentId && row.id !== projectId);
+    const siblings = getDirectChildren(txDb, input.parentId).filter((row) => row.id !== projectId);
     const position = Math.max(-1, ...siblings.map((row) => row.position)) + 1;
     txDb.update(schema.workItems).set({ parentId: input.parentId, position,
       revision: sql`${schema.workItems.revision} + 1`, updatedAt: nowIso() }).where(eq(schema.workItems.id, projectId)).run();

@@ -1725,3 +1725,18 @@ activation choices for retry. Task details expose direct `childStories`; graph
 breadcrumbs follow mixed-role parents. The obsolete standalone/nested-root
 conversion blockers, duplicate post-conversion activation dispatch, and no-op
 project-ID cascade were removed. Merge and compound undo remain separate slices.
+
+Mixed-role follow-up: `treeRepo.getDirectChildren` supplies one direct-parent
+sibling order for task/project creation, successors and moves. Task reindexing
+includes both roles and updates revisions only when their positions change;
+the moved root still increments once. This invalidates stale task metadata,
+conversion and project-move snapshots after a neighboring reorder.
+
+`nextActionRepo` traverses mixed-role descendants to identify containers.
+Open projects block task ancestors from candidacy; completed, cancelled or
+archived project subtrees stop traversal. Its projection supplies the same
+open-project container IDs to `Graph.taskContainsOpenProject`, ordinary Today
+selection (including standalone tasks) and lifecycle guards. Child projects keep
+their own normal next-action lane. Task lifecycle descendant collection skips
+terminal project subtrees entirely, preserving their statuses, revisions and
+history while allowing the containing task to complete or cancel.

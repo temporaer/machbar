@@ -1662,7 +1662,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
     project_not_found: "Das Projekt wurde nicht gefunden.",
     project_title_required: "Bitte gib einen Projekttitel ein.",
-    task_transition_invalid: "Verschiebe Unterprojekte zuerst mit Verschieben …, bevor du diese Aufgabe abschließt oder verwirfst.",
+    task_transition_invalid: "Verschiebe offene Unterprojekte zuerst mit Verschieben …, bevor du diese Aufgabe abschließt oder verwirfst.",
     project_transition_invalid:
       "Dieser Projektstatus kann so nicht geändert werden.",
     push_member_required:

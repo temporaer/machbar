@@ -112,7 +112,7 @@ workflow. This exception is not precedent for ordinary project or task editing.
 
 ### Task hierarchy
 
-`POST /api/tasks/:id/move` is the sole hierarchy mutation. Reorder, indent,
+`POST /api/tasks/:id/move` is the sole task-move mutation. Reorder, indent,
 outdent, reparent, and cross-project movement are destination calculations, not
 separate backend commands.
 
@@ -120,6 +120,11 @@ separate backend commands.
 `useOutlineOrganize.tsx` owns outline execution and rollback.
 `MoveTaskSheet.tsx` owns explicit destination moves. `QuickAdd.tsx` may use the
 same move command for post-create project correction.
+
+`treeRepo.getDirectChildren` is the canonical mixed-role sibling query for
+creation, successor insertion, reindexing and project moves. Task moves normalize
+both direct-parent groups; every sibling whose position changes gets a revision
+increment, while the moved task keeps its single revision increment.
 
 Adding another direct move caller requires an explicit checker exception and an
 explanation of why an existing move surface cannot own the behavior.
@@ -203,7 +208,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant task reconciliation | `apps/api/src/domain/externalTaskSync.ts` and `POST /api/integrations/home-assistant/tasks/sync` |
 | MCP authentication and fixed scope | `apps/api/src/integrations/mcp.ts` for explicit named/revocable agent tokens, `apps/api/src/integrations/mcpOAuth.ts` for delegated Pocket ID access-token validation, and the `mcp` policy in `apps/api/src/auth/routes.ts` as the common HTTP boundary |
 | MCP tools | `apps/api/src/mcp/tools.ts`; tools must call existing domain/repository primitives and must not introduce parallel mutation semantics |
-| Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph.selectedNextActionsFor()` |
+| Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph.selectedNextActionsFor()`; the same projection exposes open-project container facts through `Graph.taskContainsOpenProject` for Today and lifecycle guards. Terminal project subtrees are boundaries, not open work for the containing task. |
 | Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
 | Agenda eligibility and available work selection | `apps/api/src/domain/agendaSelection.ts` |
@@ -232,7 +237,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Memory-bounded camera capture | `apps/web/src/components/CameraCaptureSheet.tsx` |
 | Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |
 | Single-task capture, immediate Quick Add entry, destination presentation, and short syntax parsing/resolution | `apps/web/src/components/QuickAdd.tsx`, `apps/web/src/components/CaptureForm.tsx`, and `apps/web/src/lib/captureSyntax.ts` (capture uses the existing task-create API; the follow-up Open action dispatches `task.open`; the shared editor creates tasks only; syntax is applied only there) |
-| Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs |
+| Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs and mixed-role `getDirectChildren` sibling query |
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
 | Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) and the focused task/project conversion sheets. Task → project uses canonical execution-commitment semantics, preserves explicit contexts, recurrence deadlines, and execution windows on the retained action step (clearing the window from the project row), and maps both incoming and outgoing dependency edges atomically; graph projections expose only viewer-visible incoming dependents. Nested conversion retains the direct parent and sibling position; effective task ownership/tags/contexts become explicit project values. Project → task retains task descendants and structured criteria, preserves work plans and history, and enforces editable/checkable criteria during task completion. |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |

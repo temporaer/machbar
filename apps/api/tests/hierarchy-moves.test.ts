@@ -77,8 +77,8 @@ describe("canonical hierarchy moves", () => {
     expect(tasks.map((t) => t.title)).toEqual(["C", "A", "B"]);
     expect(tasks.map((t) => t.position)).toEqual([0, 1, 2]);
     expect(tasks.find((t) => t.id === c.id)?.revision).toBe(c.revision + 1);
-    expect(tasks.find((t) => t.id === a.id)?.revision).toBe(a.revision);
-    expect(tasks.find((t) => t.id === b.id)?.revision).toBe(b.revision);
+    expect(tasks.find((t) => t.id === a.id)?.revision).toBe(a.revision + 1);
+    expect(tasks.find((t) => t.id === b.id)?.revision).toBe(b.revision + 1);
   });
 
   it("indents a task under its previous sibling", async () => {

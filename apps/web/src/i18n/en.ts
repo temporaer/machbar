@@ -1661,7 +1661,7 @@ When the person ends the reflection, provide a concise human-readable summary an
       "Check, edit, or remove every open criterion before completing.",
     project_not_found: "The project could not be found.",
     project_title_required: "Enter a project title.",
-    task_transition_invalid: "Move child projects out with Move … before completing or cancelling this task.",
+    task_transition_invalid: "Move open child projects out with Move … before completing or cancelling this task.",
     project_transition_invalid:
       "The project cannot move to that status from here.",
     push_member_required:
