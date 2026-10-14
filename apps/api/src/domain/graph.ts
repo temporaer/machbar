@@ -257,6 +257,7 @@ export class Graph {
       Array<{ taskId: number; availability: "available" | "deferred" }>
     >,
     private readonly openProjectContainers: Set<number>,
+    private readonly unfinishedWorkContainers: Set<number>,
   ) {
     this.stuckReasonByProject = stuckReasonByProject;
     this.nextActionIdsByProject = nextActionIdsByProject;
@@ -298,6 +299,7 @@ export class Graph {
       nextActionIdsByProject,
       nextActionProjection.ordered,
       nextActionProjection.openProjectContainers,
+      nextActionProjection.unfinishedWorkContainers,
     );
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
@@ -914,6 +916,11 @@ export class Graph {
   /** Canonical container facts from the mixed-role next-action projection. */
   taskContainsOpenProject(taskId: number): boolean {
     return this.openProjectContainers.has(taskId);
+  }
+
+  /** Unfinished action/project descendants, independent of execution availability. */
+  taskContainsUnfinishedWork(taskId: number): boolean {
+    return this.unfinishedWorkContainers.has(taskId);
   }
 
   /** All tasks belonging to a project, flattened regardless of depth,

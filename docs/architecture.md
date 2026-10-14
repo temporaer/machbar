@@ -1740,3 +1740,46 @@ selection (including standalone tasks) and lifecycle guards. Child projects keep
 their own normal next-action lane. Task lifecycle descendant collection skips
 terminal project subtrees entirely, preserving their statuses, revisions and
 history while allowing the containing task to complete or cancel.
+
+
+### Today execution eligibility and structural containers
+
+The mixed-role next-action query exposes its existing `blocking_descendants`
+structural fact as `Graph.taskContainsUnfinishedWork`, alongside the phase-6a
+`taskContainsOpenProject` fact. Unfinished action descendants keep ancestors out
+of ordinary Today suggestions regardless of their schedule, revisit, window,
+blockers, clarification or parked state. References remain transparent, and
+terminal project subtrees remain outside the containing task's unfinished work.
+A parent with only terminal action descendants may qualify for wrap-up under
+its own rules; compiling Today never completes or otherwise mutates it.
+
+Today supplies `executionDate` to `createAgendaSelection`. Project candidate
+selection and standalone execution share lifecycle, owner/scope, blocker,
+context, window and date eligibility. The structural next-action order and
+readiness remain unchanged; Today can choose an eligible later candidate without
+making a future-scheduled project structurally stuck.
+
+Deadline, explicit-plan and reached-revisit roots retain their attention rules,
+including external-wait follow-up precedence outside execution windows. Those
+roots own their projected descendants. `pruneReferenceContainers` uses Today's
+full execution predicate and promotes eligible deeper work through unavailable
+intermediate actions and references, retaining identity, parent IDs and sibling
+order. A separately qualified attention root owns its own subtree and is not
+repeated inside another attention row. Ready descendants embedded beneath an
+attention root are excluded from standalone ready lanes. Ordinary execution
+roots never expose deferred children. Full detail, Week and Waiting keep their
+existing projection defaults; React renders the compiled result without
+recomputing domain eligibility or adding a clock.
+
+`TaskRow` preserves compiled child-array order in Today's compact mode:
+promoted descendants may belong to different original parents, so comparing
+their stored positions would reverse branch traversal. Original positions and
+parent IDs remain intact, and full outlines still sort actual sibling groups.
+
+`TaskOutline` owns current IDs, including nested rows, plus removed rows with an
+active optimistic retention. Rows that leave without active retention lose
+ownership before a later completion in another section. Today keys every
+outline by the member/scope selection so ownership cannot survive a logical
+selection change. Completion-triggered removal still retains the row in its
+owning section for the existing retention window. This is presentation
+ownership, not another eligibility rule or timer.

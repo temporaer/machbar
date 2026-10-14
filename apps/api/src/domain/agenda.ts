@@ -7,10 +7,7 @@ import type {
 import { calendarDateForInstant } from "@machbar/shared";
 import type { Graph } from "./graph.js";
 import type { TaskRecord } from "./graph.js";
-import {
-  createAgendaSelection,
-  selectCurrentAvailableWork,
-} from "./agendaSelection.js";
+import { createAgendaSelection, taskDescendantIds } from "./agendaSelection.js";
 import {
   pruneProjectForCompiledView,
   pruneReferenceContainers,
@@ -104,7 +101,7 @@ export function buildAgenda(
       null,
   );
   const now = Date.parse(nowInstant);
-  const selection = createAgendaSelection(graph, { ...options, now: nowInstant });
+  const selection = createAgendaSelection(graph, { ...options, now: nowInstant, executionDate: today });
   const { contextAvailability, isContextAvailable } = selection;
   const soonLimit = addDaysIso(today, dueSoonDays);
   const seen = new Set<number>();
@@ -177,12 +174,14 @@ export function buildAgenda(
     sortByDueThenPriorityTitleId,
     { requireExecutable: false, requireContextAvailable: false },
   );
-  const availableWork = selectCurrentAvailableWork(graph, {
-    ...options,
-    now: nowInstant,
-    today,
-    dueSoonDays,
-  });
+  // Attention roots own eligible embedded work. Other attention roots remain
+  // separate rows; ordinary descendants must not be duplicated in ready lanes.
+  const attentionRoots = [...overdue, ...dueToday, ...planned, ...revisit, ...dueSoon];
+  const attentionRootIds = new Set(attentionRoots.map((task) => task.id));
+  const coveredIds = new Set([
+    ...attentionRootIds, ...attentionRoots.flatMap(taskDescendantIds),
+  ]);
+  const availableWork = selection.availableWork(coveredIds);
   const shared = availableWork.shared.filter((task) => !seen.has(task.id));
   const unscheduled = availableWork.unscheduled.filter((task) => !seen.has(task.id));
   for (const task of [...shared, ...unscheduled]) seen.add(task.id);
@@ -205,13 +204,16 @@ export function buildAgenda(
     .map((task) => ({ ...task, children: [] }));
 
   const projectDueLimit = addDaysIso(today, 7);
-  // All embedded execution suggestions use the same window predicate, including
-  // descendants of attention rows; deadline/wait roots retain their precedence.
+  // Attention eligibility belongs to the root; every embedded execution row
+  // uses the same eligibility as an independent Today recommendation.
+  const todayProjection = { promoteUnavailableChildren: true };
   const pruneTask = (task: TaskRecord | null): TaskRecord | null =>
-    task && selection.isWindowAvailable(task)
-      ? pruneReferenceContainers(task, selection.isWindowAvailable) : null;
+    task && selection.isExecutableWork(task)
+      ? pruneReferenceContainers(task, selection.isExecutableWork, todayProjection) : null;
   const pruneAttentionTask = (task: TaskRecord): TaskRecord =>
-    pruneReferenceContainers(task, selection.isWindowAvailable);
+    pruneReferenceContainers(task, selection.isExecutableWork, {
+      ...todayProjection, excludedSubtrees: attentionRootIds,
+    });
   const stuckByProject = new Map(
     graph.listStuckProjects().map((project) => [project.id, project]),
   );
@@ -241,23 +243,21 @@ export function buildAgenda(
       const availableNextAction = graph.selectedNextActionsFor(
         project.id,
         selection.laneSelection,
-        selection.isExecutionAvailable,
+        selection.isExecutionSuggestion,
       )[0] ?? null;
       const canonicalNextAction = graph.nextActionFor(project.id);
-      const nextAction = availableNextAction ??
-        (canonicalNextAction && selection.isWindowAvailable(canonicalNextAction) ? canonicalNextAction : null);
+      const nextAction = availableNextAction;
       const additionalNextActions = graph.additionalSelectedNextActionsFor(
         project.id,
         selection.laneSelection,
-        selection.isExecutionAvailable,
+        selection.isExecutionSuggestion,
       );
       const projectForAgenda = pruneProjectForCompiledView({
         ...computed,
-        nextAction: pruneTask(computed.nextAction && selection.isWindowAvailable(computed.nextAction)
-          ? computed.nextAction : nextAction),
+        nextAction: pruneTask(nextAction),
         deferredNextAction: pruneTask(computed.deferredNextAction ?? null),
         additionalNextActions: computed.additionalNextActions ?? [],
-      }, selection.isWindowAvailable);
+      }, selection.isExecutableWork, todayProjection);
       const stuckProject = canonicalNextAction
         ? undefined
         : stuckByProject.get(project.id);
@@ -270,7 +270,10 @@ export function buildAgenda(
           nextActionContextAvailability: nextAction
             ? contextAvailability(nextAction)
             : null,
-          additionalNextActions: additionalNextActions.map(pruneAttentionTask),
+          additionalNextActions: additionalNextActions.flatMap((task) => {
+            const projected = pruneTask(task);
+            return projected ? [projected] : [];
+          }),
           stuck: stuckProject
             ? {
                 reason: stuckProject.stuckReason,
