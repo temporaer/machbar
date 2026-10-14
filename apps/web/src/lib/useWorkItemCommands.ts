@@ -249,6 +249,9 @@ export function useWorkItemCommands() {
       if (workItemId !== null) scope?.setActive(workItemId, commandWorkItemRole(command));
       switch (command.type) {
         case "task.open":
+          if (taskWorkflow.current && !taskWorkflow.detailInspection && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
+            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff());
+          }
           taskDetail.open(command.taskId, command.focusField);
           return;
         case "workItem.open":

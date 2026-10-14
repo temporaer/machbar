@@ -202,6 +202,7 @@ export function BottomSheet({
   headerActions,
   headerStatus,
   initialFocus = "first-control",
+  suspended = false,
 }: {
   title?: string;
   onClose: () => void;
@@ -210,6 +211,7 @@ export function BottomSheet({
   headerActions?: ReactNode;
   headerStatus?: ReactNode;
   initialFocus?: BottomSheetInitialFocus;
+  suspended?: boolean;
 }) {
   const strings = useStrings();
   const internalHeadingId = useId();
@@ -224,17 +226,26 @@ export function BottomSheet({
   );
   const dialogRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const resumeAtTopRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
     const backdrop = backdropRef.current;
+    if (suspended) {
+      resumeAtTopRef.current = true;
+      return;
+    }
     if (!dialog || !backdrop) return;
 
+    // A retained sheet resumes above any detail restored during its handoff.
+    const registrationOrder = resumeAtTopRef.current ? nextSheetOrder++ : order;
+    resumeAtTopRef.current = false;
+    orderRef.current = registrationOrder;
     registerSheet({
       id: idRef.current,
-      order,
+      order: registrationOrder,
       dialog,
       backdrop,
       opener: openerRef.current,
@@ -242,10 +253,11 @@ export function BottomSheet({
       initialFocus,
     });
     return () => unregisterSheet(idRef.current);
-  }, []);
+  }, [suspended]);
 
   return createPortal(
     <div
+      hidden={suspended}
       ref={backdropRef}
       className="sheet-backdrop"
       onClick={(e) => {

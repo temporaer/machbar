@@ -85,10 +85,9 @@ const DEPRECATED_NAMES = new Map([
  * implement no command by themselves.
  */
 const WORKFLOW_SHEET_HOSTS = new Map([
-  ["TaskPlanSheet", "TaskWorkflowHost"],
+  ["TaskPlanningSheet", "TaskWorkflowHost"],
   ["TaskWaitSheet", "TaskWorkflowHost"],
   ["WaitingFollowUpSheet", "TaskWorkflowHost"],
-  ["TaskAvailabilitySheet", "TaskWorkflowHost"],
   ["TaskStructureSheet", "TaskWorkflowHost"],
   ["TaskSplitSheet", "TaskWorkflowHost"],
   ["TaskBreakdownSheet", "TaskWorkflowHost"],

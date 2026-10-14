@@ -34,6 +34,8 @@ import {
 } from "../lib/reminderPresets";
 import type { TaskPlanningTarget } from "../lib/commands";
 import { refreshTaskAfterConflict } from "../lib/taskMutations";
+import { DetailPropertyPill } from "./DetailPropertyPill";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
@@ -59,6 +61,15 @@ interface PlanningConflict {
   draftValue: string;
 }
 
+const conflictTargets: Partial<Record<PlanningConflictField, TaskPlanningTarget>> = {
+  scheduledDate: "scheduled",
+  dueDate: "deadline",
+  revisitAt: "availability",
+  recurrence: "scheduled",
+  reminders: "reminders",
+  externalWait: "waiting",
+};
+
 function businessHoursRule(match: "inside" | "outside"): AvailabilityRule {
   return { kind: "weekly", match, windows: [{ weekdays: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }] };
 }
@@ -75,12 +86,26 @@ export function TaskPlanningSheet({
   task,
   onClose,
   initialTarget,
+  suspended = false,
 }: {
   task: Task;
   onClose: () => void;
   initialTarget?: TaskPlanningTarget;
+  suspended?: boolean;
 }) {
   const strings = useStrings();
+  const dispatch = useWorkItemCommands();
+  const [expanded, setExpanded] = useState<Partial<Record<TaskPlanningTarget, boolean>>>({});
+  const [windowOpen, setWindowOpen] = useState(false);
+  const [resolvedOpen, setResolvedOpen] = useState(false);
+  const reveal = (target: TaskPlanningTarget) => {
+    setExpanded((current) => ({ ...current, [target === "recurrence" ? "scheduled" : target]: true }));
+    if (target === "deadline") setDeadlineOpen(true);
+    if (target === "waiting" && (hasExistingWait || canAddWaiting)) setWaitingOpen(true);
+    if (target === "reminders") reminderEditorRef.current?.openEditor();
+    setActiveTarget(target);
+    setPendingScrollTarget(target);
+  };
   const { locale } = useLocale();
   const taskActions = useTaskActions();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
@@ -170,6 +195,7 @@ export function TaskPlanningSheet({
   const [followUpSaving, setFollowUpSaving] = useState(false);
 
   useLayoutEffect(() => {
+    if (initialTarget) reveal(initialTarget);
     setActiveTarget(initialTarget);
     if (initialTarget === "deadline") {
       setDeadlineOpen(true);
@@ -190,7 +216,8 @@ export function TaskPlanningSheet({
 
   useLayoutEffect(() => {
     const pendingTarget = pendingScrollTarget;
-    if (pendingTarget === null) return;
+    if (pendingTarget === null || suspended) return;
+    if (pendingTarget !== "top" && !expanded[pendingTarget === "recurrence" ? "scheduled" : pendingTarget]) return;
     if (pendingTarget === "deadline" && !deadlineOpen) return;
     if (pendingTarget === "waiting" && canAddWaiting && !waitingOpen) return;
     setPendingScrollTarget(null);
@@ -218,12 +245,21 @@ export function TaskPlanningSheet({
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
+    if (pendingTarget !== "waiting" && pendingTarget !== "dependencies") {
+      const editor = pendingTarget === "recurrence" ? target : target?.querySelector<HTMLElement>(".task-planning-editor");
+      const control = editor?.querySelector<HTMLElement>("input:not([disabled]), select:not([disabled]), textarea:not([disabled])")
+        ?? editor?.querySelector<HTMLElement>("button:not([disabled])");
+      (control ?? editor)?.focus({ preventScroll: true });
+    }
     if (pendingTarget === "dependencies") prerequisitesSearchRef.current?.focus();
     if (pendingTarget === "waiting") {
-      (hasExistingWait ? followUpOutcomeRef.current : waitingForRef.current)?.focus();
+      const control = hasExistingWait ? followUpOutcomeRef.current : waitingForRef.current;
+      (control ?? target?.querySelector<HTMLElement>(".task-planning-editor"))?.focus({ preventScroll: true });
     }
   }, [
     activeTarget,
+    expanded,
+    suspended,
     canAddWaiting,
     deadlineOpen,
     hasExistingWait,
@@ -346,6 +382,21 @@ export function TaskPlanningSheet({
     (hasExistingWait && (followUpOutcome.trim().length > 0 || followUpChoice !== "continue"));
   const allValid =
     validity.scheduled && validity.availability && validity.deadline && !recurrenceInvalid;
+  useEffect(() => {
+    const targets: TaskPlanningTarget[] = [];
+    if (!validity.scheduled || recurrenceInvalid || scheduledNotice) targets.push("scheduled");
+    if (!validity.availability || invalidRevisitSelection || availabilityNotice) targets.push("availability");
+    if (!validity.deadline) targets.push("deadline");
+    if (waitingError) targets.push("waiting");
+    if (dateConflict) targets.push("scheduled", "availability", "waiting");
+    if (dependencyError) targets.push("dependencies");
+    for (const conflict of planningConflicts) {
+      const target = conflictTargets[conflict.field];
+      if (target) targets.push(target);
+      if (conflict.field === "availabilityRule") setWindowOpen(true);
+    }
+    if (targets.length) setExpanded((current) => ({ ...current, ...Object.fromEntries(targets.map((target) => [target, true])) }));
+  }, [validity, recurrenceInvalid, invalidRevisitSelection, waitingError, dateConflict, dependencyError, planningConflicts, scheduledNotice, availabilityNotice]);
   const matchesAvailability = (instant: string | null) =>
     Boolean(
       timezoneLoaded &&
@@ -599,10 +650,7 @@ export function TaskPlanningSheet({
     setBaselineTask(latest);
     setExpectedTaskRevision(latest.revision);
     if (!localScheduled) setScheduledDate(latest.scheduledDate ?? "");
-    if (!localDeadline) {
-      setDueDate(latest.dueDate ?? "");
-      setDeadlineOpen(Boolean(latest.dueDate));
-    }
+    if (!localDeadline) setDueDate(latest.dueDate ?? "");
     if (!localRecurrence) {
       setRepeatAfterDays(latest.repeatAfterDays);
       setAllowedDeviationDays(latest.allowedDeviationDays);
@@ -628,6 +676,7 @@ export function TaskPlanningSheet({
   const changeDependency = async (dependsOnTaskId: number, remove: boolean) => {
     if (dependencyBusy !== null || planningConflicts.length > 0) return;
     if (reminderDraftPending) {
+      reveal("reminders");
       setDependencyError(strings.planningFinishReminderFirst);
       return;
     }
@@ -659,7 +708,12 @@ export function TaskPlanningSheet({
 
   const saveWaitFollowUp = async () => {
     if (!hasExistingWait || followUpSaving || planningConflicts.length > 0) return;
+    if (followUpChoice === "continue" && (!validity.availability || invalidRevisitSelection)) {
+      reveal("availability");
+      return;
+    }
     if (reminderDraftPending) {
+      reveal("reminders");
       setWaitingError(strings.planningFinishReminderFirst);
       return;
     }
@@ -722,6 +776,7 @@ export function TaskPlanningSheet({
   const removeDeadline = () => {
     setDueDate("");
     setDeadlineOpen(false);
+    setExpanded((current) => ({ ...current, deadline: false }));
     setValidity((current) => ({ ...current, deadline: true }));
   };
 
@@ -743,6 +798,7 @@ export function TaskPlanningSheet({
     }
     const plannedReminders = reminderEditorRef.current?.getCommitValue();
     if (plannedReminders === null || plannedReminders === undefined) {
+      reveal("reminders");
       setError(strings.invalidDate);
       return;
     }
@@ -856,6 +912,48 @@ export function TaskPlanningSheet({
     setError(null);
   };
 
+  const summary = (target: TaskPlanningTarget, label: string, value: string | null, addLabel?: string) => (
+    <div className="task-planning-summary">
+      <DetailPropertyPill
+        ariaExpanded={Boolean(expanded[target])}
+        ariaControls={`planning-editor-${target}-${baselineTask.id}`}
+        {...(value && !expanded[target] ? { label } : {})}
+        variant={value ? "set" : "unset"}
+        onClick={() => reveal(target)}
+        disabled={saving || followUpSaving || dependencyBusy !== null ||
+          (target === "waiting" && !hasExistingWait && !canAddWaiting)}
+      >
+        <span className="task-planning-summary-value">{expanded[target] ? label : value ?? addLabel ?? `+ ${label}`}</span>
+      </DetailPropertyPill>
+      {expanded[target] ? <button
+        type="button"
+        className="btn btn-sm btn-ghost"
+        aria-label={`${strings.close}: ${label}`}
+        disabled={
+          target === "reminders" && reminderDraftPending ||
+          target === "scheduled" && (!validity.scheduled || recurrenceInvalid) ||
+          target === "availability" && (!validity.availability || invalidRevisitSelection) ||
+          target === "deadline" && !validity.deadline ||
+          target === "waiting" && Boolean(waitingError || dateConflict) ||
+          target === "dependencies" && Boolean(dependencyError) ||
+          target === "scheduled" && Boolean(scheduledNotice) ||
+          target === "availability" && Boolean(availabilityNotice) ||
+          planningConflicts.some((conflict) => conflictTargets[conflict.field] === target)
+        }
+        onClick={() => setExpanded((current) => ({ ...current, [target]: false }))}
+      >{strings.close}</button> : null}
+    </div>
+  );
+  const revisitSummary = notBeforeDate
+    ? formatRevisitAt(nextAvailability?.notBeforeAt ?? "", locale, householdTimezone) ?? `${notBeforeDate} ${notBeforeTime}`
+    : null;
+  const dependencyLink = (dependency: Task["dependencies"][number]) => (
+    <button type="button" className="btn btn-sm btn-ghost task-planning-prerequisite-link"
+      disabled={saving || followUpSaving || dependencyBusy !== null}
+      onClick={() => dispatch({ type: "task.open", taskId: dependency.dependsOnTaskId })}>
+      {dependency.title ?? `#${dependency.dependsOnTaskId}`}
+    </button>
+  );
   const cardEvents = (target: TaskPlanningTarget) => ({
     onPointerDownCapture: () => setActiveTarget(target),
     onFocusCapture: () => setActiveTarget(target),
@@ -863,10 +961,11 @@ export function TaskPlanningSheet({
 
   return (
     <BottomSheet
+      suspended={suspended}
       title={strings.planning}
       initialFocus="dialog"
       onClose={() => {
-        if (!saving) onClose();
+        if (!saving && !followUpSaving && dependencyBusy === null) onClose();
       }}
     >
       <p className="task-planning-title">{baselineTask.title}</p>
@@ -878,10 +977,12 @@ export function TaskPlanningSheet({
           void commit();
         }}
       >
-        <div className="task-planning-card task-planning-card-compact">
+        <div className="task-planning-window">
           <label htmlFor={`planning-window-${baselineTask.id}`}>{strings.availabilityWindow}</label>
           <select
             id={`planning-window-${baselineTask.id}`}
+            onFocus={() => setWindowOpen(true)}
+            onBlur={() => setWindowOpen(false)}
             value={availabilityRule?.match ?? "anytime"}
             disabled={saving}
             onChange={(event) => setAvailabilityRule(event.target.value === "anytime"
@@ -891,117 +992,121 @@ export function TaskPlanningSheet({
             <option value="inside">{strings.availabilityBusinessHours}</option>
             <option value="outside">{strings.availabilityOutsideBusinessHours}</option>
           </select>
-          <p className="text-muted">{strings.availabilityBusinessHoursHint(householdTimezone)}</p>
+          {availabilityRule !== null || windowOpen ? <p className="text-muted">{strings.availabilityBusinessHoursHint(householdTimezone)}</p> : null}
         </div>
         <section
           ref={scheduledCardRef}
           className={cardClass(activeTarget === "scheduled" || activeTarget === "recurrence")}
           {...cardEvents("scheduled")}
         >
-          <div className="task-planning-card-header">
-            <div>
-              <h3>{strings.planningScheduledFor}</h3>
-              <p>{strings.planningScheduledExplanation}</p>
+          {summary("scheduled", strings.planningScheduledFor, scheduledDate ? (formatExactLocalDate(scheduledDate, locale) ?? scheduledDate) + (recurrenceEnabled ? ` · ${strings.recurrence}` : "") : null)}
+          <div id={`planning-editor-scheduled-${baselineTask.id}`} className="task-planning-editor" tabIndex={-1} hidden={!expanded.scheduled}>
+            <div className="task-planning-card-header">
+              <div>
+                <h3>{strings.planningScheduledFor}</h3>
+                <p>{strings.planningScheduledExplanation}</p>
+              </div>
+              {scheduledDate ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={strings.removePlanningDate}
+                  disabled={saving}
+                  onClick={removeScheduled}
+                >
+                  {strings.remove}
+                </button>
+              ) : null}
             </div>
-            {scheduledDate ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                aria-label={strings.removePlanningDate}
-                disabled={saving}
-                onClick={removeScheduled}
-              >
-                {strings.remove}
-              </button>
+            <HumanDateInput
+              id={`planning-scheduled-${baselineTask.id}`}
+              value={scheduledDate}
+              ariaLabel={strings.planningScheduledFor}
+              onChange={(date) => setPlannedDate(date ?? "")}
+              onValidityChange={setScheduledValidity}
+              disabled={saving}
+            />
+            <ScheduleShortcuts
+              value={scheduledDate}
+              onChange={(date) => setPlannedDate(date ?? "")}
+              disabled={saving}
+              includeUnscheduled={false}
+            />
+            <CaptionHintSuggestions
+              hints={scheduleHints.map((hint) => ({
+                key: hint.key,
+                label: labelFor(hint, "scheduledDate"),
+              }))}
+              disabled={saving}
+              onSelect={(key) => acceptHint("scheduledDate", scheduleHints, key)}
+            />
+            <div
+              ref={recurrenceCardRef}
+              className="task-planning-recurrence"
+              tabIndex={-1}
+              onPointerDownCapture={() => setActiveTarget("recurrence")}
+              onFocusCapture={() => setActiveTarget("recurrence")}
+            >
+              <label className="recurrence-toggle">
+                <input
+                  type="checkbox"
+                  checked={recurrenceEnabled}
+                  disabled={saving || hasExistingWait || waitingDraftActive}
+                  onChange={(event) => {
+                    setRepeatAfterDays(event.target.checked ? 7 : null);
+                    setAllowedDeviationDays(event.target.checked ? 0 : null);
+                  }}
+                />
+                <span>{strings.recurrence}</span>
+              </label>
+              {recurrenceEnabled ? (
+                <>
+                  <p className="text-muted">{strings.recurrenceHint}</p>
+                  <div className="recurrence-number-grid">
+                    <label className="field">
+                      <span>{strings.repeatAfterDays}</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        step={1}
+                        value={repeatAfterDays}
+                        disabled={saving}
+                        onChange={(event) => setRepeatAfterDays(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{strings.allowedDeviationDays}</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={1}
+                        value={allowedDeviationDays}
+                        disabled={saving}
+                        onChange={(event) => setAllowedDeviationDays(Number(event.target.value))}
+                      />
+                    </label>
+                  </div>
+                  {recurrenceInvalid ? (
+                    <p className="human-date-error" role="alert">{strings.recurrenceScheduleRequired}</p>
+                  ) : null}
+                  {recurrenceDeadline ? (
+                    <p className="recurrence-preview">
+                      {strings.recurrenceDeadlinePreview(
+                        formatExactLocalDate(recurrenceDeadline, locale) ?? recurrenceDeadline,
+                      )}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+            {scheduledNotice ? (
+              <p className="task-planning-replacement-note" role="status">
+                {scheduledNotice}
+              </p>
             ) : null}
           </div>
-          <HumanDateInput
-            id={`planning-scheduled-${baselineTask.id}`}
-            value={scheduledDate}
-            ariaLabel={strings.planningScheduledFor}
-            onChange={(date) => setPlannedDate(date ?? "")}
-            onValidityChange={setScheduledValidity}
-            disabled={saving}
-          />
-          <ScheduleShortcuts
-            value={scheduledDate}
-            onChange={(date) => setPlannedDate(date ?? "")}
-            disabled={saving}
-            includeUnscheduled={false}
-          />
-          <CaptionHintSuggestions
-            hints={scheduleHints.map((hint) => ({
-              key: hint.key,
-              label: labelFor(hint, "scheduledDate"),
-            }))}
-            disabled={saving}
-            onSelect={(key) => acceptHint("scheduledDate", scheduleHints, key)}
-          />
-          <div
-            ref={recurrenceCardRef}
-            className="task-planning-recurrence"
-            onPointerDownCapture={() => setActiveTarget("recurrence")}
-            onFocusCapture={() => setActiveTarget("recurrence")}
-          >
-            <label className="recurrence-toggle">
-              <input
-                type="checkbox"
-                checked={recurrenceEnabled}
-                disabled={saving || hasExistingWait || waitingDraftActive}
-                onChange={(event) => {
-                  setRepeatAfterDays(event.target.checked ? 7 : null);
-                  setAllowedDeviationDays(event.target.checked ? 0 : null);
-                }}
-              />
-              <span>{strings.recurrence}</span>
-            </label>
-            {recurrenceEnabled ? (
-              <>
-                <p className="text-muted">{strings.recurrenceHint}</p>
-                <div className="recurrence-number-grid">
-                  <label className="field">
-                    <span>{strings.repeatAfterDays}</span>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      step={1}
-                      value={repeatAfterDays}
-                      disabled={saving}
-                      onChange={(event) => setRepeatAfterDays(Number(event.target.value))}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{strings.allowedDeviationDays}</span>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      step={1}
-                      value={allowedDeviationDays}
-                      disabled={saving}
-                      onChange={(event) => setAllowedDeviationDays(Number(event.target.value))}
-                    />
-                  </label>
-                </div>
-                {recurrenceInvalid ? (
-                  <p className="human-date-error" role="alert">{strings.recurrenceScheduleRequired}</p>
-                ) : null}
-                {recurrenceDeadline ? (
-                  <p className="recurrence-preview">
-                    {strings.recurrenceDeadlinePreview(
-                      formatExactLocalDate(recurrenceDeadline, locale) ?? recurrenceDeadline,
-                    )}
-                  </p>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-          {scheduledNotice ? (
-            <p className="task-planning-replacement-note" role="status">
-              {scheduledNotice}
-            </p>
-          ) : null}
         </section>
 
         <section
@@ -1010,140 +1115,142 @@ export function TaskPlanningSheet({
           onPointerDownCapture={() => setActiveTarget("waiting")}
           onFocusCapture={() => setActiveTarget("waiting")}
         >
-          <div className="task-planning-card-header">
-            <div>
-              <h3>{strings.planningWaitingTitle}</h3>
-              {waitingOpen && !waitingEnded ? (
-                <p>{strings.planningWaitingExplanation}</p>
-              ) : null}
+          {summary("waiting", strings.planningWaitingTitle, waitingEnded ? strings.planningWaitingWillEnd : waitingFor || null, strings.planningAddWaiting)}
+          <div id={`planning-editor-waiting-${baselineTask.id}`} className="task-planning-editor" tabIndex={-1} hidden={!expanded.waiting}>
+            <div className="task-planning-card-header">
+              <div>
+                <h3>{strings.planningWaitingTitle}</h3>
+                {waitingOpen && !waitingEnded ? (
+                  <p>{strings.planningWaitingExplanation}</p>
+                ) : null}
+              </div>
             </div>
-          </div>
-          {!waitingOpen ? (
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              disabled={saving || !canAddWaiting}
-              onClick={() => {
-                setWaitingOpen(true);
-                setActiveTarget("waiting");
-              }}
-            >
-              {strings.planningAddWaiting}
-            </button>
-          ) : waitingEnded ? (
-            <>
-              <p className="text-muted">{strings.planningWaitingWillEnd}.</p>
-              {baselineTask.revisitAt ? (
-                <p className="text-muted">{strings.planningRevisitWillBeRemoved}</p>
-              ) : null}
+            {!waitingOpen ? (
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
-                disabled={saving}
-                onClick={undoWaitingEnd}
-              >
-                {strings.planningUndoWaiting}
-              </button>
-            </>
-          ) : (
-            <>
-              <label htmlFor={`planning-waiting-${baselineTask.id}`}>
-                {strings.waitingFor}
-              </label>
-              <input
-                ref={waitingForRef}
-                id={`planning-waiting-${baselineTask.id}`}
-                type="text"
-                value={waitingFor}
-                placeholder={strings.waitingForPlaceholder}
-                disabled={saving}
-                onChange={(event) => {
-                  setWaitingFor(event.target.value);
-                  setWaitingError(null);
+                disabled={saving || !canAddWaiting}
+                onClick={() => {
+                  setWaitingOpen(true);
+                  setActiveTarget("waiting");
                 }}
-              />
-              {hasExistingWait ? (
-                <div className="task-planning-follow-up stack">
-                  <label htmlFor={`planning-follow-up-${baselineTask.id}`}>{strings.planningFollowUpOutcome}</label>
-                  <textarea
-                    ref={followUpOutcomeRef}
-                    id={`planning-follow-up-${baselineTask.id}`}
-                    rows={2}
-                    value={followUpOutcome}
-                    disabled={saving || followUpSaving}
-                    onChange={(event) => setFollowUpOutcome(event.target.value)}
-                    placeholder={strings.planningFollowUpOutcomePlaceholder}
-                  />
-                  <label htmlFor={`planning-follow-up-choice-${baselineTask.id}`}>{strings.planningFollowUpNext}</label>
-                  <select
-                    id={`planning-follow-up-choice-${baselineTask.id}`}
-                    value={followUpChoice}
-                    disabled={saving || followUpSaving}
-                    onChange={(event) => setFollowUpChoice(event.target.value as "continue" | "resolve")}
-                  >
-                    <option value="continue">{strings.planningContinueWaiting}</option>
-                    <option value="resolve">{strings.planningEndWaiting}</option>
-                  </select>
-                  <p className="text-muted">{strings.planningFollowUpPrerequisitesNote}</p>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={saving || followUpSaving || !followUpOutcome.trim() || planningConflicts.length > 0}
-                    onClick={() => void saveWaitFollowUp()}
-                  >
-                    {followUpSaving ? strings.saving : strings.planningSaveFollowUp}
-                  </button>
-                </div>
-              ) : null}
-              {hasExistingWait ? (
+              >
+                {strings.planningAddWaiting}
+              </button>
+            ) : waitingEnded ? (
+              <>
+                <p className="text-muted">{strings.planningWaitingWillEnd}.</p>
+                {baselineTask.revisitAt ? (
+                  <p className="text-muted">{strings.planningRevisitWillBeRemoved}</p>
+                ) : null}
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
                   disabled={saving}
-                  onClick={endWaitingLocally}
+                  onClick={undoWaitingEnd}
                 >
-                  {strings.planningEndWaiting}
+                  {strings.planningUndoWaiting}
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost"
+              </>
+            ) : (
+              <>
+                <label htmlFor={`planning-waiting-${baselineTask.id}`}>
+                  {strings.waitingFor}
+                </label>
+                <input
+                  ref={waitingForRef}
+                  id={`planning-waiting-${baselineTask.id}`}
+                  type="text"
+                  value={waitingFor}
+                  placeholder={strings.waitingForPlaceholder}
                   disabled={saving}
-                  onClick={removeNewWaiting}
-                >
-                  {strings.planningRemoveWaiting}
-                </button>
-              )}
-              {waitingDraftActive && !notBeforeDate ? (
-                <div className="task-planning-inline-hint">
-                  <span>{strings.planningNoRevisit}</span>
+                  onChange={(event) => {
+                    setWaitingFor(event.target.value);
+                    setWaitingError(null);
+                  }}
+                />
+                {hasExistingWait ? (
+                  <div className="task-planning-follow-up stack">
+                    <label htmlFor={`planning-follow-up-${baselineTask.id}`}>{strings.planningFollowUpOutcome}</label>
+                    <textarea
+                      ref={followUpOutcomeRef}
+                      id={`planning-follow-up-${baselineTask.id}`}
+                      rows={2}
+                      value={followUpOutcome}
+                      disabled={saving || followUpSaving}
+                      onChange={(event) => setFollowUpOutcome(event.target.value)}
+                      placeholder={strings.planningFollowUpOutcomePlaceholder}
+                    />
+                    <label htmlFor={`planning-follow-up-choice-${baselineTask.id}`}>{strings.planningFollowUpNext}</label>
+                    <select
+                      id={`planning-follow-up-choice-${baselineTask.id}`}
+                      value={followUpChoice}
+                      disabled={saving || followUpSaving}
+                      onChange={(event) => setFollowUpChoice(event.target.value as "continue" | "resolve")}
+                    >
+                      <option value="continue">{strings.planningContinueWaiting}</option>
+                      <option value="resolve">{strings.planningEndWaiting}</option>
+                    </select>
+                    <p className="text-muted">{strings.planningFollowUpPrerequisitesNote}</p>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={saving || followUpSaving || !followUpOutcome.trim() || planningConflicts.length > 0 || (followUpChoice === "continue" && (!validity.availability || invalidRevisitSelection))}
+                      onClick={() => void saveWaitFollowUp()}
+                    >
+                      {followUpSaving ? strings.saving : strings.planningSaveFollowUp}
+                    </button>
+                  </div>
+                ) : null}
+                {hasExistingWait ? (
                   <button
                     type="button"
                     className="btn btn-sm btn-ghost"
                     disabled={saving}
-                    onPointerDownCapture={() => setActiveTarget("availability")}
-                    onFocusCapture={() => setActiveTarget("availability")}
-                    onClick={() => {
-                      setActiveTarget("availability");
-                      setPendingScrollTarget("availability");
-                    }}
+                    onClick={endWaitingLocally}
                   >
-                    {strings.planningSetRevisit}
+                    {strings.planningEndWaiting}
                   </button>
-                </div>
-              ) : null}
-            </>
-          )}
-          {waitingError ? (
-            <div className="human-date-error" role="alert">
-              {waitingError}
-            </div>
-          ) : null}
-          {dateConflict ? (
-            <p className="human-date-error" role="alert">
-              {strings.planningWaitingConflictWithoutWait}
-            </p>
-          ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    disabled={saving}
+                    onClick={removeNewWaiting}
+                  >
+                    {strings.planningRemoveWaiting}
+                  </button>
+                )}
+                {waitingDraftActive ? (
+                  <div className="task-planning-inline-hint">
+                    <span>{strings.planningShowFrom}: {revisitSummary ?? strings.planningNoRevisit}</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      disabled={saving}
+                      onPointerDownCapture={() => setActiveTarget("availability")}
+                      onFocusCapture={() => setActiveTarget("availability")}
+                      onClick={() => {
+                        reveal("availability");
+                      }}
+                    >
+                      {revisitSummary ? strings.edit : strings.planningSetRevisit}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
+            {waitingError ? (
+              <div className="human-date-error" role="alert">
+                {waitingError}
+              </div>
+            ) : null}
+            {dateConflict ? (
+              <p className="human-date-error" role="alert">
+                {strings.planningWaitingConflictWithoutWait}
+              </p>
+            ) : null}
+          </div>
         </section>
 
         {baselineTask.kind === "action" ? (
@@ -1152,61 +1259,66 @@ export function TaskPlanningSheet({
             className={cardClass(activeTarget === "dependencies")}
             {...cardEvents("dependencies")}
           >
-            <div className="task-planning-card-header">
-              <div>
-                <h3>{strings.prerequisitesTitle}</h3>
-                <p>{strings.prerequisitesExplanation}</p>
+          {summary("dependencies", strings.prerequisitesTitle, baselineTask.dependencies.length ? `${baselineTask.dependencies.filter((dep) => !dep.resolved).length} ${strings.unresolved} · ${baselineTask.dependencies.length}` : null)}
+          {!expanded.dependencies ? <div className="task-planning-prerequisite-summary">{baselineTask.dependencies.filter((dep) => !dep.resolved).map((dep) => <div key={dep.dependsOnTaskId}>{dependencyLink(dep)}</div>)}</div> : null}
+          <div id={`planning-editor-dependencies-${baselineTask.id}`} className="task-planning-editor" tabIndex={-1} hidden={!expanded.dependencies}>
+              <div className="task-planning-card-header">
+                <div>
+                  <h3>{strings.prerequisitesTitle}</h3>
+                  <p>{strings.prerequisitesExplanation}</p>
+                </div>
               </div>
-            </div>
-            {baselineTask.dependencies.length ? (
-              <ul className="list" style={{ padding: 0, margin: 0 }}>
-                {baselineTask.dependencies.map((dependency) => (
-                  <li key={dependency.dependsOnTaskId} className="row-between">
-                    <span>{dependency.title ?? `#${dependency.dependsOnTaskId}`}</span>
-                    <span className="row">
-                      <span className="text-muted">{dependency.resolved ? strings.resolved : strings.unresolved}</span>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost"
-                        disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
-                        onClick={() => void changeDependency(dependency.dependsOnTaskId, true)}
-                      >
-                        {strings.removeDependency}
-                      </button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="text-muted">{strings.prerequisitesEmpty}</p>}
-            <label htmlFor={`planning-prerequisites-${baselineTask.id}`}>{strings.prerequisitesSearchHint}</label>
-            <input
-              ref={prerequisitesSearchRef}
-              id={`planning-prerequisites-${baselineTask.id}`}
-              value={dependencyQuery}
-              disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
-              onChange={(event) => void searchDependencies(event.target.value)}
-              placeholder={strings.prerequisitesSearchHint}
-            />
-            {dependencyError ? <p className="human-date-error" role="alert">{dependencyError}</p> : null}
-            {dependencyResults.length ? (
-              <ul className="list" style={{ padding: 0, margin: 0 }}>
-                {dependencyResults
-                  .filter((candidate) => candidate.id !== baselineTask.id && !baselineTask.dependencies.some((dep) => dep.dependsOnTaskId === candidate.id))
-                  .map((candidate) => (
-                    <li key={candidate.id}>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-block"
-                        disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
-                        onClick={() => void changeDependency(candidate.id, false)}
-                      >
-                        {strings.addDependency}: {candidate.title}{candidate.projectTitle ? ` · ${candidate.projectTitle}` : ""}
-                      </button>
+              {baselineTask.dependencies.some((dep) => dep.resolved) ? <button type="button" className="btn btn-sm btn-ghost" aria-expanded={resolvedOpen} onClick={() => setResolvedOpen((open) => !open)}>{strings.resolved} ({baselineTask.dependencies.filter((dep) => dep.resolved).length})</button> : null}
+              {baselineTask.dependencies.length ? (
+                <ul className="list" style={{ padding: 0, margin: 0 }}>
+                  {baselineTask.dependencies.filter((dependency) => !dependency.resolved || resolvedOpen).sort((a, b) => Number(a.resolved) - Number(b.resolved)).map((dependency) => (
+                    <li key={dependency.dependsOnTaskId} className="row-between">
+                      {dependencyLink(dependency)}
+                      <span className="row">
+                        <span className="text-muted">{dependency.resolved ? strings.resolved : strings.unresolved}</span>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
+                          onClick={() => void changeDependency(dependency.dependsOnTaskId, true)}
+                        >
+                          {strings.removeDependency}
+                        </button>
+                      </span>
                     </li>
                   ))}
-              </ul>
-            ) : null}
-          </section>
+                </ul>
+              ) : <p className="text-muted">{strings.prerequisitesEmpty}</p>}
+              <label htmlFor={`planning-prerequisites-${baselineTask.id}`}>{strings.prerequisitesSearchHint}</label>
+              <input
+                ref={prerequisitesSearchRef}
+                id={`planning-prerequisites-${baselineTask.id}`}
+                value={dependencyQuery}
+                disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
+                onChange={(event) => void searchDependencies(event.target.value)}
+                placeholder={strings.prerequisitesSearchHint}
+              />
+              {dependencyError ? <p className="human-date-error" role="alert">{dependencyError}</p> : null}
+              {dependencyResults.length ? (
+                <ul className="list" style={{ padding: 0, margin: 0 }}>
+                  {dependencyResults
+                    .filter((candidate) => candidate.id !== baselineTask.id && !baselineTask.dependencies.some((dep) => dep.dependsOnTaskId === candidate.id))
+                    .map((candidate) => (
+                      <li key={candidate.id}>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-block"
+                          disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
+                          onClick={() => void changeDependency(candidate.id, false)}
+                        >
+                          {strings.addDependency}: {candidate.title}{candidate.projectTitle ? ` · ${candidate.projectTitle}` : ""}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              ) : null}
+          </div>
+        </section>
         ) : null}
 
         <section
@@ -1214,102 +1326,77 @@ export function TaskPlanningSheet({
           className={cardClass(activeTarget === "availability")}
           {...cardEvents("availability")}
         >
-          <div className="task-planning-card-header">
-            <div>
-              <h3>{strings.planningShowFrom}</h3>
-              <p>
-                {waitingDraftActive
-                  ? strings.planningAvailabilityExternalExplanation
-                  : strings.planningAvailabilityExplanation}
+          {summary("availability", strings.planningShowFrom, revisitSummary)}
+          <div id={`planning-editor-availability-${baselineTask.id}`} className="task-planning-editor" tabIndex={-1} hidden={!expanded.availability}>
+            <div className="task-planning-card-header">
+              <div>
+                <h3>{strings.planningShowFrom}</h3>
+                <p>
+                  {waitingDraftActive
+                    ? strings.planningAvailabilityExternalExplanation
+                    : strings.planningAvailabilityExplanation}
+                </p>
+              </div>
+              {notBeforeDate ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={strings.removeRevisitDate}
+                  disabled={saving || !timezoneLoaded || waitingEnded}
+                  onClick={removeAvailability}
+                >
+                  {strings.remove}
+                </button>
+              ) : null}
+            </div>
+            <div className="task-planning-datetime">
+              <div className="task-planning-date">
+                <label htmlFor={`planning-availability-date-${baselineTask.id}`}>
+                  {strings.date}
+                </label>
+                <HumanDateInput
+                  id={`planning-availability-date-${baselineTask.id}`}
+                  value={notBeforeDate}
+                  onChange={(date) => setRevisitDate(date ?? "")}
+                  onValidityChange={setAvailabilityValidity}
+                  disabled={saving || !timezoneLoaded || waitingEnded}
+                />
+              </div>
+              <div className="task-planning-time">
+                <label htmlFor={`planning-availability-time-${baselineTask.id}`}>
+                  {strings.time}
+                </label>
+                <input
+                  id={`planning-availability-time-${baselineTask.id}`}
+                  type="time"
+                  value={notBeforeTime}
+                  onChange={(event) =>
+                    setRevisitTime(event.target.value)
+                  }
+                  disabled={saving || !timezoneLoaded || !notBeforeDate}
+                />
+              </div>
+            </div>
+            {invalidRevisitSelection ? (
+              <p className="human-date-error" role="alert">
+                {strings.invalidRevisitTime}
               </p>
-            </div>
-            {notBeforeDate ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                aria-label={strings.removeRevisitDate}
-                disabled={saving || !timezoneLoaded || waitingEnded}
-                onClick={removeAvailability}
-              >
-                {strings.remove}
-              </button>
             ) : null}
-          </div>
-          <div className="task-planning-datetime">
-            <div className="task-planning-date">
-              <label htmlFor={`planning-availability-date-${baselineTask.id}`}>
-                {strings.date}
-              </label>
-              <HumanDateInput
-                id={`planning-availability-date-${baselineTask.id}`}
-                value={notBeforeDate}
-                onChange={(date) => setRevisitDate(date ?? "")}
-                onValidityChange={setAvailabilityValidity}
-                disabled={saving || !timezoneLoaded || waitingEnded}
-              />
-            </div>
-            <div className="task-planning-time">
-              <label htmlFor={`planning-availability-time-${baselineTask.id}`}>
-                {strings.time}
-              </label>
-              <input
-                id={`planning-availability-time-${baselineTask.id}`}
-                type="time"
-                value={notBeforeTime}
-                onChange={(event) =>
-                  setRevisitTime(event.target.value)
-                }
-                disabled={saving || !timezoneLoaded || !notBeforeDate}
-              />
-            </div>
-          </div>
-          {invalidRevisitSelection ? (
-            <p className="human-date-error" role="alert">
-              {strings.invalidRevisitTime}
-            </p>
-          ) : null}
-          <div
-            className="choice-group"
-            role="group"
-            aria-label={strings.availabilitySameDayGroup}
-          >
-            <button
-              type="button"
-              className="choice-chip"
-              aria-pressed={matchesAvailability(
-                resolveAbsolutePreset("in3Hours", new Date(), householdTimezone),
-              )}
-              disabled={saving || !timezoneLoaded || waitingEnded}
-              onClick={() => {
-                const instant = resolveAbsolutePreset(
-                  "in3Hours",
-                  new Date(),
-                  householdTimezone,
-                );
-                const date = instant
-                  ? calendarDateForInstant(instant, householdTimezone)
-                  : null;
-                if (date) {
-                  setRevisitDateTime(
-                    date,
-                    taskAvailabilityClock(instant, householdTimezone) ?? "06:00",
-                  );
-                }
-              }}
+            <div
+              className="choice-group"
+              role="group"
+              aria-label={strings.availabilitySameDayGroup}
             >
-              {strings.availabilityInAWhile}
-            </button>
-            {absolutePresetIsFuture("tonight", new Date(), householdTimezone) ? (
               <button
                 type="button"
                 className="choice-chip"
                 aria-pressed={matchesAvailability(
-                  resolveAbsolutePreset("tonight", new Date(), householdTimezone),
+                  resolveAbsolutePreset("in3Hours", new Date(), householdTimezone),
                 )}
                 disabled={saving || !timezoneLoaded || waitingEnded}
                 onClick={() => {
                   const instant = resolveAbsolutePreset(
-                    "tonight",
+                    "in3Hours",
                     new Date(),
                     householdTimezone,
                   );
@@ -1324,48 +1411,76 @@ export function TaskPlanningSheet({
                   }
                 }}
               >
-                {strings.availabilityTonight}
+                {strings.availabilityInAWhile}
               </button>
+              {absolutePresetIsFuture("tonight", new Date(), householdTimezone) ? (
+                <button
+                  type="button"
+                  className="choice-chip"
+                  aria-pressed={matchesAvailability(
+                    resolveAbsolutePreset("tonight", new Date(), householdTimezone),
+                  )}
+                  disabled={saving || !timezoneLoaded || waitingEnded}
+                  onClick={() => {
+                    const instant = resolveAbsolutePreset(
+                      "tonight",
+                      new Date(),
+                      householdTimezone,
+                    );
+                    const date = instant
+                      ? calendarDateForInstant(instant, householdTimezone)
+                      : null;
+                    if (date) {
+                      setRevisitDateTime(
+                        date,
+                        taskAvailabilityClock(instant, householdTimezone) ?? "06:00",
+                      );
+                    }
+                  }}
+                >
+                  {strings.availabilityTonight}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="choice-chip"
+                aria-pressed={matchesAvailability(tomorrowAvailability)}
+                disabled={saving || !timezoneLoaded || waitingEnded}
+                onClick={() =>
+                  setRevisitDateTime(
+                    addIsoCalendarDays(householdToday, 1),
+                    notBeforeTime || "06:00",
+                  )
+                }
+              >
+                {strings.scheduleShortcutLabels.tomorrow}
+              </button>
+              <button
+                type="button"
+                className="choice-chip"
+                aria-pressed={matchesAvailability(weekendAvailability)}
+                disabled={saving || !timezoneLoaded || waitingEnded}
+                onClick={() => {
+                  const day = new Date(`${householdToday}T00:00:00.000Z`).getUTCDay();
+                  const daysUntilSaturday = (6 - day + 7) % 7;
+                  setRevisitDateTime(
+                    addIsoCalendarDays(householdToday, daysUntilSaturday),
+                    notBeforeTime || "06:00",
+                  );
+                }}
+              >
+                {strings.scheduleShortcutLabels.weekend}
+              </button>
+            </div>
+            {availabilityNotice ? (
+              <p className="task-planning-replacement-note" role="status">
+                {availabilityNotice}
+              </p>
             ) : null}
-            <button
-              type="button"
-              className="choice-chip"
-              aria-pressed={matchesAvailability(tomorrowAvailability)}
-              disabled={saving || !timezoneLoaded || waitingEnded}
-              onClick={() =>
-                setRevisitDateTime(
-                  addIsoCalendarDays(householdToday, 1),
-                  notBeforeTime || "06:00",
-                )
-              }
-            >
-              {strings.scheduleShortcutLabels.tomorrow}
-            </button>
-            <button
-              type="button"
-              className="choice-chip"
-              aria-pressed={matchesAvailability(weekendAvailability)}
-              disabled={saving || !timezoneLoaded || waitingEnded}
-              onClick={() => {
-                const day = new Date(`${householdToday}T00:00:00.000Z`).getUTCDay();
-                const daysUntilSaturday = (6 - day + 7) % 7;
-                setRevisitDateTime(
-                  addIsoCalendarDays(householdToday, daysUntilSaturday),
-                  notBeforeTime || "06:00",
-                );
-              }}
-            >
-              {strings.scheduleShortcutLabels.weekend}
-            </button>
+            {waitingEnded ? (
+              <p className="text-muted">{strings.planningUndoWaitingToSetRevisit}</p>
+            ) : null}
           </div>
-          {availabilityNotice ? (
-            <p className="task-planning-replacement-note" role="status">
-              {availabilityNotice}
-            </p>
-          ) : null}
-          {waitingEnded ? (
-            <p className="text-muted">{strings.planningUndoWaitingToSetRevisit}</p>
-          ) : null}
         </section>
 
         <section
@@ -1375,63 +1490,66 @@ export function TaskPlanningSheet({
           }`}
           {...cardEvents("deadline")}
         >
-          <div className="task-planning-card-header">
-            <div>
-              <h3>{strings.planningDueBy}</h3>
-              {deadlineOpen ? (
-                <p>{strings.planningDeadlineExplanation}</p>
+          {summary("deadline", strings.planningDueBy, (recurrenceEnabled ? recurrenceDeadline : dueDate) ? formatExactLocalDate((recurrenceEnabled ? recurrenceDeadline : dueDate)!, locale) : null, strings.addDeadline)}
+          <div id={`planning-editor-deadline-${baselineTask.id}`} className="task-planning-editor" tabIndex={-1} hidden={!expanded.deadline}>
+            <div className="task-planning-card-header">
+              <div>
+                <h3>{strings.planningDueBy}</h3>
+                {deadlineOpen ? (
+                  <p>{strings.planningDeadlineExplanation}</p>
+                ) : null}
+              </div>
+              {dueDate && !recurrenceEnabled ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={strings.removeDeadline}
+                  disabled={saving}
+                  onClick={removeDeadline}
+                >
+                  {strings.remove}
+                </button>
               ) : null}
             </div>
-            {dueDate && !recurrenceEnabled ? (
+            {recurrenceEnabled ? (
+              <p className="recurrence-derived-hint">
+                {recurrenceDeadline
+                  ? strings.recurrenceDeadlinePreview(formatExactLocalDate(recurrenceDeadline, locale) ?? recurrenceDeadline)
+                  : strings.recurrenceScheduleRequired}
+              </p>
+            ) : !deadlineOpen ? (
               <button
                 type="button"
-                className="btn btn-sm btn-ghost"
-                aria-label={strings.removeDeadline}
+                className="btn btn-sm btn-ghost task-planning-add-deadline"
                 disabled={saving}
-                onClick={removeDeadline}
+                onClick={() => setDeadlineOpen(true)}
               >
-                {strings.remove}
+                {strings.addDeadline}
               </button>
-            ) : null}
+            ) : (
+              <>
+                <HumanDateInput
+                  id={`planning-due-${baselineTask.id}`}
+                  value={dueDate}
+                  ariaLabel={strings.planningDueBy}
+                  onChange={(date) => {
+                    setDueDate(date ?? "");
+                    setValidity((current) => ({ ...current, deadline: true }));
+                  }}
+                  onValidityChange={setDeadlineValidity}
+                  disabled={saving}
+                />
+                <CaptionHintSuggestions
+                  hints={deadlineHints.map((hint) => ({
+                    key: hint.key,
+                    label: labelFor(hint, "dueDate"),
+                  }))}
+                  disabled={saving}
+                  onSelect={(key) => acceptHint("dueDate", deadlineHints, key)}
+                />
+              </>
+            )}
           </div>
-          {recurrenceEnabled ? (
-            <p className="recurrence-derived-hint">
-              {recurrenceDeadline
-                ? strings.recurrenceDeadlinePreview(formatExactLocalDate(recurrenceDeadline, locale) ?? recurrenceDeadline)
-                : strings.recurrenceScheduleRequired}
-            </p>
-          ) : !deadlineOpen ? (
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost task-planning-add-deadline"
-              disabled={saving}
-              onClick={() => setDeadlineOpen(true)}
-            >
-              {strings.addDeadline}
-            </button>
-          ) : (
-            <>
-              <HumanDateInput
-                id={`planning-due-${baselineTask.id}`}
-                value={dueDate}
-                ariaLabel={strings.planningDueBy}
-                onChange={(date) => {
-                  setDueDate(date ?? "");
-                  setValidity((current) => ({ ...current, deadline: true }));
-                }}
-                onValidityChange={setDeadlineValidity}
-                disabled={saving}
-              />
-              <CaptionHintSuggestions
-                hints={deadlineHints.map((hint) => ({
-                  key: hint.key,
-                  label: labelFor(hint, "dueDate"),
-                }))}
-                disabled={saving}
-                onSelect={(key) => acceptHint("dueDate", deadlineHints, key)}
-              />
-            </>
-          )}
         </section>
 
         {planningConflicts.length > 0 ? (
@@ -1460,25 +1578,28 @@ export function TaskPlanningSheet({
           className={cardClass(activeTarget === "reminders")}
           {...cardEvents("reminders")}
         >
-          <div className="task-planning-card-header">
-            <div><h3>{strings.reminders}</h3></div>
+          {summary("reminders", strings.reminders, reminders.length ? reminders.map((item) => formatReminderLabel(item, recurrenceEnabled ? recurrenceDeadline : dueDate || null, strings, locale)).join(", ") : null)}
+          <div id={`planning-editor-reminders-${baselineTask.id}`} className="task-planning-editor" tabIndex={-1} hidden={!expanded.reminders}>
+            <div className="task-planning-card-header">
+              <div><h3>{strings.reminders}</h3></div>
+            </div>
+            <TaskRemindersEditor
+              key={`${baselineTask.revision}-${reminderEditorRevision}`}
+              ref={reminderEditorRef}
+              reminders={reminders}
+              dueDate={recurrenceEnabled ? recurrenceDeadline : dueDate || null}
+              onChange={setReminders}
+              onPendingChange={(pending) => {
+                setReminderDraftPending(pending);
+                if (!pending) {
+                  setWaitingError((current) => current === strings.planningFinishReminderFirst ? null : current);
+                  setDependencyError((current) => current === strings.planningFinishReminderFirst ? null : current);
+                }
+              }}
+              disabled={saving}
+              autoOpen={initialTarget === "reminders"}
+            />
           </div>
-          <TaskRemindersEditor
-            key={`${baselineTask.revision}-${reminderEditorRevision}`}
-            ref={reminderEditorRef}
-            reminders={reminders}
-            dueDate={recurrenceEnabled ? recurrenceDeadline : dueDate || null}
-            onChange={setReminders}
-            onPendingChange={(pending) => {
-              setReminderDraftPending(pending);
-              if (!pending) {
-                setWaitingError((current) => current === strings.planningFinishReminderFirst ? null : current);
-                setDependencyError((current) => current === strings.planningFinishReminderFirst ? null : current);
-              }
-            }}
-            disabled={saving}
-            autoOpen={initialTarget === "reminders"}
-          />
         </section>
 
         {activationPrompt ? (
@@ -1497,14 +1618,14 @@ export function TaskPlanningSheet({
         ) : null}
 
         <div className="task-planning-actions">
-          <button type="button" className="btn" disabled={saving} onClick={onClose}>
+          <button type="button" className="btn" disabled={saving || followUpSaving || dependencyBusy !== null} onClick={onClose}>
             {strings.cancel}
           </button>
           <button
             type="submit"
             className="btn btn-primary"
             disabled={
-              saving ||
+              saving || followUpSaving || dependencyBusy !== null ||
               !allValid ||
               invalidRevisitSelection ||
               dateConflict ||

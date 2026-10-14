@@ -346,7 +346,7 @@ describe("ReviewPage", () => {
       expect(within(sheet).getAllByText("Geplant für").length).toBeGreaterThan(0);
     });
 
-    it("opens the canonical waiting workflow for a set_followup repair", async () => {
+    it("opens the canonical revisit editor for a set_followup repair", async () => {
       mockedApi.getReviewItems.mockResolvedValue([
         repairItem(30, waitingTask.title, "waiting_without_followup", "set_followup"),
       ]);
@@ -363,7 +363,8 @@ describe("ReviewPage", () => {
       );
 
       const sheet = await screen.findByRole("dialog");
-      expect(within(sheet).getByText("Wiedervorlage")).toBeInTheDocument();
+      expect(within(sheet).getByLabelText("Datum")).toHaveFocus();
+      expect(sheet.querySelectorAll(".task-planning-editor:not([hidden])")).toHaveLength(1);
     });
 
     it("opens the canonical splitting workflow for an add_child repair", async () => {

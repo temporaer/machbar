@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useState } from "react";
+import { forwardRef, useCallback, useId, useImperativeHandle, useState } from "react";
 import type { TaskReminderInput } from "@machbar/shared";
 import { calendarDateForInstant, householdCalendarDateTimeToRevisitAt, localTimeForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -41,6 +41,7 @@ type EditorState =
 export interface TaskRemindersEditorHandle {
   getCommitValue(): TaskReminderInput[] | null;
   hasOpenEditor(): boolean;
+  openEditor(): void;
 }
 
 interface TaskRemindersEditorProps {
@@ -63,6 +64,7 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
   autoOpen = false,
   householdTimezoneAbsoluteLabels = false,
 }, ref) => {
+  const editorId = useId();
   const strings = useStrings();
   const { locale } = useLocale();
   const { timezone: householdTimezone } = useHouseholdTimezone();
@@ -145,6 +147,9 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
 
   useImperativeHandle(ref, () => ({
     getCommitValue,
+    openEditor: () => {
+      if (draft.length === 0 && editor.mode === "closed") updateEditor({ mode: "choosing" });
+    },
     hasOpenEditor: () => editor.mode === "customAbsolute" || editor.mode === "customRelative",
   }), [editor, draft, householdTimezone]);
 
@@ -196,16 +201,16 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
       <li key={rowKey} className="reminder-row reminder-row-editing">
         {editor.mode === "customAbsolute" ? (
           <>
-            <label htmlFor={`reminder-date-${rowKey}`} className="visually-hidden">{strings.due}</label>
+            <label htmlFor={`reminder-date-${editorId}-${rowKey}`} className="visually-hidden">{strings.due}</label>
             <HumanDateInput
-              id={`reminder-date-${rowKey}`}
+              id={`reminder-date-${editorId}-${rowKey}`}
               value={editor.date}
               onChange={(date) => updateEditor({ ...editor, date: date ?? "" })}
               onValidityChange={setAbsoluteDateValidity}
               disabled={disabled}
             />
             <ClockTimePicker
-              id={`reminder-time-${rowKey}`}
+              id={`reminder-time-${editorId}-${rowKey}`}
               value={editor.time}
               onChange={(time) => updateEditor({ ...editor, time })}
               disabled={disabled}
@@ -213,11 +218,11 @@ export const TaskRemindersEditor = forwardRef<TaskRemindersEditorHandle, TaskRem
           </>
         ) : (
           <>
-            <label htmlFor={`reminder-days-${rowKey}`} className="visually-hidden">
+            <label htmlFor={`reminder-days-${editorId}-${rowKey}`} className="visually-hidden">
               {strings.reminderDaysBeforeFieldLabel}
             </label>
             <input
-              id={`reminder-days-${rowKey}`}
+              id={`reminder-days-${editorId}-${rowKey}`}
               type="number"
               min={0}
               className="reminder-days-before-input"

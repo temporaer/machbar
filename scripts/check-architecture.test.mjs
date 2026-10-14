@@ -165,7 +165,7 @@ test("allows reads, unique operations, and explicit exceptions", () => {
 test("rejects a surface rendering a focused workflow sheet itself", () => {
   const results = checkSource({
     filePath: "apps/web/src/components/SomeRow.tsx",
-    sourceText: 'import { TaskPlanSheet } from "./TaskPlanSheet";',
+    sourceText: 'import { TaskPlanningSheet } from "./TaskPlanningSheet";',
   });
   assert.deepEqual(results.map((result) => result.rule), ["canonical-workflow-host"]);
   assert.match(results[0].message, /Only TaskWorkflowHost may render it/);
@@ -176,7 +176,7 @@ test("allows the workflow host to import its own focused sheets", () => {
     rules(
       "apps/web/src/components/TaskWorkflowHost.tsx",
       [
-        'import { TaskPlanSheet } from "./TaskPlanSheet";',
+        'import { TaskPlanningSheet } from "./TaskPlanningSheet";',
         'import { TaskSplitSheet } from "./TaskSplitSheet";',
       ].join("\n"),
     ),

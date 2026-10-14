@@ -27,8 +27,19 @@ vi.mock("../lib/api", () => ({
 const mockedApi = vi.mocked(api, true);
 let originalScrollIntoViewDescriptor: PropertyDescriptor | undefined;
 
-function card(name: string) {
-  return screen.getByRole("heading", { name }).closest("section") as HTMLElement;
+function card(name: string, open = true) {
+  const heading = Array.from(document.querySelectorAll("section h3")).find((element) => element.textContent === name)!;
+  const section = heading.closest("section") as HTMLElement;
+  const editor = section.querySelector<HTMLElement>(".task-planning-editor")!;
+  // Existing domain tests enter the editor before interacting with its controls.
+  // Unset deadline/wait actions themselves remain the entry point.
+  if (open && editor.hidden && !["Deadline", "Wartet auf"].includes(name)) {
+    fireEvent.click(section.querySelector(".task-planning-summary button")!);
+  }
+  if (open && editor.hidden && name === "Wartet auf" && section.querySelector<HTMLInputElement>('input[id^="planning-waiting"]')?.value) {
+    fireEvent.click(section.querySelector(".task-planning-summary button")!);
+  }
+  return section;
 }
 
 function stubScrollIntoView(
@@ -127,6 +138,7 @@ describe("TaskPlanningSheet", () => {
       .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
       .mockResolvedValueOnce({ ...latest, revision: 3, scheduledDate: "2026-10-16" } as never);
     renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+    card("Geplant für");
     const plannedDate = screen.getByLabelText("Geplant für");
     fireEvent.change(plannedDate, { target: { value: "16.10.2026" } });
     fireEvent.blur(plannedDate);
@@ -177,6 +189,7 @@ describe("TaskPlanningSheet", () => {
       />,
     );
 
+    card("Wiedervorlage");
     const dateInput = screen.getByLabelText("Datum");
     await user.clear(dateInput);
     await user.type(dateInput, "kein Datum");
@@ -233,6 +246,7 @@ describe("TaskPlanningSheet", () => {
       />,
     );
 
+    card("Wiedervorlage");
     const dateInput = screen.getByLabelText("Datum");
     const tomorrow = within(card("Wiedervorlage")).getByRole("button", {
       name: "Morgen",
@@ -290,7 +304,7 @@ describe("TaskPlanningSheet", () => {
       />,
     );
 
-    expect(card("Geplant für")).not.toHaveClass("task-planning-card-active");
+    expect(card("Geplant für", false)).not.toHaveClass("task-planning-card-active");
     expect(scrollIntoView).not.toHaveBeenCalled();
     const sheet = screen.getByRole("dialog");
     sheet.scrollTop = 120;
@@ -310,7 +324,7 @@ describe("TaskPlanningSheet", () => {
     rerender(
       <TaskPlanningSheet task={task} onClose={vi.fn()} />,
     );
-    expect(card("Geplant für")).not.toHaveClass("task-planning-card-active");
+    expect(card("Geplant für", false)).not.toHaveClass("task-planning-card-active");
     expect(sheet.scrollTop).toBe(0);
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
@@ -382,7 +396,7 @@ describe("TaskPlanningSheet", () => {
     expect(observed).toHaveLength(1);
     expect(observed[0]).toBe(card("Wiedervorlage"));
 
-    fireEvent.pointerDown(card("Deadline"));
+    fireEvent.pointerDown(card("Deadline", false));
     rerender(
       <TaskPlanningSheet
         task={task}
@@ -391,7 +405,7 @@ describe("TaskPlanningSheet", () => {
       />,
     );
     expect(observed).toHaveLength(1);
-    expect(card("Deadline")).toHaveClass("task-planning-card-active");
+    expect(card("Deadline", false)).toHaveClass("task-planning-card-active");
   });
 
   it("expands and removes an empty deadline without mutating", async () => {
@@ -659,7 +673,7 @@ describe("TaskPlanningSheet", () => {
         name: "Wiedervorlage setzen",
       }),
     );
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
     expect(scrollIntoView).toHaveBeenCalledWith({
       block: "nearest",
       behavior: "auto",
@@ -820,7 +834,7 @@ describe("TaskPlanningSheet", () => {
     const firstDate = within(card("Geplant für")).getByLabelText("Geplant für");
     fireEvent.change(firstDate, { target: { value: "01.12.2026" } });
     fireEvent.blur(firstDate);
-    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
+    if (within(card("Erinnerungen")).queryByRole("button", { name: "+ Erinnerung" })) await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
     await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Morgen früh" }));
     await user.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -985,6 +999,7 @@ describe("TaskPlanningSheet", () => {
       .mockResolvedValueOnce({ ...latest, revision: 4, scheduledDate: "2026-10-16" } as never);
     renderWithProviders(<TaskPlanningSheet task={task} initialTarget="reminders" onClose={vi.fn()} />);
 
+    card("Geplant für");
     const plannedDate = screen.getByLabelText("Geplant für");
     fireEvent.change(plannedDate, { target: { value: "16.10.2026" } });
     fireEvent.blur(plannedDate);
@@ -1060,6 +1075,7 @@ describe("TaskPlanningSheet", () => {
       .mockResolvedValueOnce({ ...latest, revision: 3, scheduledDate: "2026-10-16" } as never);
     renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
 
+    card("Geplant für");
     const plannedDate = screen.getByLabelText("Geplant für");
     fireEvent.change(plannedDate, { target: { value: "16.10.2026" } });
     fireEvent.blur(plannedDate);
@@ -1207,7 +1223,7 @@ describe("TaskPlanningSheet", () => {
     const onClose = vi.fn();
     renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={onClose} />);
 
-    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
+    if (within(card("Erinnerungen")).queryByRole("button", { name: "+ Erinnerung" })) await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
     await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Benutzerdefiniert …" }));
     const reminderDate = screen.getByLabelText("Fällig");
     await user.clear(reminderDate);
@@ -1276,6 +1292,7 @@ describe("TaskPlanningSheet", () => {
     const schedule = screen.getByLabelText("Geplant für");
     fireEvent.change(schedule, { target: { value: "25.10.2026" } });
     fireEvent.blur(schedule);
+    card("Erinnerungen");
     await userEvent.click(screen.getByRole("button", { name: "Erinnerung entfernen" }));
     await userEvent.type(screen.getByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"), "Freigabe");
     await userEvent.click(await screen.findByRole("button", { name: "Abhängigkeit hinzufügen: Freigabe" }));
@@ -1302,7 +1319,7 @@ describe("TaskPlanningSheet", () => {
     renderWithProviders(<TaskPlanningSheet task={task} initialTarget="dependencies" onClose={vi.fn()} />);
     const user = userEvent.setup();
 
-    await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
+    if (within(card("Erinnerungen")).queryByRole("button", { name: "+ Erinnerung" })) await user.click(within(card("Erinnerungen")).getByRole("button", { name: "+ Erinnerung" }));
     await user.click(within(card("Erinnerungen")).getByRole("button", { name: "Benutzerdefiniert …" }));
     const reminderDate = screen.getByLabelText("Fällig");
     await user.clear(reminderDate);

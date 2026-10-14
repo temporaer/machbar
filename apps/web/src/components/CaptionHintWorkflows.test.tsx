@@ -11,7 +11,7 @@ import {
 import { renderWithProviders } from "../test/testUtils";
 import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
-import { TaskPlanSheet } from "./TaskPlanSheet";
+import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
 
 vi.mock("../lib/api", () => ({
@@ -42,7 +42,7 @@ describe("caption hints in focused task workflows", () => {
       createdAt,
     });
     mockedApi.updateTask.mockResolvedValue({ ...task, revision: 4 } as never);
-    renderWithProviders(<TaskPlanSheet task={task} onClose={vi.fn()} />);
+    renderWithProviders(<TaskPlanningSheet initialTarget="scheduled" task={task} onClose={vi.fn()} />);
 
     await userEvent.click(
       screen.getByRole("button", { name: /^Planen: 15\./ }),
@@ -71,7 +71,7 @@ describe("caption hints in focused task workflows", () => {
       title: "Fenster morgen putzen",
       createdAt,
     });
-    renderWithProviders(<TaskPlanSheet task={task} onClose={vi.fn()} />);
+    renderWithProviders(<TaskPlanningSheet initialTarget="scheduled" task={task} onClose={vi.fn()} />);
 
     await userEvent.click(
       screen.getByRole("button", { name: /^Planen: 15\./ }),

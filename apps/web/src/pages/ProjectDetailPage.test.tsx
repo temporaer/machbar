@@ -1143,9 +1143,8 @@ describe("ProjectDetailPage task explanations", () => {
     const dialog = await screen.findByRole("dialog", {
       name: strings.planning,
     });
-    expect(dialog).toHaveFocus();
-    expect(within(dialog).getByRole("heading", { name: strings.planningScheduledFor }))
-      .toBeInTheDocument();
+    expect(within(dialog).getByLabelText(strings.planningScheduledFor)).toHaveFocus();
+    expect(dialog.querySelectorAll(".task-planning-editor:not([hidden])")).toHaveLength(1);
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|7");
     expect(screen.getByLabelText("task-route-state")).toHaveTextContent("none|none");
   });

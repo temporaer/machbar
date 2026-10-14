@@ -1364,57 +1364,6 @@ details[open] > .disclosure-summary::after {
   gap: 8px;
 }
 
-.task-planning-form {
-  gap: 10px;
-}
-
-.task-planning-card {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-alt);
-}
-
-.task-planning-card-active {
-  border-color: var(--color-primary);
-}
-
-.task-planning-card h3 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.task-planning-card-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--color-text);
-  text-align: left;
-  font: inherit;
-}
-
-.task-planning-card .human-date-control,
-.task-planning-card > input[type="time"],
-.task-planning-card > input[type="text"] {
-  min-height: 44px;
-}
-
-.task-planning-card > input[type="time"],
-.task-planning-card > input[type="text"] {
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 9px 10px;
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
 .task-planning-inline-hint {
   display: flex;
   align-items: center;
@@ -1423,16 +1372,6 @@ details[open] > .disclosure-summary::after {
   flex-wrap: wrap;
   color: var(--color-text-muted);
   font-size: 0.85rem;
-}
-
-.task-planning-actions {
-  position: sticky;
-  display: flex;
-  flex-wrap: wrap;
-  bottom: 0;
-  z-index: 1;
-  padding: 10px 0 max(10px, env(safe-area-inset-bottom));
-  background: var(--color-surface);
 }
 
 /*
@@ -2740,6 +2679,102 @@ details[open] > .disclosure-summary::after {
   margin-left: auto;
 }
 
+/* Planning disclosures retain mounted drafts while showing compact values. */
+.sheet-backdrop[hidden], .task-planning-editor[hidden] {
+  display: none;
+}
+.task-planning-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+}
+.task-planning-card-active {
+  box-shadow: none;
+}
+.task-planning-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.task-planning-summary .detail-meta-button {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  border-radius: var(--radius-sm);
+}
+.task-planning-summary .detail-meta-label {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow-wrap: normal;
+}
+.task-planning-summary-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.task-planning-editor {
+  padding: 12px;
+  border-left: 2px solid var(--color-primary);
+}
+.task-planning-editor > * + * {
+  margin-top: 8px;
+}
+.task-planning-editor .task-planning-card-header h3 {
+  display: none;
+}
+.task-planning-window {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.task-planning-window p {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: .8rem;
+  overflow-wrap: anywhere;
+}
+.task-planning-form input:not([type="checkbox"]):not([type="radio"]),
+.task-planning-form select, .task-planning-form textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  padding: 9px 10px;
+  min-height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+.task-planning-form textarea {
+  resize: vertical;
+}
+.task-planning-form input[type="checkbox"] {
+  accent-color: var(--color-primary);
+}
+.task-planning-prerequisite-link {
+  text-align: left;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  white-space: normal;
+}
+.task-planning-editor .row-between {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-planning-editor .row-between > .task-planning-prerequisite-link {
+  flex: 1 1 12rem;
+}
+
+
 .task-planning-title {
   margin: -2px 0 12px;
   color: var(--color-text-muted);
@@ -2747,24 +2782,7 @@ details[open] > .disclosure-summary::after {
 }
 
 .task-planning-form {
-  gap: 12px;
-}
-
-.task-planning-card {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-}
-
-.task-planning-card-active {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
-}
-
-.task-planning-card-compact {
-  padding-block: 10px;
+  gap: 8px;
 }
 
 .task-planning-card-header {
@@ -2829,7 +2847,7 @@ details[open] > .disclosure-summary::after {
   flex-wrap: wrap;
 }
 
-.task-planning-card > * + * {
+.task-planning-card > .task-planning-editor:not([hidden]) {
   margin-top: 8px;
 }
 
