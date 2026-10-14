@@ -1,13 +1,14 @@
 /**
- * Task hierarchy structural moves: reparenting, reordering, and cascading a
- * subtree's story assignment.
+ * Canonical task and project hierarchy moves on the unified parent edge.
  */
-import { eq, sql } from "drizzle-orm";
+import type { ProjectActivationResolution } from "@machbar/shared";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import {
   getDescendantIds as repoGetDescendantIds,
+  getAncestorIds,
   neutralizeContribution,
   recordActivity,
   recordContribution,
@@ -15,6 +16,9 @@ import {
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { assertParentAcceptsChildren, getTaskOrThrow } from "./taskCrud.js";
+import { activateCommittedProjectChain } from "./commitmentActivation.js";
+import { hasExecutionCommitment } from "./commitmentTransition.js";
+import { getEffectiveOwners } from "../repo/effectiveRepo.js";
 import { Graph } from "./graph.js";
 import {
   MutationContext,
@@ -74,12 +78,6 @@ function db_selectAllTasks(tx: Db) {
   return Graph.load(tx).allTasks();
 }
 
-function cascadeProjectId(tx: Db, rootId: number, newProjectId: number | null) {
-  void tx;
-  void rootId;
-  void newProjectId;
-}
-
 /**
  * Canonical transactional hierarchy mutation. UI gestures calculate a
  * concrete destination; this command validates concurrency and hierarchy
@@ -134,6 +132,9 @@ export function moveTask(
       newProjectId = "projectId" in input ? input.projectId ?? null : task.projectId;
       if (newProjectId !== null && newProjectId !== task.projectId) {
         const newProject = getProjectOrThrow(txDb, newProjectId);
+        if (wouldCreateHierarchyCycle(txDb, taskId, newProjectId)) {
+          throw AppError.conflict("task_hierarchy_cycle", "This move would create a cycle in the hierarchy.", { taskId, projectId: newProjectId });
+        }
         if (newProject.scope !== task.scope) {
           throw AppError.conflict(
             "scope_mismatch",
@@ -202,9 +203,7 @@ export function moveTask(
       .where(eq(schema.workItems.id, taskId))
       .run();
 
-    if (newProjectId !== task.projectId) {
-      cascadeProjectId(txDb, taskId, newProjectId);
-    }
+
 
     reindexGroup(txDb, newParentTaskId, newProjectId, destinationIds);
 
@@ -310,5 +309,96 @@ export function moveTask(
       }
     }
     return updated;
+  });
+}
+
+/** A reviewed hierarchy snapshot protects membership and every affected revision. */
+export function assertHierarchySnapshot(
+  db: Db,
+  requiredIds: number[],
+  expected: Array<{ id: number; revision: number }>,
+) {
+  const revisions = new Map(expected.map((entry) => [entry.id, entry.revision]));
+  if (revisions.size !== expected.length || requiredIds.some((id) => !revisions.has(id))) {
+    throw AppError.conflict("stale_write_conflict", "The hierarchy changed. Reload before continuing.");
+  }
+  const rows = db.select().from(schema.workItems).where(inArray(schema.workItems.id, [...revisions.keys()])).all();
+  if (rows.length !== revisions.size) throw AppError.conflict("stale_write_conflict", "An affected item no longer exists.");
+  for (const row of rows) assertExpectedRevision(row.role === "story" ? "project" : "task", row.id, row.revision, revisions.get(row.id));
+}
+
+export interface MoveProjectInput {
+  /** Projects move to another project or become standalone; task destinations are not offered. */
+  parentId: number | null;
+  expectedRevision: number;
+  expectedHierarchyRevisions: Array<{ id: number; revision: number }>;
+  activationResolution?: ProjectActivationResolution;
+}
+
+/** Canonical project reparenting, preserving the whole subtree and obligations. */
+export function moveProject(db: Db, projectId: number, input: MoveProjectInput, context?: MutationContext) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, projectId);
+    assertExpectedRevision("project", projectId, project.revision, input.expectedRevision);
+    const descendants = repoGetDescendantIds(txDb, projectId);
+    if (input.parentId !== null && wouldCreateHierarchyCycle(txDb, projectId, input.parentId)) {
+      throw AppError.conflict("project_transition_invalid", "A project cannot move into itself or its descendants.");
+    }
+    const destination = input.parentId === null ? null : getProjectOrThrow(txDb, input.parentId);
+    if (destination && destination.scope !== project.scope) throw AppError.conflict("scope_mismatch", "A project cannot move across household/work scope.");
+    const requiredIds = [projectId, ...descendants, ...getAncestorIds(txDb, projectId),
+      ...(destination ? [destination.id, ...getAncestorIds(txDb, destination.id)] : [])];
+    assertHierarchySnapshot(txDb, requiredIds, input.expectedHierarchyRevisions);
+    if (project.parentId === input.parentId) return project;
+    // Moving inherited work must not silently give it to a different owner.
+    const ownersBefore = getEffectiveOwners(txDb);
+    const subtreeIds = [projectId, ...descendants];
+    const siblings = txDb.select().from(schema.workItems).all().filter((row) => row.parentId === input.parentId && row.id !== projectId);
+    const position = Math.max(-1, ...siblings.map((row) => row.position)) + 1;
+    txDb.update(schema.workItems).set({ parentId: input.parentId, position,
+      revision: sql`${schema.workItems.revision} + 1`, updatedAt: nowIso() }).where(eq(schema.workItems.id, projectId)).run();
+    const ownersAfter = getEffectiveOwners(txDb);
+    if (subtreeIds.some((id) => ownersBefore.get(id)?.ownerId !== ownersAfter.get(id)?.ownerId)) {
+      throw AppError.conflict("project_transition_invalid", "Choose a destination that preserves this project's ownership.");
+    }
+    const graph = Graph.load(txDb);
+    const committed = project.status !== "completed" && project.status !== "archived" && (
+      project.status === "active" ||
+      hasExecutionCommitment({ kind: "action", dueDate: project.dueDate, scheduledDate: project.scheduledDate, revisitAt: project.revisitAt, reminders: [] }) ||
+      descendants.some((id) => {
+        const task = graph.tasksById.get(id);
+        const childProject = graph.projectsById.get(id);
+        if (task) return task.status !== "done" && task.status !== "cancelled" && (hasExecutionCommitment(task) || task.repeatAfterDays !== null);
+        return childProject?.status === "active" || (childProject?.status === "backlog" && (!!childProject.dueDate || !!childProject.scheduledDate));
+      })
+    );
+    if (committed) {
+      // Evaluate the moved project's whole new chain. Its existing active
+      // progress path satisfies its new ancestors without inventing a step.
+      const resolution = input.activationResolution ? {
+        ...input.activationResolution,
+        expectedProjects: input.activationResolution.expectedProjects.map((entry) =>
+          entry.projectId === projectId && entry.revision === project.revision
+            ? { ...entry, revision: project.revision + 1 }
+            : entry),
+      } : undefined;
+      try {
+        activateCommittedProjectChain(txDb, projectId, context, resolution);
+      } catch (error) {
+        if (error instanceof AppError && error.code === "project_commitment_resolution_required") {
+          const details = error.details as Record<string, unknown> | undefined;
+          if (details && Array.isArray(details.expectedProjects)) {
+            details.expectedProjects = (details.expectedProjects as Array<{ projectId: number; revision: number }>).map((entry) =>
+              entry.projectId === projectId ? { ...entry, revision: project.revision } : entry);
+            if (details.targetRevision === project.revision + 1) details.targetRevision = project.revision;
+          }
+        }
+        throw error;
+      }
+    }
+    recordActivity(txDb, { actorMemberId: actor(context), kind: "project_updated", entityType: "project", entityTitle: project.title, projectId,
+      metadata: { changedFields: ["parentId"], relatedProjectIds: input.parentId === null ? [] : [input.parentId] } });
+    return getProjectOrThrow(txDb, projectId);
   });
 }

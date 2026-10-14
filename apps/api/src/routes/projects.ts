@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
+import { moveProject } from "../domain/structuralMoves.js";
+import { moveProjectSchema } from "../schemas.js";
 import { convertStoryToTask } from "../domain/roleConversion.js";
 import {
   addCriterion,
@@ -265,6 +267,9 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/convert-to-task",
     async (request, reply) => {
       const id = parseId(request.params.id);
+      if (!Graph.load(db, undefined, viewerMemberId(request)).projectsById.has(id)) {
+        throw AppError.notFound("project_not_found", "The project was not found.");
+      }
       const body = parseOrThrow(convertStoryToTaskSchema, request.body ?? {});
       const task = convertStoryToTask(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
@@ -274,6 +279,17 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       return graph.allTasks().find((t) => t.id === task.id) ?? null;
     },
   );
+
+  app.post<{ Params: { id: string } }>("/api/projects/:id/move", async (request) => {
+    const id = parseId(request.params.id);
+    const body = parseOrThrow(moveProjectSchema, request.body);
+    const visible = Graph.load(db, undefined, viewerMemberId(request));
+    if (!visible.projectsById.has(id) || (body.parentId !== null && !visible.projectsById.has(body.parentId))) {
+      throw AppError.notFound("project_not_found", "The project destination was not found.");
+    }
+    moveProject(db, id, body, { actorMemberId: request.activityActor?.id ?? null });
+    return projectWithIssues(Graph.load(db, undefined, viewerMemberId(request)), id);
+  });
 
   // --- acceptance criteria (ordered, structured; replaces description) ---
 

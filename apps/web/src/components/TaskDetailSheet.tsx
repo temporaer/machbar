@@ -20,7 +20,7 @@ import { useStrings } from "../lib/strings";
 import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
-import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
+import { isCapturedInboxItem } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
@@ -939,44 +939,57 @@ export function TaskDetailSheet() {
           ) : null}
 
           <WorkItemDetailDisclosure
-            title={strings.subtasks}
+            title={loadedTask?.childStories?.length ? strings.structure : strings.subtasks}
             summary={
-              task.children.length > 0
-                ? strings.subtaskSummary(task.children.length)
-                : strings.noSubtasks
+              loadedTask?.childStories?.length
+                ? strings.projects
+                : task.children.length > 0
+                  ? strings.subtaskSummary(task.children.length)
+                  : strings.noSubtasks
             }
-            defaultOpen={task.children.length > 0}
+            defaultOpen={task.children.length > 0 || (loadedTask?.childStories?.length ?? 0) > 0}
             resetKey={task.id}
           >
             <div className="field">
             <ul className="list" style={{ padding: 0, margin: 0 }}>
-              {sortByPosition(task.children).map((child) => (
-                <li key={child.id} className="row-between">
-                  <span className="row">
-                    {child.kind === "reference" ? (
-                      <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
-                        🗎
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`task-row-checkbox${child.status === "done" ? " done" : ""}${child.status === "cancelled" ? " cancelled" : ""}`}
-                        aria-label={child.status === "done" || child.status === "cancelled" ? strings.reopen : strings.done}
-                        onClick={() => {
-                          dispatch({ type: "task.toggleDone", task: child });
-                          reload();
-                        }}
-                      >
-                        {child.status === "done" ? "✓" : child.status === "cancelled" ? "×" : ""}
+              {[
+                ...task.children.map((item) => ({ role: "task" as const, item })),
+                ...(loadedTask?.childStories ?? []).map((item) => ({ role: "story" as const, item })),
+              ].sort((a, b) => a.item.position - b.item.position).map((entry) => {
+                if (entry.role === "story") return (
+                  <li key={entry.item.id} className="row-between">
+                    <button type="button" className="btn" onClick={() => dispatch({ type: "workItem.open", workItem: { id: entry.item.id, role: "story" } })}>📁 {entry.item.title}</button>
+                  </li>
+                );
+                const child = entry.item;
+                return (
+                  <li key={child.id} className="row-between">
+                    <span className="row">
+                      {child.kind === "reference" ? (
+                        <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
+                          🗎
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`task-row-checkbox${child.status === "done" ? " done" : ""}${child.status === "cancelled" ? " cancelled" : ""}`}
+                          aria-label={child.status === "done" || child.status === "cancelled" ? strings.reopen : strings.done}
+                          onClick={() => {
+                            dispatch({ type: "task.toggleDone", task: child });
+                            reload();
+                          }}
+                        >
+                          {child.status === "done" ? "✓" : child.status === "cancelled" ? "×" : ""}
+                        </button>
+                      )}
+                      <button type="button" className="link-plain" onClick={() => open(child.id)}>
+                        {child.title}
                       </button>
-                    )}
-                    <button type="button" className="link-plain" onClick={() => open(child.id)}>
-                      {child.title}
-                    </button>
-                  </span>
-                  {child.kind === "reference" ? null : <StatusBadge status={child.status} />}
-                </li>
-              ))}
+                    </span>
+                    {child.kind === "reference" ? null : <StatusBadge status={child.status} />}
+                  </li>
+                );
+              })}
             </ul>
             {!isReference && task.repeatAfterDays === null && !taskIsCapturedInboxItem ? (
               <div className="row">

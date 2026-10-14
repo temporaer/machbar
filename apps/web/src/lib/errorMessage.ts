@@ -83,7 +83,7 @@ export function localizedApiErrorMessage(
   }
   if (code === "role_conversion_invalid") {
     const reason = stringDetail(details, "reason");
-    if (["nested_project", "nested_projects", "archived_status_requires_restore"].includes(reason ?? "")) {
+    if (["nested_projects", "archived_status_requires_restore"].includes(reason ?? "")) {
       return strings.convertProjectToTaskUnsupported;
     }
     if (reason === "planning_intent_conflict") return strings.convertProjectToTaskPlanningConflict;

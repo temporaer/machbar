@@ -9,6 +9,7 @@ import { ProjectStructureSheet } from "./ProjectStructureSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
+import { MoveProjectSheet } from "./MoveProjectSheet";
 import { ProjectConvertToTaskSheet } from "./ProjectConvertToTaskSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
@@ -95,6 +96,8 @@ export function ProjectWorkflowHost() {
       );
     case "editOutcome":
       return <StoryCriteriaSheet story={story} onClose={close} />;
+    case "move":
+      return <MoveProjectSheet story={story} onClose={close} />;
     case "convertToTask":
       return <ProjectConvertToTaskSheet story={story} onClose={close} />;
     case "completeWithDecisions":

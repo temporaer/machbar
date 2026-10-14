@@ -50,6 +50,7 @@ export function DestinationPicker({
   onChange,
   noneLabel,
   autoFocus = false,
+  disabled = false,
 }: {
   kind: DestinationKind;
   /** Visible + accessible name of the picker, e.g. "Projekt wählen". */
@@ -61,6 +62,7 @@ export function DestinationPicker({
   noneLabel: string;
   /** Focus the search field when a picker is the immediate next capture step. */
   autoFocus?: boolean;
+  disabled?: boolean;
 }) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -93,6 +95,7 @@ export function DestinationPicker({
       key={id ?? "none"}
       type="button"
       className="destination-row"
+      disabled={disabled}
       aria-pressed={value === id}
       onClick={() => onChange(id)}
     >
@@ -107,6 +110,7 @@ export function DestinationPicker({
       <input
         id={`${reactId}-search`}
         type="search"
+        disabled={disabled}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder={strings.searchDestinationPlaceholder}

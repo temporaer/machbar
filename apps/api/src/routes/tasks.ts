@@ -104,7 +104,7 @@ function taskOrThrow(
       { taskId: id },
     );
   }
-  return { ...task, ancestors: graph.taskAncestorsFor(id), externalRefs: listExternalWorkItemRefs(db, id) };
+  return { ...task, ancestors: graph.taskAncestorsFor(id), hierarchyRevisions: graph.hierarchyRevisionsFor(id), childStories: graph.childProjectsFor(id), externalRefs: listExternalWorkItemRefs(db, id) };
 }
 
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {
@@ -312,6 +312,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     "/api/tasks/:id/convert-to-story",
     async (request, reply) => {
       const id = parseId(request.params.id);
+      taskOrThrow(db, id, viewerMemberId(request));
       const body = parseOrThrow(convertTaskToStorySchema, request.body);
       const project = convertTaskToStory(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,

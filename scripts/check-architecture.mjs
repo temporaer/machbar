@@ -98,6 +98,7 @@ const WORKFLOW_SHEET_HOSTS = new Map([
   ["TaskConvertToProjectSheet", "TaskWorkflowHost"],
   ["ProjectDeferSheet", "ProjectWorkflowHost"],
   ["ProjectStructureSheet", "ProjectWorkflowHost"],
+  ["MoveProjectSheet", "ProjectWorkflowHost"],
   ["ProjectTagsSheet", "ProjectWorkflowHost"],
   ["ProjectContextsSheet", "ProjectWorkflowHost"],
   ["StoryCriteriaSheet", "ProjectWorkflowHost"],

@@ -45,6 +45,7 @@ function projectChain(db: Db, projectId: number): ProjectRow[] {
     const project = db
       .select({
         id: schema.workItems.id,
+        role: schema.workItems.role,
         revision: schema.workItems.revision,
         parentId: schema.workItems.parentId,
         title: schema.workItems.title,
@@ -54,10 +55,10 @@ function projectChain(db: Db, projectId: number): ProjectRow[] {
         scope: schema.workItems.scope,
       })
       .from(schema.workItems)
-      .where(and(eq(schema.workItems.id, currentId), eq(schema.workItems.role, "story")))
+      .where(eq(schema.workItems.id, currentId))
       .get();
     if (!project) break;
-    chain.push(project);
+    if (project.role === "story") chain.push(project);
     currentId = project.parentId;
   }
   return chain;
@@ -73,12 +74,12 @@ export function loadCommitmentTransitionSnapshot(
   subject: CommitmentTransitionSnapshot["subject"],
   today = isoToday(),
 ): CommitmentTransitionSnapshot {
-  const projects = projectChain(db, projectId).map((project) => {
+  const projects = projectChain(db, projectId).map((project, index, chain) => {
     const readiness = getProjectActivationReadiness(db, project.id, project.ownerMemberId, today);
     return {
       projectId: project.id,
       title: project.title,
-      parentId: project.parentId,
+      parentId: chain[index + 1]?.id ?? null,
       revision: project.revision,
       status: statusOf(project),
       ownerMemberId: project.ownerMemberId,

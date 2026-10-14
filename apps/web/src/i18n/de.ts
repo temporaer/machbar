@@ -587,8 +587,6 @@ const extra = {
   convertToProjectIncomingDependency: "Andere Aufgabe wartet auf diese Aufgabe",
   convertToProjectUnsupportedStatus:
     "Erledigte oder verworfene Aufgaben können nicht in Projekte umgewandelt werden.",
-  convertToProjectNotStandalone:
-    "Nur eigenständige Aufgaben ohne Elternaufgabe und Projekt können zu einem Projekt werden.",
   convertProjectToTask: "Zur Aufgabe machen",
   convertProjectToTaskTitle: "Projekt zur Aufgabe machen",
   convertProjectToTaskReady:
@@ -599,7 +597,7 @@ const extra = {
   convertProjectToTaskUseLatest: "Serverfassung verwenden",
   convertProjectToTaskKeepMyEdit: "Meine Änderung beibehalten",
   convertProjectToTaskUnsupported:
-    "Verschachtelte oder archivierte Projekte können hier nicht direkt umgewandelt werden. Stelle das Projekt zuerst wieder her oder löse seine Einordnung.",
+    "Archivierte Projekte müssen zuerst wiederhergestellt werden. Projekte mit Unterprojekten können noch nicht zu Aufgaben werden; verschiebe die Unterprojekte zuerst mit Verschieben ….",
   convertProjectToTaskPlanningConflict:
     "Arbeitsplan und Wiedervorlage lassen sich nicht beide auf dieselbe gewöhnliche Aufgabe übertragen. Ändere zuerst die Planung des Projekts.",
   needsClarification: "Zu klären",
@@ -730,6 +728,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   moveHere: "Hierher verschieben",
   subtreeHint: "Verschiebt die Aufgabe inklusive aller Teilaufgaben.",
   changeParentTitle: "Neue übergeordnete Aufgabe",
+  projectMoveActivationHint: "Aktive Arbeit aktiviert das Ziel und nötige übergeordnete Projekte. Fehlende Entscheidungen werden hier abgefragt.",
+  projectSubtreeHint: "Verschiebt das Projekt mit allen Unterprojekten und Aufgaben.",
   moveProjectTitle: "In anderes Projekt verschieben",
   currentProject: "Aktuelles Projekt",
   searchDestination: "Ziel suchen",
@@ -1656,6 +1656,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
     project_not_found: "Das Projekt wurde nicht gefunden.",
     project_title_required: "Bitte gib einen Projekttitel ein.",
+    task_transition_invalid: "Verschiebe Unterprojekte zuerst mit Verschieben …, bevor du diese Aufgabe abschließt oder verwirfst.",
     project_transition_invalid:
       "Dieser Projektstatus kann so nicht geändert werden.",
     push_member_required:

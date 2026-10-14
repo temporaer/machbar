@@ -19,6 +19,8 @@ import { getTaskOrThrow, nextPositionForGroup } from "./taskCrud.js";
 import { insertTaskRow, storedTaskStatus } from "./taskRowInsert.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import { hasExecutionCommitment } from "./commitmentTransition.js";
+import { assertHierarchySnapshot } from "./structuralMoves.js";
+import { getAncestorIds } from "../repo/treeRepo.js";
 import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
 import {
   MutationContext,
@@ -65,13 +67,12 @@ export interface ConvertTaskToStoryInput {
   expectedDescendantRevisions?: Array<{ taskId: number; revision: number }>;
   activationResolution?: ProjectActivationResolution;
   expectedRevision?: number;
+  expectedHierarchyRevisions?: Array<{ id: number; revision: number }>;
   /** Internal compound operations may add their own reviewed child graph before activation. */
   deferActivation?: boolean;
 }
 
 type TaskToStoryInvalidReason =
-  | "not_root"
-  | "inside_story"
   | "is_reference"
   | "unsupported_status"
   | "stale_descendant_snapshot"
@@ -125,19 +126,6 @@ export function convertTaskToStoryInTransaction(
         { taskId, reason, ...details },
       );
     };
-    if (task.parentTaskId !== null) {
-      reject(
-        "not_root",
-        "Only a root-level standalone task can be converted to a story.",
-      );
-    }
-    if (task.projectId !== null) {
-      reject(
-        "inside_story",
-        "A task inside a story cannot be converted independently.",
-        { projectId: task.projectId },
-      );
-    }
     if (task.kind === "reference") {
       reject(
         "is_reference",
@@ -202,6 +190,7 @@ export function convertTaskToStoryInTransaction(
       }
     }
     const descendants = repoGetDescendantIds(txDb, taskId);
+    if (input.expectedHierarchyRevisions) assertHierarchySnapshot(txDb, [taskId, ...descendants, ...getAncestorIds(txDb, taskId)], input.expectedHierarchyRevisions);
     if (input.expectedDescendantRevisions !== undefined) {
       const revisions = new Map(input.expectedDescendantRevisions.map(({ taskId: id, revision }) => [id, revision]));
       if (revisions.size !== input.expectedDescendantRevisions.length || revisions.size !== descendants.length) {
@@ -240,7 +229,7 @@ export function convertTaskToStoryInTransaction(
     }
 
     const ownerMemberId =
-      task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null;
+      task.effectiveOwnerId;
 
     const executionCommitment = task.status === "actionable" ||
       hasExecutionCommitment({
@@ -256,7 +245,7 @@ export function convertTaskToStoryInTransaction(
       .set({
         role: "story",
         taskKind: null,
-        parentId: null,
+        parentId: task.parentTaskId ?? task.projectId,
         title,
         notes: input.notes ?? task.notes,
         status: targetStatus,
@@ -281,6 +270,12 @@ export function convertTaskToStoryInTransaction(
       .where(eq(schema.workItems.id, taskId))
       .run();
 
+    for (const tag of task.effectiveTags) {
+      txDb.insert(schema.workItemTags).values({ workItemId: taskId, tagId: tag.id }).onConflictDoNothing().run();
+    }
+    for (const physicalContext of task.effectiveContexts) {
+      txDb.insert(schema.workItemPhysicalContexts).values({ workItemId: taskId, contextId: physicalContext.id }).onConflictDoNothing().run();
+    }
     const project = getProjectOrThrow(txDb, taskId);
     let preservedStepId: number | null = null;
     if (preserveAsStep) {
@@ -462,6 +457,8 @@ export interface ConvertStoryToTaskInput {
   title?: string;
   notes?: string;
   expectedRevision?: number;
+  expectedHierarchyRevisions?: Array<{ id: number; revision: number }>;
+  activationResolution?: ProjectActivationResolution;
 }
 
 export function convertStoryToTask(
@@ -479,14 +476,8 @@ export function convertStoryToTask(
       project.revision,
       input.expectedRevision,
     );
-    if (project.parentId !== null) {
-      throw AppError.conflict(
-        "role_conversion_invalid",
-        "A nested project cannot be converted to a standalone task.",
-        { projectId, reason: "nested_project" },
-      );
-    }
     const descendants = repoGetDescendantIds(txDb, projectId);
+    if (input.expectedHierarchyRevisions) assertHierarchySnapshot(txDb, [projectId, ...descendants, ...getAncestorIds(txDb, projectId)], input.expectedHierarchyRevisions);
     const nestedProject = descendants.length > 0
       ? txDb.select({ id: schema.workItems.id })
           .from(schema.workItems)
@@ -558,7 +549,7 @@ export function convertStoryToTask(
     const status = project.status === "backlog" && executionCommitment
       ? "actionable"
       : mappedStatus;
-    const position = nextPositionForGroup(txDb, null, null);
+    const position = project.position;
 
     // A backlog project parks its ordinary open outline. When its root becomes
     // a Someday task, keep that effective state for unplanned descendants too;
@@ -608,7 +599,7 @@ export function convertStoryToTask(
       .set({
         role: "task",
         taskKind: "action",
-        parentId: null,
+        parentId: project.parentId,
         title,
         notes: input.notes ?? project.notes,
         status: taskStatusToStored(status),
@@ -646,6 +637,9 @@ export function convertStoryToTask(
       .run();
 
     const task = getTaskOrThrow(txDb, projectId);
+    if (task.projectId !== null && status === "actionable") {
+      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution);
+    }
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "work_item_role_converted",

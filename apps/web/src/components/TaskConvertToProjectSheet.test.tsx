@@ -24,6 +24,7 @@ describe("TaskConvertToProjectSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.convertTaskToStory.mockResolvedValue(makeProject({ id: 42, title: "Vorhaben" }));
+    mockedApi.getTask.mockImplementation(() => new Promise(() => {}));
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.getProject.mockResolvedValue({ ...makeProject({ id: 42, title: "Vorhaben" }), tasks: [] });
     mockedApi.createTask.mockResolvedValue(makeTask());

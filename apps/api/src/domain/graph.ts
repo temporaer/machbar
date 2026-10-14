@@ -67,6 +67,7 @@ export interface ProjectRecord extends SharedProject {
   activationReadiness: ProjectActivationReadiness;
   childStories: ProjectRecord[];
   ancestors: WorkItemAncestor[];
+  hierarchyRevisions: Array<{ id: number; revision: number }>;
 }
 
 export interface TaskRecord extends SharedTask {
@@ -81,6 +82,8 @@ export interface TaskRecord extends SharedTask {
  */
 export interface TaskDetailRecord extends TaskRecord {
   ancestors: WorkItemAncestor[];
+  hierarchyRevisions: Array<{ id: number; revision: number }>;
+  childStories: ProjectRecord[];
   externalRefs: import("@machbar/shared").ExternalWorkItemRef[];
 }
 
@@ -658,6 +661,7 @@ export class Graph {
         availableActions: availableProjectWorkflowActions(p.status),
         activationReadiness: graph.activationReadinessByProject.get(p.id)!,
         childStories: [],
+        hierarchyRevisions: [],
         ancestors: [],
       });
     }
@@ -1031,47 +1035,51 @@ export class Graph {
     return this.blockerAnalysisByTask.get(taskId) ?? null;
   }
 
-  private ancestorsFor(projectId: number): WorkItemAncestor[] {
-    const ancestors: WorkItemAncestor[] = [];
-    let parentId = this.projectsById.get(projectId)?.parentId ?? null;
-    const seen = new Set<number>([projectId]);
-    while (parentId !== null && !seen.has(parentId)) {
-      seen.add(parentId);
-      const parent = this.projectsById.get(parentId);
-      if (!parent) break;
-      ancestors.unshift({ id: parent.id, role: "story", title: parent.title, revision: parent.revision });
-      parentId = parent.parentId;
-    }
-    return ancestors;
+  private parentIdFor(id: number): number | null {
+    const project = this.projectsById.get(id);
+    if (project) return project.parentId;
+    const task = this.tasksById.get(id);
+    return task ? task.parentTaskId ?? task.projectId : null;
   }
 
-  /**
-   * The full ordered ancestor chain for a task, outermost-first: any
-   * containing project chain (via `ancestorsFor`, plus the immediately
-   * containing project itself) followed by any containing parent-task
-   * chain. Never includes the task itself. Backs `TaskDetailRecord.ancestors`
-   * (see `routes/tasks.ts`'s `taskOrThrow`) and `WorkItemBreadcrumbs` on the
-   * frontend — the hierarchy is derived here, once, from the graph's own
-   * `parentTaskId`/`projectId` edges, not reconstructed from whatever
-   * partial tree happens to be rendered on a given page.
-   */
-  taskAncestorsFor(taskId: number): WorkItemAncestor[] {
-    const taskAncestors: WorkItemAncestor[] = [];
-    const seenTasks = new Set<number>([taskId]);
-    let current = this.tasksById.get(taskId) ?? null;
-    while (current && current.parentTaskId !== null && !seenTasks.has(current.parentTaskId)) {
-      const parent = this.tasksById.get(current.parentTaskId);
+  private ancestorsFor(id: number): WorkItemAncestor[] {
+    const result: WorkItemAncestor[] = [];
+    const seen = new Set([id]);
+    let parentId = this.parentIdFor(id);
+    while (parentId !== null && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = this.projectsById.get(parentId) ?? this.tasksById.get(parentId);
       if (!parent) break;
-      seenTasks.add(parent.id);
-      taskAncestors.unshift({ id: parent.id, role: "task", title: parent.title, revision: parent.revision });
-      current = parent;
+      result.unshift({
+        id: parent.id,
+        role: this.projectsById.has(parent.id) ? "story" : "task",
+        title: parent.title,
+        revision: parent.revision,
+      });
+      parentId = this.parentIdFor(parentId);
     }
-    const rootProjectId = current?.projectId ?? null;
-    const project = rootProjectId !== null ? this.projectsById.get(rootProjectId) : undefined;
-    const projectAncestors: WorkItemAncestor[] = project
-      ? [...this.ancestorsFor(project.id), { id: project.id, role: "story", title: project.title, revision: project.revision }]
-      : [];
-    return [...projectAncestors, ...taskAncestors];
+    return result;
+  }
+
+  taskAncestorsFor(taskId: number): WorkItemAncestor[] {
+    return this.ancestorsFor(taskId);
+  }
+
+  /** Viewer-visible revisions for a structural operation, including subtree membership. */
+  hierarchyRevisionsFor(id: number): Array<{ id: number; revision: number }> {
+    const ids = new Set([id, ...this.ancestorsFor(id).map((item) => item.id)]);
+    const items = [...this.tasksById.values(), ...this.projectsById.values()];
+    for (const item of items) {
+      if (this.ancestorsFor(item.id).some((parent) => parent.id === id)) ids.add(item.id);
+    }
+    return items.filter((item) => ids.has(item.id)).map(({ id: itemId, revision }) => ({ id: itemId, revision }));
+  }
+
+  childProjectsFor(id: number): ProjectRecord[] {
+    return (this.childStoryIdsByParent.get(id) ?? [])
+      .map((childId) => this.projectWithComputed(childId))
+      .filter((project): project is ProjectRecord => project !== null)
+      .sort((a, b) => a.position - b.position);
   }
 
   projectWithComputed(
@@ -1142,6 +1150,7 @@ export class Graph {
             a.id - b.id,
         ),
       ancestors: this.ancestorsFor(projectId),
+      hierarchyRevisions: this.hierarchyRevisionsFor(projectId),
     };
   }
 

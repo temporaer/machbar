@@ -71,7 +71,11 @@ export function getTaskOrThrow(db: Db, id: number) {
 /** All descendants (any depth, any status) of a task, flattened. */
 export function listDescendants(db: Db, rootId: number) {
   const ids = repoGetDescendantIds(db, rootId);
-  return ids.map((id) => getTaskOrThrow(db, id));
+  const graph = Graph.load(db);
+  if (ids.some((id) => graph.projectsById.has(id))) {
+    throw AppError.conflict("task_transition_invalid", "Move this task's child projects out before completing or cancelling its outline.", { taskId: rootId, reason: "project_descendants" });
+  }
+  return ids.map((id) => graph.tasksById.get(id)!);
 }
 
 // ---------------------------------------------------------------------------

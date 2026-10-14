@@ -124,6 +124,13 @@ same move command for post-create project correction.
 Adding another direct move caller requires an explicit checker exception and an
 explanation of why an existing move surface cannot own the behavior.
 
+`POST /api/projects/:id/move` extends `structuralMoves.ts` for atomic project
+reparenting to a project or top level. `story.move` routes through
+`ProjectWorkflowHost` to `MoveProjectSheet`, reusing `DestinationPicker` and
+activation decision fields. The hierarchy snapshot covers the source subtree,
+source ancestors and destination ancestors. The move only appends the moved
+root in its destination; existing siblings need no writes.
+
 ### Dependency direction
 
 Pure domain semantics live in React-free modules. A non-hook `.ts` helper under
@@ -227,7 +234,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Single-task capture, immediate Quick Add entry, destination presentation, and short syntax parsing/resolution | `apps/web/src/components/QuickAdd.tsx`, `apps/web/src/components/CaptureForm.tsx`, and `apps/web/src/lib/captureSyntax.ts` (capture uses the existing task-create API; the follow-up Open action dispatches `task.open`; the shared editor creates tasks only; syntax is applied only there) |
 | Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs |
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
-| Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) and the focused task/project conversion sheets. Task → project uses canonical execution-commitment semantics, preserves explicit contexts and recurrence deadlines on the retained action step, and maps both incoming and outgoing dependency edges atomically; graph projections expose only viewer-visible incoming dependents. Project → task retains task descendants and structured criteria, preserves work plans and history, and enforces editable/checkable criteria during task completion. |
+| Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) and the focused task/project conversion sheets. Task → project uses canonical execution-commitment semantics, preserves explicit contexts and recurrence deadlines on the retained action step, and maps both incoming and outgoing dependency edges atomically; graph projections expose only viewer-visible incoming dependents. Nested conversion retains the direct parent and sibling position; effective task ownership/tags/contexts become explicit project values. Project → task retains task descendants and structured criteria, preserves work plans and history, and enforces editable/checkable criteria during task completion. |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
 | Fixed row action rail (task-kind/status-specific planning/shape/structure/note/waiting actions and project next-step/goal/structure/planning actions; lifecycle remains right-swipe only) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
 | Unified task planning (`scheduledDate` + recurrence + reminders + external wait + `revisitAt` + `dueDate`) workflow | `apps/web/src/components/TaskPlanningSheet.tsx`, opened by `task.plan`, `task.availability`, `task.reminders`, `task.recurrence`, and targeted `task.waitingLifecycle` workflows; reminder presets/editing are draft-only in `TaskRemindersEditor`; one local draft is committed atomically through `apps/web/src/lib/useTaskActions.tsx` and the canonical API update mutation |
@@ -236,7 +243,8 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome/convert to task) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
-| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria, while the canonical domain operation rejects unsupported nested-project, archived-status, or planning mappings atomically |
+| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria, while the canonical domain operation preserves a nested root's parent/position and rejects project descendants, archived-status, or incompatible recurrence/wait mappings atomically |
+| Project hierarchy execution | `apps/api/src/domain/structuralMoves.ts` (`moveProject`) and `POST /api/projects/:id/move`; `MoveProjectSheet` is the focused `story.move` workflow. `assertHierarchySnapshot` is reused by moves and role conversion. |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
 | View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, `InboxPage` |
 | Task/project `scope` ("household" \| "work") read/derivation and owner-only visibility | `apps/api/src/domain/graph.ts` (`Graph.load`'s viewer-restriction parameter; see below) |
