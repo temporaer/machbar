@@ -350,12 +350,15 @@ export const convertTaskToStorySchema = z.object({
     revision: z.number().int().positive(),
   }).strict()).optional(),
   activationResolution: projectActivationResolutionSchema.optional(),
+  expectedHierarchyRevisions: z.array(z.object({ id: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
   expectedRevision: z.number().int().positive().optional(),
 }).strict();
 
 export const convertStoryToTaskSchema = z.object({
+  activationResolution: projectActivationResolutionSchema.optional(),
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
+  expectedHierarchyRevisions: z.array(z.object({ id: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
 
@@ -715,3 +718,10 @@ export const activityQuerySchema = z.object({
   taskId: z.coerce.number().int().positive().optional(),
   projectId: z.coerce.number().int().positive().optional(),
 });
+
+export const moveProjectSchema = z.object({
+  parentId: z.number().int().positive().nullable(),
+  expectedRevision: z.number().int().positive(),
+  expectedHierarchyRevisions: z.array(z.object({ id: z.number().int().positive(), revision: z.number().int().positive() }).strict()),
+  activationResolution: projectActivationResolutionSchema.optional(),
+}).strict();

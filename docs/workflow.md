@@ -88,7 +88,8 @@ the same transaction as its first child; **Als Projekt behandeln** is an
 optional branch through the existing guarded conversion. Unsupported
 conversions leave the original task and the whole step batch intact.
 
-Converting a standalone task into a project keeps its numeric identity,
+Converting a task into a project keeps its direct parent (project or task),
+sibling position, numeric identity,
 content, material, owner, deadline, descendants and history. Task-level work
 plans, reminders, waits, recurrence (including recorded occurrences) and
 dependencies move to a preserved action step. Each dependency may instead be
@@ -461,6 +462,38 @@ the whole task tree along with it. Neither choice is a silent default.
 
 Tasks and stories can be nested to arbitrary depth. A project outline can be
 reorganized with drag, touch, keyboard controls, or a searchable move sheet.
+Project **Struktur → Verschieben …** uses the same destination picker to move
+a whole project subtree under another project or to the top level. Destination
+selection, driver decisions and an authored progress path stay local until one
+revision-checked transaction commits. Cycles, scope changes and stale source,
+descendant or ancestor revisions reject the whole operation.
+
+Task → Project conversion works inside a project and below a task without
+detaching first. Existing effective ownership, tags and physical contexts
+become the project's explicit values so retained work keeps its responsibility
+and material. Task-only obligations, including execution windows, use the
+existing retained-action mapping.
+A child project below a task is reachable from that task's detail steps and has
+mixed-role hierarchy breadcrumbs. Project → Task preserves the direct parent
+and position when all descendants are tasks; task descendants and structured
+criteria stay attached. A project with a project anywhere in its subtree is
+still unsupported because task lifecycle/outline commands do not yet represent
+project descendants. Move those child projects out first. A task containing open
+child projects likewise requires moving them out before its task
+completion/cancellation cascade. Completed or archived project subtrees stay
+untouched when their containing task completes or is cancelled. Archived projects
+and the existing incompatible recurrence/wait mappings remain guarded. Active
+nested conversion and committed project moves resolve required project ancestor
+activation inside the originating transaction. No merge or compound undo is
+included in this slice (issue #167 phase 6a, original cases 59–61 and 63).
+
+Mixed task/project sibling groups share one direct-parent order. Creation,
+successor insertion and moves count both roles. Reindexing touches only changed
+positions and increments those siblings' revisions, so pending edits or
+conversions cannot overwrite a later reorder. A task containing an open project
+is a container for next-action and ordinary Today selection, including standalone
+tasks; the child project's own next action remains available through that project.
+Terminal project subtrees do not block that task or participate in its cascade.
 
 Responsibility and tags can flow down from a project or parent task. A child
 can override or explicitly exclude inherited values when the general context

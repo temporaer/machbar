@@ -37,6 +37,7 @@ export type ProjectWorkflowKind =
   | "assignDriver"
   | "editOutcome"
   | "convertToTask"
+  | "move"
   | "deadline"
   | "tags"
   | "contexts"

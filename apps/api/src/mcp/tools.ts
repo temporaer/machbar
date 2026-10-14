@@ -407,7 +407,7 @@ function taskOrThrow(
       taskId: id,
     });
   }
-  return { ...task, ancestors: graph.taskAncestorsFor(id), externalRefs: listExternalWorkItemRefs(db, id) };
+  return { ...task, ancestors: graph.taskAncestorsFor(id), hierarchyRevisions: graph.hierarchyRevisionsFor(id), childStories: graph.childProjectsFor(id), externalRefs: listExternalWorkItemRefs(db, id) };
 }
 
 function projectOrThrow(db: Db, id: number, memberId: number) {

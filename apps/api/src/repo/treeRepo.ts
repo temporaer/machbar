@@ -1,5 +1,6 @@
-import { sql } from "drizzle-orm";
+import { asc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
+import * as schema from "../db/schema.js";
 
 /**
  * Hierarchy queries (descendants / ancestors / cycle checks) expressed as
@@ -9,15 +10,28 @@ import type { Db } from "../db/client.js";
  * this repository is the only place that owns that SQL.
  */
 
-/** Every descendant work item (any depth) of `rootId`, excluding the root itself. */
-export function getDescendantIds(db: Db, rootId: number): number[] {
+/** The unified direct-parent group, ordered identically for both roles. */
+export function getDirectChildren(db: Db, parentId: number | null) {
+  return db.select().from(schema.workItems)
+    .where(parentId === null ? isNull(schema.workItems.parentId) : eq(schema.workItems.parentId, parentId))
+    .orderBy(asc(schema.workItems.position), asc(schema.workItems.id))
+    .all();
+}
+
+/** Every descendant work item, excluding the root. Task lifecycle commands
+ * stop at terminal projects to preserve those historical subtrees untouched. */
+export function getDescendantIds(db: Db, rootId: number, stopAtTerminalProjects = false): number[] {
   const rows = db.all<{ id: number }>(sql`
     WITH RECURSIVE descendants(id) AS (
       SELECT id FROM work_items WHERE parent_id = ${rootId}
+        AND (${stopAtTerminalProjects ? 1 : 0} = 0 OR role != 'story'
+          OR (archived_at IS NULL AND status NOT IN ('done', 'cancelled')))
       UNION ALL
       SELECT child.id
       FROM work_items child
       JOIN descendants d ON child.parent_id = d.id
+      WHERE (${stopAtTerminalProjects ? 1 : 0} = 0 OR child.role != 'story'
+        OR (child.archived_at IS NULL AND child.status NOT IN ('done', 'cancelled')))
     )
     SELECT id FROM descendants
   `);

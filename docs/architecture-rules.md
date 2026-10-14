@@ -112,7 +112,7 @@ workflow. This exception is not precedent for ordinary project or task editing.
 
 ### Task hierarchy
 
-`POST /api/tasks/:id/move` is the sole hierarchy mutation. Reorder, indent,
+`POST /api/tasks/:id/move` is the sole task-move mutation. Reorder, indent,
 outdent, reparent, and cross-project movement are destination calculations, not
 separate backend commands.
 
@@ -121,8 +121,20 @@ separate backend commands.
 `MoveTaskSheet.tsx` owns explicit destination moves. `QuickAdd.tsx` may use the
 same move command for post-create project correction.
 
+`treeRepo.getDirectChildren` is the canonical mixed-role sibling query for
+creation, successor insertion, reindexing and project moves. Task moves normalize
+both direct-parent groups; every sibling whose position changes gets a revision
+increment, while the moved task keeps its single revision increment.
+
 Adding another direct move caller requires an explicit checker exception and an
 explanation of why an existing move surface cannot own the behavior.
+
+`POST /api/projects/:id/move` extends `structuralMoves.ts` for atomic project
+reparenting to a project or top level. `story.move` routes through
+`ProjectWorkflowHost` to `MoveProjectSheet`, reusing `DestinationPicker` and
+activation decision fields. The hierarchy snapshot covers the source subtree,
+source ancestors and destination ancestors. The move only appends the moved
+root in its destination; existing siblings need no writes.
 
 ### Dependency direction
 
@@ -196,7 +208,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant task reconciliation | `apps/api/src/domain/externalTaskSync.ts` and `POST /api/integrations/home-assistant/tasks/sync` |
 | MCP authentication and fixed scope | `apps/api/src/integrations/mcp.ts` for explicit named/revocable agent tokens, `apps/api/src/integrations/mcpOAuth.ts` for delegated Pocket ID access-token validation, and the `mcp` policy in `apps/api/src/auth/routes.ts` as the common HTTP boundary |
 | MCP tools | `apps/api/src/mcp/tools.ts`; tools must call existing domain/repository primitives and must not introduce parallel mutation semantics |
-| Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph.selectedNextActionsFor()` |
+| Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph.selectedNextActionsFor()`; the same projection exposes open-project container facts through `Graph.taskContainsOpenProject` for Today and lifecycle guards. Terminal project subtrees are boundaries, not open work for the containing task. |
 | Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
 | Agenda eligibility and available work selection | `apps/api/src/domain/agendaSelection.ts` |
@@ -225,9 +237,9 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Memory-bounded camera capture | `apps/web/src/components/CameraCaptureSheet.tsx` |
 | Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |
 | Single-task capture, immediate Quick Add entry, destination presentation, and short syntax parsing/resolution | `apps/web/src/components/QuickAdd.tsx`, `apps/web/src/components/CaptureForm.tsx`, and `apps/web/src/lib/captureSyntax.ts` (capture uses the existing task-create API; the follow-up Open action dispatches `task.open`; the shared editor creates tasks only; syntax is applied only there) |
-| Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs |
+| Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs and mixed-role `getDirectChildren` sibling query |
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
-| Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) and the focused task/project conversion sheets. Task → project uses canonical execution-commitment semantics, preserves explicit contexts, recurrence deadlines, and execution windows on the retained action step (clearing the window from the project row), and maps both incoming and outgoing dependency edges atomically; graph projections expose only viewer-visible incoming dependents. Project → task retains task descendants and structured criteria, preserves work plans and history, and enforces editable/checkable criteria during task completion. |
+| Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) and the focused task/project conversion sheets. Task → project uses canonical execution-commitment semantics, preserves explicit contexts, recurrence deadlines, and execution windows on the retained action step (clearing the window from the project row), and maps both incoming and outgoing dependency edges atomically; graph projections expose only viewer-visible incoming dependents. Nested conversion retains the direct parent and sibling position; effective task ownership/tags/contexts become explicit project values. Project → task retains task descendants and structured criteria, preserves work plans and history, and enforces editable/checkable criteria during task completion. |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
 | Fixed row action rail (task-kind/status-specific planning/shape/structure/note/waiting actions and project next-step/goal/structure/planning actions; lifecycle remains right-swipe only) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
 | Task execution time windows | Nullable `Task.availabilityRule` JSON on `work_items`; pure `apps/api/src/domain/taskAvailability.ts` wall-clock evaluation. Today composes the predicate in `agendaSelection.ts` for execution eligibility and project next-action selection; `agenda.ts` also filters planned/revisit execution rows and embedded suggestions while retaining deadline/external-wait attention. Structural blockers and Week remain independent. |
@@ -237,7 +249,8 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome/convert to task) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
-| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria, while the canonical domain operation rejects unsupported nested-project, archived-status, or planning mappings atomically |
+| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria, while the canonical domain operation preserves a nested root's parent/position and rejects project descendants, archived-status, or incompatible recurrence/wait mappings atomically |
+| Project hierarchy execution | `apps/api/src/domain/structuralMoves.ts` (`moveProject`) and `POST /api/projects/:id/move`; `MoveProjectSheet` is the focused `story.move` workflow. `assertHierarchySnapshot` is reused by moves and role conversion. |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
 | View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, `InboxPage` |
 | Task/project `scope` ("household" \| "work") read/derivation and owner-only visibility | `apps/api/src/domain/graph.ts` (`Graph.load`'s viewer-restriction parameter; see below) |

@@ -47,6 +47,9 @@ export function ProjectStructureSheet({
         >
           {strings.structureEditOutcome}
         </button>
+        <button type="button" className="btn" onClick={() => dispatch({ type: "story.move", story })}>
+          {strings.structureMove}
+        </button>
         <button
           type="button"
           className="btn"

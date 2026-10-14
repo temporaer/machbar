@@ -13,7 +13,7 @@ import type { Db } from "../db/client.js";
  * for each ownership lane.
  *
  * An otherwise-eligible task with any open (not `done`/`cancelled`)
- * *actionable* descendant anywhere below it — direct or nested — is treated
+ * action or open project descendant anywhere below it — direct or nested — is treated
  * as a container, not a candidate: it never competes with that descendant
  * for selection. Reference nodes (`task_kind = 'reference'`) are
  * transparent for this check: they neither block their ancestors from
@@ -31,6 +31,7 @@ import type { Db } from "../db/client.js";
  * non-null `revisit_at` are likewise deferred until explicitly cleared.
  */
 export interface NextActionTaskIdsByProject {
+  openProjectContainers: Set<number>;
   available: Map<number, number[]>;
   ordered: Map<number, Array<{ taskId: number; availability: "available" | "deferred" }>>;
 }
@@ -47,9 +48,9 @@ export function getNextActionTaskIdsByProjectProjection(
   now = new Date().toISOString(),
 ): NextActionTaskIdsByProject {
   const rows = db.all<{
-    project_id: number;
+    project_id: number | null;
     task_id: number;
-    availability: "available" | "deferred";
+    availability: "available" | "deferred" | "project_container";
   }>(sql`
     WITH RECURSIVE sortkey(task_id, project_id, key) AS (
       SELECT task.id, story.id, printf('%08d', task.position)
@@ -68,11 +69,16 @@ export function getNextActionTaskIdsByProjectProjection(
       SELECT td.ancestor_id, child.id
       FROM task_descendants td
       JOIN work_items child ON child.parent_id = td.descendant_id
-      WHERE child.role = 'task'
+      -- An open project is part of the containing task's structure. A
+      -- terminal project's historical subtree is outside that task's work.
+      WHERE child.role = 'task' OR (
+        child.role = 'story' AND child.archived_at IS NULL
+        AND child.status NOT IN ('done', 'cancelled')
+      )
     ),
     blocking_descendants AS (
-      -- Every task that has at least one open actionable descendant
-      -- (direct or nested through any depth of reference containers).
+      -- Open actions and projects keep their task ancestors as containers.
+      -- Reference nodes remain transparent; terminal project subtrees stop above.
       SELECT DISTINCT td.ancestor_id AS task_id
       FROM task_descendants td
       JOIN work_items descendant ON descendant.id = td.descendant_id
@@ -109,16 +115,27 @@ export function getNextActionTaskIdsByProjectProjection(
       FROM candidates c
       JOIN work_items t ON t.id = c.task_id
     )
-    SELECT project_id, task_id, availability
-    FROM eligible
+    SELECT project_id, task_id, availability, key FROM eligible
+    UNION ALL
+    SELECT NULL, td.ancestor_id, 'project_container', NULL
+    FROM task_descendants td
+    JOIN work_items descendant ON descendant.id = td.descendant_id
+    WHERE descendant.role = 'story'
+    GROUP BY td.ancestor_id
     ORDER BY project_id, key
   `);
+  const openProjectContainers = new Set<number>();
   const available = new Map<number, number[]>();
   const ordered = new Map<
     number,
     Array<{ taskId: number; availability: "available" | "deferred" }>
   >();
   for (const row of rows) {
+    if (row.availability === "project_container") {
+      openProjectContainers.add(row.task_id);
+      continue;
+    }
+    if (row.project_id === null) continue;
     if (row.availability === "available") {
       const ids = available.get(row.project_id) ?? [];
       ids.push(row.task_id);
@@ -128,5 +145,5 @@ export function getNextActionTaskIdsByProjectProjection(
     candidates.push({ taskId: row.task_id, availability: row.availability });
     ordered.set(row.project_id, candidates);
   }
-  return { available, ordered };
+  return { available, ordered, openProjectContainers };
 }

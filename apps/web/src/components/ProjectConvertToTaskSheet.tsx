@@ -4,6 +4,8 @@ import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
+import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import { BottomSheet } from "./BottomSheet";
 import { ErrorState, LoadingState } from "./AsyncStates";
 
@@ -27,6 +29,8 @@ export function ProjectConvertToTaskSheet({
   const baseline = useRef({ title: story.title, notes: story.notes ?? "" });
   const [conflicts, setConflicts] = useState<Array<"title" | "notes">>([]);
   const [freshProject, setFreshProject] = useState<ProjectDetail | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const {
@@ -58,7 +62,7 @@ export function ProjectConvertToTaskSheet({
 
   const hasChildren = (currentProject?.tasks.length ?? 0) > 0;
   const hasAcceptanceCriteria = (currentProject?.acceptanceCriteria ?? []).length > 0;
-  const canConvert = currentProject !== null && currentProject !== undefined && currentProject.parentId === null && currentProject.status !== "archived" && (currentProject.childStories?.length ?? 0) === 0;
+  const canConvert = currentProject !== null && currentProject !== undefined && currentProject.status !== "archived" && (currentProject.childStories?.length ?? 0) === 0;
 
   const convert = async () => {
     if (busy || !canConvert || !currentProject || conflicts.length > 0) return;
@@ -69,10 +73,14 @@ export function ProjectConvertToTaskSheet({
         ...(titleEdited ? { title } : {}),
         ...(notesEdited ? { notes } : {}),
         expectedRevision: currentProject.revision,
+        ...(activationResolution ? { activationResolution } : {}),
+        ...(currentProject.hierarchyRevisions ? { expectedHierarchyRevisions: currentProject.hierarchyRevisions } : {}),
       });
       bump();
       onClose();
     } catch (cause) {
+      const prompt = projectActivationPromptFromError(cause, activationPrompt);
+      if (prompt) setActivationPrompt(prompt);
       if (isStaleWriteConflict(cause)) {
         try {
           const latest = await api.getProject(story.id);
@@ -191,10 +199,11 @@ export function ProjectConvertToTaskSheet({
                     </div>
                   ) : null}
                 </label>
+                {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy || title.trim() === "" || !canConvert || conflicts.length > 0}
+                  disabled={busy || title.trim() === "" || !canConvert || conflicts.length > 0 || (!!activationPrompt && !activationResolution)}
                   onClick={() => void convert()}
                 >
                   {strings.convertProjectToTask}

@@ -1693,3 +1693,50 @@ new acceptance, uncommitted work, hierarchy, reminders, and external payloads
 continue to be validated. Review refreshes the
 revision after failures while keeping the local edits and selections, and
 focuses the visible Apply alert.
+
+
+### Phase 6a: nested role conversion and project reparenting
+
+`roleConversion.ts` remains the identity-preserving transaction for both roles.
+A task below a project or task becomes a child project by changing its role,
+keeping `parentId`, `position`, identity and descendant edges. Effective task
+ownership/tags/contexts become explicit project values; task-only obligations
+continue to use the existing retained action and dependency mappings. A nested
+project containing only task descendants can become a task at the same parent
+and position. A project with any project descendant remains unsupported: task
+lifecycle/outline commands cannot yet represent project descendants. Archived
+projects and existing recurrence/wait restrictions still reject conversion.
+
+`structuralMoves.ts` owns the new canonical `moveProject`, exposed as
+`POST /api/projects/:id/move`. Supported destinations are another visible,
+same-scope project or top level. The operation appends the moved root without
+rewriting siblings; descendant links, relations, obligations and ownership
+stay attached. `assertHierarchySnapshot`, reused by conversion, checks complete
+subtree/ancestor membership and all supplied revisions before any writes.
+Source and destination ancestry are reviewed along with the source subtree.
+Committed moves and nested conversions use `activateCommittedProjectChain`
+inside their original transaction. That adapter walks through intervening task
+parents and presents the nearest project parent to the pure commitment rules.
+
+`story.move` dispatches only through `useWorkItemCommands` / `ProjectWorkflowHost`
+to `MoveProjectSheet`. It reuses `DestinationPicker`, recents, and
+`ProjectActivationDecisionFields`. Conflict keeps the destination and authored
+activation choices for retry. Task details expose direct `childStories`; graph
+breadcrumbs follow mixed-role parents. The obsolete standalone/nested-root
+conversion blockers, duplicate post-conversion activation dispatch, and no-op
+project-ID cascade were removed. Merge and compound undo remain separate slices.
+
+Mixed-role follow-up: `treeRepo.getDirectChildren` supplies one direct-parent
+sibling order for task/project creation, successors and moves. Task reindexing
+includes both roles and updates revisions only when their positions change;
+the moved root still increments once. This invalidates stale task metadata,
+conversion and project-move snapshots after a neighboring reorder.
+
+`nextActionRepo` traverses mixed-role descendants to identify containers.
+Open projects block task ancestors from candidacy; completed, cancelled or
+archived project subtrees stop traversal. Its projection supplies the same
+open-project container IDs to `Graph.taskContainsOpenProject`, ordinary Today
+selection (including standalone tasks) and lifecycle guards. Child projects keep
+their own normal next-action lane. Task lifecycle descendant collection skips
+terminal project subtrees entirely, preserving their statuses, revisions and
+history while allowing the containing task to complete or cancel.

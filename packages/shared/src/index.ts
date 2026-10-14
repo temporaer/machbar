@@ -227,6 +227,7 @@ export type ApiErrorCode =
   | "scope_mismatch"
   | "scope_edit_root_only"
   | "role_conversion_invalid"
+  | "task_transition_invalid"
   | "task_title_required"
   | "external_wait_reason_required"
   | "external_wait_followup_content_required"

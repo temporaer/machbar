@@ -234,6 +234,7 @@ export interface CreateTaskStepBatchInput {
 
 export type ProjectRevisionSnapshot = Pick<Project, "id" | "revision" | "title" | "status"> & {
   ancestors?: WorkItemAncestor[];
+  hierarchyRevisions?: Array<{ id: number; revision: number }>;
 };
 
 export interface CreateTaskStepBatchResult {
@@ -263,12 +264,15 @@ export interface ConvertTaskToStoryInput {
   expectedDescendantRevisions?: Array<{ taskId: number; revision: number }>;
   activationResolution?: ProjectActivationResolution;
   expectedRevision?: number;
+  expectedHierarchyRevisions?: Array<{ id: number; revision: number }>;
 }
 
 export interface ConvertStoryToTaskInput {
+  activationResolution?: ProjectActivationResolution;
   title?: string;
   notes?: string;
   expectedRevision?: number;
+  expectedHierarchyRevisions?: Array<{ id: number; revision: number }>;
 }
 
 /**
@@ -327,6 +331,7 @@ export type ProjectDetail = ProjectWithActions & {
   directActivationDecisionSnapshot?: ProjectActivationDecisionSnapshot;
   childStories?: ProjectWithActions[];
   ancestors?: WorkItemAncestor[];
+  hierarchyRevisions?: Array<{ id: number; revision: number }>;
   externalRefs?: ExternalWorkItemRef[];
 };
 
@@ -337,7 +342,9 @@ export interface DiscussionListResponse {
 
 /** Detail-only task response (`GET /api/tasks/:id`); list/tree tasks never carry ancestors. */
 export type TaskDetail = Task & {
+  childStories?: ProjectWithActions[];
   ancestors?: WorkItemAncestor[];
+  hierarchyRevisions?: Array<{ id: number; revision: number }>;
   externalRefs?: ExternalWorkItemRef[];
 };
 
@@ -1003,6 +1010,8 @@ export const api = {
       ),
     }),
 
+  moveProject: (id: number, input: { parentId: number | null; expectedRevision: number; expectedHierarchyRevisions: Array<{ id: number; revision: number }>; activationResolution?: ProjectActivationResolution }) =>
+    request<ProjectWithActions>(`/projects/${id}/move`, { method: "POST", body: JSON.stringify(input) }),
   moveTask: (id: number, input: MoveTaskInput) =>
     request<Task>(`/tasks/${id}/move`, { method: "POST", body: JSON.stringify(input) }),
 

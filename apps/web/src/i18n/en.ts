@@ -604,8 +604,6 @@ const en = {
   convertToProjectIncomingDependency: "Another task waits on this task",
   convertToProjectUnsupportedStatus:
     "Completed or discarded tasks cannot be converted to projects.",
-  convertToProjectNotStandalone:
-    "Only standalone tasks without a parent task or project can become a project.",
   convertProjectToTask: "Make task",
   convertProjectToTaskTitle: "Convert project to task",
   convertProjectToTaskReady:
@@ -616,7 +614,7 @@ const en = {
   convertProjectToTaskUseLatest: "Use server version",
   convertProjectToTaskKeepMyEdit: "Keep my edit",
   convertProjectToTaskUnsupported:
-    "Nested or archived projects cannot be converted directly here. Restore the project or resolve its placement first.",
+    "Archived projects need restoring first. Projects containing child projects cannot become tasks yet; move those child projects out with Move … first.",
   convertProjectToTaskPlanningConflict:
     "A work plan and revisit cannot both be represented by one ordinary task. Resolve the project's planning first.",
   needsClarification: "Needs clarification",
@@ -747,6 +745,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   moveHere: "Move here",
   subtreeHint: "Moves this task together with all its subtasks.",
   changeParentTitle: "New parent task",
+  projectMoveActivationHint: "Active work will activate the destination and any necessary project ancestors. Missing decisions are collected here.",
+  projectSubtreeHint: "Moves the project together with all child projects and tasks.",
   moveProjectTitle: "Move to another project",
   currentProject: "Current project",
   searchDestination: "Search destinations",
@@ -1661,6 +1661,7 @@ When the person ends the reflection, provide a concise human-readable summary an
       "Check, edit, or remove every open criterion before completing.",
     project_not_found: "The project could not be found.",
     project_title_required: "Enter a project title.",
+    task_transition_invalid: "Move open child projects out with Move … before completing or cancelling this task.",
     project_transition_invalid:
       "The project cannot move to that status from here.",
     push_member_required:

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ProjectActivationResolution, Task } from "@machbar/shared";
-import { api } from "../lib/api";
+import { api, type TaskDetail } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
-import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { BottomSheet } from "./BottomSheet";
@@ -28,8 +27,7 @@ function openActionDescendants(tasks: Task[]): Task[] {
 export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
   const { bump } = useRefresh();
-  const dispatch = useWorkItemCommands();
-  const [currentTask, setCurrentTask] = useState(task);
+  const [currentTask, setCurrentTask] = useState<TaskDetail>(task);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preservedStepTitle, setPreservedStepTitle] = useState(task.title);
@@ -38,15 +36,20 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [project, setProject] = useState<Awaited<ReturnType<typeof api.convertTaskToStory>> | null>(null);
   useEffect(() => {
-    setCurrentTask(task);
-    if (!preservedStepTitleEdited) setPreservedStepTitle(task.title);
-  }, [task, preservedStepTitleEdited]);
+    setCurrentTask((previous) => previous.id === task.id && previous.revision === task.revision ? previous : task);
+  }, [task]);
+  useEffect(() => {
+    if (!preservedStepTitleEdited) setPreservedStepTitle(currentTask.title);
+  }, [currentTask.title, preservedStepTitleEdited]);
+  useEffect(() => {
+    let cancelled = false;
+    api.getTask(task.id).then((latest) => { if (!cancelled) setCurrentTask(latest); }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); });
+    return () => { cancelled = true; };
+  }, [task.id, task.revision, strings]);
   const blockReason =
     currentTask.status === "done" || currentTask.status === "cancelled"
       ? strings.convertToProjectUnsupportedStatus
-      : currentTask.parentTaskId !== null || currentTask.projectId !== null
-      ? strings.convertToProjectNotStandalone
-        : null;
+      : null;
   const openChildren = useMemo(
     () => openActionDescendants(currentTask.children),
     [currentTask.children],
@@ -57,15 +60,17 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
   ], [currentTask.dependencies, currentTask.incomingDependencies]);
   const preserveStepRequired = currentTask.externalWait !== null || currentTask.revisitAt !== null || dependencies.length > 0 ||
     currentTask.repeatAfterDays !== null || currentTask.allowedDeviationDays !== null ||
-    currentTask.reminders.length > 0 || currentTask.scheduledDate !== null ||
+    currentTask.reminders.length > 0 || currentTask.scheduledDate !== null || currentTask.availabilityRule !== null ||
     currentTask.notBeforeAt != null || currentTask.notBeforeDate != null ||
     (currentTask.status === "actionable" && openChildren.length === 0);
   const activationResolution: ProjectActivationResolution | null = activationPrompt
     ? projectActivationResolutionFromPrompt(activationPrompt)
     : null;
 
+  const hierarchyPending = (currentTask.parentTaskId !== null || currentTask.projectId !== null) && !currentTask.hierarchyRevisions;
+
   const convert = async (status: "active" | "backlog") => {
-    if (busy || blockReason) return;
+    if (busy || blockReason || hierarchyPending) return;
     setBusy(true);
     setError(null);
     try {
@@ -80,13 +85,16 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
             sourceEndpoint: dependency?.endpoint ?? "task",
           };
         }),
-        expectedDescendantRevisions: descendantRevisions(currentTask.children),
+        ...(currentTask.hierarchyRevisions ? { expectedHierarchyRevisions: currentTask.hierarchyRevisions } : {}),
+        expectedDescendantRevisions: currentTask.hierarchyRevisions
+          ? currentTask.hierarchyRevisions.filter((entry) => entry.id !== currentTask.id && !currentTask.ancestors?.some((parent) => parent.id === entry.id)).map(({ id, revision }) => ({ taskId: id, revision }))
+          : descendantRevisions(currentTask.children),
         ...(activationResolution ? { activationResolution } : {}),
         expectedRevision: currentTask.revision,
       });
       bump();
       setProject(converted);
-      if (status === "active") dispatch({ type: "story.activate", story: converted });
+
     } catch (cause) {
       const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
       if (refreshedPrompt) setActivationPrompt(refreshedPrompt);
@@ -150,8 +158,8 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
             ))}
             {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
             <div className="capture-shape-actions">
-              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
-              <button type="button" className="btn capture-shape-action" disabled={busy || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("active")}>{strings.convertToProjectActive}</button>
+              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
+              <button type="button" className="btn capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("active")}>{strings.convertToProjectActive}</button>
             </div>
           </>
         )}

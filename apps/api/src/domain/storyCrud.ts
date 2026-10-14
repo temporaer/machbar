@@ -3,13 +3,14 @@
  * Lifecycle transitions live in `storyWorkflow.ts`; acceptance criteria live
  * in `acceptanceCriteria.ts`.
  */
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { ProjectActivationResolution, ProjectStatus, WorkItemScope } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import {
   getDescendantIds as repoGetDescendantIds,
+  getDirectChildren,
   neutralizeContribution,
   neutralizeEntityContributions,
   recordActivity,
@@ -126,19 +127,8 @@ export function createProject(
     // created it, so default the owner to the creator when none was given.
     const ownerMemberId =
       input.ownerMemberId ?? (scope === "work" ? actor(context) : null);
-    const maxPosition = tx
-      .select({ position: schema.workItems.position })
-      .from(schema.workItems)
-      .where(
-        and(
-          eq(schema.workItems.role, "story"),
-          parentId === null
-            ? isNull(schema.workItems.parentId)
-            : eq(schema.workItems.parentId, parentId),
-        ),
-      )
-      .all()
-      .reduce((max, p) => Math.max(max, p.position), -1);
+    const maxPosition = getDirectChildren(txDb, parentId)
+      .reduce((max, item) => Math.max(max, item.position), -1);
 
     const project = tx
       .insert(schema.workItems)

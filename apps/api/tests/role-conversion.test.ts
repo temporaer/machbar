@@ -432,7 +432,7 @@ describe("task <-> story role conversion", () => {
     });
   });
 
-  it("rejects subtasks, project-contained tasks, and unsupported terminal states", async () => {
+  it("requires activation decisions for nested tasks and rejects unsupported terminal states", async () => {
     const root = (
       await post("/api/tasks", { title: "Root", status: "actionable" })
     ).json();
@@ -482,13 +482,11 @@ describe("task <-> story role conversion", () => {
 
     expect(childConversion.statusCode).toBe(409);
     expect(childConversion.json().error).toMatchObject({
-      code: "role_conversion_invalid",
-      details: { reason: "not_root" },
+      code: "project_commitment_resolution_required",
     });
     expect(storyContainedConversion.statusCode).toBe(409);
     expect(storyContainedConversion.json().error).toMatchObject({
-      code: "role_conversion_invalid",
-      details: { reason: "inside_story" },
+      code: "project_commitment_resolution_required",
     });
     expect(doneConversion.statusCode).toBe(409);
     expect(doneConversion.json().error).toMatchObject({

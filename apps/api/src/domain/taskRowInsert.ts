@@ -1,7 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
 import type { AvailabilityRule, TaskKind, TaskStatus, WorkItemScope } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
+import { getDirectChildren } from "../repo/treeRepo.js";
 
 type TaskRowInput = {
   parentId: number | null;
@@ -40,12 +40,7 @@ export function storedTaskStatus(status: TaskStatus): "captured" | "active" | "b
 }
 
 export function nextTaskPosition(db: Db, parentId: number | null): number {
-  const rows = db.select({ position: schema.workItems.position })
-    .from(schema.workItems)
-    .where(and(
-      eq(schema.workItems.role, "task"),
-      parentId === null ? sql`${schema.workItems.parentId} IS NULL` : eq(schema.workItems.parentId, parentId),
-    )).all();
+  const rows = getDirectChildren(db, parentId);
   return rows.reduce((max, row) => Math.max(max, row.position), -1) + 1;
 }
 

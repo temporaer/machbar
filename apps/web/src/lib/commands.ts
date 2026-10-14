@@ -86,6 +86,7 @@ export type WorkItemCommand =
   | { type: "story.planWork"; story: ProjectWithActions }
   | { type: "story.editOutcome"; story: ProjectWithActions }
   | { type: "story.convertToTask"; story: ProjectWithActions }
+  | { type: "story.move"; story: ProjectWithActions }
   | { type: "story.deadline"; story: ProjectWithActions }
   | { type: "story.tags"; story: ProjectWithActions }
   | { type: "story.contexts"; story: ProjectWithActions }

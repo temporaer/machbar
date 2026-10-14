@@ -150,10 +150,12 @@ export function createAgendaSelection(
       ]),
   );
   const isSelectedOrdinaryWork = (task: TaskRecord) =>
-    task.projectId === null ||
-    selectedProjectTaskIds.has(task.id) ||
-    (task.needsClarification &&
-      (task.scheduledDate !== null || task.dueDate !== null));
+    !graph.taskContainsOpenProject(task.id) && (
+      task.projectId === null ||
+      selectedProjectTaskIds.has(task.id) ||
+      (task.needsClarification &&
+        (task.scheduledDate !== null || task.dueDate !== null))
+    );
   const isExecutableWork = (task: TaskRecord) =>
     isAgendaTask(task) &&
     task.executable &&
