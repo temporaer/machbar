@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
@@ -284,6 +284,27 @@ describe("TaskOutline", () => {
       await screen.findByText("Elternaufgabe");
       expect(await screen.findByText("Erledigter Nachkomme")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /erledigt anzeigen/ })).not.toBeInTheDocument();
+    });
+
+    it("retains a completed descendant once across multiple compiled outlines and refresh", async () => {
+      const child = makeTask({ id: 161, title: "Completed child" });
+      const parent = makeTask({ id: 160, title: "Attention parent", children: [child] });
+      const other = makeTask({ id: 162, title: "Other ready work" });
+      mockedApi.completeTask.mockResolvedValue(makeTask({ ...child, status: "done" }));
+      const outlines = (children: typeof parent.children) => <>
+        <TaskOutline tasks={[{ ...parent, children }]} emptyMessage="Empty attention" compactDescendants />
+        <TaskOutline tasks={[other]} emptyMessage="Empty ready" compactDescendants />
+      </>;
+      const { rerender } = renderWithProviders(outlines([child]));
+      const row = (await screen.findByText("Completed child")).closest("li")!;
+      await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+      await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
+      expect(screen.getAllByText("Completed child")).toHaveLength(1);
+      // Today now filters terminal execution descendants out of refreshed trees.
+      rerender(outlines([]));
+      expect(screen.getAllByText("Completed child")).toHaveLength(1);
+      expect(screen.getByText("Attention parent")).toBeInTheDocument();
+      expect(screen.getByText("Other ready work")).toBeInTheDocument();
     });
 
     it("keeps a just-completed descendant visible while it is retained", async () => {
