@@ -431,7 +431,6 @@ export function TaskDetailSheet() {
       | "task.assignOwner"
       | "task.availability"
       | "task.deferClarification"
-      | "task.plan"
       | "task.reminders"
       | "task.waitingLifecycle"
       | "task.recurrence"
@@ -708,12 +707,12 @@ export function TaskDetailSheet() {
             {planValue ? (
               <DetailPropertyPill
                 label={strings.taskPlanFor}
-                onClick={() => runCommand("task.plan")}
+                onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: task.scheduledDate ? "scheduled" : "deadline" })}
               >
                 <span>{planValue}</span>
               </DetailPropertyPill>
             ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.plan")}>
+              <DetailPropertyPill variant="unset" onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "scheduled" })}>
                 {strings.addPlan}
               </DetailPropertyPill>
             )}

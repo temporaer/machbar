@@ -553,6 +553,8 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(
       await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "In einer Weile" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "+ Wiedervorlage" }));
     expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
   });
 
@@ -880,11 +882,10 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
-    await screen.findByLabelText("Geplant für");
+    await screen.findByRole("dialog", { name: "Planung" });
+    await userEvent.click(screen.getByRole("button", { name: "+ Geplant für" }));
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    const scheduledCard = screen
-      .getByRole("heading", { name: "Geplant für" })
-      .closest<HTMLElement>(".task-planning-card");
+    const scheduledCard = screen.getByLabelText("Geplant für").closest<HTMLElement>("section");
     await userEvent.click(
       within(scheduledCard!).getByRole("button", { name: "Morgen" }),
     );

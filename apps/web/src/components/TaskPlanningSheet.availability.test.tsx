@@ -7,7 +7,7 @@ import { makeTask } from "../test/fixtures";
 import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
-import { TaskAvailabilitySheet } from "./TaskAvailabilitySheet";
+import { TaskPlanningSheet } from "./TaskPlanningSheet";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -20,11 +20,8 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
-/**
- * Compatibility coverage for the old availability import: it now renders
- * the unified planning sheet and commits all temporal fields together.
- */
-describe("TaskAvailabilitySheet", () => {
+/** Availability entries share the canonical planning draft and mutation. */
+describe("TaskPlanningSheet availability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
@@ -40,7 +37,7 @@ describe("TaskAvailabilitySheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 40 }));
     const task = makeTask({ id: 40, title: "Wäsche aufhängen", scheduledDate: "2026-09-14" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskPlanningSheet initialTarget="availability" task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "In einer Weile" }));
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
@@ -61,7 +58,7 @@ describe("TaskAvailabilitySheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 41 }));
     const task = makeTask({ id: 41, title: "Anruf zurückgeben" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskPlanningSheet initialTarget="availability" task={task} onClose={onClose} />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
@@ -82,7 +79,7 @@ describe("TaskAvailabilitySheet", () => {
     vi.setSystemTime(new Date(2026, 8, 19, 21, 0));
 
     renderWithProviders(
-      <TaskAvailabilitySheet
+      <TaskPlanningSheet initialTarget="availability"
         task={makeTask({ id: 46, title: "Später Anruf" })}
         onClose={vi.fn()}
       />,
@@ -97,9 +94,9 @@ describe("TaskAvailabilitySheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 42 }));
     const task = makeTask({ id: 42, title: "Steuer einreichen" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskPlanningSheet initialTarget="availability" task={task} onClose={onClose} />);
 
-    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[1]!);
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
@@ -115,7 +112,7 @@ describe("TaskAvailabilitySheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 44, revisitAt: null }));
     const task = makeTask({ id: 44, title: "Handwerker beauftragen", revisitAt: "2026-09-19T18:00:00.000Z" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskPlanningSheet initialTarget="availability" task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage entfernen" }));
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
@@ -131,7 +128,7 @@ describe("TaskAvailabilitySheet", () => {
 
   it("requires both a custom date and time before confirming", async () => {
     const task = makeTask({ id: 45, title: "Termin abstimmen" });
-    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={vi.fn()} />);
+    renderWithProviders(<TaskPlanningSheet initialTarget="availability" task={task} onClose={vi.fn()} />);
 
     await userEvent.type(screen.getByLabelText("Datum"), "morgen");
     await userEvent.tab();
@@ -148,7 +145,7 @@ describe("TaskAvailabilitySheet", () => {
         revisitAt: "2026-03-28T01:30:00.000Z",
       });
       renderWithProviders(
-        <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
+        <TaskPlanningSheet initialTarget="availability" task={task} onClose={vi.fn()} />,
       );
       const picker = document.querySelectorAll<HTMLInputElement>(
         'input[type="date"]',
@@ -170,7 +167,7 @@ describe("TaskAvailabilitySheet", () => {
   it("accepts a valid post-overlap time as the correct household-zone instant", async () => {
     const task = makeTask({ id: 48, revisitAt: "2026-10-24T00:30:00.000Z" });
     renderWithProviders(
-      <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
+      <TaskPlanningSheet initialTarget="availability" task={task} onClose={vi.fn()} />,
     );
     fireEvent.change(
       document.querySelectorAll<HTMLInputElement>('input[type="date"]')[1]!,
@@ -209,8 +206,9 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<Harness />);
 
     await userEvent.click(screen.getByRole("button", { name: "open availability" }));
-    expect(await screen.findByRole("heading", { name: "Wiedervorlage" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Geplant für" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Deadline" })).toBeInTheDocument();
+    await screen.findByRole("dialog", { name: "Planung" });
+    expect(screen.getByLabelText("Datum")).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Heute" })).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".task-planning-editor:not([hidden])")).toHaveLength(1);
   });
 });

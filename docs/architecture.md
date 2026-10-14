@@ -1390,6 +1390,37 @@ snapshot; when the same field changed both locally and on the server, the user
 chooses which value to retain before retrying. An open custom-reminder editor
 is included in the outer planning save and invalid dates block that commit.
 
+The obsolete `TaskAvailabilitySheet` and `TaskPlanSheet` compatibility wrappers
+were removed; availability entry, DST and caption-hint coverage exercise
+`TaskPlanningSheet` directly.
+
+Planning starts with compact value summaries and small add actions. The expanded
+sections are presentation state; collapsed date/reminder controls remain mounted
+to retain authored text and pending inputs. Reminder control IDs are scoped to
+each editor instance so retained and foreground forms cannot collide. Direct targets expand only their
+editor, scroll and focus it. Invalid input and same-field conflicts reveal their
+section, and unfinished reminder input cannot be collapsed. Recurrence stays
+inside the planned-date section. The execution window remains the existing
+household-timezone business-hours preset and independent local draft.
+
+Waiting and the overview both read the same revisit date/time draft. The waiting
+summary opens the single revisit editor, so conversion, DST validation and
+conflict decisions cannot diverge between contexts. Selecting a date retains
+the existing plan/revisit replacement semantics; changing editor visibility
+never clears a value.
+
+Prerequisite titles dispatch `task.open`; removal remains a separate explicit
+dependency commit, as does recording a wait follow-up. Unresolved prerequisites
+appear first; resolved links are behind an explicit disclosure. The workflow
+context retains each nested planning workflow during detail inspection. Both
+`task.open` and task-role `workItem.open` suspend the foreground planner.
+The host keeps each component mounted in its original slot and suspends
+its `BottomSheet` registration, allowing the normal task detail and any focused
+operation launched there to occupy the foreground. Closing detail restores the
+most recent planning workflow and, where applicable, the prior detail/queue snapshot using
+`TaskDetailProvider`'s existing handoff methods. No planning state is serialized
+or committed for navigation, and no separate prerequisite viewer is introduced.
+
 ### Paperless-backed Markdown attachments
 
 `apps/api/src/integrations/paperless/` is the only code that knows Paperless

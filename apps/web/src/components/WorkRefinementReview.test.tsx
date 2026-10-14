@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { workRefinementProposalSchema, type IntakeRecord } from "@machbar/shared";
 import { api, ApiError, request } from "../lib/api";
@@ -544,7 +544,7 @@ describe("WorkRefinementReview", () => {
     fireEvent.change(screen.getByLabelText("Wiedervorlage-Uhrzeit"), { target: { value: "02:30" } });
     await userEvent.click(screen.getByRole("button", { name: "+ Erinnerung" }));
     await userEvent.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
-    const reminderDate = container.querySelector<HTMLInputElement>("#reminder-date-new");
+    const reminderDate = within(container).getByLabelText<HTMLInputElement>("Fällig");
     expect(reminderDate).not.toBeNull();
     fireEvent.change(reminderDate!, { target: { value: "20.10.2026" } });
 
@@ -554,7 +554,7 @@ describe("WorkRefinementReview", () => {
     expect(screen.getByDisplayValue("Kita-Formular")).toBeInTheDocument();
     expect(screen.getByLabelText("Wiedervorlage-Datum")).toHaveValue("2026-03-29");
     expect(screen.getByLabelText("Wiedervorlage-Uhrzeit")).toHaveValue("02:30");
-    expect(container.querySelector<HTMLInputElement>("#reminder-date-new")).toHaveValue("20.10.2026");
+    expect(within(container).getByLabelText<HTMLInputElement>("Fällig")).toHaveValue("20.10.2026");
   });
 
   it("preserves reminder-only editor input through a conflicting proposal refresh", async () => {
@@ -568,7 +568,7 @@ describe("WorkRefinementReview", () => {
     await editDetails();
     await userEvent.click(screen.getByRole("button", { name: "+ Erinnerung" }));
     await userEvent.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
-    const reminderDate = container.querySelector<HTMLInputElement>("#reminder-date-new");
+    const reminderDate = within(container).getByLabelText<HTMLInputElement>("Fällig");
     expect(reminderDate).not.toBeNull();
     fireEvent.change(reminderDate!, { target: { value: "20.10.2026" } });
 
@@ -576,7 +576,7 @@ describe("WorkRefinementReview", () => {
 
     await waitFor(() => expect(screen.getByText("Der Vorschlag wurde inzwischen geändert. Deine lokalen Änderungen bleiben erhalten. Prüfe sie und speichere sie erneut.")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Kita-Formular")).toBeInTheDocument();
-    expect(container.querySelector<HTMLInputElement>("#reminder-date-new")).toHaveValue("20.10.2026");
+    expect(within(container).getByLabelText<HTMLInputElement>("Fällig")).toHaveValue("20.10.2026");
   });
 
   it("requires an answer to a clarification before it can be applied", async () => {

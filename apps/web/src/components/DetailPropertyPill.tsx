@@ -18,6 +18,8 @@ export function DetailPropertyPill({
   variant = "set",
   extraClassName,
   disabled,
+  ariaExpanded,
+  ariaControls,
 }: {
   label?: string;
   children: ReactNode;
@@ -26,6 +28,8 @@ export function DetailPropertyPill({
   variant?: "set" | "unset";
   extraClassName?: string;
   disabled?: boolean;
+  ariaExpanded?: boolean;
+  ariaControls?: string;
 }) {
   const classes = ["detail-meta-button"];
   if (variant === "unset") classes.push("detail-meta-add-button");
@@ -35,6 +39,8 @@ export function DetailPropertyPill({
       type="button"
       className={classes.join(" ")}
       aria-label={ariaLabel}
+      aria-expanded={ariaExpanded}
+      aria-controls={ariaControls}
       disabled={disabled}
       onClick={onClick}
     >

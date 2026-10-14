@@ -1238,8 +1238,11 @@ describe("TaskDetailSheet", () => {
     expect(mockedApi.reopenTask).not.toHaveBeenCalled();
   });
 
-  it("plans through the one focused planning workflow", async () => {
-    const task = makeTask({ id: 56, title: "Wochenplanung", scheduledDate: "2026-09-04" });
+  it.each([
+    { field: "scheduledDate", label: "Geplant für", removeLabel: "Planungsdatum entfernen" },
+    { field: "dueDate", label: "Deadline", removeLabel: "Deadline entfernen" },
+  ])("plans $field through the one focused planning workflow", async ({ field, label, removeLabel }) => {
+    const task = makeTask({ id: 56, title: "Wochenplanung", [field]: "2026-09-04" });
     mockedApi.getTask.mockResolvedValue(task);
     renderSheet(56);
     await userEvent.click(screen.getByText("open"));
@@ -1252,14 +1255,17 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("button", { name: /Geplant für.*04\.09\.2026/ }),
     );
 
+    const planning = await screen.findByRole("dialog", { name: "Planung" });
+    expect(planning.querySelectorAll(".task-planning-editor:not([hidden])")).toHaveLength(1);
+    expect(within(planning).getByLabelText(label)).toHaveFocus();
     await userEvent.click(
-      screen.getByRole("button", { name: "Planungsdatum entfernen" }),
+      screen.getByRole("button", { name: removeLabel }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
-        scheduledDate: null,
+        [field]: null,
         expectedRevision: 1,
       }),
     );

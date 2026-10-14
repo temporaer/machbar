@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { useTaskWorkflow } from "../lib/taskWorkflowContext";
+import { useTaskWorkflow, type TaskWorkflowState } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
@@ -37,6 +37,27 @@ import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailConte
  */
 export function TaskWorkflowHost() {
   const workflow = useTaskWorkflow();
+  const taskDetail = useTaskDetail();
+  useEffect(() => {
+    if (workflow.detailInspection && taskDetail.openTaskId === null) {
+      const previous = workflow.detailInspection.previousDetail;
+      if (previous) taskDetail.resumeAfterHandoff(previous);
+      workflow.resumeFromDetail();
+    }
+  }, [workflow.detailInspection, taskDetail.openTaskId]);
+  // Each planning slot keeps its React position when another prerequisite is
+  // inspected. Only the foreground operation registers a visible modal.
+  const retained = workflow.detailInspections;
+  const foreground = workflow.current === workflow.detailInspection?.planningWorkflow
+    ? null : workflow.current;
+  return <>
+    {[...retained.map((inspection) => inspection.planningWorkflow), foreground].map((state, index) =>
+      <TaskWorkflowContent key={index} state={state} suspended={index < retained.length} />)}
+  </>;
+}
+
+function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflowState | null; suspended?: boolean }) {
+  const workflow = useTaskWorkflow();
   const strings = useStrings();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
@@ -44,7 +65,7 @@ export function TaskWorkflowHost() {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useWorkItemCommands();
-  const taskId = workflow.current?.taskId ?? null;
+  const taskId = state?.taskId ?? null;
   const { data: fetchedTask, reload } = useAsync(
     () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
     [taskId],
@@ -56,22 +77,24 @@ export function TaskWorkflowHost() {
     if (taskId !== null) reload();
   }, [taskId, reload]);
 
-  if (!workflow.current || !task) return null;
+  if (!state || !task) return null;
   const close = workflow.close;
 
-  switch (workflow.current.kind) {
+  switch (state.kind) {
     case "plan":
       return (
         <TaskPlanningSheet
+          key={task.id}
           task={task}
+          suspended={suspended}
           onClose={close}
-          {...(workflow.current.planningTarget
-            ? { initialTarget: workflow.current.planningTarget }
+          {...(state.planningTarget
+            ? { initialTarget: state.planningTarget }
             : {})}
         />
       );
     case "availability":
-      return <TaskPlanningSheet task={task} onClose={close} initialTarget="availability" />;
+      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} initialTarget="availability" />;
     case "deferClarification":
       return <TaskClarificationSheet task={task} onClose={close} />;
     case "shape":
@@ -79,7 +102,7 @@ export function TaskWorkflowHost() {
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
     case "waitingLifecycle":
-      return <TaskPlanningSheet task={task} onClose={close} initialTarget="waiting" />;
+      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} initialTarget="waiting" />;
     case "split":
       return (
         <TaskSplitSheet

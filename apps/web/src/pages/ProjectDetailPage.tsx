@@ -108,8 +108,9 @@ export function ProjectDetailPage() {
   // `?focus=planning` is a deep link into the canonical `task.plan` workflow
   // for the project's first unplanned task; this page only decides *which*
   // task and cleans up after itself, it never implements planning.
+  const planningWorkflow = taskWorkflow.detailInspections[0]?.planningWorkflow ?? taskWorkflow.current;
   const planningWorkflowTaskId =
-    taskWorkflow.current?.kind === "plan" ? taskWorkflow.current.taskId : null;
+    planningWorkflow?.kind === "plan" ? planningWorkflow.taskId : null;
   const openTaskIdRef = useRef(planningWorkflowTaskId);
   const closeTaskDetailRef = useRef(taskWorkflow.close);
   openTaskIdRef.current = planningWorkflowTaskId;
@@ -288,7 +289,7 @@ export function ProjectDetailPage() {
     planningTaskRef.current = taskToPlan.id;
     planningOwnsSheetRef.current = true;
     planningSheetOpenedRef.current = false;
-    dispatch({ type: "task.plan", taskId: taskToPlan.id });
+    dispatch({ type: "task.plan", taskId: taskToPlan.id, target: "scheduled" });
   }, [
     planningFocusActive,
     project,
