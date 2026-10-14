@@ -1771,8 +1771,15 @@ roots never expose deferred children. Full detail, Week and Waiting keep their
 existing projection defaults; React renders the compiled result without
 recomputing domain eligibility or adding a clock.
 
-`TaskOutline` remembers the IDs it displayed, including nested rows. Shared
-optimistic snapshots may retain removed rows only in those outlines, so an
-execution child filtered out after completion stays visible once during the
-existing retention window rather than being injected into unrelated Today
-sections. This is presentation ownership, not another eligibility rule or timer.
+`TaskRow` preserves compiled child-array order in Today's compact mode:
+promoted descendants may belong to different original parents, so comparing
+their stored positions would reverse branch traversal. Original positions and
+parent IDs remain intact, and full outlines still sort actual sibling groups.
+
+`TaskOutline` owns current IDs, including nested rows, plus removed rows with an
+active optimistic retention. Rows that leave without active retention lose
+ownership before a later completion in another section. Today keys every
+outline by the member/scope selection so ownership cannot survive a logical
+selection change. Completion-triggered removal still retains the row in its
+owning section for the existing retention window. This is presentation
+ownership, not another eligibility rule or timer.

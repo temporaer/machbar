@@ -118,6 +118,19 @@ describe("Today execution eligibility across task and project containers", () =>
     expect(agenda.dueToday[0]?.children).toEqual([]);
   });
 
+  it("promotes descendants in branch order while retaining their original positions", () => {
+    const parent = task({ title: "Attention parent", dueDate: today });
+    const hidden = task({ title: "Future branch", parentTaskId: parent.id, scheduledDate: tomorrow, position: 0 });
+    const promoted = task({ title: "Promoted action", parentTaskId: hidden.id, position: 7 });
+    const direct = task({ title: "Direct action", parentTaskId: parent.id, position: 1 });
+    const before = state();
+    expect(compile().dueToday[0]?.children.map(({ id, position, parentTaskId }) => ({ id, position, parentTaskId }))).toEqual([
+      { id: promoted.id, position: 7, parentTaskId: hidden.id },
+      { id: direct.id, position: 1, parentTaskId: parent.id },
+    ]);
+    expect(state()).toEqual(before);
+  });
+
   it("keeps separately qualified child attention and its work unique", () => {
     const parent = task({ title: "Parent deadline", dueDate: today });
     const child = task({ title: "Child overdue", parentTaskId: parent.id, dueDate: "2026-07-12", scheduledDate: tomorrow });

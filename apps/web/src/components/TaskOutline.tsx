@@ -40,7 +40,9 @@ export interface TaskOutlineProps {
    * *descendant* (any depth below the outline's own roots) renders as a
    * compact row (title + status control + only high-value signals) and
    * hides entirely-terminal (done/cancelled) descendant subtrees behind an
-   * inline "N erledigt anzeigen" affordance. Used on Today; Project Detail
+   * inline "N erledigt anzeigen" affordance. Descendants keep the compiled
+   * traversal order, since promoted rows can have different original parents.
+   * Used on Today; Project Detail
    * keeps the default `false` full outline.
    */
   compactDescendants?: boolean;
@@ -72,8 +74,14 @@ export function TaskOutline({
   // removes it; otherwise each Today section would inject the same ghost.
   const observedIds = useRef(new Set<number>());
   useEffect(() => {
-    for (const task of flattenTasks(organize.tasks)) observedIds.current.add(task.id);
-  }, [organize.tasks]);
+    const currentIds = new Set(flattenTasks(organize.tasks).map((task) => task.id));
+    // Keep ownership across completion-triggered removal, but relinquish rows
+    // that left this section before their transition began elsewhere.
+    for (const id of observedIds.current) {
+      if (taskActions.retained.has(id)) currentIds.add(id);
+    }
+    observedIds.current = currentIds;
+  }, [organize.tasks, taskActions.retained]);
 
   // Root-level rows that just transitioned may no longer be present in
   // `tasks` once the compiled view (Heute/Eingang/Suche/…) refetches — see
