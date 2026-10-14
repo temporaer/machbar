@@ -13,6 +13,8 @@ export type AgendaLaneSelection =
 export interface AgendaSelectionOptions {
   /** Only Today evaluates execution windows; Week/inventory remain accessible. */
   now?: string;
+  /** Today-only execution date; other compiled views keep their own placement rules. */
+  executionDate?: string;
   householdTimezone?: string;
   memberId?: number;
   scope?: AgendaScope;
@@ -50,7 +52,7 @@ function addDaysIso(dateIso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function descendantIds(task: TaskRecord): number[] {
+export function taskDescendantIds(task: TaskRecord): number[] {
   const ids: number[] = [];
   const walk = (children: TaskRecord[]) => {
     for (const child of children) {
@@ -133,34 +135,39 @@ export function createAgendaSelection(
     isOperationalTask(task) &&
     matchesOwner(task) &&
     matchesScope(task);
+  const isExecutionSuggestion = (task: TaskRecord) =>
+    isAgendaTask(task) && task.executable && isExecutionAvailable(task) &&
+    (options.executionDate === undefined || (
+      !graph.taskContainsUnfinishedWork(task.id) &&
+      (task.scheduledDate === null || task.scheduledDate <= options.executionDate)
+    ));
+  const isCandidateAvailable = options.executionDate === undefined
+    ? isExecutionAvailable : isExecutionSuggestion;
   const selectedProjectTaskIds = new Set(
     [...graph.projectsById.values()]
       .filter((project) => project.status === "active")
       .flatMap((project) => [
         ...graph
-          .selectedNextActionsFor(project.id, laneSelection, isExecutionAvailable)
+          .selectedNextActionsFor(project.id, laneSelection, isCandidateAvailable)
           .map((task) => task.id),
         ...graph
           .additionalSelectedNextActionsFor(
             project.id,
             laneSelection,
-            isExecutionAvailable,
-          )
+                  )
           .map((task) => task.id),
       ]),
   );
   const isSelectedOrdinaryWork = (task: TaskRecord) =>
-    !graph.taskContainsOpenProject(task.id) && (
+    !graph.taskContainsOpenProject(task.id) &&
+    (options.executionDate === undefined || !graph.taskContainsUnfinishedWork(task.id)) && (
       task.projectId === null ||
       selectedProjectTaskIds.has(task.id) ||
       (task.needsClarification &&
         (task.scheduledDate !== null || task.dueDate !== null))
     );
   const isExecutableWork = (task: TaskRecord) =>
-    isAgendaTask(task) &&
-    task.executable &&
-    isExecutionAvailable(task) &&
-    isSelectedOrdinaryWork(task);
+    isExecutionSuggestion(task) && isSelectedOrdinaryWork(task);
   const isDirectExternalWaitAttention = (task: TaskRecord) =>
     isAgendaTask(task) && task.blocked && task.externalWait !== null;
   const availableWork = (
@@ -189,6 +196,7 @@ export function createAgendaSelection(
     isContextAvailable,
     isWindowAvailable,
     isExecutionAvailable,
+    isExecutionSuggestion,
     matchesOwnerId,
     matchesOwner,
     matchesScope,
@@ -216,7 +224,7 @@ export function selectCurrentAvailableWork(
       Date.parse(task.revisitAt) <= Date.parse(options.now ?? new Date().toISOString())
     ) {
       takenByCurrentAttention.add(task.id);
-      for (const descendantId of descendantIds(task)) {
+      for (const descendantId of taskDescendantIds(task)) {
         takenByCurrentAttention.add(descendantId);
       }
       continue;
@@ -231,7 +239,7 @@ export function selectCurrentAvailableWork(
         (!!task.dueDate && task.dueDate <= soonLimit))
     ) {
       takenByCurrentAttention.add(task.id);
-      for (const descendantId of descendantIds(task)) {
+      for (const descendantId of taskDescendantIds(task)) {
         takenByCurrentAttention.add(descendantId);
       }
     }

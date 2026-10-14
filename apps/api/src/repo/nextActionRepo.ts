@@ -32,6 +32,7 @@ import type { Db } from "../db/client.js";
  */
 export interface NextActionTaskIdsByProject {
   openProjectContainers: Set<number>;
+  unfinishedWorkContainers: Set<number>;
   available: Map<number, number[]>;
   ordered: Map<number, Array<{ taskId: number; availability: "available" | "deferred" }>>;
 }
@@ -50,7 +51,7 @@ export function getNextActionTaskIdsByProjectProjection(
   const rows = db.all<{
     project_id: number | null;
     task_id: number;
-    availability: "available" | "deferred" | "project_container";
+    availability: "available" | "deferred" | "project_container" | "work_container";
   }>(sql`
     WITH RECURSIVE sortkey(task_id, project_id, key) AS (
       SELECT task.id, story.id, printf('%08d', task.position)
@@ -122,15 +123,23 @@ export function getNextActionTaskIdsByProjectProjection(
     JOIN work_items descendant ON descendant.id = td.descendant_id
     WHERE descendant.role = 'story'
     GROUP BY td.ancestor_id
+    UNION ALL
+    SELECT NULL, task_id, 'work_container', NULL
+    FROM blocking_descendants
     ORDER BY project_id, key
   `);
   const openProjectContainers = new Set<number>();
+  const unfinishedWorkContainers = new Set<number>();
   const available = new Map<number, number[]>();
   const ordered = new Map<
     number,
     Array<{ taskId: number; availability: "available" | "deferred" }>
   >();
   for (const row of rows) {
+    if (row.availability === "work_container") {
+      unfinishedWorkContainers.add(row.task_id);
+      continue;
+    }
     if (row.availability === "project_container") {
       openProjectContainers.add(row.task_id);
       continue;
@@ -145,5 +154,5 @@ export function getNextActionTaskIdsByProjectProjection(
     candidates.push({ taskId: row.task_id, availability: row.availability });
     ordered.set(row.project_id, candidates);
   }
-  return { available, ordered, openProjectContainers };
+  return { available, ordered, openProjectContainers, unfinishedWorkContainers };
 }

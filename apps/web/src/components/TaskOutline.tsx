@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
@@ -40,7 +40,9 @@ export interface TaskOutlineProps {
    * *descendant* (any depth below the outline's own roots) renders as a
    * compact row (title + status control + only high-value signals) and
    * hides entirely-terminal (done/cancelled) descendant subtrees behind an
-   * inline "N erledigt anzeigen" affordance. Used on Today; Project Detail
+   * inline "N erledigt anzeigen" affordance. Descendants keep the compiled
+   * traversal order, since promoted rows can have different original parents.
+   * Used on Today; Project Detail
    * keeps the default `false` full outline.
    */
   compactDescendants?: boolean;
@@ -67,6 +69,20 @@ export function TaskOutline({
   // the tree, so render what it hands back rather than the raw prop.
   const organize = useOutlineOrganize(tasks, organizable);
 
+  // The shared action controller retains rows for every screen. Only an
+  // outline that actually displayed a row may keep it after compilation
+  // removes it; otherwise each Today section would inject the same ghost.
+  const observedIds = useRef(new Set<number>());
+  useEffect(() => {
+    const currentIds = new Set(flattenTasks(organize.tasks).map((task) => task.id));
+    // Keep ownership across completion-triggered removal, but relinquish rows
+    // that left this section before their transition began elsewhere.
+    for (const id of observedIds.current) {
+      if (taskActions.retained.has(id)) currentIds.add(id);
+    }
+    observedIds.current = currentIds;
+  }, [organize.tasks, taskActions.retained]);
+
   // Root-level rows that just transitioned may no longer be present in
   // `tasks` once the compiled view (Heute/Eingang/Suche/…) refetches — see
   // `useTaskActions`'s retention window. Re-insert them (with their
@@ -88,7 +104,9 @@ export function TaskOutline({
   const { roots, ghosts } = useMemo(() => {
     const sorted = preserveRootOrder ? organize.tasks : sortByPosition(organize.tasks);
     const presentIds = new Set(flattenTasks(sorted).map((t) => t.id));
-    const stillRetained = [...taskActions.retained.values()].filter((t) => !presentIds.has(t.id));
+    const stillRetained = [...taskActions.retained.values()].filter(
+      (task) => observedIds.current.has(task.id) && !presentIds.has(task.id),
+    );
     return { roots: sorted, ghosts: stillRetained };
   }, [organize.tasks, preserveRootOrder, taskActions.retained]);
 

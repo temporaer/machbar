@@ -1,5 +1,12 @@
 import type { ProjectRecord, TaskRecord } from "./graph.js";
 
+interface CompiledTaskProjectionOptions {
+  /** Today evaluates each descendant independently, including below unavailable actions. */
+  promoteUnavailableChildren?: boolean;
+  /** An attention row rendered separately owns its entire projected subtree. */
+  excludedSubtrees?: ReadonlySet<number>;
+}
+
 /**
  * Rebuilds a TaskRecord's `children` tree for compiled work views (Today,
  * Week, Waiting), which must show only actionable work with References
@@ -9,19 +16,21 @@ import type { ProjectRecord, TaskRecord } from "./graph.js";
  *
  * Full outline/detail responses must not use this helper, because they need
  * reference nodes to remain visible as first-class outline entries.
- * Today also supplies a window predicate for embedded execution suggestions;
+ * Today also supplies full execution eligibility for embedded execution suggestions;
  * the root's attention eligibility remains the agenda compiler's decision.
  */
 export function pruneReferenceContainers(
   task: TaskRecord,
   isAvailable: (task: TaskRecord) => boolean = () => true,
+  options: CompiledTaskProjectionOptions = {},
 ): TaskRecord {
   const flatten = (nodes: TaskRecord[]): TaskRecord[] =>
-    nodes.flatMap((node) =>
-      node.kind === "reference"
-        ? flatten(node.children)
-        : isAvailable(node) ? [pruneReferenceContainers(node, isAvailable)] : [],
-    );
+    nodes.flatMap((node) => {
+      if (options.excludedSubtrees?.has(node.id)) return [];
+      if (node.kind === "reference") return flatten(node.children);
+      if (isAvailable(node)) return [pruneReferenceContainers(node, isAvailable, options)];
+      return options.promoteUnavailableChildren ? flatten(node.children) : [];
+    });
 
   return {
     ...task,
@@ -39,6 +48,7 @@ export function pruneReferenceContainers(
 export function pruneProjectForCompiledView(
   project: ProjectRecord,
   isAvailable: (task: TaskRecord) => boolean = () => true,
+  options: CompiledTaskProjectionOptions = {},
 ): ProjectRecord {
   const pruneOptionalTask = (
     task: TaskRecord | null | undefined,
@@ -47,15 +57,15 @@ export function pruneProjectForCompiledView(
       ? undefined
       : task === null || !isAvailable(task)
         ? null
-        : pruneReferenceContainers(task, isAvailable);
+        : pruneReferenceContainers(task, isAvailable, options);
 
   return {
     ...project,
     nextAction: pruneOptionalTask(project.nextAction),
     deferredNextAction: pruneOptionalTask(project.deferredNextAction),
     additionalNextActions: project.additionalNextActions?.filter(isAvailable).map(
-      (task) => pruneReferenceContainers(task, isAvailable),
+      (task) => pruneReferenceContainers(task, isAvailable, options),
     ),
-    childStories: project.childStories.map((child) => pruneProjectForCompiledView(child, isAvailable)),
+    childStories: project.childStories.map((child) => pruneProjectForCompiledView(child, isAvailable, options)),
   };
 }

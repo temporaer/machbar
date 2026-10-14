@@ -126,6 +126,7 @@ export function TodayPage() {
       <div className="section-title">{section.label}</div>
       {visibleSectionTasks[section.key].length > 0 ? (
         <TaskOutline
+          key={agendaSelectionKey}
           tasks={visibleSectionTasks[section.key]}
           emptyMessage={strings.noItems}
           preserveRootOrder
@@ -239,6 +240,7 @@ export function TodayPage() {
                     <div className="section" key="revisit">
                       <div className="section-title">{strings.revisit}</div>
                       <TaskOutline
+                        key={agendaSelectionKey}
                         tasks={revisitTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
@@ -263,6 +265,7 @@ export function TodayPage() {
                         {strings.unscheduled} ({additionalTasks.length})
                       </summary>
                       <TaskOutline
+                        key={agendaSelectionKey}
                         tasks={additionalTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
@@ -279,6 +282,7 @@ export function TodayPage() {
                       </summary>
                       <p className="page-subtitle">{strings.completedTodayHint}</p>
                       <TaskOutline
+                        key={agendaSelectionKey}
                         tasks={completedTodayTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
@@ -284,6 +284,74 @@ describe("TaskOutline", () => {
       await screen.findByText("Elternaufgabe");
       expect(await screen.findByText("Erledigter Nachkomme")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /erledigt anzeigen/ })).not.toBeInTheDocument();
+    });
+
+    it.each([true, false])("preserves compiled branch order without changing full-outline sorting (compact=%s)", compact => {
+      const promoted = makeTask({ id: 171, title: "Promoted branch action", parentTaskId: 179, position: 7 });
+      const direct = makeTask({ id: 172, title: "Direct action", parentTaskId: 170, position: 1 });
+      const parent = makeTask({ id: 170, title: "Attention root", children: [promoted, direct] });
+      renderWithProviders(<TaskOutline tasks={[parent]} emptyMessage="Empty" compactDescendants={compact} />);
+      const promotedTitle = screen.getByText("Promoted branch action");
+      const directTitle = screen.getByText("Direct action");
+      expect(Boolean(promotedTitle.compareDocumentPosition(directTitle) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(compact);
+      expect(parent.children.map(task => task.position)).toEqual([7, 1]);
+    });
+
+    it("transfers retention ownership when a task changes sections before completion", async () => {
+      const moving = makeTask({ id: 181, title: "Moving action" });
+      mockedApi.completeTask.mockResolvedValue(makeTask({ ...moving, status: "done" }));
+      const outlines = (inA: boolean, inB: boolean) => <>
+        <TaskOutline tasks={inA ? [moving] : []} emptyMessage="Empty A" compactDescendants />
+        <TaskOutline tasks={inB ? [moving] : []} emptyMessage="Empty B" compactDescendants />
+      </>;
+      const { rerender } = renderWithProviders(outlines(true, false));
+      expect(await screen.findAllByText("Moving action")).toHaveLength(1);
+      rerender(outlines(false, true));
+      expect(screen.getAllByText("Moving action")).toHaveLength(1);
+      const row = screen.getByText("Moving action").closest("li")!;
+      await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+      await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
+      expect(screen.getAllByText("Moving action")).toHaveLength(1);
+      rerender(outlines(false, false));
+      expect(screen.getAllByText("Moving action")).toHaveLength(1);
+      expect(screen.getByText("Empty A")).toBeInTheDocument();
+    });
+
+    it.each(["member", "scope"])("does not retain removed rows across a logical %s selection change", async selection => {
+      const task = makeTask({ id: 191, title: "Previous selection action" });
+      mockedApi.completeTask.mockResolvedValue(makeTask({ ...task, status: "done" }));
+      const outline = (key: string, tasks: typeof task[]) =>
+        <TaskOutline key={key} tasks={tasks} emptyMessage="New selection empty" compactDescendants />;
+      const { rerender } = renderWithProviders(outline(`${selection}-before`, [task]));
+      const row = (await screen.findByText("Previous selection action")).closest("li")!;
+      await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+      await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
+      rerender(outline(`${selection}-before`, []));
+      expect(screen.getAllByText("Previous selection action")).toHaveLength(1);
+      rerender(outline(`${selection}-after`, []));
+      expect(screen.queryByText("Previous selection action")).not.toBeInTheDocument();
+      expect(screen.getByText("New selection empty")).toBeInTheDocument();
+    });
+
+    it("retains a completed descendant once across multiple compiled outlines and refresh", async () => {
+      const child = makeTask({ id: 161, title: "Completed child" });
+      const parent = makeTask({ id: 160, title: "Attention parent", children: [child] });
+      const other = makeTask({ id: 162, title: "Other ready work" });
+      mockedApi.completeTask.mockResolvedValue(makeTask({ ...child, status: "done" }));
+      const outlines = (children: typeof parent.children) => <>
+        <TaskOutline tasks={[{ ...parent, children }]} emptyMessage="Empty attention" compactDescendants />
+        <TaskOutline tasks={[other]} emptyMessage="Empty ready" compactDescendants />
+      </>;
+      const { rerender } = renderWithProviders(outlines([child]));
+      const row = (await screen.findByText("Completed child")).closest("li")!;
+      await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+      await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
+      expect(screen.getAllByText("Completed child")).toHaveLength(1);
+      // Today now filters terminal execution descendants out of refreshed trees.
+      rerender(outlines([]));
+      expect(screen.getAllByText("Completed child")).toHaveLength(1);
+      expect(screen.getByText("Attention parent")).toBeInTheDocument();
+      expect(screen.getByText("Other ready work")).toBeInTheDocument();
     });
 
     it("keeps a just-completed descendant visible while it is retained", async () => {

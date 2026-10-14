@@ -208,7 +208,9 @@ export function TaskRow({
     if (expandRequest?.taskId === taskProp.id) setCollapsed(false);
   }, [expandRequest, taskProp.id, setCollapsed]);
 
-  const children = sortByPosition(task.children);
+  // Today has already compiled branch order across different original parents.
+  // Full outlines still sort actual sibling groups by their stored positions.
+  const children = compactDescendants ? task.children : sortByPosition(task.children);
   // Compact presentation applies to every row below the outline's own
   // root; the root itself (depth 0) always stays full-featured.
   const isCompact = compactDescendants && depth > 0;

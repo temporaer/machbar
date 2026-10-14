@@ -309,6 +309,35 @@ describe("TodayPage", () => {
     );
   });
 
+  it.each(["member", "scope"])("does not expose a retained row after changing the selected %s", async selection => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Jonas" }),
+    ]);
+    const child = makeTask({ id: 220, title: "Retained previous selection" });
+    mockedApi.completeTask.mockResolvedValue(makeTask({ ...child, status: "done" }));
+    mockedApi.getAgenda.mockImplementation(async (member, scope) => ({
+      ...makeEmptyAgenda(),
+      dueToday: [member === 1 && scope === "mine"
+        ? makeTask({ id: 221, title: "Original attention", children: [child] })
+        : makeTask({ id: 222, title: "Other selection" })],
+    }));
+    const { container } = renderWithProviders(<><IdentitySelector /><TodayPage /></>);
+    const row = (await screen.findByText("Retained previous selection")).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
+    expect(screen.getAllByText("Retained previous selection")).toHaveLength(1);
+    if (selection === "scope") {
+      await userEvent.click(within(container.querySelector<HTMLElement>(".page-header")!).getByRole("button", {
+        name: "Aufgaben aller Personen anzeigen",
+      }));
+    } else {
+      await userEvent.click(await screen.findByRole("option", { name: /Jonas/ }));
+    }
+    expect(await screen.findByText("Other selection")).toBeInTheDocument();
+    expect(screen.queryByText("Retained previous selection")).not.toBeInTheDocument();
+  });
+
   it("remembers the household scope while this browser tab remains open", async () => {
     mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
     const first = renderWithProviders(<TodayPage />);
