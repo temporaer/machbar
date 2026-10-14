@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../styles/index.css";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { AvailabilityRule } from "@machbar/shared";
 import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
@@ -42,6 +43,101 @@ function stubScrollIntoView(
 }
 
 describe("TaskPlanningSheet", () => {
+  const businessHours: AvailabilityRule = {
+    kind: "weekly", match: "inside",
+    windows: [{ weekdays: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }],
+  };
+
+  it("saves only the independent window field without changing the planning dates", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ scheduledDate: "2026-10-15", dueDate: "2026-10-17" });
+    mockedApi.updateTask.mockResolvedValue({ ...task, availabilityRule: businessHours } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText("Zeitfenster"), "inside");
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      availabilityRule: businessHours, expectedRevision: task.revision,
+    }));
+  });
+
+  it("cancels window drafts without writing", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    renderWithProviders(<TaskPlanningSheet task={makeTask()} onClose={onClose} />);
+    await user.selectOptions(screen.getByLabelText("Zeitfenster"), "outside");
+    await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(onClose).toHaveBeenCalled();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("clears the window with null while preserving revisit", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ availabilityRule: businessHours, revisitAt: "2026-10-16T04:00:00Z" });
+    mockedApi.updateTask.mockResolvedValue({ ...task, availabilityRule: null } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText("Zeitfenster"), "anytime");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      availabilityRule: null, expectedRevision: task.revision,
+    }));
+  });
+
+  it.each(["plan", "revisit"])("clearing %s preserves the independent window", async (field) => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      availabilityRule: businessHours,
+      scheduledDate: field === "plan" ? "2026-10-15" : null,
+      revisitAt: field === "revisit" ? "2026-10-16T04:00:00Z" : null,
+    });
+    mockedApi.updateTask.mockResolvedValue({ ...task, scheduledDate: null, revisitAt: null } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+    await user.click(within(card(field === "plan" ? "Geplant für" : "Wiedervorlage")).getByRole("button", { name: /entfernen/ }));
+    expect(screen.getByLabelText("Zeitfenster")).toHaveValue("inside");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalled());
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).not.toHaveProperty("availabilityRule");
+  });
+
+  it("requires a choice for concurrent window edits and retries against the latest revision", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 318, revision: 1 });
+    const latest = { ...task, revision: 2, availabilityRule: { ...businessHours, match: "outside" as const } };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 3, availabilityRule: businessHours } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText("Zeitfenster"), "inside");
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await screen.findByText("Aktuell gespeichert:");
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Meine Änderung beibehalten" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({ availabilityRule: businessHours, expectedRevision: 2 });
+  });
+
+  it("adopts an untouched concurrent window while retaining the local schedule draft", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 319, revision: 1, scheduledDate: "2026-10-15" });
+    const latest = { ...task, revision: 2, availabilityRule: businessHours };
+    mockedApi.getTask.mockResolvedValue(latest as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...latest, revision: 3, scheduledDate: "2026-10-16" } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+    const plannedDate = screen.getByLabelText("Geplant für");
+    fireEvent.change(plannedDate, { target: { value: "16.10.2026" } });
+    fireEvent.blur(plannedDate);
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(screen.getByLabelText("Zeitfenster")).toHaveValue("inside"));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({ scheduledDate: "2026-10-16", expectedRevision: 2 });
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).not.toHaveProperty("availabilityRule");
+  });
+
   beforeEach(() => {
     originalScrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,

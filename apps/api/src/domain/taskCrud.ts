@@ -5,6 +5,7 @@
  */
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type {
+  AvailabilityRule,
   InheritanceMode,
   ProjectActivationResolution,
   TaskKind,
@@ -103,6 +104,7 @@ export interface CreateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   revisitAt?: string | null;
+  availabilityRule?: AvailabilityRule | null;
   /** @deprecated Use revisitAt. */
   notBeforeAt?: string | null;
   /** @deprecated Use revisitAt. */
@@ -474,6 +476,7 @@ function insertTask(
           : input.dueDate ?? null,
     scheduledDate,
     revisitAt,
+    availabilityRule: input.availabilityRule ?? null,
     priority: kind === "reference" ? null : input.priority ?? null,
     size: kind === "reference" ? null : input.size ?? null,
     repeatAfterDays,
@@ -872,6 +875,7 @@ export interface UpdateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   revisitAt?: string | null;
+  availabilityRule?: AvailabilityRule | null;
   externalWait?: {
     waitingFor?: string | null;
   } | null;
@@ -1290,6 +1294,11 @@ export function updateTask(
     ) {
       patch.revisitAt = effectiveRevisitAt;
       changedFields.push("revisitAt");
+    }
+    if (input.availabilityRule !== undefined &&
+      JSON.stringify(input.availabilityRule) !== JSON.stringify(currentTask.availabilityRule)) {
+      patch.availabilityRule = input.availabilityRule;
+      changedFields.push("availabilityRule");
     }
     for (const field of [
       "priority",

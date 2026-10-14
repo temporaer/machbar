@@ -168,7 +168,7 @@ export function convertTaskToStoryInTransaction(
       dependencies.length > 0 || task.repeatAfterDays !== null ||
       task.allowedDeviationDays !== null || task.reminders.length > 0 ||
       recurrenceOccurrences.length > 0 || task.scheduledDate !== null || task.notBeforeAt != null || task.notBeforeDate != null ||
-      task.additionalNextAction;
+      task.additionalNextAction || task.availabilityRule !== null;
     if (externalWait && task.repeatAfterDays !== null) {
       reject("unsupported_obligation_mapping", "A task cannot carry both an external wait and recurrence.");
     }
@@ -253,6 +253,7 @@ export function convertTaskToStoryInTransaction(
         needsClarification: false,
         ownerMemberId,
         scheduledDate: null,
+        availabilityRule: null,
         revisitAt: externalWait ? null : task.revisitAt,
         notBeforeAt: null,
         notBeforeDate: null,
@@ -297,6 +298,7 @@ export function convertTaskToStoryInTransaction(
         physicalContextInheritanceMode: task.contextInheritanceMode,
         dueDate: reminderNeedsDeadline || task.repeatAfterDays !== null ? task.dueDate : null,
         scheduledDate: task.scheduledDate,
+        availabilityRule: task.availabilityRule,
         revisitAt: task.revisitAt,
         notBeforeAt: task.notBeforeAt,
         notBeforeDate: task.notBeforeDate,
@@ -608,6 +610,7 @@ export function convertStoryToTask(
         ownerMemberId: project.ownerMemberId,
         ownerInheritanceMode: project.ownerMemberId !== null ? "explicit" : "none",
         scheduledDate: project.scheduledDate,
+        availabilityRule: null,
         revisitAt: project.revisitAt,
         position,
         completedAt: status === "done" ? sourceRow.completedAt : null,

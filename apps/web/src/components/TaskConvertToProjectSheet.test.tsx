@@ -100,6 +100,18 @@ describe("TaskConvertToProjectSheet", () => {
     })));
   });
 
+  it("keeps the authored retained step for a nested task with an execution window", async () => {
+    const task = makeTask({ id: 42, status: "someday", parentTaskId: 7,
+      availabilityRule: { kind: "weekly", match: "inside", windows: [{ weekdays: [1], start: "09:00", end: "17:00" }] } });
+    mockedApi.getTask.mockResolvedValue({ ...task, hierarchyRevisions: [{ id: 42, revision: 1 }, { id: 7, revision: 1 }], ancestors: [{ id: 7, role: "task", title: "Parent", revision: 1 }] });
+    renderWithProviders(<TaskConvertToProjectSheet task={task} onClose={vi.fn()} />);
+    const title = await screen.findByLabelText(strings.convertToProjectPreservedStep);
+    await userEvent.clear(title);
+    await userEvent.type(title, "Authored window step");
+    await userEvent.click(screen.getByRole("button", { name: strings.convertToProjectBacklog }));
+    await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(42, expect.objectContaining({ preservedStepTitle: "Authored window step" })));
+  });
+
   it("cancels without starting conversion", async () => {
     const onClose = vi.fn();
     renderWithProviders(<TaskConvertToProjectSheet task={makeTask({ id: 42 })} onClose={onClose} />);

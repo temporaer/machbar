@@ -801,6 +801,13 @@ export type TaskReminder =
       timezone: string;
     };
 
+/** Execution availability in the household timezone; null means anytime. */
+export type AvailabilityRule = {
+  kind: "weekly";
+  match: "inside" | "outside";
+  windows: Array<{ weekdays: number[]; start: string; end: string }>;
+};
+
 export interface Task {
   /** Legacy upgrade/input compatibility; current API projections omit these. */
   notBeforeAt?: string | null;
@@ -828,6 +835,7 @@ export interface Task {
   dueDate: string | null;
   scheduledDate: string | null;
   revisitAt: string | null;
+  availabilityRule: AvailabilityRule | null;
   externalWait: ExternalWait | null;
   priority: number | null;
   size: TaskSize | null;

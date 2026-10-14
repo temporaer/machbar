@@ -60,7 +60,7 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
   ], [currentTask.dependencies, currentTask.incomingDependencies]);
   const preserveStepRequired = currentTask.externalWait !== null || currentTask.revisitAt !== null || dependencies.length > 0 ||
     currentTask.repeatAfterDays !== null || currentTask.allowedDeviationDays !== null ||
-    currentTask.reminders.length > 0 || currentTask.scheduledDate !== null ||
+    currentTask.reminders.length > 0 || currentTask.scheduledDate !== null || currentTask.availabilityRule !== null ||
     currentTask.notBeforeAt != null || currentTask.notBeforeDate != null ||
     (currentTask.status === "actionable" && openChildren.length === 0);
   const activationResolution: ProjectActivationResolution | null = activationPrompt

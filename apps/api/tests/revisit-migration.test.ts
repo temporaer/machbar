@@ -106,10 +106,10 @@ describe("revisit migration", () => {
       const journal = JSON.parse(
         readFileSync(path.join(drizzleDir, "meta", "_journal.json"), "utf8"),
       ) as { entries: Array<{ idx: number; tag: string }> };
-      expect(journal.entries).toHaveLength(24);
+      expect(journal.entries).toHaveLength(25);
       expect(journal.entries.at(-1)).toEqual({
-        idx: 23,
-        tag: "0023_clarification_revisit_date",
+        idx: 24,
+        tag: "0024_task_availability_rule",
         version: "6",
         when: expect.any(Number),
         breakpoints: true,
@@ -118,6 +118,7 @@ describe("revisit migration", () => {
         .prepare("PRAGMA table_info(work_items)")
         .all() as Array<{ name: string }>;
       expect(workItemColumns.map((column) => column.name)).toContain("revisit_at");
+      expect(workItemColumns.map((column) => column.name)).toContain("availability_rule");
       expect(
         handle.sqlite
           .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -151,7 +152,7 @@ describe("revisit migration", () => {
         handle.sqlite
           .prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations")
           .get(),
-      ).toEqual({ count: 24 });
+      ).toEqual({ count: 25 });
     } finally {
       handle.close();
     }

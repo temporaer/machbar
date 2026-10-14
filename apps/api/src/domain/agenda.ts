@@ -16,18 +16,6 @@ import {
   pruneReferenceContainers,
 } from "./compiledViewProjection.js";
 
-function todayIso(timezone?: string): string {
-  if (!timezone) return new Date().toISOString().slice(0, 10);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
 function addDaysIso(dateIso: string, days: number): string {
   const d = new Date(`${dateIso}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -103,19 +91,20 @@ export function buildAgenda(
   graph: Graph,
   options: BuildAgendaOptions = {},
 ): Agenda {
+  const nowInstant = options.now ?? new Date().toISOString();
   const {
     dueSoonDays = 3,
     memberId,
     householdTimezone,
-    today = todayIso(householdTimezone),
+    today = calendarDateForInstant(nowInstant, householdTimezone ?? "UTC")!,
   } = options;
   const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
     (task) =>
       calendarDateForInstant(task.revisitAt, householdTimezone) ??
       null,
   );
-  const now = Date.parse(options.now ?? new Date().toISOString());
-  const selection = createAgendaSelection(graph, options);
+  const now = Date.parse(nowInstant);
+  const selection = createAgendaSelection(graph, { ...options, now: nowInstant });
   const { contextAvailability, isContextAvailable } = selection;
   const soonLimit = addDaysIso(today, dueSoonDays);
   const seen = new Set<number>();
@@ -161,7 +150,7 @@ export function buildAgenda(
       t.status === "actionable" &&
       !!t.scheduledDate &&
       t.scheduledDate <= today &&
-      t.externalWait === null,
+      t.externalWait === null && selection.isWindowAvailable(t),
     sortByScheduledThenPriorityTitleId,
     { requireExecutable: false, requireContextAvailable: false },
   );
@@ -178,7 +167,8 @@ export function buildAgenda(
             t.revisitAt !== null &&
             t.revisitAt !== undefined &&
             Date.parse(t.revisitAt) <= now));
-      return selection.isAgendaTask(t) && reached && !seen.has(t.id);
+      return selection.isAgendaTask(t) && reached &&
+        (t.externalWait !== null || selection.isWindowAvailable(t)) && !seen.has(t.id);
     })
     .sort(sortByRevisitThenPriorityTitleId);
   for (const task of revisit) seen.add(task.id);
@@ -189,6 +179,7 @@ export function buildAgenda(
   );
   const availableWork = selectCurrentAvailableWork(graph, {
     ...options,
+    now: nowInstant,
     today,
     dueSoonDays,
   });
@@ -214,8 +205,13 @@ export function buildAgenda(
     .map((task) => ({ ...task, children: [] }));
 
   const projectDueLimit = addDaysIso(today, 7);
+  // All embedded execution suggestions use the same window predicate, including
+  // descendants of attention rows; deadline/wait roots retain their precedence.
   const pruneTask = (task: TaskRecord | null): TaskRecord | null =>
-    task ? pruneReferenceContainers(task) : null;
+    task && selection.isWindowAvailable(task)
+      ? pruneReferenceContainers(task, selection.isWindowAvailable) : null;
+  const pruneAttentionTask = (task: TaskRecord): TaskRecord =>
+    pruneReferenceContainers(task, selection.isWindowAvailable);
   const stuckByProject = new Map(
     graph.listStuckProjects().map((project) => [project.id, project]),
   );
@@ -245,23 +241,23 @@ export function buildAgenda(
       const availableNextAction = graph.selectedNextActionsFor(
         project.id,
         selection.laneSelection,
-        isContextAvailable,
+        selection.isExecutionAvailable,
       )[0] ?? null;
       const canonicalNextAction = graph.nextActionFor(project.id);
-      const nextAction = availableNextAction ?? canonicalNextAction;
+      const nextAction = availableNextAction ??
+        (canonicalNextAction && selection.isWindowAvailable(canonicalNextAction) ? canonicalNextAction : null);
       const additionalNextActions = graph.additionalSelectedNextActionsFor(
         project.id,
         selection.laneSelection,
-        isContextAvailable,
+        selection.isExecutionAvailable,
       );
       const projectForAgenda = pruneProjectForCompiledView({
         ...computed,
-        nextAction: pruneTask(computed.nextAction ?? null),
+        nextAction: pruneTask(computed.nextAction && selection.isWindowAvailable(computed.nextAction)
+          ? computed.nextAction : nextAction),
         deferredNextAction: pruneTask(computed.deferredNextAction ?? null),
-        additionalNextActions: (computed.additionalNextActions ?? []).map(
-          pruneReferenceContainers,
-        ),
-      });
+        additionalNextActions: computed.additionalNextActions ?? [],
+      }, selection.isWindowAvailable);
       const stuckProject = canonicalNextAction
         ? undefined
         : stuckByProject.get(project.id);
@@ -274,9 +270,7 @@ export function buildAgenda(
           nextActionContextAvailability: nextAction
             ? contextAvailability(nextAction)
             : null,
-          additionalNextActions: additionalNextActions.map(
-            pruneReferenceContainers,
-          ),
+          additionalNextActions: additionalNextActions.map(pruneAttentionTask),
           stuck: stuckProject
             ? {
                 reason: stuckProject.stuckReason,
@@ -303,13 +297,13 @@ export function buildAgenda(
     });
 
   return {
-    planned: planned.map(pruneReferenceContainers),
-    overdue: overdue.map(pruneReferenceContainers),
-    dueToday: dueToday.map(pruneReferenceContainers),
-    dueSoon: dueSoon.map(pruneReferenceContainers),
-    shared: shared.map(pruneReferenceContainers),
-    unscheduled: unscheduled.map(pruneReferenceContainers),
-    revisit: revisit.map(pruneReferenceContainers),
+    planned: planned.map(pruneAttentionTask),
+    overdue: overdue.map(pruneAttentionTask),
+    dueToday: dueToday.map(pruneAttentionTask),
+    dueSoon: dueSoon.map(pruneAttentionTask),
+    shared: shared.map(pruneAttentionTask),
+    unscheduled: unscheduled.map(pruneAttentionTask),
+    revisit: revisit.map(pruneAttentionTask),
     completedToday,
     projects,
   };

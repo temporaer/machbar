@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import type { TaskKind, TaskStatus, WorkItemScope } from "@machbar/shared";
+import type { AvailabilityRule, TaskKind, TaskStatus, WorkItemScope } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 
@@ -18,6 +18,7 @@ type TaskRowInput = {
   dueDate?: string | null;
   scheduledDate?: string | null;
   revisitAt?: string | null;
+  availabilityRule?: AvailabilityRule | null;
   notBeforeAt?: string | null;
   notBeforeDate?: string | null;
   priority?: number | null;
@@ -72,6 +73,7 @@ export function insertTaskRow(db: Db, input: TaskRowInput) {
     dueDate: input.dueDate ?? null,
     scheduledDate: input.scheduledDate ?? null,
     revisitAt: input.revisitAt ?? null,
+    availabilityRule: input.availabilityRule ?? null,
     notBeforeAt: input.notBeforeAt ?? null,
     notBeforeDate: input.notBeforeDate ?? null,
     priority: input.priority ?? null,

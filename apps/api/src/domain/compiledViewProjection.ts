@@ -9,13 +9,18 @@ import type { ProjectRecord, TaskRecord } from "./graph.js";
  *
  * Full outline/detail responses must not use this helper, because they need
  * reference nodes to remain visible as first-class outline entries.
+ * Today also supplies a window predicate for embedded execution suggestions;
+ * the root's attention eligibility remains the agenda compiler's decision.
  */
-export function pruneReferenceContainers(task: TaskRecord): TaskRecord {
+export function pruneReferenceContainers(
+  task: TaskRecord,
+  isAvailable: (task: TaskRecord) => boolean = () => true,
+): TaskRecord {
   const flatten = (nodes: TaskRecord[]): TaskRecord[] =>
     nodes.flatMap((node) =>
       node.kind === "reference"
         ? flatten(node.children)
-        : [pruneReferenceContainers(node)],
+        : isAvailable(node) ? [pruneReferenceContainers(node, isAvailable)] : [],
     );
 
   return {
@@ -33,23 +38,24 @@ export function pruneReferenceContainers(task: TaskRecord): TaskRecord {
  */
 export function pruneProjectForCompiledView(
   project: ProjectRecord,
+  isAvailable: (task: TaskRecord) => boolean = () => true,
 ): ProjectRecord {
   const pruneOptionalTask = (
     task: TaskRecord | null | undefined,
   ): TaskRecord | null | undefined =>
     task === undefined
       ? undefined
-      : task === null
+      : task === null || !isAvailable(task)
         ? null
-        : pruneReferenceContainers(task);
+        : pruneReferenceContainers(task, isAvailable);
 
   return {
     ...project,
     nextAction: pruneOptionalTask(project.nextAction),
     deferredNextAction: pruneOptionalTask(project.deferredNextAction),
-    additionalNextActions: project.additionalNextActions?.map(
-      pruneReferenceContainers,
+    additionalNextActions: project.additionalNextActions?.filter(isAvailable).map(
+      (task) => pruneReferenceContainers(task, isAvailable),
     ),
-    childStories: project.childStories.map(pruneProjectForCompiledView),
+    childStories: project.childStories.map((child) => pruneProjectForCompiledView(child, isAvailable)),
   };
 }

@@ -69,6 +69,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     dueDate: null,
     scheduledDate: null,
     revisitAt: null,
+    availabilityRule: null,
     notBeforeAt: null,
     notBeforeDate: null,
     externalWait: null,

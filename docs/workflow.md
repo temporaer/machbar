@@ -471,7 +471,8 @@ descendant or ancestor revisions reject the whole operation.
 Task → Project conversion works inside a project and below a task without
 detaching first. Existing effective ownership, tags and physical contexts
 become the project's explicit values so retained work keeps its responsibility
-and material. Task-only obligations use the existing retained-action mapping.
+and material. Task-only obligations, including execution windows, use the
+existing retained-action mapping.
 A child project below a task is reachable from that task's detail steps and has
 mixed-role hierarchy breadcrumbs. Project → Task preserves the direct parent
 and position when all descendants are tasks; task descendants and structured

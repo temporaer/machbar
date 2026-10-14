@@ -125,7 +125,8 @@ describe("phase 6a parent-preserving structure", () => {
     const context = ctx.handle.db.insert(schema.physicalContexts).values({ name: "Home", source: "home_assistant", externalId: "home" }).returning().get();
     const tag = (await post("/api/tags", { name: "Material", kind: "plain" })).json();
     const parent = (await post("/api/tasks", { title: "Parent", status: "actionable", ownerMemberId: member.id, ownerInheritanceMode: "explicit", contextInheritanceMode: "explicit", contextIds: [context.id], tagIds: [tag.id] })).json();
-    const response = await post("/api/tasks", { title: "Recurring", parentTaskId: parent.id, status: "actionable", dueDate: "2026-09-17", scheduledDate: "2026-09-15", repeatAfterDays: 7, allowedDeviationDays: 2, reminders: [{ kind: "absolute", at: "2026-12-09T09:00:00.000Z" }] });
+    const availabilityRule = { kind: "weekly", match: "inside", windows: [{ weekdays: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }] };
+    const response = await post("/api/tasks", { availabilityRule, title: "Recurring", parentTaskId: parent.id, status: "actionable", dueDate: "2026-09-17", scheduledDate: "2026-09-15", repeatAfterDays: 7, allowedDeviationDays: 2, reminders: [{ kind: "absolute", at: "2026-12-09T09:00:00.000Z" }] });
     expect(response.statusCode, response.body).toBe(201);
     const task = response.json();
     const dependent = (await post("/api/tasks", { title: "Depends on recurring" })).json();
@@ -138,7 +139,7 @@ describe("phase 6a parent-preserving structure", () => {
     const detail = await get(`/api/projects/${task.id}`);
     const retained = detail.tasks[0];
     expect(detail).toMatchObject({ parentId: parent.id, ownerMemberId: member.id, tags: [expect.objectContaining({ id: tag.id })], contexts: [expect.objectContaining({ id: context.id })] });
-    expect(retained).toMatchObject({ dueDate: "2026-09-17", scheduledDate: "2026-09-15", repeatAfterDays: 7, effectiveOwnerId: member.id, reminders: [expect.objectContaining({ id: task.reminders[0].id })] });
+    expect(retained).toMatchObject({ availabilityRule, dueDate: "2026-09-17", scheduledDate: "2026-09-15", repeatAfterDays: 7, effectiveOwnerId: member.id, reminders: [expect.objectContaining({ id: task.reminders[0].id })] });
     expect(ctx.handle.db.select().from(schema.taskRecurrenceOccurrences).where(eq(schema.taskRecurrenceOccurrences.taskId, retained.id)).all()).toHaveLength(1);
     expect((await get(`/api/tasks/${dependent.id}`)).dependencies[0].dependsOnTaskId).toBe(retained.id);
     const before = rows();
