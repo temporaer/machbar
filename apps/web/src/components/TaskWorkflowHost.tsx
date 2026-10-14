@@ -45,13 +45,14 @@ export function TaskWorkflowHost() {
       workflow.resumeFromDetail();
     }
   }, [workflow.detailInspection, taskDetail.openTaskId]);
-  // Keep the planning content in the same React position throughout inspection.
-  // An inspected task's focused operations use the normal host above its detail.
-  const planning = workflow.detailInspection?.planningWorkflow;
+  // Each planning slot keeps its React position when another prerequisite is
+  // inspected. Only the foreground operation registers a visible modal.
+  const retained = workflow.detailInspections;
+  const foreground = workflow.current === workflow.detailInspection?.planningWorkflow
+    ? null : workflow.current;
   return <>
-    <TaskWorkflowContent state={planning ?? workflow.current} suspended={Boolean(planning)} />
-    {planning && workflow.current !== planning
-      ? <TaskWorkflowContent state={workflow.current} /> : null}
+    {[...retained.map((inspection) => inspection.planningWorkflow), foreground].map((state, index) =>
+      <TaskWorkflowContent key={index} state={state} suspended={index < retained.length} />)}
   </>;
 }
 

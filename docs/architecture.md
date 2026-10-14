@@ -1412,11 +1412,12 @@ never clears a value.
 Prerequisite titles dispatch `task.open`; removal remains a separate explicit
 dependency commit, as does recording a wait follow-up. Unresolved prerequisites
 appear first; resolved links are behind an explicit disclosure. The workflow
-context retains only the originating planning workflow during detail inspection.
-The host keeps its component mounted at the same React position and suspends
+context retains each nested planning workflow during detail inspection. Both
+`task.open` and task-role `workItem.open` suspend the foreground planner.
+The host keeps each component mounted in its original slot and suspends
 its `BottomSheet` registration, allowing the normal task detail and any focused
 operation launched there to occupy the foreground. Closing detail restores the
-planning workflow and, where applicable, the prior detail/queue snapshot using
+most recent planning workflow and, where applicable, the prior detail/queue snapshot using
 `TaskDetailProvider`'s existing handoff methods. No planning state is serialized
 or committed for navigation, and no separate prerequisite viewer is introduced.
 

@@ -249,17 +249,16 @@ export function useWorkItemCommands() {
       if (workItemId !== null) scope?.setActive(workItemId, commandWorkItemRole(command));
       switch (command.type) {
         case "task.open":
-          if (taskWorkflow.current && !taskWorkflow.detailInspection && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
+        case "workItem.open":
+          if (command.type === "workItem.open" && command.workItem.role !== "task") {
+            navigate(`/projects/${command.workItem.id}`);
+            return;
+          }
+          if (taskWorkflow.current && taskWorkflow.current !== taskWorkflow.detailInspection?.planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
             taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff());
           }
-          taskDetail.open(command.taskId, command.focusField);
-          return;
-        case "workItem.open":
-          if (command.workItem.role === "task") {
-            taskDetail.open(command.workItem.id);
-          } else {
-            navigate(`/projects/${command.workItem.id}`);
-          }
+          if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
+          else taskDetail.open(command.workItem.id);
           return;
         case "task.plan":
           taskWorkflow.open("plan", command.taskId, command.target);

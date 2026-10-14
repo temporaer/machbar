@@ -53,6 +53,7 @@ interface TaskWorkflowContextValue {
   open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;
   close: () => void;
   detailInspection: PlanningDetailInspection | null;
+  detailInspections: PlanningDetailInspection[];
   suspendForDetail: (previousDetail: TaskDetailHandoff | null) => void;
   resumeFromDetail: () => void;
 }
@@ -61,17 +62,21 @@ const TaskWorkflowContext = createContext<TaskWorkflowContextValue | null>(null)
 
 export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<TaskWorkflowState | null>(null);
-  const [detailInspection, setDetailInspection] = useState<PlanningDetailInspection | null>(null);
+  const [detailInspections, setDetailInspections] = useState<PlanningDetailInspection[]>([]);
+  const detailInspection = detailInspections.at(-1) ?? null;
   const value = useMemo<TaskWorkflowContextValue>(
     () => ({
       current,
       detailInspection,
+      detailInspections,
       suspendForDetail: (previousDetail) => {
-        if (current) setDetailInspection({ previousDetail, planningWorkflow: current });
+        if (current && current !== detailInspection?.planningWorkflow) {
+          setDetailInspections((previous) => [...previous, { previousDetail, planningWorkflow: current }]);
+        }
       },
       resumeFromDetail: () => {
         if (detailInspection) setCurrent(detailInspection.planningWorkflow);
-        setDetailInspection(null);
+        setDetailInspections((previous) => previous.slice(0, -1));
       },
       open: (kind, taskId, planningTarget) =>
         setCurrent({
@@ -84,7 +89,7 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
         else setCurrent(null);
       },
     }),
-    [current, detailInspection],
+    [current, detailInspection, detailInspections],
   );
   return <TaskWorkflowContext.Provider value={value}>{children}</TaskWorkflowContext.Provider>;
 }

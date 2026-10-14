@@ -24,7 +24,7 @@ function openSection(element: HTMLElement) {
 }
 function Harness({ fromDetail = false }: { fromDetail?: boolean }) {
   const dispatch = useWorkItemCommands();
-  return <><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><TaskDetailSheet /><TaskWorkflowHost /></>;
+  return <><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><button onClick={() => dispatch({ type: "workItem.open", workItem: { id: 3, role: "task" } })}>Generic linked task</button><TaskDetailSheet /><TaskWorkflowHost /></>;
 }
 
 beforeEach(() => {
@@ -180,4 +180,66 @@ describe("compact planning", () => {
       expect(await screen.findByRole("heading", { name: "Example planning", level: 1 })).toBeInTheDocument();
     }
   }, 15000);
+  it.each([false, true])("returns through nested prerequisite planners (detail origin: %s)", async (fromDetail) => {
+    const user = userEvent.setup();
+    const tasks = [1, 2, 3].map((id) => makeTask({ id, title: `Nested task ${id}`, revision: 1,
+      scheduledDate: "2026-10-19", repeatAfterDays: 7, allowedDeviationDays: 1,
+      dependencies: id < 3 ? [{ id, taskId: id, dependsOnTaskId: id + 1, title: `Nested task ${id + 1}`, resolved: false }] : [],
+    }));
+    mocked.getTask.mockImplementation(async (id) => ({ ...tasks[id - 1], ancestors: [], childStories: [], externalRefs: [], hierarchyRevisions: [] }) as never);
+    mocked.updateTask.mockImplementation(async (id) => {
+      tasks[id - 1] = { ...tasks[id - 1]!, revision: 2, scheduledDate: "2026-10-21" };
+      throw Object.assign(new Error("stale"), { code: "stale_write_conflict" });
+    });
+    renderWithProviders(<Harness fromDetail={fromDetail} />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    if (fromDetail) {
+      await screen.findByRole("heading", { name: "Nested task 1", level: 1 });
+      await user.click(screen.getByRole("button", { name: /Geplant für.*19\.10\.2026/ }));
+    }
+    const genericLink = screen.getByRole("button", { name: "Generic linked task", hidden: true });
+    const reminders: HTMLElement[] = [];
+    const expanded: number[] = [];
+    for (const id of [1, 2]) {
+      const planner = await screen.findByRole("dialog", { name: "Planung" });
+      const reveal = (selector: string) => {
+        const target = planner.querySelector<HTMLElement>(selector)!;
+        if (target.querySelector(".task-planning-editor")?.hasAttribute("hidden")) openSection(target);
+      };
+      reveal('section:has([id^="planning-scheduled"])');
+      const date = within(planner).getByLabelText("Geplant für");
+      fireEvent.change(date, { target: { value: `${22 + id}.10.2026` } });
+      fireEvent.blur(date);
+      await user.click(within(planner).getByRole("button", { name: "Speichern" }));
+      await user.click(await screen.findByRole("button", { name: "Meine Änderung beibehalten" }));
+      reveal('section:has(.reminder-list)');
+      await user.click(within(planner).getByRole("button", { name: "Benutzerdefiniert …" }));
+      const reminder = within(planner).getByLabelText("Fällig");
+      await user.clear(reminder);
+      await user.type(reminder, id === 1 ? "unfinished alpha" : "unfinished beta");
+      reminders.push(reminder);
+      reveal('section:has([id^="planning-prerequisites"])');
+      expanded.push(planner.querySelectorAll(".task-planning-editor:not([hidden])").length);
+      if (id === 2 && fromDetail) fireEvent.click(genericLink);
+      else await user.click(within(planner).getByRole("button", { name: `Nested task ${id + 1}` }));
+      await screen.findByRole("heading", { name: `Nested task ${id + 1}`, level: 1 });
+      expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+      if (id === 1) await user.click(screen.getByRole("button", { name: /Geplant für.*19\.10\.2026/ }));
+    }
+    for (const id of [2, 1]) {
+      if (id === 2) await user.keyboard("{Escape}");
+      else await user.click(screen.getByRole("button", { name: "Schließen" }));
+      const planner = await screen.findByRole("dialog", { name: "Planung" });
+      expect(within(planner).getByText(`Nested task ${id}`, { selector: "p" })).toBeInTheDocument();
+      expect(within(planner).getByLabelText("Geplant für")).toHaveValue(`${22 + id}.10.2026`);
+      expect(within(planner).getByLabelText("Fällig")).toBe(reminders[id - 1]);
+      expect(reminders[id - 1]).toHaveValue(id === 1 ? "unfinished alpha" : "unfinished beta");
+      expect(planner.querySelectorAll(".task-planning-editor:not([hidden])")).toHaveLength(expanded[id - 1]!);
+      expect(within(planner).queryByRole("button", { name: "Meine Änderung beibehalten" })).not.toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      if (id === 2 || fromDetail) await screen.findByRole("heading", { name: `Nested task ${id}`, level: 1 });
+    }
+    expect(mocked.updateTask).toHaveBeenCalledTimes(2);
+  }, 20000);
+
 });

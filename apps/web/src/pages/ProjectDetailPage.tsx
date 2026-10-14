@@ -108,7 +108,7 @@ export function ProjectDetailPage() {
   // `?focus=planning` is a deep link into the canonical `task.plan` workflow
   // for the project's first unplanned task; this page only decides *which*
   // task and cleans up after itself, it never implements planning.
-  const planningWorkflow = taskWorkflow.detailInspection?.planningWorkflow ?? taskWorkflow.current;
+  const planningWorkflow = taskWorkflow.detailInspections[0]?.planningWorkflow ?? taskWorkflow.current;
   const planningWorkflowTaskId =
     planningWorkflow?.kind === "plan" ? planningWorkflow.taskId : null;
   const openTaskIdRef = useRef(planningWorkflowTaskId);
