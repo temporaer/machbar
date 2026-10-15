@@ -1,3 +1,5 @@
+import { observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
+import { observationPlanSchema } from "../schemas.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type {
@@ -1393,6 +1395,19 @@ export function createMachbarMcpServer({
       return result(compactProject(scopedProjectOrThrow(projectId)));
     },
   );
+
+  server.registerTool("machbar_intervention_observations", {
+    description: "Read your intervention's immutable observation plans and report history.",
+    inputSchema: { interventionId: z.number().int().positive() },
+  }, async ({ interventionId }) => result(observationHistory(db, interventionId, { ownerMemberId: memberId })));
+  server.registerTool("machbar_set_observation_plan", {
+    description: "Set an explicit evidence plan; later plans apply prospectively tomorrow and preserve historical meaning.",
+    inputSchema: { interventionId: z.number().int().positive(), expectedRevision: z.number().int().positive(), plan: observationPlanSchema },
+  }, async ({ interventionId, ...input }) => result(setObservationPlan(db, interventionId, input, { ownerMemberId: memberId })));
+  server.registerTool("machbar_record_observation", {
+    description: "Report a reference day after its window closes. Revision 0 creates; a current revision corrects. Missing reports are never failures.",
+    inputSchema: { interventionId: z.number().int().positive(), referenceDate: z.string(), answer: z.enum(["met", "not_met", "unknown", "no_opportunity"]), notes: z.string().optional(), expectedRevision: z.number().int().nonnegative() },
+  }, async ({ interventionId, ...input }) => result(recordObservation(db, interventionId, input, { ownerMemberId: memberId })));
 
   // --- Goals & interventions (manual authoring; no AI) ---------------------
   // Goals are always owner-scoped per-user; a credential sees only its own

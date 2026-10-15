@@ -1158,3 +1158,22 @@ export const interventionAssessments = sqliteTable(
     index("intervention_assessments_intervention_idx").on(t.interventionId),
   ],
 );
+
+/** Immutable prospective plan snapshots: old observations retain their meaning. */
+export const interventionObservationPlans = sqliteTable("intervention_observation_plans", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  interventionId: integer("intervention_id").notNull().references(() => interventions.id, { onDelete: "cascade" }),
+  effectiveFrom: text("effective_from").notNull(), timezone: text("timezone").notNull(),
+  commitment: text("commitment").notNull(),
+  plan: text("plan", { mode: "json" }).$type<import("@machbar/shared").ObservationPlan>().notNull(),
+  createdAt: text("created_at").notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+}, (t) => [uniqueIndex("observation_plan_effective_idx").on(t.interventionId, t.effectiveFrom)]);
+export const interventionObservations = sqliteTable("intervention_observations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  interventionId: integer("intervention_id").notNull().references(() => interventions.id, { onDelete: "cascade" }),
+  planVersionId: integer("plan_version_id").notNull().references(() => interventionObservationPlans.id),
+  revision: integer("revision").notNull().default(1), referenceDate: text("reference_date").notNull(),
+  submittedAt: text("submitted_at").notNull(), updatedAt: text("updated_at").notNull(),
+  answer: text("answer", { enum: ["met", "not_met", "unknown", "no_opportunity"] }).notNull(),
+  notes: text("notes").notNull().default(""),
+}, (t) => [uniqueIndex("observation_reference_idx").on(t.interventionId, t.referenceDate)]);

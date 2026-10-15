@@ -196,6 +196,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant reverse request bridge | `apps/api/src/integrations/homeAssistantRequests.ts` and `custom_components/machbar/worker.py`; exactly `intake_analyze`, `cleanup_round_analyze`, `goal_suggest`, `goal_assess`, and `calendar_create`, not an RPC mechanism |
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, `custom_components/machbar/goal_coach.py`, and `custom_components/machbar/calendar_bridge.py` |
 | Owner-only generated task privacy | `work_items.privacy_owner_member_id`, migration 0026 inheritance constraints, viewer-aware `Graph.load`, task/project HTTP pre-handler guards, activity snapshots and existing reflection/notification readers |
+| Intervention observation plans and records | `interventionObservation.ts` shared contracts, `domain/interventionObservations.ts` canonical history, plan and report mutations; existing goals routes and MCP tools |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
@@ -383,3 +384,12 @@ for deleted work; activity, digest, reflection and notification projections
 respect the same owner. Private work never earns shared contribution points.
 The existing `assertGoalAccessible`/`assertInterventionAccessible` guards own
 HTTP and MCP journal access; coach requests require a concrete matching owner.
+
+### Intervention observation history
+
+`domain/interventionObservations.ts` owns explicit immutable plan snapshots and
+revision-aware daily records; HTTP and MCP share these mutations. Contracts
+live in `packages/shared/src/interventionObservation.ts`; structural validation
+is in `schemas.ts`. Plans are prospective, reports retain reference dates and
+initial submission times, and absence is missing. This is separate from task
+completion and extends the existing journal, not a reporting task subsystem.

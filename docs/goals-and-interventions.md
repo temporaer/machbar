@@ -698,3 +698,38 @@ The spec is therefore complete and build-ready. Two items are explicitly
 - **Reflection-briefing integration.** §11 keeps the Goals page as the home for
   a goal's assessment arc in v1; feeding concluded goals' arcs into the
   historical reflection briefing as first-class evidence is a later option.
+
+## Observation plans and records (#213, Phase 2)
+
+Plans are explicit: existing task evidence, end-of-period reflection, or a daily
+self-report. No plan or historical answers are inferred for existing journals.
+A daily plan records its question, day/night reference, same-day closed-window
+or next-day availability time, timezone snapshot, opportunity applicability,
+and optional successful-days target. Night questions always refer to the prior
+night. Same-day availability is the declared window closure, not a sensor rule.
+
+Immutable plan versions snapshot commitment, wording, timing and targets. The
+initial plan starts today (or a future intervention start); replacements start
+tomorrow. A second replacement for the same effective day conflicts instead of
+rewriting history. A plan remains active past the checkpoint while its behavior
+is active. Stopped interventions accept late reports for prior reference days.
+
+Reports are separate from tasks and unique per intervention/reference date.
+Revision zero creates; corrections require the current revision. Corrections
+preserve first submission time and plan attribution. `met`, `not_met`, explicit
+`unknown`, and applicable `no_opportunity` are distinct; no row means missing.
+Daily timing uses local calendar days and wall-clock times, including DST.
+
+Calendar-week targets mean Monday through Sunday. Seven-day targets require a
+stated anchor, defining consecutive non-overlapping seven-day windows. Success
+counts only explicit met days. No opportunity is inapplicable, explicit unknown
+is reported but inconclusive, and missing is unreported. Partial windows and
+plan-version boundaries must be shown as partial; they do not silently prorate
+a target. Unsupported prose remains qualitative. Phase 5 assembles these facts
+and coverage into the shared review evidence, rather than adding a scorer here.
+
+`GET/PUT /api/interventions/:id/observations` and
+`PUT /api/interventions/:id/observation-plan` share canonical revision-aware
+mutations with the three corresponding MCP tools. All require the parent goal's
+owner. A negative answer successfully records a report and never creates debt.
+Migration 0027 only adds empty tables; original goals and assessments survive.

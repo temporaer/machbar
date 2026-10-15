@@ -1616,3 +1616,5 @@ export interface AssessmentProposal {
   /** Present when `status === "failed"`. */
   error: string | null;
 }
+
+export * from "./interventionObservation.js";

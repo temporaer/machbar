@@ -1842,3 +1842,12 @@ for deleted work; activity, digest, reflection and notification projections
 respect the same owner. Private work never earns shared contribution points.
 The existing `assertGoalAccessible`/`assertInterventionAccessible` guards own
 HTTP and MCP journal access; coach requests require a concrete matching owner.
+
+### Intervention observation history
+
+`domain/interventionObservations.ts` owns explicit immutable plan snapshots and
+revision-aware daily records; HTTP and MCP share these mutations. Contracts
+live in `packages/shared/src/interventionObservation.ts`; structural validation
+is in `schemas.ts`. Plans are prospective, reports retain reference dates and
+initial submission times, and absence is missing. This is separate from task
+completion and extends the existing journal, not a reporting task subsystem.

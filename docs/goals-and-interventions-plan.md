@@ -6,6 +6,9 @@ owner-only placement → observation records → Today collection → ordinary t
 backing → shared manual evidence/review → coach clarification → coach review.
 Each shipping phase receives its own commit and full verifier evidence.
 
+Phase 2 adds explicit versioned plans and revision-aware reports; existing
+manual data is preserved with no inferred observations.
+
 Phase 1 introduces durable internal task privacy independently of scope; see
 [the current access contract](goals-and-interventions.md#owner-only-access-and-task-placement-213-phase-1).
 
