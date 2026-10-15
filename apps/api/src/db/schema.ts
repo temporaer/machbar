@@ -236,7 +236,13 @@ export const homeAssistantRequests = sqliteTable(
     cleanupRoundId: text("cleanup_round_id")
       .references(() => cleanupRounds.id, { onDelete: "cascade" }),
     kind: text("kind", {
-      enum: ["intake_analyze", "calendar_create", "cleanup_round_analyze"],
+      enum: [
+        "intake_analyze",
+        "calendar_create",
+        "cleanup_round_analyze",
+        "goal_suggest",
+        "goal_assess",
+      ],
     }).notNull(),
     payloadJson: text("payload_json").notNull(),
     status: text("status", {

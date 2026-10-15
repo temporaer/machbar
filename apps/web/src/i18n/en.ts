@@ -1776,6 +1776,9 @@ When the person ends the reflection, provide a concise human-readable summary an
     intervention_revisit_invalid: "The revisit date must not be before the start date.",
     intervention_transition_invalid: "That intervention change is not possible.",
     intervention_assessment_invalid: "The assessment is incomplete or invalid.",
+    goal_owner_required: "A goal needs a responsible person.",
+    coach_request_not_found: "The coach proposal was not found.",
+    coach_proposal_not_ready: "The coach proposal is not ready yet.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `A person named “${name}” already exists.`,

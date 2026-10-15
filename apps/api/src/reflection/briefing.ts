@@ -8,13 +8,14 @@ import { localDate, householdTimezone } from "../domain/householdCalendar.js";
 import { getEffectiveOwners } from "../repo/effectiveRepo.js";
 import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 
-export interface ReflectionBriefingOptions { subjectMemberId: number; days: 30 | 90 | 180; scope: ReflectionBriefingScope; now?: Date }
+export interface ReflectionBriefingOptions { subjectMemberId: number; days: number; scope: ReflectionBriefingScope; now?: Date; window?: { startDate: string; endDate: string } }
 type Scope = "household" | "work";
 type CurrentVisibility = { scope: Scope; owner: number | null };
 /** A work item needs a short runway before being described as an old commitment. */
 const INACTIVE_COMMITMENT_AGE_DAYS = 14;
 
 function shiftDate(date: string, days: number): string { const value = new Date(`${date}T00:00:00.000Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
+function daysBetweenInclusive(startDate: string, endDate: string): number { const start = new Date(`${startDate}T00:00:00.000Z`).getTime(); const end = new Date(`${endDate}T00:00:00.000Z`).getTime(); return Math.floor((end - start) / 86_400_000) + 1; }
 const validTimezone = householdTimezone;
 function factForTask(task: TaskRecord, graph: Graph, names: Map<number, string>): ReflectionWorkItemFact {
   return { id: task.id, type: "task", title: task.title, status: task.status, scope: task.scope, notes: task.notes, href: `#/tasks/${task.id}`,
@@ -138,7 +139,10 @@ function renderMarkdown(b: Omit<ReflectionBriefing, "markdown">): string {
 export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptions): ReflectionBriefing {
   const subject = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).where(eq(schema.members.id, options.subjectMemberId)).get();
   if (!subject) throw AppError.notFound("member_not_found", "The selected member does not exist.");
-  const timezone = validTimezone(db); const now = options.now ?? new Date(); const endDate = localDate(now, timezone); const startDate = shiftDate(endDate, -(options.days - 1));
+  const timezone = validTimezone(db); const now = options.now ?? new Date();
+  const endDate = options.window ? options.window.endDate : localDate(now, timezone);
+  const startDate = options.window ? options.window.startDate : shiftDate(endDate, -(options.days - 1));
+  const windowDays = options.window ? daysBetweenInclusive(startDate, endDate) : options.days;
   const graph = Graph.load(db, endDate, options.subjectMemberId, now.toISOString());
   const memberNames = new Map(db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all().map((m) => [m.id, m.name]));
   const inScope = (scope: Scope) => options.scope === "all" || options.scope === scope;
@@ -280,7 +284,7 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
     inactiveWork.push({ id: item.id, type, title: item.title, href: `#/${type === "project" ? "projects" : "tasks"}/${item.id}`, classification, status: item.status, lastOutcomeProgressAt, lastWorkEnablingProgressAt, lastActivityAt, scheduledDate: plannedDate, revisitAt, dueDate, waitingReason, evidenceLimitations: limitations });
   }
   const counts = { administrative: inWindow.filter((e) => adminKinds.has(e.kind) || (e.kind === "project_status_changed" && e.metadata.nextStatus !== "completed") || (e.kind === "task_status_changed" && e.metadata.nextStatus !== "done" && !e.metadata.recurrenceOccurrenceId) || e.metadata.changedFields?.some((f) => ["ownerMemberId", "reviewedAt", "tagIds", "contextIds", "title", "notes"].includes(f))).length, finiteOutcomes: finiteCompletions.length, milestones: inWindow.filter((e) => e.kind === "project_status_changed" && ["active", "completed"].includes(String(e.metadata.nextStatus))).length, recurringOccurrences: recurringWork.reduce((sum, x) => sum + x.completed + x.missed, 0), explicitPostponements: postponements.length, unresolvedActiveWork: inactiveWork.filter((x) => x.classification === "actionable_no_recorded_progress").length };
-  const base: Omit<ReflectionBriefing, "markdown"> = { generatedAt: now.toISOString(), subject, scope: options.scope, timezone, window: { days: options.days, startDate, endDate }, current: { activeProjects, executableNextActions, waitingItems, backlog, areaCommitments }, history: {
+  const base: Omit<ReflectionBriefing, "markdown"> = { generatedAt: now.toISOString(), subject, scope: options.scope, timezone, window: { days: windowDays, startDate, endDate }, current: { activeProjects, executableNextActions, waitingItems, backlog, areaCommitments }, history: {
     finiteCompletions, bulkCompletionGroups, recurringWork, inactiveWork, postponements,
     progress: { lastOutcomeProgressAt: [...outcomeDates.values()].sort().at(-1) ?? null, lastWorkEnablingProgressAt: [...enablingDates.values()].sort().at(-1) ?? null, lastActivityAt: [...activityDates.values()].sort().at(-1) ?? null, projectsWithRecordedChildOutcomes, checkedAcceptanceCriteria, verifiedUnblocking },
     activityCounts: counts, evidence: { incomplete: true, notes: ["Die Historie beschreibt dokumentierte Machbar-Ereignisse, nicht alle tatsächlich geleistete Arbeit.", "Berücksichtigt werden nur historische Einträge mit ausreichend geprüfter Sichtbarkeit; die verfügbare Historie kann dadurch unvollständig sein."] } } };
