@@ -17,6 +17,13 @@ import type {
   HomeAssistantIntegrationStatus,
   HomeAssistantPairingCode,
   ExternalWorkItemRef,
+  Goal,
+  GoalScope,
+  GoalWithInterventions,
+  Intervention,
+  InterventionAssessment,
+  InterventionType,
+  AssessmentBand,
   IntakeDraft,
   IntakeRecord,
   InheritanceMode,
@@ -481,6 +488,46 @@ export type AgendaResponse = Agenda & {
 };
 
 export type AgendaScope = "mine" | "all" | "work";
+
+export interface CreateGoalInput {
+  title: string;
+  notes?: string;
+  scope?: GoalScope;
+  ownerMemberId?: number | null;
+}
+
+export interface UpdateGoalInput {
+  title?: string;
+  notes?: string;
+  expectedRevision?: number;
+}
+
+export interface StartInterventionInput {
+  type: InterventionType;
+  commitment: string;
+  rationale?: string;
+  startDate: string;
+  revisitDate: string;
+}
+
+export interface AdjustInterventionInput {
+  type?: InterventionType;
+  commitment?: string;
+  rationale?: string;
+  startDate?: string;
+  revisitDate?: string;
+  expectedRevision?: number;
+}
+
+export interface ManualAssessmentInput {
+  band: AssessmentBand;
+  rationaleMd: string;
+  countedItemIds?: number[];
+  digestWindowStart: string;
+  digestWindowEnd: string;
+}
+
+export type { Goal, GoalWithInterventions, Intervention, InterventionAssessment };
 
 export type { ProjectAgendaEntry };
 
@@ -1040,4 +1087,47 @@ export const api = {
     }),
   removeExcludedTag: (taskId: number, tagId: number) =>
     request<Task>(`/tasks/${taskId}/excluded-tags/${tagId}`, { method: "DELETE" }),
+
+  // --- Goals & interventions (feature spec §9) -----------------------------
+  listGoals: () => request<GoalWithInterventions[]>("/goals"),
+  getGoal: (id: number) => request<GoalWithInterventions>(`/goals/${id}`),
+  createGoal: (input: CreateGoalInput) =>
+    request<GoalWithInterventions>("/goals", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateGoal: (id: number, input: UpdateGoalInput) =>
+    request<GoalWithInterventions>(`/goals/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  concludeGoal: (id: number, expectedRevision?: number) =>
+    request<GoalWithInterventions>(`/goals/${id}/conclude`, {
+      method: "POST",
+      body: JSON.stringify(
+        expectedRevision === undefined ? {} : { expectedRevision },
+      ),
+    }),
+  startIntervention: (goalId: number, input: StartInterventionInput) =>
+    request<Intervention>(`/goals/${goalId}/interventions`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  adjustIntervention: (id: number, input: AdjustInterventionInput) =>
+    request<Intervention>(`/interventions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  concludeIntervention: (id: number, expectedRevision?: number) =>
+    request<Intervention>(`/interventions/${id}/conclude`, {
+      method: "POST",
+      body: JSON.stringify(
+        expectedRevision === undefined ? {} : { expectedRevision },
+      ),
+    }),
+  assessIntervention: (id: number, input: ManualAssessmentInput) =>
+    request<InterventionAssessment>(`/interventions/${id}/assessments`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };

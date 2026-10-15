@@ -1,5 +1,6 @@
 import type {
   Agenda,
+  AgendaInterventionFocus,
   ContextAvailability,
   ProjectAgendaBucket,
   ProjectAgendaEntry,
@@ -58,6 +59,13 @@ export interface BuildAgendaOptions {
    */
   memberId?: number;
   scope?: "mine" | "all" | "work";
+  /**
+   * The Heute standing-focus intervention section (§6), computed by the caller
+   * from the goals journal. Kept as an injected option rather than derived here
+   * because interventions live outside the task graph; defaults to empty so the
+   * agenda never fails when the feature has no data.
+   */
+  interventions?: AgendaInterventionFocus;
   contextAvailability?: (
     task: TaskRecord,
     target: number | "household",
@@ -309,5 +317,6 @@ export function buildAgenda(
     revisit: revisit.map(pruneAttentionTask),
     completedToday,
     projects,
+    interventions: options.interventions ?? { running: [], review: [] },
   };
 }

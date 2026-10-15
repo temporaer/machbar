@@ -59,6 +59,7 @@ const emptyAgenda = {
   unscheduled: [],
   revisit: [],
   completedToday: [],
+  interventions: { running: [], review: [] },
 };
 
 function renderPage() {

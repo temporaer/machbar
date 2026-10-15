@@ -13,6 +13,7 @@ import {
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaRow } from "../components/ProjectAgendaRow";
+import { InterventionFocusStrip } from "../components/InterventionFocusStrip";
 import { PageHeader, type PageHint } from "../components/PageHeader";
 import { ContributionPulse } from "../components/ContributionPulse";
 import { ActivityDigest } from "../components/ActivityDigest";
@@ -216,6 +217,9 @@ export function TodayPage() {
         <ContributionPulse />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        {agenda ? (
+          <InterventionFocusStrip focus={agenda.interventions} />
+        ) : null}
         {agenda
           ? (() => {
               const total =

@@ -1,6 +1,8 @@
 import type {
   ApiErrorCode,
+  AssessmentBand,
   CleanupProposalKind,
+  InterventionType,
   ProjectStatus,
   StuckReason,
   TaskSize,
@@ -1779,6 +1781,64 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     action: string,
   ) =>
     `Das Projekt kann im Status „${currentStatus}“ nicht mit „${action}“ fortgesetzt werden.`,
+
+  // --- Goals & interventions (feature spec §6, §9) -------------------------
+  goalsTitle: "Ziele & Experimente",
+  goalsLinkHint: "Kleine Experimente, die ein Ziel voranbringen",
+  goalsExplanation:
+    "Ein Ziel beschreibt, was du erreichen willst. Ein Experiment ist eine kleine, konkrete Zusage mit Rückblickdatum, mit der du es ausprobierst.",
+  goalsActiveHeading: "Aktive Ziele",
+  goalsConcludedHeading: "Abgeschlossene Ziele",
+  goalsEmpty: "Noch keine Ziele. Leg eins an, um ein Experiment zu starten.",
+  goalActiveBadge: "Aktiv",
+  goalConcludedBadge: "Abgeschlossen",
+  newGoal: "Neues Ziel",
+  editGoal: "Ziel bearbeiten",
+  createGoal: "Ziel anlegen",
+  saveGoal: "Speichern",
+  concludeGoal: "Ziel abschließen",
+  concludeGoalConfirm: "Dieses Ziel wirklich abschließen?",
+  goalTitleLabel: "Titel",
+  goalNotesLabel: "Notizen",
+  goalScopeLabel: "Bereich",
+  goalScopeHousehold: "Zuhause",
+  goalScopeWork: "Arbeit",
+  currentIntervention: "Aktuelles Experiment",
+  noIntervention: "Noch kein Experiment",
+  startIntervention: "Experiment starten",
+  editIntervention: "Experiment anpassen",
+  saveIntervention: "Experiment speichern",
+  concludeIntervention: "Experiment beenden",
+  concludeInterventionConfirm:
+    "Dieses Experiment jetzt beenden? Danach kannst du einen Rückblick machen.",
+  interventionTypeLabel: "Art",
+  interventionCommitmentLabel: "Zusage",
+  interventionCommitmentHint: "Die eine konkrete Sache, die du tun wirst.",
+  interventionRationaleLabel: "Warum",
+  interventionStartDateLabel: "Start",
+  interventionRevisitDateLabel: "Rückblick am",
+  interventionRunningBadge: "Läuft",
+  interventionFinishedBadge: "Rückblick offen",
+  interventionReviewedBadge: "Rückblick erledigt",
+  interventionPeriodProgress: (day: number, length: number) =>
+    `Tag ${day} von ${length}`,
+  assessmentHistory: "Rückblicke",
+  noAssessments: "Noch kein Rückblick",
+  reviewIntervention: "Rückblick auf dein Experiment",
+  assessmentBandLabel: "Ergebnis",
+  assessmentRationaleLabel: "Was ist passiert?",
+  assessmentWindowStartLabel: "Zeitraum von",
+  assessmentWindowEndLabel: "Zeitraum bis",
+  assessmentCountedItemsLabel: "Gezählte Einträge",
+  assessmentCountedItemsHint:
+    "Optional: IDs der Einträge, die du für diesen Rückblick zählst, durch Komma getrennt.",
+  assessmentCountedItemsEmpty: "Keine gezählten Einträge",
+  saveAssessment: "Rückblick speichern",
+  assessedOn: (date: string) => `Rückblick am ${date}`,
+  todayInterventionFocusTitle: "Dein Experiment",
+  todayInterventionReviewTitle: "Rückblick fällig",
+  interventionRevisitInvalidHint:
+    "Das Rückblickdatum darf nicht vor dem Startdatum liegen.",
 } as const;
 
 const taskStatusLabels: Record<TaskStatus, string> = {
@@ -1810,6 +1870,22 @@ const taskSizeLabels: Record<TaskSize, string> = {
   XL: "XL",
 };
 
+const interventionTypeLabels: Record<InterventionType, string> = {
+  frequency_habit: "Häufigkeit / Gewohnheit",
+  obstacle_removal: "Hindernis beseitigen",
+  commitment_stake: "Selbstverpflichtung",
+  exploration_step: "Erkundungsschritt",
+  composition_ratio: "Verhältnis / Mischung",
+};
+
+const assessmentBandLabels: Record<AssessmentBand, string> = {
+  no_evidence: "Kein Beleg",
+  attempted_partial: "Teilweise versucht",
+  mostly_achieved: "Größtenteils erreicht",
+  achieved: "Erreicht",
+  exceeded: "Übertroffen",
+};
+
 export const de = {
   ...base,
   ...extra,
@@ -1817,4 +1893,6 @@ export const de = {
   stuckReasonLabels,
   projectStatusLabels,
   taskSizeLabels,
+  interventionTypeLabels,
+  assessmentBandLabels,
 } as const;

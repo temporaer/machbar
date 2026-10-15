@@ -64,6 +64,13 @@ export function MorePage() {
             </span>
             <span aria-hidden="true">›</span>
           </Link>
+          <Link to="/more/goals" className="list-link more-list-link">
+            <span>
+              <strong>{strings.goalsTitle}</strong>
+              <small className="list-link-description">{strings.goalsLinkHint}</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
           {homeAssistant?.intakeReady ? (
             <Link to="/more/cleanup-round" className="list-link more-list-link">
               <span>
