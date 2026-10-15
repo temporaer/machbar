@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import * as schema from "../db/schema.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -84,6 +86,15 @@ function projectWithIssues(graph: Graph, id: number) {
 }
 
 export function registerProjectRoutes(app: FastifyInstance, db: Db) {
+  app.addHook("preHandler", async (request) => {
+    const path = request.routeOptions.url ?? "";
+    if (!path.startsWith("/api/projects/:")) return;
+    const id = Number((request.params as { id?: string }).id);
+    if (!Number.isSafeInteger(id)) return;
+    const item = db.select({ privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId }).from(schema.workItems).where(eq(schema.workItems.id, id)).get();
+    if (item?.privacyOwnerMemberId != null) projectOrThrow(db, id, viewerMemberId(request));
+  });
+
   app.get("/api/projects", async (request) => {
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     return graph.listProjectsWithComputed();

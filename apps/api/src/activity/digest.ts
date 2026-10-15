@@ -32,6 +32,7 @@ interface WorkItemRow {
   status: string;
   archivedAt: string | null;
   scope: "household" | "work";
+  privacyOwnerMemberId: number | null;
   ownerMemberId: number | null;
   parentId: number | null;
   projectId: number | null;
@@ -1049,6 +1050,7 @@ function loadWorkItems(db: Db): { rows: Map<number, WorkItemRow>; projects: Map<
       status: schema.workItems.status,
       archivedAt: schema.workItems.archivedAt,
       scope: schema.workItems.scope,
+      privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId,
       ownerMemberId: schema.workItems.ownerMemberId,
       parentId: schema.workItems.parentId,
       taskKind: schema.workItems.taskKind,
@@ -1101,6 +1103,8 @@ function visibleToViewer(
   rows: Map<number, WorkItemRow>,
 ): boolean {
   const row = stableId(event) === null ? undefined : rows.get(stableId(event)!);
+  const privacyOwner = row?.privacyOwnerMemberId ?? event.metadata.after?.privacyOwnerMemberId ?? event.metadata.before?.privacyOwnerMemberId;
+  if (privacyOwner != null && privacyOwner !== viewerMemberId) return false;
   const scope = eventScope(event) ?? row?.scope ?? null;
   if (scope === null) return false;
   if (scope !== "work") return true;

@@ -195,6 +195,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | AI Klärungsrunde execution (sampling, prompt, validation, jobs) | `apps/api/src/cleanupRound/` (`sampler.ts`, `prompt.ts`, `validate.ts`, `jobs.ts`, and `actions.ts` for the narrow confirmed micro-flow actions that call the canonical domain functions and dismiss the card in one transaction), `apps/api/src/routes/cleanupRounds.ts`, `apps/web/src/pages/CleanupRoundPage.tsx`, the pure surface-to-action mapping in `apps/web/src/lib/cleanupRound.ts`, and `apps/web/src/components/CleanupRoundActionSheet.tsx` for explicit, user-confirmed micro-flows that call those action endpoints (never a generic mutation followed by a separate card dismissal); AI results never mutate work items by themselves, and only “Hinten anstellen” uses the review acknowledgement primitives |
 | Home Assistant reverse request bridge | `apps/api/src/integrations/homeAssistantRequests.ts` and `custom_components/machbar/worker.py`; exactly `intake_analyze`, `cleanup_round_analyze`, `goal_suggest`, `goal_assess`, and `calendar_create`, not an RPC mechanism |
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, `custom_components/machbar/goal_coach.py`, and `custom_components/machbar/calendar_bridge.py` |
+| Owner-only generated task privacy | `work_items.privacy_owner_member_id`, migration 0026 inheritance constraints, viewer-aware `Graph.load`, task/project HTTP pre-handler guards, activity snapshots and existing reflection/notification readers |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
@@ -370,3 +371,15 @@ the registry in the same change.
 Run `npm run architecture` before typecheck, tests, and build. The checker
 protects selected mechanical boundaries; the pull request template makes
 semantic reuse, deletion, endpoint need, and documentation decisions visible.
+
+### Intervention-generated task privacy
+
+`work_items.privacy_owner_member_id` is an internal durable owner-only boundary,
+independent of household/work placement. `domain/goals.ts` sets it through
+`createTaskInTransaction`; migration 0026 preserves it on children and moves.
+`Graph.load` filters it on viewer-aware reads. Task/project HTTP boundaries
+check visibility before direct-ID mutations. Activity snapshots retain privacy
+for deleted work; activity, digest, reflection and notification projections
+respect the same owner. Private work never earns shared contribution points.
+The existing `assertGoalAccessible`/`assertInterventionAccessible` guards own
+HTTP and MCP journal access; coach requests require a concrete matching owner.

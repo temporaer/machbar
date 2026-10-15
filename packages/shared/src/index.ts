@@ -336,6 +336,7 @@ export interface ActivityEventMetadata {
 
 /** Stable, privacy-safe state used to interpret activity after later edits. */
 export interface ActivityStateSnapshot {
+  privacyOwnerMemberId?: number | null;
   status?: TaskStatus | ProjectStatus;
   ownerMemberId?: number | null;
   effectiveOwnerId?: number | null;
@@ -469,6 +470,7 @@ export interface ReflectionWorkItemFact {
   title: string;
   notes?: string | null;
   status: string;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   href: string;
   owner: { id: number; name: string } | null;
@@ -732,6 +734,7 @@ export interface Project {
   discussionRequested: boolean;
   archivedAt: string | null;
   ownerMemberId: number | null;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -844,6 +847,7 @@ export interface Task {
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   contextInheritanceMode: InheritanceMode;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   createdByMemberId: number | null;
   dueDate: string | null;
@@ -1037,6 +1041,7 @@ export interface McpAgent {
   id: number;
   name: string;
   memberId: number;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   createdAt: string;
   lastUsedAt: string | null;

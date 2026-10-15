@@ -570,6 +570,9 @@ export function backIntervention(
       );
     }
     const goal = requireGoalRow(tx, current.goalId);
+    if (goal.ownerMemberId === null) {
+      throw AppError.badRequest("goal_owner_required", "An owner is required before creating private tasks.");
+    }
     // Start the check-in no earlier than today so the first occurrence is not
     // already overdue, but never before the intervention's own start date.
     const scheduledDate =
@@ -581,7 +584,8 @@ export function backIntervention(
       tx as unknown as Db,
       {
         title,
-        scope: "work",
+        scope: goal.area === "work" ? "work" : "household",
+        privacyOwnerMemberId: goal.ownerMemberId ?? undefined,
         ownerMemberId: goal.ownerMemberId,
         ownerInheritanceMode: "explicit",
         createdByMemberId: context?.actorMemberId ?? null,

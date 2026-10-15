@@ -1,9 +1,31 @@
 # Goals & Interventions — a lightweight AI coach
 
-> Status: design spec. Nothing here is implemented yet. This document
-> describes a proposed feature and grounds it in machbar's current
-> architecture with exact citations; it is deliberately a specification, not
-> an implementation plan, and contains no schema or migration code.
+> Status: the manual journal, Today focus, advisory coach and recurring backing
+> are implemented. The follow-up delivery is tracked in #213, with #212 as the
+> product source of truth. Its checkpoint, evidence and owner-only requirements
+> supersede older lifecycle and backing assumptions below.
+
+### Owner-only access and task placement (#213, Phase 1)
+
+Every public goal/intervention endpoint requires a resolved member and checks
+ownership before reads or writes, including coach requests and proposals. OIDC
+identity wins over the activity actor; actor selection is supported only in the
+existing authentication-disabled household deployment. Anonymous access cannot
+read private goals. MCP uses its credential's fixed member; Home Assistant is
+only the already authenticated request worker, not a goal-access credential.
+
+Generated ordinary tasks store an internal durable `privacyOwnerMemberId`,
+independent of `scope`: personal goals use household placement in the owner's
+Mine view, work goals use Work. Household overview omits private tasks. The
+privacy owner survives keep, movement, role conversion and deletion snapshots;
+children inherit it. It is not a new task type or a public task privacy editor.
+SQL inheritance/preservation constraints protect canonical task writers alike.
+Graph projections, HTTP direct-ID access, activity/digest/reflection and reminder
+recipients respect this boundary; private tasks never award shared points.
+Migration 0026 changes only proven backing tasks with known goal owners and
+their descendants, retaining task identities and recurrence history. Existing
+unowned journal data is preserved but requires deliberate owner repair before
+public access; it is never assigned to an arbitrary household member.
 
 ## 1. Motivation and horizon framing
 

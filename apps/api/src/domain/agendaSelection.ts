@@ -115,8 +115,9 @@ export function createAgendaSelection(
   // Household views ("mine"/"all") never show work items, even the
   // viewer's own; the "work" view shows only work items. Other members'
   // work items are already excluded at the Graph level.
-  const matchesScope = (item: { scope: TaskRecord["scope"] }) =>
-    scope === "work" ? item.scope === "work" : item.scope !== "work";
+  const matchesScope = (item: { scope: TaskRecord["scope"]; privacyOwnerMemberId?: number | null }) =>
+    (scope !== "all" || item.privacyOwnerMemberId == null) &&
+    (scope === "work" ? item.scope === "work" : item.scope !== "work");
   const isOperationalTask = (task: TaskRecord) =>
     isTaskInWorkingSystem(task, projectStatusById);
   const isAgendaTask = (task: TaskRecord) =>

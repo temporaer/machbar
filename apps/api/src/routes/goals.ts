@@ -16,6 +16,8 @@ import {
 } from "../schemas.js";
 import { householdToday } from "../domain/householdCalendar.js";
 import {
+  assertGoalAccessible,
+  assertInterventionAccessible,
   adjustIntervention,
   backIntervention,
   concludeGoal,
@@ -59,6 +61,21 @@ export function registerGoalRoutes(
   db: Db,
   signal: HomeAssistantRequestSignal = new HomeAssistantRequestSignal(),
 ): void {
+  app.addHook("preHandler", async (request) => {
+    const path = request.routeOptions.url ?? "";
+    if (!/^\/api\/(goals|interventions)(?:\/|$)/.test(path)) return;
+    const viewer = viewerMemberId(request);
+    if (viewer === undefined) {
+      throw AppError.unauthorized("authentication_required", "Choose a member before accessing private goals.");
+    }
+    const id = (request.params as { id?: string }).id;
+    if (id !== undefined) {
+      const access = { ownerMemberId: viewer };
+      if (path.startsWith("/api/goals/")) assertGoalAccessible(db, parseId(id, "goal"), access);
+      else assertInterventionAccessible(db, parseId(id, "intervention"), access);
+    }
+  });
+
   app.get("/api/goals", async (request) => {
     const viewer = viewerMemberId(request);
     return listGoals(db, viewer === undefined ? {} : { ownerMemberId: viewer }, householdToday(db));
@@ -71,6 +88,9 @@ export function registerGoalRoutes(
   app.post("/api/goals", async (request, reply) => {
     const body = parseOrThrow(createGoalSchema, request.body ?? {});
     const viewer = viewerMemberId(request);
+    if (body.ownerMemberId !== undefined && body.ownerMemberId !== viewer) {
+      throw AppError.badRequest("goal_owner_required", "Private goals must belong to the current member.");
+    }
     const goal = createGoal(
       db,
       {

@@ -1830,3 +1830,15 @@ outline by the member/scope selection so ownership cannot survive a logical
 selection change. Completion-triggered removal still retains the row in its
 owning section for the existing retention window. This is presentation
 ownership, not another eligibility rule or timer.
+
+### Intervention-generated task privacy
+
+`work_items.privacy_owner_member_id` is an internal durable owner-only boundary,
+independent of household/work placement. `domain/goals.ts` sets it through
+`createTaskInTransaction`; migration 0026 preserves it on children and moves.
+`Graph.load` filters it on viewer-aware reads. Task/project HTTP boundaries
+check visibility before direct-ID mutations. Activity snapshots retain privacy
+for deleted work; activity, digest, reflection and notification projections
+respect the same owner. Private work never earns shared contribution points.
+The existing `assertGoalAccessible`/`assertInterventionAccessible` guards own
+HTTP and MCP journal access; coach requests require a concrete matching owner.

@@ -28,6 +28,7 @@ export interface ActivityFilters {
 interface VisibilityRow {
   scope: "household" | "work";
   ownerMemberId: number | null;
+  privacyOwnerMemberId: number | null;
 }
 
 function loadVisibilityRows(
@@ -49,6 +50,7 @@ function loadVisibilityRows(
       id: schema.workItems.id,
       role: schema.workItems.role,
       scope: schema.workItems.scope,
+      privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId,
       ownerMemberId: schema.workItems.ownerMemberId,
     })
     .from(schema.workItems)
@@ -58,6 +60,7 @@ function loadVisibilityRows(
     currentRows.map((row) => [
       row.id,
       {
+        privacyOwnerMemberId: row.privacyOwnerMemberId,
         scope: row.scope as "household" | "work",
         ownerMemberId:
           row.role === "task"
@@ -84,6 +87,8 @@ function visibleToViewer(
     metadata.after?.ownerMemberId ??
     metadata.before?.ownerMemberId;
   const current = currentRows.get(metadata.affectedWorkItemId ?? row.entityId ?? -1);
+  const privacyOwner = current?.privacyOwnerMemberId ?? metadata.after?.privacyOwnerMemberId ?? metadata.before?.privacyOwnerMemberId;
+  if (privacyOwner != null && privacyOwner !== viewerMemberId) return false;
   if (scope === undefined && current !== undefined) {
     scope = current.scope;
     if (owner === undefined) {
@@ -140,6 +145,7 @@ function activityContext(
       role: schema.workItems.role,
       ownerMemberId: schema.workItems.ownerMemberId,
       scope: schema.workItems.scope,
+      privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId,
       dueDate: schema.workItems.dueDate,
       scheduledDate: schema.workItems.scheduledDate,
       revisitAt: schema.workItems.revisitAt,
@@ -174,6 +180,7 @@ function activityContext(
     scope: row.scope as "household" | "work",
     projectContextId,
     snapshot: {
+      privacyOwnerMemberId: row.privacyOwnerMemberId,
       ownerMemberId: row.ownerMemberId,
       effectiveOwnerId:
         row.role === "task"

@@ -1,5 +1,15 @@
 # Goals & Interventions — phased implementation plan
 
+The original phases below have shipped. Follow-up work is tracked by #213
+(product decisions: #212), sequentially on one branch and PR as requested:
+owner-only placement → observation records → Today collection → ordinary task
+backing → shared manual evidence/review → coach clarification → coach review.
+Each shipping phase receives its own commit and full verifier evidence.
+
+Phase 1 introduces durable internal task privacy independently of scope; see
+[the current access contract](goals-and-interventions.md#owner-only-access-and-task-placement-213-phase-1).
+
+
 This is the build plan for the feature specified in
 [`docs/goals-and-interventions.md`](./goals-and-interventions.md). Every phase
 is grounded in that spec and cites the same real files. Section references

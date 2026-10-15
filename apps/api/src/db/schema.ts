@@ -534,6 +534,8 @@ export const workItems = sqliteTable(
     ownerMemberId: integer("owner_member_id").references(() => members.id, {
       onDelete: "set null",
     }),
+    // Durable privacy, independent of household/work placement. Internal creation only.
+    privacyOwnerMemberId: integer("privacy_owner_member_id"),
     ownerInheritanceMode: text("owner_inheritance_mode")
       .notNull()
       .default("inherit"), // inherit | explicit | none

@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import * as schema from "../db/schema.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -108,6 +110,15 @@ function taskOrThrow(
 }
 
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {
+  app.addHook("preHandler", async (request) => {
+    const path = request.routeOptions.url ?? "";
+    if (!path.startsWith("/api/tasks/:")) return;
+    const id = Number((request.params as { id?: string }).id);
+    if (!Number.isSafeInteger(id)) return;
+    const item = db.select({ privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId }).from(schema.workItems).where(eq(schema.workItems.id, id)).get();
+    if (item?.privacyOwnerMemberId != null) taskOrThrow(db, id, viewerMemberId(request));
+  });
+
   app.get<{ Params: { id: string } }>("/api/tasks/:id", async (request) => {
     const id = parseId(request.params.id);
     return taskOrThrow(db, id, viewerMemberId(request));

@@ -23,6 +23,8 @@ export function enqueueNotification(
   intent: NotificationIntent,
 ): void {
   if (intent.recipientMemberId === intent.actorMemberId) return;
+  const item = db.select().from(schema.workItems).where(eq(schema.workItems.id, intent.entityId)).get();
+  if (item?.privacyOwnerMemberId != null && item.privacyOwnerMemberId !== intent.recipientMemberId) return;
   db.insert(schema.notificationEvents)
     .values(intent)
     .onConflictDoNothing({ target: schema.notificationEvents.sourceKey })
@@ -110,6 +112,7 @@ export function enqueueDueReminders(
     .select({
       id: schema.workItems.id,
       title: schema.workItems.title,
+      privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId,
       dueDate: schema.workItems.dueDate,
       taskKind: schema.workItems.taskKind,
     })
@@ -148,7 +151,7 @@ export function enqueueDueReminders(
   db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     for (const { reminder, task } of dueReminders) {
-      const ownerId = owners.get(task.id)?.ownerId ?? null;
+      const ownerId = task.privacyOwnerMemberId ?? owners.get(task.id)?.ownerId ?? null;
       const recipientIds = ownerId !== null ? [ownerId] : allMemberIds;
       const occurrenceKey = reminderOccurrenceKey(reminder, task);
       for (const recipientMemberId of recipientIds) {

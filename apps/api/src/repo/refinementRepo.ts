@@ -124,7 +124,7 @@ function loadFilteredOpenTasks(
 } {
   const effective = getEffectiveOwners(db);
   const effectiveTagIds = getEffectiveTagIds(db);
-  const graph = Graph.load(db);
+  const graph = Graph.load(db, undefined, undefined);
   const projectStatusById = new Map(
     [...graph.projectsById.values()].map((project) => [project.id, project.status]),
   );
@@ -242,7 +242,7 @@ export function getRefinementTasks(
   db: Db,
   filters?: RefinementFilters,
 ): RefinementTaskRow[] {
-  const graph = Graph.load(db);
+  const graph = Graph.load(db, undefined, undefined);
   const projectStatusById = new Map(
     [...graph.projectsById.values()].map((project) => [
       project.id,

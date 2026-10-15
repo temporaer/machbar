@@ -148,7 +148,7 @@ function interventionRowOrThrow(db: Db, interventionId: number): InterventionRow
 
 /** Owner-scopes the coach to the viewer, mirroring the Phase 1 goal guards. */
 function assertGoalOwner(goal: GoalRow, ownerMemberId: number | null): void {
-  if (ownerMemberId !== null && goal.ownerMemberId !== ownerMemberId) {
+  if (ownerMemberId === null || goal.ownerMemberId !== ownerMemberId) {
     throw AppError.notFound("goal_not_found", "The goal was not found.", { goalId: goal.id });
   }
 }
