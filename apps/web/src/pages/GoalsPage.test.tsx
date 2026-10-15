@@ -68,7 +68,7 @@ function makeGoal(
     id: 1,
     revision: 1,
     ownerMemberId: 1,
-    scope: "work",
+    area: "work",
     title: "Run a half marathon",
     notes: "",
     status: "active",

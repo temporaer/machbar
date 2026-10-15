@@ -16,7 +16,7 @@
 import type {
   AgendaIntervention,
   AgendaInterventionFocus,
-  GoalScope,
+  GoalArea,
   GoalWithInterventions,
   InterventionView,
 } from "@machbar/shared";
@@ -26,9 +26,9 @@ import { listGoals } from "./goals.js";
 
 export interface AgendaInterventionFocusOptions {
   /**
-   * The resolved viewer. Running experiments are personal, so the section is
-   * owner-scoped to this member for the "mine"/"work" views. Omitted for the
-   * household-wide "all" view, which shows every owner's household goals.
+   * The resolved viewer. Goals are always owner-scoped per-user, so the section
+   * is only ever the viewer's own goals. Omitted for the household-wide "all"
+   * overview, which surfaces no goals at all (goals are never shared).
    */
   memberId?: number;
   scope: "mine" | "all" | "work";
@@ -57,7 +57,7 @@ function toAgendaIntervention(
   return {
     goalId: goal.id,
     goalTitle: goal.title,
-    goalScope: goal.scope,
+    goalArea: goal.area,
     interventionId: intervention.id,
     revision: intervention.revision,
     type: intervention.type,
@@ -75,16 +75,18 @@ export function buildAgendaInterventionFocus(
   db: Db,
   options: AgendaInterventionFocusOptions,
 ): AgendaInterventionFocus {
-  const scope: GoalScope = options.scope === "work" ? "work" : "household";
-  // "all" is the household overview: every owner's household goals. "mine" and
-  // "work" are personal: only the viewer's own goals in that scope. When no
-  // viewer is known the section is empty rather than leaking other owners.
+  // Goals are always owner-scoped per-user and never shared. The household
+  // overview ("all") therefore surfaces no goals. The "work" view shows the
+  // viewer's work-area goals; the personal "mine" view shows the viewer's
+  // personal-area goals. When no viewer is known the section is empty rather
+  // than leaking another owner's goals.
   const filter =
-    options.scope === "all"
-      ? { scope: "household" as const }
-      : options.memberId === undefined
-        ? null
-        : { scope, ownerMemberId: options.memberId };
+    options.scope === "all" || options.memberId === undefined
+      ? null
+      : {
+          ownerMemberId: options.memberId,
+          area: options.scope === "work" ? ("work" as GoalArea) : ("personal" as GoalArea),
+        };
   if (filter === null) {
     return { running: [], review: [] };
   }

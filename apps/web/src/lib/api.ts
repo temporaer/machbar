@@ -18,7 +18,7 @@ import type {
   HomeAssistantPairingCode,
   ExternalWorkItemRef,
   Goal,
-  GoalScope,
+  GoalArea,
   GoalWithInterventions,
   Intervention,
   InterventionAssessment,
@@ -492,13 +492,14 @@ export type AgendaScope = "mine" | "all" | "work";
 export interface CreateGoalInput {
   title: string;
   notes?: string;
-  scope?: GoalScope;
+  area?: GoalArea;
   ownerMemberId?: number | null;
 }
 
 export interface UpdateGoalInput {
   title?: string;
   notes?: string;
+  area?: GoalArea;
   expectedRevision?: number;
 }
 

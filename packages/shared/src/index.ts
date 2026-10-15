@@ -1120,7 +1120,7 @@ export interface Agenda {
 export interface AgendaIntervention {
   goalId: number;
   goalTitle: string;
-  goalScope: GoalScope;
+  goalArea: GoalArea;
   interventionId: number;
   revision: number;
   type: InterventionType;
