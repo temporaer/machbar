@@ -16,6 +16,7 @@ import {
   normalizeIntakeTimestamp,
   normalizeNullableContractValue,
   resolveOwnerSuggestion,
+  interventionTypes,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import { buildAgenda } from "../domain/agenda.js";
@@ -39,6 +40,18 @@ import { cancelTask, completeTask } from "../domain/taskWorkflow.js";
 import { makeTaskAction } from "../domain/roleConversion.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
 import { isIsoCalendarDate } from "../domain/calendarDate.js";
+import { householdToday } from "../domain/householdCalendar.js";
+import {
+  adjustIntervention,
+  assertGoalAccessible,
+  assertInterventionAccessible,
+  concludeGoal,
+  concludeIntervention,
+  createGoal,
+  listGoals,
+  startIntervention,
+  updateGoal,
+} from "../domain/goals.js";
 import { getMemberOrThrow, listMembers } from "../domain/members.js";
 import {
   appendProjectNotes,
@@ -1370,6 +1383,143 @@ export function createMachbarMcpServer({
           break;
       }
       return result(compactProject(scopedProjectOrThrow(projectId)));
+    },
+  );
+
+  // --- Goals & interventions (manual authoring; no AI) ---------------------
+  const goalAccess = { ownerMemberId: memberId, scope: agentScope };
+  const goalId = z.number().int().positive();
+  const interventionId = z.number().int().positive();
+  const interventionTypeSchema = z.enum(interventionTypes);
+
+  server.registerTool(
+    "machbar_list_goals",
+    {
+      description:
+        "List this owner's goals in the current scope, each with its interventions and their derived running/finished/reviewed state and assessment history. Goals are a standing-focus journal, separate from tasks and projects; they never appear in Today/Week/Review.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () =>
+      result(listGoals(db, goalAccess, householdToday(db))),
+  );
+
+  server.registerTool(
+    "machbar_create_goal",
+    {
+      description:
+        "Create a goal (a durable intention), owned by the authenticated member in the credential's scope. Interventions are authored separately with machbar_start_intervention.",
+      inputSchema: {
+        title: z.string().min(1),
+        notes: z.string().optional(),
+      },
+    },
+    async ({ title, notes }) =>
+      result(
+        createGoal(
+          db,
+          { title, notes, scope: agentScope, ownerMemberId: memberId, createdByMemberId: memberId },
+          householdToday(db),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "machbar_update_goal",
+    {
+      description:
+        "Edit a goal's title and/or notes using its current revision. Lifecycle (concluding) is a separate command, not a metadata edit.",
+      inputSchema: {
+        goalId,
+        expectedRevision,
+        title: z.string().min(1).optional(),
+        notes: z.string().optional(),
+      },
+    },
+    async ({ goalId: id, expectedRevision: rev, title, notes }) => {
+      assertGoalAccessible(db, id, goalAccess);
+      return result(updateGoal(db, id, { title, notes, expectedRevision: rev }, householdToday(db)));
+    },
+  );
+
+  server.registerTool(
+    "machbar_conclude_goal",
+    {
+      description:
+        "Conclude a goal using its current revision (a dedicated lifecycle command, not a status edit). Its interventions keep their own history.",
+      inputSchema: { goalId, expectedRevision },
+    },
+    async ({ goalId: id, expectedRevision: rev }) => {
+      assertGoalAccessible(db, id, goalAccess);
+      return result(concludeGoal(db, id, rev, householdToday(db)));
+    },
+  );
+
+  server.registerTool(
+    "machbar_start_intervention",
+    {
+      description:
+        "Author a manual intervention under a goal: a time-boxed behavioral experiment with a one-line commitment and a revisit date. startDate and revisitDate are YYYY-MM-DD only; revisitDate must not precede startDate.",
+      inputSchema: {
+        goalId,
+        type: interventionTypeSchema,
+        commitment: z.string().min(1),
+        rationale: z.string().optional(),
+        startDate: z.string(),
+        revisitDate: z.string(),
+      },
+    },
+    async ({ goalId: id, type, commitment, rationale, startDate, revisitDate }) => {
+      assertGoalAccessible(db, id, goalAccess);
+      return result(
+        startIntervention(
+          db,
+          id,
+          { type, commitment, rationale, startDate, revisitDate, source: "manual" },
+          householdToday(db),
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "machbar_adjust_intervention",
+    {
+      description:
+        "Adjust an intervention (type, commitment, rationale, start or revisit date) using its current revision. Concluding is a separate command.",
+      inputSchema: {
+        interventionId,
+        expectedRevision,
+        type: interventionTypeSchema.optional(),
+        commitment: z.string().min(1).optional(),
+        rationale: z.string().optional(),
+        startDate: z.string().optional(),
+        revisitDate: z.string().optional(),
+      },
+    },
+    async ({ interventionId: id, expectedRevision: rev, type, commitment, rationale, startDate, revisitDate }) => {
+      assertInterventionAccessible(db, id, goalAccess);
+      return result(
+        adjustIntervention(
+          db,
+          id,
+          { type, commitment, rationale, startDate, revisitDate, expectedRevision: rev },
+          householdToday(db),
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "machbar_conclude_intervention",
+    {
+      description:
+        "Conclude an intervention early or at its revisit using its current revision (a dedicated lifecycle command). Its assessment history is preserved.",
+      inputSchema: { interventionId, expectedRevision },
+    },
+    async ({ interventionId: id, expectedRevision: rev }) => {
+      assertInterventionAccessible(db, id, goalAccess);
+      return result(concludeIntervention(db, id, rev, householdToday(db)));
     },
   );
 

@@ -19,6 +19,8 @@ import {
   taskSizes,
   taskStatuses,
   workItemScopes,
+  interventionTypes,
+  assessmentBands,
   isoCalendarDateSchema,
   isoDateTimeSchema,
   taskRemindersSchema,
@@ -725,3 +727,51 @@ export const moveProjectSchema = z.object({
   expectedHierarchyRevisions: z.array(z.object({ id: z.number().int().positive(), revision: z.number().int().positive() }).strict()),
   activationResolution: projectActivationResolutionSchema.optional(),
 }).strict();
+
+// --- Goals & interventions (docs/goals-and-interventions.md §9) -------------
+
+export const createGoalSchema = z.object({
+  title: z.string().min(1, "A goal needs a title."),
+  notes: z.string().optional(),
+  scope: z.enum(workItemScopes).optional(),
+  ownerMemberId: z.number().int().positive().nullable().optional(),
+});
+
+export const updateGoalSchema = z.object({
+  title: z.string().min(1).optional(),
+  notes: z.string().optional(),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const goalLifecycleSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const startInterventionSchema = z.object({
+  type: z.enum(interventionTypes),
+  commitment: z.string().min(1, "An intervention needs a commitment."),
+  rationale: z.string().optional(),
+  startDate: isoDate,
+  revisitDate: isoDate,
+});
+
+export const adjustInterventionSchema = z.object({
+  type: z.enum(interventionTypes).optional(),
+  commitment: z.string().min(1).optional(),
+  rationale: z.string().optional(),
+  startDate: isoDate.optional(),
+  revisitDate: isoDate.optional(),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const interventionLifecycleSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const manualAssessmentSchema = z.object({
+  band: z.enum(assessmentBands),
+  rationaleMd: z.string().min(1, "An assessment needs a rationale."),
+  countedItemIds: z.array(z.number().int().positive()).optional(),
+  digestWindowStart: isoDate,
+  digestWindowEnd: isoDate,
+});
