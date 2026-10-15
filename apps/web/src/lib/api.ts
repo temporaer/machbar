@@ -528,6 +528,16 @@ export interface ManualAssessmentInput {
   digestWindowEnd: string;
 }
 
+export interface BackInterventionInput {
+  title?: string;
+  scheduledDate?: string;
+  repeatAfterDays?: number;
+  allowedDeviationDays?: number;
+  expectedRevision?: number;
+}
+
+export type BackingCleanup = "keep" | "stop";
+
 export type { Goal, GoalWithInterventions, Intervention, InterventionAssessment };
 
 export type { ProjectAgendaEntry };
@@ -1119,12 +1129,22 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(input),
     }),
-  concludeIntervention: (id: number, expectedRevision?: number) =>
+  backIntervention: (id: number, input: BackInterventionInput) =>
+    request<Intervention>(`/interventions/${id}/backing`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  concludeIntervention: (
+    id: number,
+    expectedRevision?: number,
+    backingCleanup?: BackingCleanup,
+  ) =>
     request<Intervention>(`/interventions/${id}/conclude`, {
       method: "POST",
-      body: JSON.stringify(
-        expectedRevision === undefined ? {} : { expectedRevision },
-      ),
+      body: JSON.stringify({
+        ...(expectedRevision === undefined ? {} : { expectedRevision }),
+        ...(backingCleanup === undefined ? {} : { backingCleanup }),
+      }),
     }),
   assessIntervention: (id: number, input: ManualAssessmentInput) =>
     request<InterventionAssessment>(`/interventions/${id}/assessments`, {

@@ -277,6 +277,8 @@ export type ApiErrorCode =
   | "intervention_revisit_invalid"
   | "intervention_transition_invalid"
   | "intervention_assessment_invalid"
+  | "intervention_backing_unavailable"
+  | "intervention_already_backed"
   | "goal_owner_required"
   | "coach_request_not_found"
   | "coach_proposal_not_ready";
@@ -1136,6 +1138,22 @@ export interface AgendaIntervention {
   periodLength: number;
   derivedState: InterventionDerivedState;
   withinReviewWindow: boolean;
+  /**
+   * Phase 4 recurring-task backing (§8): when a `frequency_habit` intervention
+   * is backed by a canonical recurring check-in task, this carries that task's
+   * id and its crisp hit/miss tally over the period so far. The backing task is
+   * the real Heute presence — the soft strip is replaced by the completable
+   * check-in. `null` for unbacked interventions (every non-`frequency_habit`
+   * type is always `null`).
+   */
+  backing: AgendaInterventionBacking | null;
+}
+
+/** Crisp recurring hit/miss signal for a backed intervention (§8). */
+export interface AgendaInterventionBacking {
+  taskId: number;
+  hits: number;
+  misses: number;
 }
 
 /**

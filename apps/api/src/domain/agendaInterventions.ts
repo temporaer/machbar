@@ -15,12 +15,15 @@
  */
 import type {
   AgendaIntervention,
+  AgendaInterventionBacking,
   AgendaInterventionFocus,
   GoalArea,
   GoalWithInterventions,
   InterventionView,
 } from "@machbar/shared";
+import { and, inArray, lte } from "drizzle-orm";
 import type { Db } from "../db/client.js";
+import * as schema from "../db/schema.js";
 import { calendarDaysBetween } from "./calendarDate.js";
 import { listGoals } from "./goals.js";
 
@@ -52,6 +55,7 @@ function toAgendaIntervention(
   goal: GoalWithInterventions,
   intervention: InterventionView,
   today: string,
+  backing: AgendaInterventionBacking | null,
 ): AgendaIntervention {
   const { periodDay, periodLength } = periodProgress(intervention, today);
   return {
@@ -68,7 +72,49 @@ function toAgendaIntervention(
     periodLength,
     derivedState: intervention.derivedState,
     withinReviewWindow: intervention.withinReviewWindow,
+    backing,
   };
+}
+
+/**
+ * Reads the crisp hit/miss tally for each backed intervention's recurring
+ * check-in over its period so far (§8). The tally comes straight from the
+ * canonical `task_recurrence_occurrences` the normal recurring-task machinery
+ * records — this section only reads it, never writes task state.
+ */
+function backingTalliesByTask(
+  db: Db,
+  interventions: Array<{ backingTaskId: number | null; startDate: string }>,
+  today: string,
+): Map<number, AgendaInterventionBacking> {
+  const taskIds = interventions
+    .map((i) => i.backingTaskId)
+    .filter((id): id is number => id !== null);
+  const tallies = new Map<number, AgendaInterventionBacking>();
+  if (taskIds.length === 0) return tallies;
+  const rows = db
+    .select({
+      taskId: schema.taskRecurrenceOccurrences.taskId,
+      result: schema.taskRecurrenceOccurrences.result,
+    })
+    .from(schema.taskRecurrenceOccurrences)
+    .where(
+      and(
+        inArray(schema.taskRecurrenceOccurrences.taskId, taskIds),
+        lte(schema.taskRecurrenceOccurrences.completedOn, today),
+      ),
+    )
+    .all();
+  for (const taskId of taskIds) {
+    tallies.set(taskId, { taskId, hits: 0, misses: 0 });
+  }
+  for (const row of rows) {
+    const tally = tallies.get(row.taskId);
+    if (!tally) continue;
+    if (row.result === "hit") tally.hits += 1;
+    else tally.misses += 1;
+  }
+  return tallies;
 }
 
 export function buildAgendaInterventionFocus(
@@ -95,17 +141,32 @@ export function buildAgendaInterventionFocus(
     (goal) => goal.status === "active",
   );
 
+  const allInterventions = goals.flatMap((goal) => goal.interventions);
+  const backingTallies = backingTalliesByTask(db, allInterventions, options.today);
+
   const running: AgendaIntervention[] = [];
   const review: AgendaIntervention[] = [];
   for (const goal of goals) {
     for (const intervention of goal.interventions) {
+      const backing =
+        intervention.backingTaskId === null
+          ? null
+          : backingTallies.get(intervention.backingTaskId) ?? {
+              taskId: intervention.backingTaskId,
+              hits: 0,
+              misses: 0,
+            };
       if (intervention.derivedState === "running") {
-        running.push(toAgendaIntervention(goal, intervention, options.today));
+        running.push(
+          toAgendaIntervention(goal, intervention, options.today, backing),
+        );
       } else if (
         intervention.derivedState === "finished" &&
         intervention.withinReviewWindow
       ) {
-        review.push(toAgendaIntervention(goal, intervention, options.today));
+        review.push(
+          toAgendaIntervention(goal, intervention, options.today, backing),
+        );
       }
     }
   }

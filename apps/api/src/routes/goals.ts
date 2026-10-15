@@ -6,6 +6,7 @@ import {
   acceptAssessmentSchema,
   acceptSuggestionSchema,
   adjustInterventionSchema,
+  backInterventionSchema,
   createGoalSchema,
   goalLifecycleSchema,
   interventionLifecycleSchema,
@@ -16,6 +17,7 @@ import {
 import { householdToday } from "../domain/householdCalendar.js";
 import {
   adjustIntervention,
+  backIntervention,
   concludeGoal,
   concludeIntervention,
   createGoal,
@@ -111,6 +113,19 @@ export function registerGoalRoutes(
     return adjustIntervention(db, parseId(request.params.id, "intervention"), body, householdToday(db));
   });
 
+  app.post<{ Params: { id: string } }>("/api/interventions/:id/backing", async (request, reply) => {
+    const body = parseOrThrow(backInterventionSchema, request.body ?? {});
+    const intervention = backIntervention(
+      db,
+      parseId(request.params.id, "intervention"),
+      body,
+      householdToday(db),
+      { actorMemberId: request.activityActor?.id ?? null },
+    );
+    reply.status(201);
+    return intervention;
+  });
+
   app.post<{ Params: { id: string } }>("/api/interventions/:id/conclude", async (request) => {
     const body = parseOrThrow(interventionLifecycleSchema, request.body ?? {});
     return concludeIntervention(
@@ -118,6 +133,10 @@ export function registerGoalRoutes(
       parseId(request.params.id, "intervention"),
       body.expectedRevision,
       householdToday(db),
+      {
+        backingCleanup: body.backingCleanup,
+        context: { actorMemberId: request.activityActor?.id ?? null },
+      },
     );
   });
 

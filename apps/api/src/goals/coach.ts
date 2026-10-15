@@ -401,6 +401,7 @@ export function requestInterventionAssessment(
       },
       digest,
       aiContext: getHouseholdAiContext(db),
+      backingTaskId: intervention.backingTaskId,
     }),
     windowStart: intervention.startDate,
     windowEnd: intervention.revisitDate,

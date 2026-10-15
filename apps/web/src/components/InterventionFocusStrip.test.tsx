@@ -21,6 +21,7 @@ function makeIntervention(
     periodLength: 14,
     derivedState: "running",
     withinReviewWindow: false,
+    backing: null,
     ...overrides,
   };
 }
@@ -50,6 +51,29 @@ describe("InterventionFocusStrip", () => {
     expect(within(running).getByText("Tag 6 von 14")).toBeInTheDocument();
     // It is a sibling section, never a task candidate.
     expect(running.closest(".task-row")).toBeNull();
+  });
+
+  it("shows no backing tally for an unbacked running experiment", () => {
+    renderWithProviders(
+      <InterventionFocusStrip focus={makeFocus({ running: [makeIntervention()] })} />,
+    );
+    expect(screen.queryByTestId("intervention-focus-backing")).toBeNull();
+  });
+
+  it("shows the hit/miss tally when the running experiment is backed", () => {
+    renderWithProviders(
+      <InterventionFocusStrip
+        focus={makeFocus({
+          running: [
+            makeIntervention({ backing: { taskId: 77, hits: 4, misses: 1 } }),
+          ],
+        })}
+      />,
+    );
+    const running = screen.getByTestId("intervention-focus-running");
+    expect(
+      within(running).getByTestId("intervention-focus-backing"),
+    ).toHaveTextContent("Treffer 4 · Verpasst 1");
   });
 
   it("shows a review call-to-action linking to the Goals page for a finished experiment", () => {

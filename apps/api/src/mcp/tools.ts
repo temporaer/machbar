@@ -46,6 +46,7 @@ import {
   adjustIntervention,
   assertGoalAccessible,
   assertInterventionAccessible,
+  backIntervention,
   concludeGoal,
   concludeIntervention,
   createGoal,
@@ -1525,15 +1526,59 @@ export function createMachbarMcpServer({
   );
 
   server.registerTool(
+    "machbar_back_intervention",
+    {
+      description:
+        "Back a frequency_habit intervention with a recurring check-in task (only this type can be backed). The check-in is created through the canonical task path and becomes the intervention's Heute presence, recording hit/miss. Cadence defaults to a daily check-in; the title defaults to the commitment.",
+      inputSchema: {
+        interventionId,
+        expectedRevision: expectedRevision.optional(),
+        title: z.string().min(1).optional(),
+        scheduledDate: z.string().optional(),
+        repeatAfterDays: z.number().int().positive().optional(),
+        allowedDeviationDays: z.number().int().min(0).optional(),
+      },
+    },
+    async ({
+      interventionId: id,
+      expectedRevision: rev,
+      title,
+      scheduledDate,
+      repeatAfterDays,
+      allowedDeviationDays,
+    }) => {
+      assertInterventionAccessible(db, id, goalAccess);
+      return result(
+        backIntervention(
+          db,
+          id,
+          { title, scheduledDate, repeatAfterDays, allowedDeviationDays, expectedRevision: rev },
+          householdToday(db),
+          { actorMemberId: memberId },
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
     "machbar_conclude_intervention",
     {
       description:
-        "Conclude an intervention early or at its revisit using its current revision (a dedicated lifecycle command). Its assessment history is preserved.",
-      inputSchema: { interventionId, expectedRevision },
+        "Conclude an intervention early or at its revisit using its current revision (a dedicated lifecycle command). Its assessment history is preserved. If it is backed by a recurring check-in, `backingCleanup` decides that task's fate — \"stop\" (default) ends it through the canonical task path, \"keep\" leaves it as ordinary recurring work and just clears the backing pointer.",
+      inputSchema: {
+        interventionId,
+        expectedRevision,
+        backingCleanup: z.enum(["keep", "stop"]).optional(),
+      },
     },
-    async ({ interventionId: id, expectedRevision: rev }) => {
+    async ({ interventionId: id, expectedRevision: rev, backingCleanup }) => {
       assertInterventionAccessible(db, id, goalAccess);
-      return result(concludeIntervention(db, id, rev, householdToday(db)));
+      return result(
+        concludeIntervention(db, id, rev, householdToday(db), {
+          backingCleanup,
+          context: { actorMemberId: memberId },
+        }),
+      );
     },
   );
 
