@@ -276,7 +276,10 @@ export type ApiErrorCode =
   | "intervention_commitment_required"
   | "intervention_revisit_invalid"
   | "intervention_transition_invalid"
-  | "intervention_assessment_invalid";
+  | "intervention_assessment_invalid"
+  | "goal_owner_required"
+  | "coach_request_not_found"
+  | "coach_proposal_not_ready";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
@@ -484,7 +487,7 @@ export interface ReflectionBriefing {
   subject: { id: number; name: string };
   scope: ReflectionBriefingScope;
   timezone: string;
-  window: { days: 30 | 90 | 180; startDate: string; endDate: string };
+  window: { days: number; startDate: string; endDate: string };
   current: {
     activeProjects: ReflectionWorkItemFact[];
     executableNextActions: ReflectionWorkItemFact[];
@@ -1524,4 +1527,69 @@ export interface InterventionView extends Intervention {
 /** A goal together with its interventions (each carrying derived state). */
 export interface GoalWithInterventions extends Goal {
   interventions: InterventionView[];
+}
+
+/**
+ * Lifecycle of an advisory coach AI pass (§7/§9). The proposal is produced by
+ * the Home Assistant AI Task asynchronously and is *never applied* until an
+ * explicit accept. `queued`/`analyzing` are transient; `ready` means a valid
+ * proposal is stored and awaiting accept; `failed` means the request errored or
+ * the model returned something unusable.
+ */
+export const coachRequestStatuses = [
+  "queued",
+  "analyzing",
+  "ready",
+  "failed",
+] as const;
+export type CoachRequestStatus = (typeof coachRequestStatuses)[number];
+
+/**
+ * One proposed intervention inside a `goal_suggest` proposal. Mirrors the
+ * manual authoring surface (type + commitment + rationale + the two-week
+ * default period) so accepting it is a single `startIntervention` write.
+ */
+export interface ProposedIntervention {
+  type: InterventionType;
+  /** The if-then implementation intention / single observable behaviour (§7.1). */
+  commitment: string;
+  rationale: string;
+  startDate: string;
+  revisitDate: string;
+}
+
+/**
+ * Stored-not-applied result of a `goal_suggest` pass (§7.1). Advisory only:
+ * accepting one entry authors a real coach-sourced intervention.
+ */
+export interface GoalSuggestionProposal {
+  requestId: string;
+  goalId: number;
+  status: CoachRequestStatus;
+  /** Present only when `status === "ready"`. */
+  interventions: ProposedIntervention[];
+  /** Present when `status === "failed"`. */
+  error: string | null;
+}
+
+/**
+ * Stored-not-applied result of an `intervention_assess` pass (§7.2). The band
+ * is always paired with a qualitative after-action review; there is never a
+ * numeric percentage. `countedItemIds` cites the digest items the review drew
+ * on so the user can sanity-check the evidence.
+ */
+export interface AssessmentProposal {
+  requestId: string;
+  interventionId: number;
+  status: CoachRequestStatus;
+  /** Present only when `status === "ready"`. */
+  band: AssessmentBand | null;
+  rationaleMd: string | null;
+  countedItemIds: number[];
+  windowStart: string | null;
+  windowEnd: string | null;
+  /** Optional forward-looking suggestion: continue / adjust / conclude (§7.2). */
+  nextMove: string | null;
+  /** Present when `status === "failed"`. */
+  error: string | null;
 }

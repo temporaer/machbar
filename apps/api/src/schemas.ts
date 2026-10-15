@@ -777,3 +777,22 @@ export const manualAssessmentSchema = z.object({
   digestWindowStart: isoDate,
   digestWindowEnd: isoDate,
 });
+
+// --- Coach AI passes (proposal-not-applied, §7/§9) --------------------------
+
+/** Accept a suggested intervention; all fields are optional user overrides. */
+export const acceptSuggestionSchema = z.object({
+  index: z.number().int().min(0).optional(),
+  type: z.enum(interventionTypes).optional(),
+  commitment: z.string().min(1).optional(),
+  rationale: z.string().optional(),
+  startDate: isoDate.optional(),
+  revisitDate: isoDate.optional(),
+});
+
+/** Accept an assessment proposal; all fields are optional user overrides. */
+export const acceptAssessmentSchema = z.object({
+  band: z.enum(assessmentBands).optional(),
+  rationaleMd: z.string().min(1).optional(),
+  countedItemIds: z.array(z.number().int().positive()).optional(),
+});

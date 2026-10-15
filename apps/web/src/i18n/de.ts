@@ -1767,6 +1767,9 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     intervention_revisit_invalid: "Das Rückblickdatum darf nicht vor dem Startdatum liegen.",
     intervention_transition_invalid: "Dieser Experimentwechsel ist nicht möglich.",
     intervention_assessment_invalid: "Die Einschätzung ist unvollständig oder ungültig.",
+    goal_owner_required: "Ein Ziel braucht eine zuständige Person.",
+    coach_request_not_found: "Der Coach-Vorschlag wurde nicht gefunden.",
+    coach_proposal_not_ready: "Der Coach-Vorschlag ist noch nicht bereit.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `Eine Person mit dem Namen „${name}“ ist bereits vorhanden.`,

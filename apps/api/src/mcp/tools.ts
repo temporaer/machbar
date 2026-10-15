@@ -53,6 +53,12 @@ import {
   startIntervention,
   updateGoal,
 } from "../domain/goals.js";
+import {
+  getAssessmentProposal,
+  getGoalSuggestion,
+  requestGoalSuggestion,
+  requestInterventionAssessment,
+} from "../goals/coach.js";
 import { getMemberOrThrow, listMembers } from "../domain/members.js";
 import {
   appendProjectNotes,
@@ -1528,6 +1534,41 @@ export function createMachbarMcpServer({
     async ({ interventionId: id, expectedRevision: rev }) => {
       assertInterventionAccessible(db, id, goalAccess);
       return result(concludeIntervention(db, id, rev, householdToday(db)));
+    },
+  );
+
+  // --- Coach AI passes (advisory; proposal-not-applied, §7/§9) -------------
+  // These enqueue a Home Assistant AI Task and return the stored proposal's
+  // request id + status. Nothing mutates until an explicit accept through the
+  // HTTP accept endpoints. When no AI is configured they surface the same
+  // graceful-degradation guards as the Klärungsrunde; the manual authoring
+  // tools above keep working unchanged.
+
+  server.registerTool(
+    "machbar_suggest_intervention",
+    {
+      description:
+        "Ask the goal coach to propose one small two-week behavioral experiment for a goal. Advisory only: this stores a proposal and returns its requestId and status — nothing is applied until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise it reports home_assistant_not_connected / ai_task_not_configured and the manual machbar_start_intervention path still works.",
+      inputSchema: { goalId },
+    },
+    async ({ goalId: id }) => {
+      assertGoalAccessible(db, id, goalAccess);
+      const requestId = requestGoalSuggestion(db, id, memberId);
+      return result(getGoalSuggestion(db, id, requestId, memberId));
+    },
+  );
+
+  server.registerTool(
+    "machbar_assess_intervention",
+    {
+      description:
+        "Ask the goal coach to review a finished intervention over its own period (start_date → revisit_date), producing a qualitative band and an after-action review citing the counted items — never a numeric percentage. Advisory only: this stores a proposal and returns its requestId and status; nothing is recorded until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise the manual self-assessment path still works.",
+      inputSchema: { interventionId },
+    },
+    async ({ interventionId: id }) => {
+      assertInterventionAccessible(db, id, goalAccess);
+      const requestId = requestInterventionAssessment(db, id, memberId);
+      return result(getAssessmentProposal(db, id, requestId, memberId));
     },
   );
 

@@ -3,6 +3,8 @@ import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { parseOrThrow } from "../validation.js";
 import {
+  acceptAssessmentSchema,
+  acceptSuggestionSchema,
   adjustInterventionSchema,
   createGoalSchema,
   goalLifecycleSchema,
@@ -23,6 +25,15 @@ import {
   startIntervention,
   updateGoal,
 } from "../domain/goals.js";
+import {
+  acceptAssessmentProposal,
+  acceptGoalSuggestion,
+  getAssessmentProposal,
+  getGoalSuggestion,
+  requestGoalSuggestion,
+  requestInterventionAssessment,
+} from "../goals/coach.js";
+import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
 
 function parseId(raw: string, resource: "goal" | "intervention"): number {
   const id = Number.parseInt(raw, 10);
@@ -41,7 +52,11 @@ function viewerMemberId(request: FastifyRequest): number | undefined {
   return request.authMember?.id ?? request.activityActor?.id ?? undefined;
 }
 
-export function registerGoalRoutes(app: FastifyInstance, db: Db): void {
+export function registerGoalRoutes(
+  app: FastifyInstance,
+  db: Db,
+  signal: HomeAssistantRequestSignal = new HomeAssistantRequestSignal(),
+): void {
   app.get("/api/goals", async (request) => {
     const viewer = viewerMemberId(request);
     return listGoals(db, viewer === undefined ? {} : { ownerMemberId: viewer }, householdToday(db));
@@ -112,4 +127,88 @@ export function registerGoalRoutes(app: FastifyInstance, db: Db): void {
     reply.status(201);
     return assessment;
   });
+
+  // --- Coach AI passes (advisory, proposal-not-applied; §7/§9) --------------
+
+  app.post<{ Params: { id: string } }>("/api/goals/:id/suggest", async (request, reply) => {
+    const requestId = requestGoalSuggestion(
+      db,
+      parseId(request.params.id, "goal"),
+      viewerMemberId(request) ?? null,
+      signal,
+    );
+    reply.status(202);
+    return getGoalSuggestion(db, parseId(request.params.id, "goal"), requestId, viewerMemberId(request) ?? null);
+  });
+
+  app.get<{ Params: { id: string; requestId: string } }>(
+    "/api/goals/:id/suggest/:requestId",
+    async (request) =>
+      getGoalSuggestion(
+        db,
+        parseId(request.params.id, "goal"),
+        request.params.requestId,
+        viewerMemberId(request) ?? null,
+      ),
+  );
+
+  app.post<{ Params: { id: string; requestId: string } }>(
+    "/api/goals/:id/suggest/:requestId/accept",
+    async (request, reply) => {
+      const body = parseOrThrow(acceptSuggestionSchema, request.body ?? {});
+      const intervention = acceptGoalSuggestion(
+        db,
+        parseId(request.params.id, "goal"),
+        request.params.requestId,
+        viewerMemberId(request) ?? null,
+        body,
+        householdToday(db),
+      );
+      reply.status(201);
+      return intervention;
+    },
+  );
+
+  app.post<{ Params: { id: string } }>("/api/interventions/:id/assess", async (request, reply) => {
+    const requestId = requestInterventionAssessment(
+      db,
+      parseId(request.params.id, "intervention"),
+      viewerMemberId(request) ?? null,
+      signal,
+    );
+    reply.status(202);
+    return getAssessmentProposal(
+      db,
+      parseId(request.params.id, "intervention"),
+      requestId,
+      viewerMemberId(request) ?? null,
+    );
+  });
+
+  app.get<{ Params: { id: string; requestId: string } }>(
+    "/api/interventions/:id/assess/:requestId",
+    async (request) =>
+      getAssessmentProposal(
+        db,
+        parseId(request.params.id, "intervention"),
+        request.params.requestId,
+        viewerMemberId(request) ?? null,
+      ),
+  );
+
+  app.post<{ Params: { id: string; requestId: string } }>(
+    "/api/interventions/:id/assess/:requestId/accept",
+    async (request, reply) => {
+      const body = parseOrThrow(acceptAssessmentSchema, request.body ?? {});
+      const assessment = acceptAssessmentProposal(
+        db,
+        parseId(request.params.id, "intervention"),
+        request.params.requestId,
+        viewerMemberId(request) ?? null,
+        body,
+      );
+      reply.status(201);
+      return assessment;
+    },
+  );
 }

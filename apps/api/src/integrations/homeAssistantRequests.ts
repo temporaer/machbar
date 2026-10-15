@@ -10,12 +10,15 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { onCalendarCreated, onIntakeAnalyzed, onIntakeRequestFailed } from "../intake/jobs.js";
 import { onCleanupRoundAnalyzed, onCleanupRoundRequestFailed } from "../cleanupRound/jobs.js";
+import { onGoalSuggestAnalyzed, onInterventionAssessAnalyzed } from "../goals/coach.js";
 
 export const MAX_ATTEMPTS = 3;
 const LEASE_MS = {
   intake_analyze: 180_000,
   calendar_create: 60_000,
   cleanup_round_analyze: 180_000,
+  goal_suggest: 180_000,
+  goal_assess: 180_000,
 } as const;
 
 export class HomeAssistantRequestSignal {
@@ -42,10 +45,15 @@ export class HomeAssistantRequestSignal {
   }
 }
 
-/** Each request is owned by exactly one intake job or Klärungsrunde. */
+/**
+ * Each request is owned by exactly one intake job or Klärungsrunde, or — for the
+ * goal coach passes — by a goal/intervention referenced from the stored payload
+ * (no FK column; the row's own status carries the proposal lifecycle).
+ */
 type RequestOwner =
   | { intakeJobId: string; kind: "intake_analyze" | "calendar_create" }
-  | { cleanupRoundId: string; kind: "cleanup_round_analyze" };
+  | { cleanupRoundId: string; kind: "cleanup_round_analyze" }
+  | { kind: "goal_suggest" | "goal_assess" };
 
 export function enqueueHomeAssistantRequest(
   tx: Db,
@@ -136,11 +144,18 @@ function intakeJobFor(db: Db, row: RequestRow) {
     : db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, row.intakeJobId)).get();
 }
 
+function isGoalCoachKind(kind: RequestRow["kind"]): boolean {
+  return kind === "goal_suggest" || kind === "goal_assess";
+}
+
 function failOwner(
   db: Db,
   row: RequestRow,
   error: { code: string; message: string; details?: Record<string, unknown> },
 ): void {
+  // Goal coach requests carry their lifecycle on the request row itself; a
+  // failed row IS the state, so there is no separate owner to notify.
+  if (isGoalCoachKind(row.kind)) return;
   if (row.kind === "cleanup_round_analyze") {
     const round = cleanupRoundFor(db, row);
     if (round) onCleanupRoundRequestFailed(db, round, error as never);
@@ -172,9 +187,10 @@ export function completeHomeAssistantRequest(
       throw AppError.conflict("home_assistant_request_lease_lost", "The Home Assistant request lease is no longer valid.");
     }
     const txDb = tx as unknown as Db;
+    const goalKind = isGoalCoachKind(row.kind);
     const round = row.kind === "cleanup_round_analyze" ? cleanupRoundFor(txDb, row) : undefined;
-    const job = row.kind === "cleanup_round_analyze" ? undefined : intakeJobFor(txDb, row);
-    if (!round && !job) throw AppError.notFound("home_assistant_request_not_found", "The request owner no longer exists.");
+    const job = goalKind || row.kind === "cleanup_round_analyze" ? undefined : intakeJobFor(txDb, row);
+    if (!goalKind && !round && !job) throw AppError.notFound("home_assistant_request_not_found", "The request owner no longer exists.");
     if (completion.outcome === "failed") {
       tx.update(schema.homeAssistantRequests).set({
         status: "failed",
@@ -192,7 +208,11 @@ export function completeHomeAssistantRequest(
       error: null,
       leaseExpiresAt: null,
     }).where(eq(schema.homeAssistantRequests.id, id)).run();
-    if (round) {
+    if (row.kind === "goal_suggest") {
+      onGoalSuggestAnalyzed(txDb, row, completion.result);
+    } else if (row.kind === "goal_assess") {
+      onInterventionAssessAnalyzed(txDb, row, completion.result);
+    } else if (round) {
       onCleanupRoundAnalyzed(txDb, round, completion.result);
     } else if (row.kind === "intake_analyze") {
       onIntakeAnalyzed(txDb, job!, completion.result as IntakePlan);

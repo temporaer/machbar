@@ -1238,12 +1238,58 @@ export type HomeAssistantRequestErrorCode =
 export type HomeAssistantLeasedRequest =
   | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "intake_analyze"; payload: { intakeId: string; taskName: string; instructions: string; text: string | null; attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }> } }
   | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "calendar_create"; payload: { intakeId: string; correlationId: string; title: string; description: string | null; location: string | null; allDay: boolean; startDate: string | null; endDate: string | null; startDateTime: string | null; endDateTime: string | null } }
-  | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "cleanup_round_analyze"; payload: CleanupRoundAnalyzePayload };
+  | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "cleanup_round_analyze"; payload: CleanupRoundAnalyzePayload }
+  | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "goal_suggest"; payload: GoalSuggestAnalyzePayload }
+  | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "goal_assess"; payload: GoalAssessAnalyzePayload };
+
+/**
+ * Payload for the advisory `goal_suggest` coach pass (§7.1). The worker needs
+ * only the rendered prompt; `goalId` is echoed for the worker's correlation but
+ * the owner is read back from our own stored request row on completion.
+ */
+export interface GoalSuggestAnalyzePayload {
+  goalId: number;
+  taskName: "Machbar Zielcoach";
+  instructions: string;
+}
+
+/** Payload for the advisory `intervention_assess` coach pass (§7.2). */
+export interface GoalAssessAnalyzePayload {
+  interventionId: number;
+  taskName: "Machbar Zielcoach";
+  instructions: string;
+  windowStart: string;
+  windowEnd: string;
+}
+
+/**
+ * Raw model output of a `goal_suggest` pass before validation. Enum-typed
+ * fields are received as plain strings and validated in the domain handler.
+ */
+export interface GoalSuggestAiResponse {
+  interventions: Array<{
+    type: string;
+    commitment: string;
+    rationale: string;
+    startDate: string;
+    revisitDate: string;
+  }>;
+}
+
+/** Raw model output of an `intervention_assess` pass before validation. */
+export interface GoalAssessAiResponse {
+  band: string;
+  rationaleMd: string;
+  countedItemIds: number[];
+  nextMove?: string | null;
+}
 
 export type HomeAssistantRequestCompletion =
   | { leaseToken: string; outcome: "succeeded"; result: IntakePlan }
   | { leaseToken: string; outcome: "succeeded"; result: HomeAssistantCalendarEventRef }
   | { leaseToken: string; outcome: "succeeded"; result: CleanupRoundAiResponse }
+  | { leaseToken: string; outcome: "succeeded"; result: GoalSuggestAiResponse }
+  | { leaseToken: string; outcome: "succeeded"; result: GoalAssessAiResponse }
   | {
       leaseToken: string;
       outcome: "failed";

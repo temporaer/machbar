@@ -51,7 +51,7 @@ export function registerRoutes(
   registerHomeAssistantRoutes(app, db, env, homeAssistantRequestSignal);
   registerIntakeRoutes(app, db, env, paperlessClient, homeAssistantRequestSignal);
   registerCleanupRoundRoutes(app, db, homeAssistantRequestSignal);
-  registerGoalRoutes(app, db);
+  registerGoalRoutes(app, db, homeAssistantRequestSignal);
   registerAiContextRoutes(app, db);
   registerMcpOAuthRoutes(app, env, mcpOAuthProvider);
   registerMcpRoutes(app, db);

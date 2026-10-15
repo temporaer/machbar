@@ -540,6 +540,21 @@ export function createManualAssessment(
   interventionId: number,
   input: ManualAssessmentInput,
 ): InterventionAssessment {
+  return insertAssessment(db, interventionId, input, "manual");
+}
+
+/**
+ * Shared assessment-authoring path for both the manual self-assessment (§5) and
+ * an accepted coach `intervention_assess` proposal (§7.2). The only difference
+ * is the `source` stamped on the row; validation and the single-transaction
+ * insert are identical, so there is exactly one canonical write path.
+ */
+export function insertAssessment(
+  db: Db,
+  interventionId: number,
+  input: ManualAssessmentInput,
+  source: InterventionSource,
+): InterventionAssessment {
   if (input.rationaleMd.trim().length === 0) {
     throw AppError.badRequest(
       "intervention_assessment_invalid",
@@ -573,7 +588,7 @@ export function createManualAssessment(
         digestWindowStart: input.digestWindowStart,
         digestWindowEnd: input.digestWindowEnd,
         countedItemIdsJson: JSON.stringify(countedItemIds),
-        source: "manual",
+        source,
       })
       .returning()
       .get();
