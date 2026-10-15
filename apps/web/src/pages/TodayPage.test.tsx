@@ -42,6 +42,7 @@ function makeEmptyAgenda(): Agenda {
     unscheduled: [],
     revisit: [],
     completedToday: [],
+    interventions: { running: [], review: [] },
   };
 }
 

@@ -29,6 +29,7 @@ import { SharePage } from "./pages/SharePage";
 import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { ReflectionStartPage } from "./pages/ReflectionStartPage";
+import { GoalsPage } from "./pages/GoalsPage";
 import { CleanupRoundPage } from "./pages/CleanupRoundPage";
 import { DebugPage } from "./pages/DebugPage";
 import { HomeAssistantPage } from "./pages/HomeAssistantPage";
@@ -90,6 +91,7 @@ function Shell() {
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/activity" element={<ActivityPage />} />
             <Route path="/more/reflection" element={<ReflectionStartPage />} />
+            <Route path="/more/goals" element={<GoalsPage />} />
             <Route path="/more/cleanup-round" element={<CleanupRoundPage />} />
             <Route path="/more/cleanup-round/:id" element={<CleanupRoundPage />} />
             <Route path="/more/ai-context" element={<AiContextPage />} />

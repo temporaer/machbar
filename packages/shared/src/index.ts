@@ -1101,6 +1101,48 @@ export interface Agenda {
   revisit: Task[];
   /** Top-level task rows completed on the selected calendar date. */
   completedToday: Task[];
+  /**
+   * Goals & interventions standing-focus section (feature spec §6). This is a
+   * sibling of the task buckets above: entries here are never task candidates,
+   * never consume a Heute slot, and never join the derived Review queue. The
+   * running strip and the finished-unreviewed review call-to-action are derived
+   * at read time from the Phase 1 intervention state in the household timezone.
+   */
+  interventions: AgendaInterventionFocus;
+}
+
+/**
+ * One intervention surfaced in the Heute standing-focus section, already
+ * carrying its read-time derived state and period progress so the client only
+ * renders. `periodDay`/`periodLength` express "Tag {periodDay} von
+ * {periodLength}" over the inclusive-exclusive start..revisit span.
+ */
+export interface AgendaIntervention {
+  goalId: number;
+  goalTitle: string;
+  goalScope: GoalScope;
+  interventionId: number;
+  revision: number;
+  type: InterventionType;
+  commitment: string;
+  startDate: string;
+  revisitDate: string;
+  /** 1-based day within the start..revisit period, clamped to [1, periodLength]. */
+  periodDay: number;
+  /** Length of the start..revisit period in days, at least 1. */
+  periodLength: number;
+  derivedState: InterventionDerivedState;
+  withinReviewWindow: boolean;
+}
+
+/**
+ * The two mutually exclusive Heute intervention surfaces (§6): `running`
+ * standing-focus strips and `review` finished-unreviewed call-to-actions that
+ * are still inside the 7-day window. Reviewed interventions appear in neither.
+ */
+export interface AgendaInterventionFocus {
+  running: AgendaIntervention[];
+  review: AgendaIntervention[];
 }
 
 export type WeekWorkItemRole = "task" | "story";

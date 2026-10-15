@@ -5147,3 +5147,40 @@ details[open] > .disclosure-summary::after {
   padding: 9px 10px;
   background: var(--color-surface);
 }
+
+/* Goals & interventions (feature spec §6/§10). */
+.intervention-focus .intervention-focus-card {
+  border-left: 3px solid var(--color-primary);
+}
+
+.intervention-focus-card > strong {
+  display: block;
+}
+
+.intervention-focus-card > p {
+  margin: 4px 0 0;
+}
+
+.intervention-focus-card > .btn {
+  margin-top: 10px;
+}
+
+.goal-card .goal-intervention {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.goal-assessment-arc {
+  margin-top: 8px;
+}
+
+.goal-assessment {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-info) 6%, var(--color-surface));
+}
+
+.goal-assessment-head {
+  justify-content: space-between;
+}

@@ -5,6 +5,7 @@ import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { Graph } from "../domain/graph.js";
 import { buildAgenda } from "../domain/agenda.js";
+import { buildAgendaInterventionFocus } from "../domain/agendaInterventions.js";
 import { buildWeekAgenda } from "../domain/weekAgenda.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
 import { createAgendaSelection } from "../domain/agendaSelection.js";
@@ -133,12 +134,22 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     }
     const now = new Date().toISOString();
     const graph = Graph.load(db, now, viewerMemberId);
+    const householdTimezone = getTimezone();
+    const agendaScope: "mine" | "all" | "work" =
+      scope === "work" ? "work" : memberId === undefined ? "all" : "mine";
+    const today =
+      date ?? calendarDateForInstant(now, householdTimezone) ?? now.slice(0, 10);
     return buildAgenda(graph, {
       now,
       memberId,
       today: date,
-      scope: scope === "work" ? "work" : memberId === undefined ? "all" : "mine",
-      householdTimezone: getTimezone(),
+      scope: agendaScope,
+      householdTimezone,
+      interventions: buildAgendaInterventionFocus(db, {
+        ...(memberId !== undefined ? { memberId } : {}),
+        scope: agendaScope,
+        today,
+      }),
       contextAvailability: (task, target) =>
         target === "household"
           ? contextAvailabilityForHousehold(db, task.effectiveContexts)

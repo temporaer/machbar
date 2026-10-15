@@ -1,6 +1,8 @@
 import type {
   ApiErrorCode,
+  AssessmentBand,
   CleanupProposalKind,
+  InterventionType,
   ProjectStatus,
   StuckReason,
   TaskSize,
@@ -35,6 +37,22 @@ const taskSizeLabels: Record<TaskSize, string> = {
   M: "M",
   L: "L",
   XL: "XL",
+};
+
+const interventionTypeLabels: Record<InterventionType, string> = {
+  frequency_habit: "Frequency / habit",
+  obstacle_removal: "Remove an obstacle",
+  commitment_stake: "Commitment stake",
+  exploration_step: "Exploration step",
+  composition_ratio: "Composition / ratio",
+};
+
+const assessmentBandLabels: Record<AssessmentBand, string> = {
+  no_evidence: "No evidence",
+  attempted_partial: "Attempted / partial",
+  mostly_achieved: "Mostly achieved",
+  achieved: "Achieved",
+  exceeded: "Exceeded",
 };
 
 const en = {
@@ -1773,10 +1791,69 @@ When the person ends the reflection, provide a concise human-readable summary an
   ) =>
     `The project cannot use “${action}” while its status is “${currentStatus}”.`,
 
+  // --- Goals & interventions (feature spec §6, §9) -------------------------
+  goalsTitle: "Goals & experiments",
+  goalsLinkHint: "Small experiments that move a goal forward",
+  goalsExplanation:
+    "A goal describes what you want to achieve. An experiment is a small, concrete commitment with a revisit date that you use to try it out.",
+  goalsActiveHeading: "Active goals",
+  goalsConcludedHeading: "Concluded goals",
+  goalsEmpty: "No goals yet. Add one to start an experiment.",
+  goalActiveBadge: "Active",
+  goalConcludedBadge: "Concluded",
+  newGoal: "New goal",
+  editGoal: "Edit goal",
+  createGoal: "Add goal",
+  saveGoal: "Save",
+  concludeGoal: "Conclude goal",
+  concludeGoalConfirm: "Really conclude this goal?",
+  goalTitleLabel: "Title",
+  goalNotesLabel: "Notes",
+  goalScopeLabel: "Area",
+  goalScopeHousehold: "Home",
+  goalScopeWork: "Work",
+  currentIntervention: "Current experiment",
+  noIntervention: "No experiment yet",
+  startIntervention: "Start experiment",
+  editIntervention: "Adjust experiment",
+  saveIntervention: "Save experiment",
+  concludeIntervention: "End experiment",
+  concludeInterventionConfirm:
+    "End this experiment now? Afterwards you can write a review.",
+  interventionTypeLabel: "Type",
+  interventionCommitmentLabel: "Commitment",
+  interventionCommitmentHint: "The one concrete thing you will do.",
+  interventionRationaleLabel: "Why",
+  interventionStartDateLabel: "Start",
+  interventionRevisitDateLabel: "Revisit on",
+  interventionRunningBadge: "Running",
+  interventionFinishedBadge: "Review due",
+  interventionReviewedBadge: "Reviewed",
+  interventionPeriodProgress: (day: number, length: number) =>
+    `Day ${day} of ${length}`,
+  assessmentHistory: "Reviews",
+  noAssessments: "No review yet",
+  reviewIntervention: "Review your experiment",
+  assessmentBandLabel: "Outcome",
+  assessmentRationaleLabel: "What happened?",
+  assessmentWindowStartLabel: "Period from",
+  assessmentWindowEndLabel: "Period to",
+  assessmentCountedItemsLabel: "Counted items",
+  assessmentCountedItemsHint:
+    "Optional: IDs of the items you count for this review, separated by commas.",
+  assessmentCountedItemsEmpty: "No counted items",
+  saveAssessment: "Save review",
+  assessedOn: (date: string) => `Reviewed on ${date}`,
+  todayInterventionFocusTitle: "Your experiment",
+  todayInterventionReviewTitle: "Review due",
+  interventionRevisitInvalidHint: "The revisit date cannot be before the start date.",
+
   taskStatusLabels,
   stuckReasonLabels,
   projectStatusLabels,
   taskSizeLabels,
+  interventionTypeLabels,
+  assessmentBandLabels,
 } as const satisfies TranslationCatalog;
 
 export { en };
