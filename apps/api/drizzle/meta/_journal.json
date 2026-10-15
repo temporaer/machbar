@@ -176,6 +176,13 @@
       "when": 1791925200000,
       "tag": "0024_task_availability_rule",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1792065879839,
+      "tag": "0025_goals_and_interventions",
+      "breakpoints": true
     }
   ]
 }

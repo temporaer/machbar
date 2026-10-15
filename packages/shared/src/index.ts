@@ -1353,3 +1353,98 @@ export interface SearchFilters {
    */
   kinds?: TaskKind[];
 }
+
+/**
+ * Goals & interventions contract (feature spec: docs/goals-and-interventions.md).
+ *
+ * Shared vocabulary for the goals/interventions journal so the API and web
+ * app agree on one set of enums and DTOs. These mirror the `goals`,
+ * `interventions`, and `intervention_assessments` tables exactly.
+ *
+ * Stored lifecycle is only `active | concluded`; the user-facing
+ * `running | finished | reviewed` progression is derived at read time from
+ * the revisit date and whether an assessment row exists (§4, §5), hence the
+ * separate `InterventionDerivedState`.
+ */
+export const goalStatuses = ["active", "concluded"] as const;
+export type GoalStatus = (typeof goalStatuses)[number];
+
+/** Goals reuse the work-item scope vocabulary; personal goals are `work`. */
+export type GoalScope = WorkItemScope;
+
+export const interventionTypes = [
+  "frequency_habit",
+  "obstacle_removal",
+  "commitment_stake",
+  "exploration_step",
+  "composition_ratio",
+] as const;
+export type InterventionType = (typeof interventionTypes)[number];
+
+export const interventionStatuses = ["active", "concluded"] as const;
+export type InterventionStatus = (typeof interventionStatuses)[number];
+
+export const interventionSources = ["coach", "manual"] as const;
+export type InterventionSource = (typeof interventionSources)[number];
+
+/** Derived at read time, never stored (§4, §5). */
+export const interventionDerivedStates = [
+  "running",
+  "finished",
+  "reviewed",
+] as const;
+export type InterventionDerivedState =
+  (typeof interventionDerivedStates)[number];
+
+export const assessmentBands = [
+  "no_evidence",
+  "attempted_partial",
+  "mostly_achieved",
+  "achieved",
+  "exceeded",
+] as const;
+export type AssessmentBand = (typeof assessmentBands)[number];
+
+export interface Goal {
+  id: number;
+  revision: number;
+  ownerMemberId: number | null;
+  scope: GoalScope;
+  title: string;
+  notes: string;
+  status: GoalStatus;
+  concludedAt: string | null;
+  createdByMemberId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Intervention {
+  id: number;
+  revision: number;
+  goalId: number;
+  type: InterventionType;
+  commitment: string;
+  rationale: string;
+  startDate: string;
+  revisitDate: string;
+  status: InterventionStatus;
+  concludedAt: string | null;
+  backingTaskId: number | null;
+  source: InterventionSource;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InterventionAssessment {
+  id: number;
+  interventionId: number;
+  assessedAt: string;
+  band: AssessmentBand;
+  rationaleMd: string;
+  digestWindowStart: string;
+  digestWindowEnd: string;
+  countedItemIds: number[];
+  source: InterventionSource;
+  createdAt: string;
+}
