@@ -2,7 +2,7 @@ CREATE TABLE `goals` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`revision` integer DEFAULT 1 NOT NULL,
 	`owner_member_id` integer,
-	`scope` text DEFAULT 'work' NOT NULL,
+	`area` text DEFAULT 'personal' NOT NULL,
 	`title` text NOT NULL,
 	`notes` text DEFAULT '' NOT NULL,
 	`status` text DEFAULT 'active' NOT NULL,

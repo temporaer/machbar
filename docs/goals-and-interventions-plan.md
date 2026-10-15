@@ -36,10 +36,11 @@ schema and contracts to build against. No behavior.
   `intervention_assessments` following the exact conventions the spec fixes in
   §4 — integer autoincrement PK,   `revision` default 1 (cf. `schema.ts:508`),
   ISO-8601 text timestamps defaulted via `strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
-  owner refs to `members` with `onDelete: "set null"`, `scope` enum
-  `household | work` default `work`, calendar fields as strict `YYYY-MM-DD`
+  owner refs to `members` with `onDelete: "set null"`, `area` enum
+  `personal | work` default `personal` (decoupled from ownership; goals are
+  always owner-scoped per-user), calendar fields as strict `YYYY-MM-DD`
   text (matching `dueDate`/`scheduledDate`, `schema.ts:549-551`).
-  - `goals`: `id`, `revision`, `owner_member_id`, `scope`, `title`, `notes`,
+  - `goals`: `id`, `revision`, `owner_member_id`, `area`, `title`, `notes`,
     `status` (`active | concluded`), `concluded_at`, `created_by_member_id`,
     `created_at`/`updated_at` (§4 `goals` table).
   - `interventions`: `id`, `revision`, `goal_id` (`onDelete: "cascade"`),
@@ -152,9 +153,14 @@ configured: a Goals page and the Heute strip + review CTA.
 - **Heute wiring**: add the running-intervention standing-focus section and the
   finished-unreviewed review CTA as a **sibling section** in the existing Heute
   projection (`agendaSelection.ts` / `compiledViewProjection.ts`), **not** a
-  task candidate (§6). The review CTA respects the **7-day demotion**: shown for
-  7 days after `revisit_date`, then only on the Goals page (§5, §6) — consuming
-  the eligibility flag computed in Phase 1.
+  task candidate (§6). Placement follows the goal's `area` (§6): a personal-area
+  goal surfaces only in the owner's personal Heute, a work-area goal only in
+  their work Heute, and neither in the shared household overview; the section is
+  always owner-scoped to the viewer. The review CTA respects the **7-day
+  demotion**: shown for 7 days after `revisit_date`, then only on the Goals page
+  (§5, §6) — consuming the eligibility flag computed in Phase 1.
+- A Goal form **area selector** (`personal` default / `work`) authored through
+  the same action pattern.
 - The review/assess sheet reuses the established "review the proposal, edit or
   exclude, then explicitly accept" interaction used by intake and the
   Klärungsrunde (`docs/workflow.md:19-72`, `336-373`). In this phase it drives

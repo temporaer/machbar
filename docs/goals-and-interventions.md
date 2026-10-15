@@ -75,11 +75,14 @@ that violates them.
 
 A durable, personal intention expressed as free text, e.g. *"learn piano"* or
 *"do more long-term / thinking work and less reactive short-horizon work."* A
-goal has a status of `active` or `concluded` and an owner. It is always
-**personal** (owner-scoped), mirroring how work-scoped items are owner-only
-(`schema.ts:536-545`), because goals are introspective. For v1 there are no
-household-shared goals; this is a firm decision, not an open question.
-(Household-visible goals are a conceivable far-future extension, out of scope
+goal has a status of `active` or `concluded` and an owner. It is **always
+owner-scoped per-user** — every goal has an `owner_member_id` set on creation
+and is never household-shared in v1; this is a firm decision, not an open
+question, because goals are introspective. Ownership is **decoupled** from the
+goal's `area` (`personal | work`, default `personal`): `area` does not change
+who can see the goal (only the owner does), it only decides *where the Heute
+focus strip surfaces it* (§6). (Household-visible goals are a conceivable
+far-future extension, out of scope
 here.)
 
 A goal is the **arc**: it accumulates many interventions over time, and the
@@ -139,7 +142,7 @@ has two jobs:
 Three new tables, consistent with `schema.ts` conventions: integer
 autoincrement PKs, ISO-8601 text timestamps defaulted via
 `strftime('%Y-%m-%dT%H:%M:%fZ','now')`, owner references to `members` with
-`onDelete: "set null"`, a `scope` enum, and a monotonic `revision` for
+`onDelete: "set null"`, text enums, and a monotonic `revision` for
 optimistic concurrency (the same pattern `work_items` uses at
 `schema.ts:506`). Calendar fields are strict `YYYY-MM-DD` text, matching
 `dueDate`/`scheduledDate` on work items (`schema.ts:549-551`).
@@ -152,8 +155,8 @@ Column sketches (illustrative, not DDL):
 | --- | --- | --- |
 | `id` | integer PK | |
 | `revision` | integer, default 1 | optimistic concurrency, cf. `work_items.revision` |
-| `owner_member_id` | integer → `members.id`, set null | personal by default |
-| `scope` | text enum `household \| work` default `work` | personal goals are `work`-like owner-only (firm v1 decision, §3) |
+| `owner_member_id` | integer → `members.id`, set null | always set on create; goals are owner-scoped per-user, never household-shared in v1 (§3) |
+| `area` | text enum `personal \| work` default `personal` | decoupled from ownership; only decides Heute placement (§6) — not visibility |
 | `title` | text | the free-text intention |
 | `notes` | text default `""` | optional elaboration |
 | `status` | text enum `active \| concluded` default `active` | |
@@ -289,7 +292,20 @@ Heute today is a derived projection combining planned work, deadlines, reached
 follow-ups, standalone work, and each project's next action
 (`docs/workflow.md:203-218`; assembled via `agendaSelection.ts` /
 `compiledViewProjection.ts`). Interventions add **one new, visually distinct
-section** to that projection — a standing-focus strip, not a task row:
+section** to that projection — a standing-focus strip, not a task row.
+
+**Heute placement by area.** Because `area` is decoupled from ownership
+(§3/§4), it alone decides which of the viewer's own Heute views shows the
+strip, and the strip is always owner-scoped to the viewer:
+
+- A **personal-area** goal's intervention appears only in the owner's
+  **personal (non-work) Heute** (the "mine" view).
+- A **work-area** goal's intervention appears only in the owner's **work
+  Heute** (the "work" view).
+- **Neither appears in the shared household overview** (the "all" view) — goals
+  are per-user and never surfaced to other members in v1.
+
+Within the matching view the section behaves as follows:
 
 - **Running intervention → its own slim Heute section.** Rendered separately
   from actionable task sections (`compiledViewProjection.pruneProjectForCompiledView`
@@ -553,9 +569,12 @@ New / changed MCP tools (registered alongside the existing ones in
   finished-unreviewed review action, so an MCP agent sees the same daily
   touchpoint the web Heute shows.
 
-As with all MCP access, scope is part of the credential
-(`docs/mcp.md`). Because goals are owner-scoped personal items (firm v1
-decision, §3), an MCP credential only ever sees its own owner's goals.
+As with all MCP access, the credential carries a context
+(`docs/mcp.md`). Because goals are always owner-scoped per-user (firm v1
+decision, §3), an MCP credential only ever sees its own owner's goals,
+regardless of each goal's `area`. A goal's `area` (`personal | work`) is a
+property of the goal that governs Heute placement (§6); it is independent of
+the credential context and never widens visibility beyond the owner.
 
 ## 10. Web surfaces
 
@@ -632,7 +651,10 @@ split.
 All design questions from the original draft are resolved; their resolutions
 live in the body:
 
-- **Personal-only goals** (firm v1) — §3, §4.
+- **Personal-only ownership + decoupled area** (firm v1) — goals are always
+  owner-scoped per-user (never household-shared), and a separate `area`
+  (`personal | work`, default `personal`) decides Heute placement without
+  affecting visibility — §3, §4, §6.
 - **Soft total-load nudge**, not a per-goal cap — §5, §7.1.
 - **Derived `finished`** (stored status is only `active | concluded`) — §4, §5.
 - **7-day Heute demotion** of finished-unreviewed interventions — §5, §6.

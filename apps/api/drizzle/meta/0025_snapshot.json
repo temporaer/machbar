@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7308c426-3999-4bb4-8cd6-03386879ca50",
+  "id": "efc60d28-cbb4-42d2-9fe0-bfcf4e04b1a4",
   "prevId": "b561fa30-781f-4b59-8ce9-7dabea2147fa",
   "tables": {
     "activity_events": {
@@ -924,13 +924,13 @@
           "notNull": false,
           "autoincrement": false
         },
-        "scope": {
-          "name": "scope",
+        "area": {
+          "name": "area",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'work'"
+          "default": "'personal'"
         },
         "title": {
           "name": "title",
