@@ -1,3 +1,7 @@
+import { ObservationPlanEditor } from "../components/ObservationPlanEditor";
+import { InterventionTasksEditor } from "../components/InterventionTasksSheet";
+import type { ProposedIntervention } from "@machbar/shared";
+import type { AcceptGoalSuggestionInput } from "../lib/api";
 import { InterventionTasksSheet } from "../components/InterventionTasksSheet";
 import { InterventionObservationPanel } from "../components/InterventionObservationPanel";
 import { useState } from "react";
@@ -73,22 +77,26 @@ function GoalCoachSuggestions({
 }: {
   goal: GoalWithInterventions;
   pending: boolean;
-  onRequest: (goalId: number) => Promise<GoalSuggestionProposal>;
-  onAccept: (goalId: number, requestId: string, index: number) => Promise<unknown>;
+  onRequest: (goalId: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) => Promise<GoalSuggestionProposal>;
+  onAccept: (goalId: number, requestId: string, index: number, overrides: AcceptGoalSuggestionInput) => Promise<unknown>;
 }) {
   const strings = useStrings();
   const [proposal, setProposal] = useState<GoalSuggestionProposal | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [edits, setEdits] = useState<Record<number, Partial<ProposedIntervention>>>({});
+  const patch = (index: number, value: Partial<ProposedIntervention>) => setEdits((current) => ({ ...current, [index]: { ...current[index], ...value } }));
   const [loading, setLoading] = useState(false);
   const [accepting, setAccepting] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const request = async () => {
+  const request = async (followup = false) => {
     if (loading) return;
     setLoading(true);
     setError(null);
     setProposal(null);
     try {
-      const next = await onRequest(goal.id);
+      const next = await onRequest(goal.id, followup && proposal ? { clarificationRequestId: proposal.requestId, clarificationAnswer: answer } : undefined);
+      setEdits({});
       setProposal(next);
       if (next.status === "failed") {
         setError(next.error ?? strings.goalCoachFailed);
@@ -113,7 +121,7 @@ function GoalCoachSuggestions({
     setAccepting(index);
     setError(null);
     try {
-      await onAccept(goal.id, proposal.requestId, index);
+      await onAccept(goal.id, proposal.requestId, index, { ...edits[index], observationPlan: edits[index]?.observationPlan ?? proposal.interventions[index]?.observationPlan ?? { method: "reflection" } });
       setProposal(null);
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -132,6 +140,10 @@ function GoalCoachSuggestions({
       >
         {loading ? strings.goalCoachWorking : strings.goalCoachSuggest}
       </button>
+      {proposal?.clarificationQuestion ? <div className="stack">
+        <label className="field">{proposal.clarificationQuestion}<textarea value={answer} maxLength={2000} onChange={(e) => setAnswer(e.target.value)} /></label>
+        <button type="button" className="btn" disabled={!answer.trim() || loading} onClick={() => void request(true)}>{strings.goalCoachAnswer}</button>
+      </div> : null}
       {proposal?.status === "ready" ? (
         <div className="stack">
           <p className="text-muted">{strings.goalCoachReviewHint}</p>
@@ -145,6 +157,14 @@ function GoalCoachSuggestions({
               <p className="text-muted">
                 {intervention.startDate} – {intervention.revisitDate}
               </p>
+              <details><summary>{strings.editIntervention}</summary>
+                <label className="field">{strings.interventionCommitmentLabel}<input value={edits[index]?.commitment ?? intervention.commitment} onChange={(e) => patch(index, { commitment: e.target.value })} /></label>
+                <label className="field">{strings.interventionRationaleLabel}<textarea value={edits[index]?.rationale ?? intervention.rationale} onChange={(e) => patch(index, { rationale: e.target.value })} /></label>
+                <label className="field">{strings.interventionStartDateLabel}<input type="date" value={edits[index]?.startDate ?? intervention.startDate} onChange={(e) => patch(index, { startDate: e.target.value })} /></label>
+                <label className="field">{strings.interventionRevisitDateLabel}<input type="date" value={edits[index]?.revisitDate ?? intervention.revisitDate} onChange={(e) => patch(index, { revisitDate: e.target.value })} /></label>
+              </details>
+              <ObservationPlanEditor value={edits[index]?.observationPlan ?? intervention.observationPlan ?? { method: "reflection" }} onChange={(observationPlan) => patch(index, { observationPlan })} disabled={accepting !== null} />
+              <InterventionTasksEditor tasks={edits[index]?.tasks ?? intervention.tasks ?? []} onChange={(tasks) => patch(index, { tasks })} disabled={accepting !== null} />
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
@@ -185,11 +205,12 @@ function GoalCard({
   onBackIntervention: (intervention: InterventionView) => void;
   onConcludeIntervention: (intervention: InterventionView) => void;
   onAssess: (intervention: InterventionView) => void;
-  onRequestSuggestion: (goalId: number) => Promise<GoalSuggestionProposal>;
+  onRequestSuggestion: (goalId: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) => Promise<GoalSuggestionProposal>;
   onAcceptSuggestion: (
     goalId: number,
     requestId: string,
     index: number,
+    overrides: AcceptGoalSuggestionInput,
   ) => Promise<unknown>;
   pending: boolean;
 }) {
@@ -453,8 +474,8 @@ export function GoalsPage() {
                   onConcludeIntervention={concludeIntervention}
                   onAssess={setAssessing}
                   onRequestSuggestion={actions.loadGoalSuggestion}
-                  onAcceptSuggestion={(goalId, requestId, index) =>
-                    actions.acceptGoalSuggestion(goalId, requestId, { index })
+                  onAcceptSuggestion={(goalId, requestId, index, overrides) =>
+                    actions.acceptGoalSuggestion(goalId, requestId, { ...overrides, index })
                   }
                 />
               ))
@@ -480,8 +501,8 @@ export function GoalsPage() {
                     onConcludeIntervention={concludeIntervention}
                     onAssess={setAssessing}
                     onRequestSuggestion={actions.loadGoalSuggestion}
-                    onAcceptSuggestion={(goalId, requestId, index) =>
-                      actions.acceptGoalSuggestion(goalId, requestId, { index })
+                    onAcceptSuggestion={(goalId, requestId, index, overrides) =>
+                      actions.acceptGoalSuggestion(goalId, requestId, { ...overrides, index })
                     }
                   />
                 ))}

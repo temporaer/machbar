@@ -1625,11 +1625,11 @@ export function createMachbarMcpServer({
     {
       description:
         "Ask the goal coach to propose one small two-week behavioral experiment for a goal. Advisory only: this stores a proposal and returns its requestId and status — nothing is applied until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise it reports home_assistant_not_connected / ai_task_not_configured and the manual machbar_start_intervention path still works.",
-      inputSchema: { goalId },
+      inputSchema: { goalId, clarificationRequestId: z.string().optional(), clarificationAnswer: z.string().max(2000).optional() },
     },
-    async ({ goalId: id }) => {
+    async ({ goalId: id, clarificationRequestId, clarificationAnswer }) => {
       assertGoalAccessible(db, id, goalAccess);
-      const requestId = requestGoalSuggestion(db, id, memberId);
+      const requestId = requestGoalSuggestion(db, id, memberId, undefined, { clarificationRequestId, clarificationAnswer });
       return result(getGoalSuggestion(db, id, requestId, memberId));
     },
   );

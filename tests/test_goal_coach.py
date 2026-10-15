@@ -13,6 +13,7 @@ from custom_components.machbar.goal_coach import (
     async_analyze_goal_assess,
     async_analyze_goal_suggest,
     normalize_goal_assess_response,
+    normalize_goal_suggest_response,
 )
 from custom_components.machbar.intake import AdapterError
 from custom_components.machbar.worker import RequestWorker
@@ -153,3 +154,9 @@ async def test_worker_dispatches_goal_coach_requests(hass):
         "assessment",
         {"leaseToken": "lease", "outcome": "succeeded", "result": result},
     )
+
+
+def test_suggestion_preserves_clarification_and_complete_evidence_plan():
+    assert normalize_goal_suggest_response({"clarificationQuestion": " What happens after brushing? ", "interventions": []}) == {"clarificationQuestion": "What happens after brushing?", "interventions": []}
+    proposal = {"type": "exploration_step", "commitment": "Book a lesson", "rationale": "Try piano", "startDate": "2026-10-15", "revisitDate": "2026-10-29", "observationPlan": {"method": "task_evidence"}, "tasks": [{"key": "trial", "title": "Book trial lesson"}]}
+    assert normalize_goal_suggest_response({"interventions": [proposal]})["interventions"][0] == proposal

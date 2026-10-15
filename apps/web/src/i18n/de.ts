@@ -1829,7 +1829,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   interventionReviewedBadge: "Rückblick erledigt",
   interventionPeriodProgress: (day: number, length: number) =>
     `Tag ${day} von ${length}`,
-  backIntervention: "Mit Check-in hinterlegen",
+  backIntervention: "Aufgaben dazu erstellen",
   interventionBackedBadge: "Hinterlegt",
   interventionBackingTally: (hits: number, misses: number) =>
     `Treffer ${hits} · Verpasst ${misses}`,
@@ -1870,6 +1870,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     "Der Coach konnte keinen verlässlichen Rückblick vorbereiten.",
   goalCoachAcceptAssessment: "Coach-Rückblick übernehmen",
   assessedOn: (date: string) => `Rückblick am ${date}`,
+  goalCoachAnswer: "Antwort für den Vorschlag verwenden",
   interventionEvidenceTitle: "Belege für den Rückblick",
   interventionMissing: "Unbeantwortet",
   interventionPartialWindow: "(unvollständiger Zeitraum)",

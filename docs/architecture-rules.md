@@ -421,3 +421,12 @@ reviews consume it. `goals.ts::insertAssessment` snapshots evidence and applies
 explicit revision-aware continue/adjust/stop transitions transactionally; a
 stable review key prevents duplicate acceptance. `InterventionEvidenceFacts`
 renders shared inspectable facts in the existing assessment workflow.
+
+### Bounded coach clarification
+
+`goals/coach.ts` retains one question/answer on the existing reverse request,
+validates complete version-2 proposals, and transactionally accepts through the
+canonical journal, observation and backing commands. The web reuses
+`ObservationPlanEditor` and `InterventionTasksEditor` for proposal review;
+`useGoalActions` still owns polling and acceptance. HA `goal_coach.py` preserves
+the same envelope; no generic conversation or automatic task creation exists.

@@ -1838,7 +1838,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   interventionReviewedBadge: "Reviewed",
   interventionPeriodProgress: (day: number, length: number) =>
     `Day ${day} of ${length}`,
-  backIntervention: "Back with a check-in",
+  backIntervention: "Create tasks for this",
   interventionBackedBadge: "Backed",
   interventionBackingTally: (hits: number, misses: number) =>
     `Hits ${hits} · Misses ${misses}`,
@@ -1879,6 +1879,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     "The coach could not prepare a reliable review.",
   goalCoachAcceptAssessment: "Accept coach review",
   assessedOn: (date: string) => `Reviewed on ${date}`,
+  goalCoachAnswer: "Use answer for the proposal",
   interventionEvidenceTitle: "Review evidence",
   interventionMissing: "Missing",
   interventionPartialWindow: "(partial window)",

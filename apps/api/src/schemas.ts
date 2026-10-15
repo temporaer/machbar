@@ -835,6 +835,8 @@ export const manualAssessmentSchema = z.object({
 
 /** Accept a suggested intervention; all fields are optional user overrides. */
 export const acceptSuggestionSchema = z.object({
+  observationPlan: observationPlanSchema.optional(),
+  tasks: z.array(interventionTaskPlanSchema).max(8).optional(),
   index: z.number().int().min(0).optional(),
   type: z.enum(interventionTypes).optional(),
   commitment: z.string().min(1).optional(),
@@ -849,3 +851,7 @@ export const acceptAssessmentSchema = z.object({
   rationaleMd: z.string().min(1).optional(),
   countedItemIds: z.array(z.number().int().positive()).optional(),
 });
+
+export const requestGoalSuggestionSchema = z.object({
+  clarificationRequestId: z.string().min(1).optional(), clarificationAnswer: z.string().trim().min(1).max(2000).optional(),
+}).strict().refine((v) => Boolean(v.clarificationRequestId) === Boolean(v.clarificationAnswer), { message: "A clarification answer needs its source question request." });

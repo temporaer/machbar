@@ -795,3 +795,29 @@ remaining work via canonical lifecycle commands. Existing assessments are retain
 An assessment alone no longer permanently marks an active behavior reviewed.
 The seven-day Today review demotion affects reminder prominence, not the active
 routine, its reporting, or availability for review on Goals.
+
+## Bounded coach clarification and complete proposals (#213, Phase 6)
+
+Goal capture remains title plus optional context. A suggestion request may return
+one tailored clarification or complete proposals. A follow-up references the
+owned prior request and carries its question and answer; its result must propose
+rather than ask again. No dialogue platform or automatic request chain exists.
+Coach guidance considers capability/opportunity/motivation, actual obstacles,
+cue timing, friction removal and executable avoidance alternatives. Rationale
+states a tentative mechanism. Universal effect-size/confidence rules and mandatory
+if–then phrasing have been removed.
+
+Current (version 2) suggestion requests require an explicit supported observation
+plan and optional concrete task drafts. API validation rejects unsupported fields,
+references and schedules. Users inspect/edit commitments, rationale, dates, plans
+and tasks before accepting. Acceptance atomically uses canonical intervention,
+observation and task commands; the request records its accepted intervention so
+retries do not duplicate it. The clarification context is retained in rationale.
+Old stored/in-flight requests may still be read, but acceptance of a proposal
+without evidence requires the user to explicitly choose its plan in the editor.
+New responses from an outdated adapter fail safely and preserve manual authoring.
+
+The Home Assistant adapter forwards clarification, plans and task drafts; release
+0.6.0 must be installed through HACS and Home Assistant restarted to load the new
+Python code. The reverse-request protocol remains version 3; suggestion payload
+contractVersion 2 distinguishes the new complete-proposal requirements.

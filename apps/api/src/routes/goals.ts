@@ -1,3 +1,4 @@
+import { requestGoalSuggestionSchema } from "../schemas.js";
 import { buildInterventionEvidence } from "../domain/interventionEvidence.js";
 import { recentInterventionReports, observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
 import { recordObservationSchema, setObservationPlanSchema } from "../schemas.js";
@@ -189,6 +190,7 @@ export function registerGoalRoutes(
       parseId(request.params.id, "goal"),
       viewerMemberId(request) ?? null,
       signal,
+      parseOrThrow(requestGoalSuggestionSchema, request.body ?? {}),
     );
     reply.status(202);
     return getGoalSuggestion(db, parseId(request.params.id, "goal"), requestId, viewerMemberId(request) ?? null);

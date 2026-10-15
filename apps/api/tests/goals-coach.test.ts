@@ -114,6 +114,7 @@ describe("Goals coach AI passes (Phase 3)", () => {
     await complete(token, leased, {
       interventions: [
         {
+          observationPlan: { method: "reflection" },
           type: "frequency_habit",
           commitment: "If it is a weekday evening, then I cook dinner at home on 4 of 5 days.",
           rationale: "Anchored to weekday evenings; a rate, not perfection.",
@@ -167,6 +168,7 @@ describe("Goals coach AI passes (Phase 3)", () => {
         url: `/api/goals/${goal.id}/interventions`,
         headers: actor,
         payload: {
+          observationPlan: { method: "reflection" },
           type: "frequency_habit",
           commitment: "If dinner is over, then I wipe the counters.",
           startDate: start,
@@ -266,6 +268,7 @@ describe("Goals coach AI passes (Phase 3)", () => {
         url: `/api/goals/${goal.id}/interventions`,
         headers: actor,
         payload: {
+          observationPlan: { method: "reflection" },
           type: "frequency_habit",
           commitment: "If it is morning, then I walk for 10 minutes.",
           startDate: "2025-01-01",
@@ -315,4 +318,41 @@ describe("Goals coach AI passes (Phase 3)", () => {
     expect(digest.finiteCompletions).toContainEqual(expect.objectContaining({ id: done.id, title: "Tidy up" }));
     expect(assessCandidateItemIds(digest)).toContain(done.id);
   });
+  it("asks one tailored question, carries the answer, and atomically accepts complete work once", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Sleep earlier" } })).json();
+    const token = await pair();
+    const first = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers })).json();
+    await complete(token, await lease(token), { clarificationQuestion: "What happens between brushing and bed?", interventions: [] });
+    const question = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${first.requestId}`, headers })).json();
+    expect(question).toMatchObject({ status: "ready", clarificationQuestion: "What happens between brushing and bed?", interventions: [] });
+    const next = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers, payload: { clarificationRequestId: first.requestId, clarificationAnswer: "I start browsing after brushing." } })).json();
+    const leased = await lease(token);
+    expect(leased.payload.instructions).toContain("I start browsing after brushing.");
+    await complete(token, leased, { interventions: [{ type: "obstacle_removal", commitment: "Leave the phone outside before brushing", rationale: "Tests removing browsing friction before the cue.", startDate: "2026-10-15", revisitDate: "2026-10-29", observationPlan: { method: "daily_report", question: "Last night: in bed after brushing?", reference: "night", reportDayOffset: 1, availableAfter: "07:00", opportunityBased: false }, tasks: [{ key: "charger", title: "Move charger outside the bedroom" }] }] });
+    expect(ctx.handle.db.select().from(schema.interventions).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    const accept = () => ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest/${next.requestId}/accept`, headers, payload: {} });
+    const accepted = await accept(); expect(accepted.statusCode, accepted.body).toBe(201);
+    expect((await accept()).json().id).toBe(accepted.json().id);
+    expect(ctx.handle.db.select().from(schema.interventions).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    expect(accepted.json().rationale).toContain("I start browsing after brushing.");
+  });
+
+  it("rejects a second clarification and unsupported AI task references without creating work", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Piano Tuesdays and Thursdays at 19:00" } })).json();
+    const token = await pair();
+    const first = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers })).json();
+    await complete(token, await lease(token), { interventions: [{ type: "frequency_habit", commitment: "Practise", rationale: "Useful", startDate: "2026-10-15", revisitDate: "2026-10-29", observationPlan: { method: "task_evidence" }, tasks: [{ key: "x", title: "Practise", taskId: 999 }] }] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${first.requestId}`, headers })).json().status).toBe("failed");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    const questionRequest = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers })).json();
+    await complete(token, await lease(token), { clarificationQuestion: "Which obstacle matters?", interventions: [] });
+    const followup = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers, payload: { clarificationRequestId: questionRequest.requestId, clarificationAnswer: "Finding time" } })).json();
+    await complete(token, await lease(token), { clarificationQuestion: "Another question?", interventions: [] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${followup.requestId}`, headers })).json().status).toBe("failed");
+  });
+
 });

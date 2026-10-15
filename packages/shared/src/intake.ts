@@ -1248,6 +1248,8 @@ export type HomeAssistantLeasedRequest =
  * the owner is read back from our own stored request row on completion.
  */
 export interface GoalSuggestAnalyzePayload {
+  contractVersion?: 2;
+  clarification?: { question: string; answer: string };
   goalId: number;
   taskName: "Machbar Zielcoach";
   instructions: string;
@@ -1267,7 +1269,10 @@ export interface GoalAssessAnalyzePayload {
  * fields are received as plain strings and validated in the domain handler.
  */
 export interface GoalSuggestAiResponse {
+  clarificationQuestion?: string | null;
   interventions: Array<{
+    observationPlan?: import("./interventionObservation.js").ObservationPlan;
+    tasks?: import("./interventionObservation.js").InterventionTaskPlan[];
     type: string;
     commitment: string;
     rationale: string;

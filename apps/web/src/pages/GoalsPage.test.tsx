@@ -142,7 +142,7 @@ describe("GoalsPage", () => {
     });
   });
 
-  it("offers backing only for a running, unbacked frequency habit", async () => {
+  it("reviews task drafts before creating ordinary backing work", async () => {
     const running = makeIntervention({
       status: "active",
       concludedAt: null,
@@ -154,16 +154,18 @@ describe("GoalsPage", () => {
     renderWithProviders(<GoalsPage />);
 
     const backButton = await screen.findByRole("button", {
-      name: "Mit Check-in hinterlegen",
+      name: "Aufgaben dazu erstellen",
     });
     await userEvent.click(backButton);
+    expect(mockedApi.backIntervention).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben erstellen" }));
     expect(mockedApi.backIntervention).toHaveBeenCalledWith(
       10,
       expect.objectContaining({ expectedRevision: 2 }),
     );
   });
 
-  it("hides backing for a non-frequency-habit intervention", async () => {
+  it("offers ordinary tasks for a non-frequency intervention", async () => {
     const running = makeIntervention({
       type: "obstacle_removal",
       status: "active",
@@ -177,8 +179,8 @@ describe("GoalsPage", () => {
 
     await screen.findByText("Run three times a week");
     expect(
-      screen.queryByRole("button", { name: "Mit Check-in hinterlegen" }),
-    ).toBeNull();
+      screen.queryByRole("button", { name: "Aufgaben dazu erstellen" }),
+    ).toBeInTheDocument();
   });
 
   it("prompts keep/stop when concluding a backed intervention and defaults to stop", async () => {
@@ -274,7 +276,7 @@ describe("GoalsPage", () => {
     expect(mockedApi.acceptGoalSuggestion).toHaveBeenCalledWith(
       1,
       "suggest-1",
-      { index: 0 },
+      { index: 0, observationPlan: { method: "reflection" } },
     );
   });
 
@@ -398,4 +400,16 @@ describe("GoalsPage", () => {
     );
     expect(mockedApi.assessIntervention).not.toHaveBeenCalled();
   });
+  it("answers one tailored coach question and carries it into the next proposal request", async () => {
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [] })]);
+    mockedApi.requestGoalSuggestion.mockResolvedValueOnce({ requestId: "question-1", goalId: 1, status: "ready", interventions: [], clarificationQuestion: "What happens after brushing?", error: null }).mockResolvedValueOnce({ requestId: "answer-1", goalId: 1, status: "ready", interventions: [{ type: "obstacle_removal", commitment: "Leave phone outside", rationale: "Reduce browsing friction", startDate: "2026-10-15", revisitDate: "2026-10-29", observationPlan: { method: "reflection" } }], error: null });
+    const user = userEvent.setup(); renderWithProviders(<GoalsPage />);
+    await user.click(await screen.findByRole("button", { name: "Vorschläge vom Coach" }));
+    await user.type(await screen.findByLabelText("What happens after brushing?"), "I start browsing");
+    await user.click(screen.getByRole("button", { name: "Antwort für den Vorschlag verwenden" }));
+    expect(await screen.findByText("Leave phone outside")).toBeInTheDocument();
+    expect(mockedApi.requestGoalSuggestion).toHaveBeenLastCalledWith(1, { clarificationRequestId: "question-1", clarificationAnswer: "I start browsing" });
+    expect(mockedApi.acceptGoalSuggestion).not.toHaveBeenCalled();
+  });
+
 });

@@ -1582,6 +1582,8 @@ export type CoachRequestStatus = (typeof coachRequestStatuses)[number];
  * default period) so accepting it is a single `startIntervention` write.
  */
 export interface ProposedIntervention {
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
+  tasks?: import("./interventionObservation.js").InterventionTaskPlan[];
   type: InterventionType;
   /** The if-then implementation intention / single observable behaviour (§7.1). */
   commitment: string;
@@ -1595,6 +1597,7 @@ export interface ProposedIntervention {
  * accepting one entry authors a real coach-sourced intervention.
  */
 export interface GoalSuggestionProposal {
+  clarificationQuestion?: string | null;
   requestId: string;
   goalId: number;
   status: CoachRequestStatus;

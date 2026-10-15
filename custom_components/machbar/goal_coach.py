@@ -25,6 +25,8 @@ def _suggest_intervention_schema() -> vol.Schema:
             _field("rationale", str): str,
             _field("startDate", str): str,
             _field("revisitDate", str): str,
+            vol.Optional("observationPlan"): dict,
+            vol.Optional("tasks"): [dict],
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -32,6 +34,7 @@ def _suggest_intervention_schema() -> vol.Schema:
 
 GOAL_SUGGEST_STRUCTURE = vol.Schema(
     {
+        vol.Optional("clarificationQuestion", default=None): _NULL,
         _field("interventions", [_suggest_intervention_schema()]): [
             _suggest_intervention_schema()
         ],
@@ -58,6 +61,11 @@ def normalize_goal_suggest_response(data: Any) -> dict[str, Any]:
     """Normalize the raw model envelope to the API's proposal DTO shape."""
     if not isinstance(data, dict) or not isinstance(data.get("interventions"), list):
         raise _invalid([], "an object with an interventions list", value=data)
+    question = data.get("clarificationQuestion")
+    if question is not None:
+        if not isinstance(question, str) or not question.strip() or data["interventions"]:
+            raise _invalid(["clarificationQuestion"], "one question without proposals", value=question)
+        return {"clarificationQuestion": question.strip(), "interventions": []}
     interventions: list[dict[str, Any]] = []
     for index, entry in enumerate(data["interventions"]):
         if not isinstance(entry, dict):
@@ -69,9 +77,16 @@ def normalize_goal_suggest_response(data: Any) -> dict[str, Any]:
                 "an intervention with string type, commitment, rationale, startDate, and revisitDate",
                 value=entry,
             )
-        interventions.append(
-            {field: _strip(entry[field]) for field in required}
-        )
+        normalized = {field: _strip(entry[field]) for field in required}
+        if "observationPlan" in entry:
+            if not isinstance(entry["observationPlan"], dict):
+                raise _invalid(["interventions", index, "observationPlan"], "an observation plan object", value=entry["observationPlan"])
+            normalized["observationPlan"] = entry["observationPlan"]
+        if "tasks" in entry:
+            if not isinstance(entry["tasks"], list) or any(not isinstance(task, dict) for task in entry["tasks"]):
+                raise _invalid(["interventions", index, "tasks"], "a list of task proposals", value=entry["tasks"])
+            normalized["tasks"] = entry["tasks"]
+        interventions.append(normalized)
     return {"interventions": interventions}
 
 

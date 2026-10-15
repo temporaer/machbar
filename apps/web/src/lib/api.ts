@@ -536,6 +536,8 @@ export interface ManualAssessmentInput {
 }
 
 export interface AcceptGoalSuggestionInput {
+  observationPlan?: import("@machbar/shared").ObservationPlan;
+  tasks?: import("@machbar/shared").InterventionTaskPlan[];
   index?: number;
   type?: InterventionType;
   commitment?: string;
@@ -1146,8 +1148,8 @@ export const api = {
         expectedRevision === undefined ? {} : { expectedRevision },
       ),
     }),
-  requestGoalSuggestion: (id: number) =>
-    request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST" }),
+  requestGoalSuggestion: (id: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) =>
+    request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getGoalSuggestion: (id: number, requestId: string) =>
     request<GoalSuggestionProposal>(`/goals/${id}/suggest/${requestId}`),
   acceptGoalSuggestion: (

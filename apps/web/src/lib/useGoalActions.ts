@@ -81,8 +81,8 @@ export function useGoalActions() {
     [run],
   );
 
-  const loadGoalSuggestion = useCallback(async (goalId: number) => {
-    const initial = await api.requestGoalSuggestion(goalId);
+  const loadGoalSuggestion = useCallback(async (goalId: number, input?: Parameters<typeof api.requestGoalSuggestion>[1]) => {
+    const initial = input ? await api.requestGoalSuggestion(goalId, input) : await api.requestGoalSuggestion(goalId);
     return pollCoachProposal(initial, () =>
       api.getGoalSuggestion(goalId, initial.requestId),
     );
