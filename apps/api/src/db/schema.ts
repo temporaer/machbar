@@ -1045,11 +1045,14 @@ export const goals = sqliteTable("goals", {
   ownerMemberId: integer("owner_member_id").references(() => members.id, {
     onDelete: "set null",
   }),
-  // household | work. Personal goals are owner-only "work"-like (firm v1
-  // decision, §3), hence the "work" default.
-  scope: text("scope", { enum: ["household", "work"] })
+  // personal | work. A goal is always owner-scoped per-user (never
+  // household-shared in v1, §3); `area` is decoupled from ownership and only
+  // decides where the Heute focus strip appears — personal-area goals in the
+  // owner's personal Heute, work-area goals in their work Heute, and neither in
+  // the shared household overview (§6).
+  area: text("area", { enum: ["personal", "work"] })
     .notNull()
-    .default("work"),
+    .default("personal"),
   title: text("title").notNull(),
   notes: text("notes").notNull().default(""),
   status: text("status", { enum: ["active", "concluded"] })
