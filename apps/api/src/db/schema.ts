@@ -1103,6 +1103,7 @@ export const interventions = sqliteTable(
     // End of the period = end of the digest window passed to the assess pass;
     // drives Today surfacing. Strict YYYY-MM-DD.
     revisitDate: text("revisit_date").notNull(),
+    reviewWindowStart: text("review_window_start"),
     status: text("status", { enum: ["active", "concluded"] })
       .notNull()
       .default("active"),
@@ -1127,6 +1128,11 @@ export const interventions = sqliteTable(
 export const interventionAssessments = sqliteTable(
   "intervention_assessments",
   {
+    reviewKey: text("review_key"),
+    decision: text("decision", { enum: ["continue", "adjust", "stop"] }),
+    benefit: text("benefit", { enum: ["helped", "not_helped", "uncertain"] }),
+    obstacle: text("obstacle").notNull().default(""),
+    evidence: text("evidence", { mode: "json" }).$type<import("@machbar/shared").InterventionEvidence | null>(),
     id: integer("id").primaryKey({ autoIncrement: true }),
     interventionId: integer("intervention_id")
       .notNull()

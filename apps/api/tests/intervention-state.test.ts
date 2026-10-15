@@ -32,12 +32,12 @@ describe("deriveInterventionState", () => {
     ).toEqual({ derivedState: "finished", withinReviewWindow: false });
   });
 
-  it("is reviewed once an assessment exists, regardless of dates", () => {
+  it("is reviewed once a concluded intervention has an assessment", () => {
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: true, today: "2026-03-09" }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: true, concluded: true, today: "2026-03-09" }),
     ).toEqual({ derivedState: "reviewed", withinReviewWindow: false });
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: true, today: "2026-04-01" }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: true, concluded: true, today: "2026-04-01" }),
     ).toEqual({ derivedState: "reviewed", withinReviewWindow: false });
   });
 

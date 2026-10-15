@@ -820,6 +820,10 @@ export const backInterventionSchema = z.object({
 });
 
 export const manualAssessmentSchema = z.object({
+  reviewKey: z.string().min(1).max(100).optional(), decision: z.enum(["continue", "adjust", "stop"]).optional(),
+  benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional(),
+  expectedRevision: z.number().int().positive().optional(), nextRevisitDate: isoDate.optional(),
+  backingCleanup: z.enum(["keep", "stop"]).optional(), observationPlan: observationPlanSchema.optional(), commitment: z.string().trim().min(1).optional(),
   band: z.enum(assessmentBands),
   rationaleMd: z.string().min(1, "An assessment needs a rationale."),
   countedItemIds: z.array(z.number().int().positive()).optional(),

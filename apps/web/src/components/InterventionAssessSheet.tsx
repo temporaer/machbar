@@ -1,3 +1,6 @@
+import { InterventionEvidencePanel } from "./InterventionEvidencePanel";
+import { ObservationPlanEditor } from "./ObservationPlanEditor";
+import type { ObservationPlan, InterventionReviewDecision, InterventionBenefit } from "@machbar/shared";
 import { useState } from "react";
 import {
   assessmentBands,
@@ -11,6 +14,9 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
 export interface AssessmentDraft {
+  reviewKey?: string; decision?: InterventionReviewDecision; benefit?: InterventionBenefit; obstacle?: string;
+  expectedRevision?: number; nextRevisitDate?: string; backingCleanup?: "keep" | "stop";
+  observationPlan?: ObservationPlan; commitment?: string;
   band: AssessmentBand;
   rationaleMd: string;
   countedItemIds: number[];
@@ -47,9 +53,17 @@ export function InterventionAssessSheet({
   onRequestCoach: () => Promise<AssessmentProposal>;
 }) {
   const strings = useStrings();
+  const [reviewKey] = useState(() => crypto.randomUUID());
+  const [decision, setDecision] = useState<InterventionReviewDecision>("continue");
+  const [benefit, setBenefit] = useState<InterventionBenefit>("uncertain");
+  const [obstacle, setObstacle] = useState("");
+  const [nextRevisitDate, setNextRevisitDate] = useState("");
+  const [backingCleanup, setBackingCleanup] = useState<"keep" | "stop">("keep");
+  const [observationPlan, setObservationPlan] = useState<ObservationPlan>(intervention.observationPlan ?? { method: "reflection" });
+  const [commitment, setCommitment] = useState(intervention.commitment);
   const [band, setBand] = useState<AssessmentBand>("mostly_achieved");
   const [rationale, setRationale] = useState("");
-  const [windowStart, setWindowStart] = useState(intervention.startDate);
+  const [windowStart, setWindowStart] = useState(intervention.reviewWindowStart ?? intervention.startDate);
   const [windowEnd, setWindowEnd] = useState(intervention.revisitDate);
   const [countedItems, setCountedItems] = useState("");
   const [startValid, setStartValid] = useState(true);
@@ -99,7 +113,7 @@ export function InterventionAssessSheet({
 
   const submit = async () => {
     if (saving) return;
-    const trimmedRationale = rationale.trim();
+    const trimmedRationale = rationale.trim() || strings.interventionReviewRecorded;
     if (!trimmedRationale) {
       setError(strings.assessmentRationaleLabel);
       return;
@@ -112,6 +126,9 @@ export function InterventionAssessSheet({
     setError(null);
     try {
       await onSave({
+        reviewKey, expectedRevision: intervention.revision, decision, benefit, obstacle, backingCleanup,
+        ...(nextRevisitDate ? { nextRevisitDate } : {}),
+        ...(decision === "adjust" ? { observationPlan, commitment } : {}),
         band,
         rationaleMd: trimmedRationale,
         countedItemIds: parseCountedItemIds(countedItems),
@@ -136,6 +153,12 @@ export function InterventionAssessSheet({
     >
       <div className="stack">
         <p className="text-muted">{intervention.commitment}</p>
+        <InterventionEvidencePanel interventionId={intervention.id} startDate={windowStart} endDate={windowEnd} />
+        <label className="field">{strings.interventionBenefitQuestion}<select value={benefit} onChange={(e) => setBenefit(e.target.value as InterventionBenefit)}>{(["helped", "not_helped", "uncertain"] as const).map((v) => <option key={v} value={v}>{strings.interventionBenefitLabels[v]}</option>)}</select></label>
+        <label className="field">{strings.interventionObstacleQuestion}<textarea value={obstacle} maxLength={2000} onChange={(e) => setObstacle(e.target.value)} /></label>
+        <label className="field">{strings.interventionNextMove}<select value={decision} onChange={(e) => setDecision(e.target.value as InterventionReviewDecision)}>{(["continue", "adjust", "stop"] as const).map((v) => <option key={v} value={v}>{strings.interventionDecisionLabels[v]}</option>)}</select></label>
+        {decision === "adjust" ? <><label className="field">{strings.interventionCommitmentLabel}<input value={commitment} onChange={(e) => setCommitment(e.target.value)} /></label><ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} /></> : null}
+        {decision !== "stop" ? <label className="field">{strings.interventionNextCheckpoint}<input type="date" value={nextRevisitDate} onChange={(e) => setNextRevisitDate(e.target.value)} /></label> : <label className="field">{strings.interventionRemainingTasks}<select value={backingCleanup} onChange={(e) => setBackingCleanup(e.target.value as "keep" | "stop")}><option value="keep">{strings.interventionKeepTasks}</option><option value="stop">{strings.interventionStopTasks}</option></select></label>}
         <div className="stack">
           <button
             type="button"

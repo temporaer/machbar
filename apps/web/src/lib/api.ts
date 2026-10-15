@@ -525,6 +525,9 @@ export interface AdjustInterventionInput {
 }
 
 export interface ManualAssessmentInput {
+  reviewKey?: string; decision?: "continue" | "adjust" | "stop"; benefit?: "helped" | "not_helped" | "uncertain";
+  obstacle?: string; expectedRevision?: number; nextRevisitDate?: string; backingCleanup?: "keep" | "stop";
+  observationPlan?: import("@machbar/shared").ObservationPlan; commitment?: string;
   band: AssessmentBand;
   rationaleMd: string;
   countedItemIds?: number[];
@@ -1121,6 +1124,7 @@ export const api = {
     request<Task>(`/tasks/${taskId}/excluded-tags/${tagId}`, { method: "DELETE" }),
 
   // --- Goals & interventions (feature spec §9) -----------------------------
+  interventionEvidence: (id: number, startDate?: string, endDate?: string) => request<import("@machbar/shared").InterventionEvidence>(`/interventions/${id}/evidence?${new URLSearchParams({ ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) })}`),
   observationHistory: (id: number) => request<import("@machbar/shared").InterventionObservationHistory>(`/interventions/${id}/observations`),
   recordObservation: (id: number, input: { referenceDate: string; answer: import("@machbar/shared").ObservationAnswer; notes?: string; expectedRevision: number }) => request<import("@machbar/shared").InterventionObservation>(`/interventions/${id}/observations`, { method: "PUT", body: JSON.stringify(input) }),
   listGoals: () => request<GoalWithInterventions[]>("/goals"),

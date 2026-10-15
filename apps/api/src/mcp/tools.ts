@@ -1,3 +1,5 @@
+import { buildInterventionEvidence } from "../domain/interventionEvidence.js";
+import { manualAssessmentSchema } from "../schemas.js";
 import { observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
 import { interventionTaskPlanSchema, observationPlanSchema } from "../schemas.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -52,6 +54,7 @@ import {
   concludeGoal,
   concludeIntervention,
   createGoal,
+  createManualAssessment,
   listGoals,
   startIntervention,
   updateGoal,
@@ -1396,6 +1399,17 @@ export function createMachbarMcpServer({
     },
   );
 
+  server.registerTool("machbar_intervention_evidence", {
+    description: "Read deterministic observation coverage, historical targets and task/activity evidence for your review checkpoint.",
+    inputSchema: { interventionId: z.number().int().positive() },
+  }, async ({ interventionId }) => result(buildInterventionEvidence(db, interventionId, { ownerMemberId: memberId })));
+  server.registerTool("machbar_review_intervention", {
+    description: "Explicitly record your review and choose continue, adjust or stop. Requires a stable review key and current revision for checkpoint transitions. Never creates duplicate tasks.",
+    inputSchema: { interventionId: z.number().int().positive(), ...manualAssessmentSchema.shape },
+  }, async ({ interventionId, ...input }) => {
+    assertInterventionAccessible(db, interventionId, { ownerMemberId: memberId });
+    return result(createManualAssessment(db, interventionId, input));
+  });
   server.registerTool("machbar_intervention_observations", {
     description: "Read your intervention's immutable observation plans and report history.",
     inputSchema: { interventionId: z.number().int().positive() },

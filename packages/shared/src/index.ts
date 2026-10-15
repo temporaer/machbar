@@ -1503,6 +1503,7 @@ export interface Goal {
 }
 
 export interface Intervention {
+  reviewWindowStart?: string | null;
   generatedTasks?: import("./interventionObservation.js").InterventionGeneratedTask[];
   observationPlan?: import("./interventionObservation.js").ObservationPlan;
   id: number;
@@ -1522,6 +1523,11 @@ export interface Intervention {
 }
 
 export interface InterventionAssessment {
+  reviewKey?: string | null;
+  decision?: import("./interventionObservation.js").InterventionReviewDecision | null;
+  benefit?: import("./interventionObservation.js").InterventionBenefit | null;
+  obstacle?: string;
+  evidence?: import("./interventionObservation.js").InterventionEvidence | null;
   id: number;
   interventionId: number;
   assessedAt: string;

@@ -197,6 +197,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, `custom_components/machbar/goal_coach.py`, and `custom_components/machbar/calendar_bridge.py` |
 | Owner-only generated task privacy | `work_items.privacy_owner_member_id`, migration 0026 inheritance constraints, viewer-aware `Graph.load`, task/project HTTP pre-handler guards, activity snapshots and existing reflection/notification readers |
 | Intervention observation plans and records | `interventionObservation.ts` shared contracts, `domain/interventionObservations.ts` canonical history, plan and report mutations; existing goals routes and MCP tools |
+| Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` and `InterventionAssessSheet`; existing reflection evidence is reused |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
@@ -411,3 +412,12 @@ provenance with stable proposal-local keys. `InterventionTasksEditor` authors
 only drafts; `InterventionTasksSheet` commits through `useGoalActions`.
 The singular backing pointer is a presentation summary; provenance is durable
 and retains deleted-work identity. Migration 0028 converts existing pointers.
+
+### Intervention evidence and checkpoint decisions
+
+`domain/interventionEvidence.ts::buildInterventionEvidence` combines versioned
+reports with the canonical `buildReflectionBriefing`. Both manual and coach
+reviews consume it. `goals.ts::insertAssessment` snapshots evidence and applies
+explicit revision-aware continue/adjust/stop transitions transactionally; a
+stable review key prevents duplicate acceptance. `InterventionEvidenceFacts`
+renders shared inspectable facts in the existing assessment workflow.

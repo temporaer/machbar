@@ -1,3 +1,4 @@
+import { buildInterventionEvidence } from "../domain/interventionEvidence.js";
 import { recentInterventionReports, observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
 import { recordObservationSchema, setObservationPlanSchema } from "../schemas.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -176,6 +177,9 @@ export function registerGoalRoutes(
     setObservationPlan(db, parseId(request.params.id, "intervention"), parseOrThrow(setObservationPlanSchema, request.body), { ownerMemberId: viewerMemberId(request)! }));
   app.put<{ Params: { id: string } }>("/api/interventions/:id/observations", async (request) =>
     recordObservation(db, parseId(request.params.id, "intervention"), parseOrThrow(recordObservationSchema, request.body), { ownerMemberId: viewerMemberId(request)! }));
+
+  app.get<{ Params: { id: string }; Querystring: { startDate?: string; endDate?: string } }>("/api/interventions/:id/evidence", async (request) =>
+    buildInterventionEvidence(db, parseId(request.params.id, "intervention"), { ownerMemberId: viewerMemberId(request)! }, request.query));
 
   // --- Coach AI passes (advisory, proposal-not-applied; §7/§9) --------------
 

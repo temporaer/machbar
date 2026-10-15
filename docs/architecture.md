@@ -1869,3 +1869,12 @@ provenance with stable proposal-local keys. `InterventionTasksEditor` authors
 only drafts; `InterventionTasksSheet` commits through `useGoalActions`.
 The singular backing pointer is a presentation summary; provenance is durable
 and retains deleted-work identity. Migration 0028 converts existing pointers.
+
+### Intervention evidence and checkpoint decisions
+
+`domain/interventionEvidence.ts::buildInterventionEvidence` combines versioned
+reports with the canonical `buildReflectionBriefing`. Both manual and coach
+reviews consume it. `goals.ts::insertAssessment` snapshots evidence and applies
+explicit revision-aware continue/adjust/stop transitions transactionally; a
+stable review key prevents duplicate acceptance. `InterventionEvidenceFacts`
+renders shared inspectable facts in the existing assessment workflow.

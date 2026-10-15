@@ -198,7 +198,7 @@ function GoalCard({
     b.startDate.localeCompare(a.startDate),
   );
   const hasOpenIntervention = interventions.some(
-    (intervention) => intervention.derivedState !== "reviewed",
+    (intervention) => intervention.status === "active",
   );
   const active = goal.status === "active";
 
@@ -245,7 +245,7 @@ function GoalCard({
               {intervention.generatedTasks?.map((task) => <p key={task.id}>{task.taskId ? <a href={`#/tasks/${task.taskId}`}>{task.title}</a> : <span>{task.title} · {strings.interventionTaskDeleted}</span>}</p>)}
               <InterventionObservationPanel interventionId={intervention.id} goalId={goal.id} goalTitle={goal.title} />
               <div className="row goal-intervention-actions">
-                {active && intervention.derivedState === "running" ? (
+                {active && intervention.status === "active" ? (
                   <>
                     <button
                       type="button"

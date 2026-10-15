@@ -41,3 +41,19 @@ export interface InterventionGeneratedTask {
   id: number; key: string; taskId: number | null; originalTaskId: number;
   title: string; createdAt: string;
 }
+
+export interface ObservationCounts {
+  eligible: number; reported: number; met: number; notMet: number;
+  unknown: number; noOpportunity: number; missing: number;
+}
+export interface InterventionEvidence {
+  interventionId: number; generatedAt: string; window: { startDate: string; endDate: string };
+  plans: ObservationPlanVersion[]; observations: InterventionObservation[]; counts: ObservationCounts;
+  periods: Array<{ planVersionId: number; startDate: string; endDate: string; partial: boolean;
+    target: ObservationTarget; counts: ObservationCounts; targetMet: boolean | null }>;
+  generatedTasks: InterventionGeneratedTask[];
+  /** Reuses the historical reflection path. Task facts and reports measure separate facts. */
+  activity: import("./index.js").ReflectionBriefing;
+}
+export type InterventionReviewDecision = "continue" | "adjust" | "stop";
+export type InterventionBenefit = "helped" | "not_helped" | "uncertain";

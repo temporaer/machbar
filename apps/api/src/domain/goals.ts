@@ -1,3 +1,6 @@
+import { buildInterventionEvidence } from "./interventionEvidence.js";
+import { addCalendarDays } from "./calendarDate.js";
+import { householdToday } from "./householdCalendar.js";
 /**
  * Goals & interventions domain layer (feature spec: docs/goals-and-interventions.md
  * §4, §5, §9). Mirrors the typed parse-schema → domain-mutation → transaction
@@ -79,6 +82,15 @@ export interface AdjustInterventionInput {
 }
 
 export interface ManualAssessmentInput {
+  reviewKey?: string;
+  decision?: "continue" | "adjust" | "stop";
+  benefit?: "helped" | "not_helped" | "uncertain";
+  obstacle?: string;
+  expectedRevision?: number;
+  nextRevisitDate?: string;
+  backingCleanup?: BackingCleanup;
+  observationPlan?: ObservationPlan;
+  commitment?: string;
   band: AssessmentBand;
   rationaleMd: string;
   countedItemIds?: number[];
@@ -139,6 +151,7 @@ function mapIntervention(row: InterventionRow): Intervention {
     status: row.status,
     concludedAt: row.concludedAt,
     backingTaskId: row.backingTaskId,
+    reviewWindowStart: row.reviewWindowStart,
     source: row.source,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -161,6 +174,7 @@ function mapAssessment(row: AssessmentRow): InterventionAssessment {
   return {
     id: row.id,
     interventionId: row.interventionId,
+    reviewKey: row.reviewKey, decision: row.decision, benefit: row.benefit, obstacle: row.obstacle, evidence: row.evidence,
     assessedAt: row.assessedAt,
     band: row.band,
     rationaleMd: row.rationaleMd,
@@ -295,7 +309,7 @@ function buildInterventionView(
 ): InterventionView {
   const state = deriveInterventionState({
     revisitDate: intervention.revisitDate,
-    hasAssessment: assessments.length > 0,
+    hasAssessment: intervention.status === "concluded" && assessments.length > 0,
     today,
     concluded: intervention.status === "concluded",
   });
@@ -575,7 +589,7 @@ export function backIntervention(
     for (const task of tasks) {
       const { key, ...taskInput } = task;
       const created = createTaskInTransaction(tx as unknown as Db, {
-        ...taskInput, status: "actionable", scope: goal.area === "work" ? "work" : "household",
+        ...taskInput, ...(taskInput.repeatAfterDays ? { allowedDeviationDays: taskInput.allowedDeviationDays ?? 0 } : {}), status: "actionable", scope: goal.area === "work" ? "work" : "household",
         privacyOwnerMemberId: goal.ownerMemberId, ownerMemberId: goal.ownerMemberId, ownerInheritanceMode: "explicit",
         createdByMemberId: context?.actorMemberId ?? null,
       }, context);
@@ -676,11 +690,35 @@ export function insertAssessment(
   }
   const countedItemIds = input.countedItemIds ?? [];
   return db.transaction((tx) => {
-    requireInterventionRow(tx, interventionId);
+    const current = requireInterventionRow(tx, interventionId);
+    if (input.reviewKey) {
+      const existing = tx.select().from(schema.interventionAssessments).where(and(eq(schema.interventionAssessments.interventionId, interventionId), eq(schema.interventionAssessments.reviewKey, input.reviewKey))).get();
+      if (existing) return mapAssessment(existing);
+    }
+    if (input.decision && (!input.reviewKey || input.expectedRevision === undefined)) throw AppError.badRequest("intervention_assessment_invalid", "A checkpoint decision needs its revision and stable acceptance key.");
+    if (input.decision) assertInterventionRevision(current, input.expectedRevision);
+    const owner = requireGoalRow(tx, current.goalId).ownerMemberId;
+    const evidence = owner === null ? null : buildInterventionEvidence(tx as unknown as Db, interventionId, { ownerMemberId: owner }, { startDate: input.digestWindowStart, endDate: input.digestWindowEnd });
+    if (input.decision) {
+      if (current.status !== "active") throw AppError.conflict("intervention_transition_invalid", "This behavior has already stopped.");
+      if (input.digestWindowStart !== (current.reviewWindowStart ?? current.startDate)) throw AppError.conflict("stale_write_conflict", "This review window has already advanced.");
+      if (input.decision === "stop") {
+        if (current.backingTaskId !== null && input.backingCleanup === undefined) throw AppError.badRequest("intervention_assessment_invalid", "Choose whether to keep or stop generated tasks.");
+        concludeIntervention(tx as unknown as Db, interventionId, current.revision, householdToday(tx as unknown as Db), { backingCleanup: input.backingCleanup });
+      } else {
+        const today = householdToday(tx as unknown as Db);
+        const next = input.nextRevisitDate ?? addCalendarDays(today, 14);
+        if (!isIsoCalendarDate(next) || next <= today || next <= input.digestWindowEnd) throw AppError.badRequest("intervention_revisit_invalid", "The next checkpoint must be in the future.");
+        if (input.decision === "adjust") adjustIntervention(tx as unknown as Db, interventionId, { ...(input.commitment ? { commitment: input.commitment } : {}), ...(input.observationPlan ? { observationPlan: input.observationPlan } : {}), expectedRevision: current.revision }, today);
+        const updated = requireInterventionRow(tx, interventionId);
+        tx.update(schema.interventions).set({ revisitDate: next, reviewWindowStart: addCalendarDays(input.digestWindowEnd, 1), revision: updated.revision + 1, updatedAt: nowIso() }).where(eq(schema.interventions.id, interventionId)).run();
+      }
+    }
     const created = tx
       .insert(schema.interventionAssessments)
       .values({
         interventionId,
+        reviewKey: input.reviewKey, decision: input.decision, benefit: input.benefit, obstacle: input.obstacle ?? "", evidence,
         assessedAt: input.assessedAt ?? nowIso(),
         band: input.band,
         rationaleMd: input.rationaleMd,

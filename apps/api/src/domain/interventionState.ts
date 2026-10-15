@@ -40,7 +40,7 @@ export interface InterventionState {
  * `YYYY-MM-DD` values.
  */
 export function deriveInterventionState(input: InterventionStateInput): InterventionState {
-  if (input.hasAssessment) {
+  if (input.hasAssessment && input.concluded) {
     return { derivedState: "reviewed", withinReviewWindow: false };
   }
   const reached = input.today >= input.revisitDate;

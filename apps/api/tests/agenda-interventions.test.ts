@@ -121,7 +121,7 @@ describe("Agenda intervention focus (Phase 2)", () => {
     expect(demoted.interventions.review).toHaveLength(0);
   });
 
-  it("drops the experiment from Heute once it has been reviewed", async () => {
+  it("keeps an active behavior reviewable after a standalone assessment", async () => {
     const member = await createMember();
     const goal = await createGoal(member.id, { title: "Sleep earlier", area: "work" });
     const intervention = await startIntervention(member.id, goal.id, {
@@ -144,10 +144,10 @@ describe("Agenda intervention focus (Phase 2)", () => {
     });
     expect(assessRes.statusCode).toBe(201);
 
-    // Within the window but already reviewed → gone from both buckets.
+    // An assessment alone does not stop the active behavior or advance its checkpoint.
     const reviewed = await agenda(member.id, "work", "2026-02-11");
     expect(reviewed.interventions.running).toHaveLength(0);
-    expect(reviewed.interventions.review).toHaveLength(0);
+    expect(reviewed.interventions.review).toHaveLength(1);
   });
 
   it("places goals into the viewer's own Heute by area, never into the household overview", async () => {

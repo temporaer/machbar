@@ -768,3 +768,30 @@ coexist with a practice task; task-only plans never add a duplicate report.
 Stop uses canonical cancellation for all still-open generated tasks. Already
 done, cancelled and deleted tasks are handled without invented completions.
 Keep leaves tasks running and preserves their privacy and evidence provenance.
+
+## Shared evidence and checkpoints (#213, Phase 5)
+
+`buildInterventionEvidence` is the shared deterministic review path. It extends
+`buildReflectionBriefing` rather than reading activity independently. It combines
+immutable observation versions and reference-date reports with the existing
+finite-completion/recurrence distinction and created-work provenance. Task
+administration never becomes behavioral success. Task and observation counts
+remain separate because a practice task cannot establish phone avoidance.
+
+Review displays met, not met, unknown, no opportunity and missing separately,
+with reported/answerable-day coverage. Calendar-week targets are evaluated in
+Monday–Sunday windows; anchored seven-day targets retain their stated anchor.
+Partial/version-split windows are marked, never prorated. Missing or inconclusive
+evidence never proves a target failure. Unsupported commitments stay qualitative.
+Users may also inspect the existing historical activity briefing.
+
+Assessment records snapshot the evidence and perceived benefit separately from
+adherence, with optional obstacle context. These observations cannot establish
+causation. Explicit checkpoint decisions require the current revision and a
+stable review key. Retrying the same key returns the recorded transition.
+Continue advances the review window and next checkpoint without recreating tasks
+or plans; adjust changes the plan prospectively; stop explicitly keeps or stops
+remaining work via canonical lifecycle commands. Existing assessments are retained.
+An assessment alone no longer permanently marks an active behavior reviewed.
+The seven-day Today review demotion affects reminder prominence, not the active
+routine, its reporting, or availability for review on Goals.
