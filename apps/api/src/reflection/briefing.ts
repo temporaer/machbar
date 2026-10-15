@@ -1,10 +1,10 @@
 import type { ReflectionBriefing, ReflectionBriefingScope, ReflectionWorkItemFact, ActivityEventMetadata } from "@machbar/shared";
-import { DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { Graph, type TaskRecord, type ProjectRecord } from "../domain/graph.js";
+import { localDate, householdTimezone } from "../domain/householdCalendar.js";
 import { getEffectiveOwners } from "../repo/effectiveRepo.js";
 import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 
@@ -14,16 +14,8 @@ type CurrentVisibility = { scope: Scope; owner: number | null };
 /** A work item needs a short runway before being described as an old commitment. */
 const INACTIVE_COMMITMENT_AGE_DAYS = 14;
 
-function localDate(date: Date, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
 function shiftDate(date: string, days: number): string { const value = new Date(`${date}T00:00:00.000Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
-function validTimezone(db: Db): string {
-  const value = db.select({ value: schema.householdSettings.value }).from(schema.householdSettings).where(eq(schema.householdSettings.key, "timezone")).get()?.value ?? DEFAULT_HOUSEHOLD_TIMEZONE;
-  try { new Intl.DateTimeFormat("en", { timeZone: value }); return value; } catch { return DEFAULT_HOUSEHOLD_TIMEZONE; }
-}
+const validTimezone = householdTimezone;
 function factForTask(task: TaskRecord, graph: Graph, names: Map<number, string>): ReflectionWorkItemFact {
   return { id: task.id, type: "task", title: task.title, status: task.status, scope: task.scope, notes: task.notes, href: `#/tasks/${task.id}`,
     owner: task.effectiveOwnerId === null ? null : { id: task.effectiveOwnerId, name: names.get(task.effectiveOwnerId) ?? `Mitglied ${task.effectiveOwnerId}` },

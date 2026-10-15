@@ -267,7 +267,16 @@ export type ApiErrorCode =
   | "cleanup_round_no_candidates"
   | "cleanup_round_target_mismatch"
   | "cleanup_round_action_no_change"
-  | "cleanup_round_action_surface_mismatch";
+  | "cleanup_round_action_surface_mismatch"
+  | "goal_not_found"
+  | "goal_title_required"
+  | "goal_transition_invalid"
+  | "goal_query_invalid"
+  | "intervention_not_found"
+  | "intervention_commitment_required"
+  | "intervention_revisit_invalid"
+  | "intervention_transition_invalid"
+  | "intervention_assessment_invalid";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
@@ -1447,4 +1456,25 @@ export interface InterventionAssessment {
   countedItemIds: number[];
   source: InterventionSource;
   createdAt: string;
+}
+
+/**
+ * An intervention enriched with its read-time derived state (§5) and its
+ * assessment history. `derivedState` and `withinReviewWindow` are computed per
+ * request in the household timezone and are never persisted.
+ */
+export interface InterventionView extends Intervention {
+  derivedState: InterventionDerivedState;
+  /**
+   * True while a finished intervention is still within the 7-day Heute review
+   * window (`today <= revisit_date + 7`). Always false once reviewed or while
+   * running. Phase 2 consumes this to drive the finished-unreviewed Heute card.
+   */
+  withinReviewWindow: boolean;
+  assessments: InterventionAssessment[];
+}
+
+/** A goal together with its interventions (each carrying derived state). */
+export interface GoalWithInterventions extends Goal {
+  interventions: InterventionView[];
 }
