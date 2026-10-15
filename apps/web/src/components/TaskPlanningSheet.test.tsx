@@ -151,6 +151,9 @@ describe("TaskPlanningSheet", () => {
   });
 
   beforeEach(() => {
+    // Reminder presets and labels must use the same stable calendar day in UTC and Berlin.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T10:00:00Z"));
     originalScrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,
       "scrollIntoView",
