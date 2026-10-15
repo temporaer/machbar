@@ -747,3 +747,24 @@ recent unanswered days plus the most recent 30 recorded reports for correction.
 Older missing reports do not accumulate as tasks or overdue debt. Reporting No
 is a successful submission. Notes are optional. Task-only plans ask no question.
 German and English catalogs cover all controls. History preserves plan wording.
+
+## Ordinary task backing (#213, Phase 4)
+
+The canonical backing command now accepts up to eight authored tasks per
+acceptance, at most sixteen created tasks per intervention. All intervention
+types may create ordinary one-off, scheduled or recurring work. The UI reviews
+dates, recurrence-after-completion and reminder times before explicit creation;
+it explains that fixed weekdays require separate dated tasks. Unsupported
+calendar recurrence is never silently approximated by a new engine.
+
+Stable proposal-local task keys make lost-response retries idempotent. Creation
+and provenance are one transaction through `createTaskInTransaction`. Provenance
+records only created work, retaining original IDs and titles after task deletion.
+Migration 0028 associates existing backing pointers without changing recurrence
+history. No arbitrary task-to-goal tagging exists. Generated work retains the
+Phase 1 privacy owner and area placement. A separate avoidance question can
+coexist with a practice task; task-only plans never add a duplicate report.
+
+Stop uses canonical cancellation for all still-open generated tasks. Already
+done, cancelled and deleted tasks are handled without invented completions.
+Keep leaves tasks running and preserves their privacy and evidence provenance.

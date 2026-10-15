@@ -158,7 +158,9 @@ export function recordContribution(
   // Work items are private, owner-only, and outside the household's shared
   // gamification system: never award or record points for them.
   if (entityScope(db, input.entityType, input.entityId) === "work") return null;
-  if (input.entityId != null && db.select().from(schema.workItems).where(eq(schema.workItems.id, input.entityId)).get()?.privacyOwnerMemberId != null) return null;
+  const workItemId = input.entityType === "task" || input.entityType === "project" ? input.entityId
+    : db.select().from(schema.taskRecurrenceOccurrences).where(eq(schema.taskRecurrenceOccurrences.id, input.entityId)).get()?.taskId;
+  if (workItemId != null && db.select().from(schema.workItems).where(eq(schema.workItems.id, workItemId)).get()?.privacyOwnerMemberId != null) return null;
   const now = input.now ?? new Date();
   const nowIso = now.toISOString();
   const existing = db

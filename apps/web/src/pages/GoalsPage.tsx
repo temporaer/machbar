@@ -1,3 +1,4 @@
+import { InterventionTasksSheet } from "../components/InterventionTasksSheet";
 import { InterventionObservationPanel } from "../components/InterventionObservationPanel";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -241,6 +242,7 @@ function GoalCard({
               <p className="text-muted">
                 {intervention.startDate} – {intervention.revisitDate}
               </p>
+              {intervention.generatedTasks?.map((task) => <p key={task.id}>{task.taskId ? <a href={`#/tasks/${task.taskId}`}>{task.title}</a> : <span>{task.title} · {strings.interventionTaskDeleted}</span>}</p>)}
               <InterventionObservationPanel interventionId={intervention.id} goalId={goal.id} goalTitle={goal.title} />
               <div className="row goal-intervention-actions">
                 {active && intervention.derivedState === "running" ? (
@@ -253,8 +255,6 @@ function GoalCard({
                     >
                       {strings.editIntervention}
                     </button>
-                    {intervention.type === "frequency_habit" &&
-                    intervention.backingTaskId === null ? (
                       <button
                         type="button"
                         className="btn btn-sm"
@@ -263,7 +263,6 @@ function GoalCard({
                       >
                         {strings.backIntervention}
                       </button>
-                    ) : null}
                     <button
                       type="button"
                       className="btn btn-sm"
@@ -390,9 +389,8 @@ export function GoalsPage() {
   const requestAssessment = (interventionId: number): Promise<AssessmentProposal> =>
     actions.loadAssessmentProposal(interventionId);
 
-  const backIntervention = (intervention: InterventionView) => {
-    void actions.backIntervention(intervention);
-  };
+  const [taskBacking, setTaskBacking] = useState<InterventionView | null>(null);
+  const backIntervention = (intervention: InterventionView) => setTaskBacking(intervention);
 
   const concludeIntervention = (intervention: InterventionView) => {
     if (intervention.backingTaskId !== null) {
@@ -436,6 +434,7 @@ export function GoalsPage() {
 
       {goalsState.data ? (
         <>
+      {taskBacking ? <InterventionTasksSheet intervention={taskBacking} onClose={() => setTaskBacking(null)} /> : null}
           <section className="stack" aria-labelledby="goals-active-heading">
             <h2 id="goals-active-heading">{strings.goalsActiveHeading}</h2>
             {activeGoals.length === 0 ? (

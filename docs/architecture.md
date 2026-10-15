@@ -1860,3 +1860,12 @@ journal edits. `recentInterventionReports` projects bounded answerable periods
 for `agendaInterventions.ts` and the existing history endpoint.
 `InterventionReportCard` is reused by Today focus and goal history, and writes
 only through `useGoalActions.recordObservation`. Questions never become tasks.
+
+### Ordinary intervention-created tasks
+
+`domain/goals.ts::backIntervention` is the single backing mutation for all
+intervention types, using canonical task creation and `intervention_tasks`
+provenance with stable proposal-local keys. `InterventionTasksEditor` authors
+only drafts; `InterventionTasksSheet` commits through `useGoalActions`.
+The singular backing pointer is a presentation summary; provenance is durable
+and retains deleted-work identity. Migration 0028 converts existing pointers.

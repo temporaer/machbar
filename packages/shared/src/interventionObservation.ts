@@ -30,3 +30,14 @@ export interface DueInterventionReport {
   interventionId: number; goalId: number; goalTitle: string;
   referenceDate: string; plan: ObservationPlanVersion;
 }
+
+/** Only work created by the intervention, never arbitrary manual tagging. */
+export interface InterventionTaskPlan {
+  key: string; title: string; notes?: string; scheduledDate?: string;
+  dueDate?: string; repeatAfterDays?: number; allowedDeviationDays?: number;
+  reminders?: import("./taskReminder.js").TaskReminderInput[];
+}
+export interface InterventionGeneratedTask {
+  id: number; key: string; taskId: number | null; originalTaskId: number;
+  title: string; createdAt: string;
+}

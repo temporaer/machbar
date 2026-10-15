@@ -1,5 +1,5 @@
 import { observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
-import { observationPlanSchema } from "../schemas.js";
+import { interventionTaskPlanSchema, observationPlanSchema } from "../schemas.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type {
@@ -1544,9 +1544,10 @@ export function createMachbarMcpServer({
     "machbar_back_intervention",
     {
       description:
-        "Back a frequency_habit intervention with a recurring check-in task (only this type can be backed). The check-in is created through the canonical task path and becomes the intervention's Heute presence, recording hit/miss. Cadence defaults to a daily check-in; the title defaults to the commitment.",
+        "Create ordinary one-off, scheduled or recurring tasks for an intervention after explicit acceptance. Stable task keys make retries idempotent. No arbitrary existing-task tagging.",
       inputSchema: {
         interventionId,
+        tasks: z.array(interventionTaskPlanSchema).min(1).max(8).optional(),
         expectedRevision: expectedRevision.optional(),
         title: z.string().min(1).optional(),
         scheduledDate: z.string().optional(),
@@ -1556,6 +1557,7 @@ export function createMachbarMcpServer({
     },
     async ({
       interventionId: id,
+      tasks,
       expectedRevision: rev,
       title,
       scheduledDate,
@@ -1567,7 +1569,7 @@ export function createMachbarMcpServer({
         backIntervention(
           db,
           id,
-          { title, scheduledDate, repeatAfterDays, allowedDeviationDays, expectedRevision: rev },
+          { tasks, title, scheduledDate, repeatAfterDays, allowedDeviationDays, expectedRevision: rev },
           householdToday(db),
           { actorMemberId: memberId },
         ),

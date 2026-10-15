@@ -1503,6 +1503,7 @@ export interface Goal {
 }
 
 export interface Intervention {
+  generatedTasks?: import("./interventionObservation.js").InterventionGeneratedTask[];
   observationPlan?: import("./interventionObservation.js").ObservationPlan;
   id: number;
   revision: number;

@@ -12,6 +12,7 @@
  */
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
+  InterventionTaskPlan,
   ObservationPlan,
   AssessmentBand,
   Goal,
@@ -93,6 +94,7 @@ export interface ManualAssessmentInput {
  * caller-chosen cadence (defaulting to a daily check-in).
  */
 export interface BackInterventionInput {
+  tasks?: InterventionTaskPlan[];
   title?: string;
   scheduledDate?: string;
   repeatAfterDays?: number;
@@ -299,6 +301,7 @@ function buildInterventionView(
   });
   return {
     ...mapIntervention(intervention),
+    generatedTasks: db.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, intervention.id)).all(),
     observationPlan: db.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, intervention.id)).orderBy(desc(schema.interventionObservationPlans.effectiveFrom)).get()?.plan,
     derivedState: state.derivedState,
     withinReviewWindow: state.withinReviewWindow,
@@ -546,84 +549,42 @@ export function adjustIntervention(
   });
 }
 
-/**
- * Back a `frequency_habit` intervention with a recurring check-in task (§8).
- *
- * The check-in is created through the canonical task path
- * ({@link createTaskInTransaction}) inside the same transaction that stores the
- * pointer, so there is no parallel task-mutation module and no window in which
- * the task exists without its backing reference. The task is owner-only
- * (`scope: "work"`, explicit owner = the goal owner) so it surfaces in the
- * owner's reflection digest — the assess pass then reads its crisp hit/miss.
- */
+/** Atomically create ordinary work with bounded provenance through canonical task creation. */
 export function backIntervention(
-  db: Db,
-  interventionId: number,
-  input: BackInterventionInput,
-  today: string,
-  context?: MutationContext,
+  db: Db, interventionId: number, input: BackInterventionInput, today: string, context?: MutationContext,
 ): InterventionView {
   return db.transaction((tx) => {
     const current = requireInterventionRow(tx, interventionId);
+    const existing = tx.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all();
+    const tasks = input.tasks ?? [{ key: "legacy-check-in", title: (input.title ?? current.commitment).trim(),
+      scheduledDate: input.scheduledDate ?? (current.startDate < today ? today : current.startDate),
+      ...(current.type === "frequency_habit" ? { repeatAfterDays: input.repeatAfterDays ?? 1, allowedDeviationDays: input.allowedDeviationDays ?? 0 } : {}),
+    }];
+    if (new Set(tasks.map((t) => t.key)).size !== tasks.length || tasks.length > 8) throw AppError.badRequest("intervention_backing_unavailable", "Each generated task needs a unique key; at most eight tasks per acceptance.");
+    // Stable proposal-local keys make an identical retry a read, even after a lost response.
+    if (tasks.every((task) => existing.some((row) => row.key === task.key && JSON.stringify(row.input) === JSON.stringify(task)))) {
+      const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
+      return buildInterventionView(tx as unknown as Db, current, assessments, today);
+    }
     assertInterventionRevision(current, input.expectedRevision);
-    if (current.type !== "frequency_habit") {
-      throw AppError.conflict(
-        "intervention_backing_unavailable",
-        "Only a frequency-habit intervention can be backed by a recurring check-in.",
-        { interventionId, type: current.type },
-      );
-    }
-    if (current.status === "concluded") {
-      throw AppError.conflict(
-        "intervention_transition_invalid",
-        "A concluded intervention cannot be backed.",
-        { interventionId },
-      );
-    }
-    if (current.backingTaskId !== null) {
-      throw AppError.conflict(
-        "intervention_already_backed",
-        "This intervention already has a recurring check-in.",
-        { interventionId, backingTaskId: current.backingTaskId },
-      );
-    }
+    if (current.status === "concluded") throw AppError.conflict("intervention_transition_invalid", "A concluded intervention cannot create tasks.");
+    if (existing.length + tasks.length > 16 || tasks.some((t) => existing.some((row) => row.key === t.key))) throw AppError.conflict("intervention_already_backed", "These task keys were already accepted or the intervention already has sixteen generated tasks.");
     const goal = requireGoalRow(tx, current.goalId);
-    if (goal.ownerMemberId === null) {
-      throw AppError.badRequest("goal_owner_required", "An owner is required before creating private tasks.");
-    }
-    // Start the check-in no earlier than today so the first occurrence is not
-    // already overdue, but never before the intervention's own start date.
-    const scheduledDate =
-      input.scheduledDate ?? (current.startDate < today ? today : current.startDate);
-    const repeatAfterDays = input.repeatAfterDays ?? 1;
-    const allowedDeviationDays = input.allowedDeviationDays ?? 0;
-    const title = (input.title ?? current.commitment).trim();
-    const created = createTaskInTransaction(
-      tx as unknown as Db,
-      {
-        title,
-        scope: goal.area === "work" ? "work" : "household",
-        privacyOwnerMemberId: goal.ownerMemberId ?? undefined,
-        ownerMemberId: goal.ownerMemberId,
-        ownerInheritanceMode: "explicit",
+    if (goal.ownerMemberId === null) throw AppError.badRequest("goal_owner_required", "An owner is required before creating private tasks.");
+    let firstTaskId = current.backingTaskId;
+    for (const task of tasks) {
+      const { key, ...taskInput } = task;
+      const created = createTaskInTransaction(tx as unknown as Db, {
+        ...taskInput, status: "actionable", scope: goal.area === "work" ? "work" : "household",
+        privacyOwnerMemberId: goal.ownerMemberId, ownerMemberId: goal.ownerMemberId, ownerInheritanceMode: "explicit",
         createdByMemberId: context?.actorMemberId ?? null,
-        scheduledDate,
-        repeatAfterDays,
-        allowedDeviationDays,
-      },
-      context,
-    );
-    tx.update(schema.interventions)
-      .set({
-        backingTaskId: created.id,
-        revision: current.revision + 1,
-        updatedAt: nowIso(),
-      })
-      .where(eq(schema.interventions.id, interventionId))
-      .run();
-    const updated = requireInterventionRow(tx, interventionId);
+      }, context);
+      tx.insert(schema.interventionTasks).values({ interventionId, key, taskId: created.id, originalTaskId: created.id, title: task.title, input: task }).run();
+      firstTaskId ??= created.id;
+    }
+    tx.update(schema.interventions).set({ backingTaskId: firstTaskId, revision: current.revision + 1, updatedAt: nowIso() }).where(eq(schema.interventions.id, interventionId)).run();
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
-    return buildInterventionView(tx as unknown as Db, updated, assessments, today);
+    return buildInterventionView(tx as unknown as Db, requireInterventionRow(tx, interventionId), assessments, today);
   });
 }
 
@@ -649,8 +610,13 @@ export function concludeIntervention(
     // before flipping status. "keep" just clears the pointer so the task lives
     // on as ordinary recurring work; "stop" (default) ends it through the
     // canonical task path — never a parallel mutation — leaving no orphan.
-    if (current.backingTaskId !== null && backingCleanup === "stop") {
-      cancelTask(tx as unknown as Db, current.backingTaskId, undefined, options.context);
+    if (backingCleanup === "stop") {
+      const generated = tx.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all();
+      for (const row of generated) {
+        if (row.taskId === null) continue;
+        const task = tx.select().from(schema.workItems).where(eq(schema.workItems.id, row.taskId)).get();
+        if (task && task.status !== "done" && task.status !== "cancelled") cancelTask(tx as unknown as Db, row.taskId, undefined, options.context);
+      }
     }
     tx.update(schema.interventions)
       .set({

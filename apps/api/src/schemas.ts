@@ -804,7 +804,14 @@ export const interventionLifecycleSchema = z.object({
  * Back a frequency_habit intervention with a recurring check-in (§8). Cadence
  * defaults to a daily check-in; a title defaults to the commitment.
  */
+export const interventionTaskPlanSchema = z.object({
+  key: z.string().min(1).max(80), title: z.string().trim().min(1).max(500), notes: z.string().max(4000).optional(),
+  scheduledDate: isoDate.optional(), dueDate: isoDate.optional(),
+  repeatAfterDays: z.number().int().positive().optional(), allowedDeviationDays: z.number().int().nonnegative().optional(),
+  reminders: taskRemindersSchema.optional(),
+}).strict();
 export const backInterventionSchema = z.object({
+  tasks: z.array(interventionTaskPlanSchema).min(1).max(8).optional(),
   title: z.string().min(1).optional(),
   scheduledDate: isoDate.optional(),
   repeatAfterDays: z.number().int().positive().optional(),

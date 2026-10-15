@@ -1177,3 +1177,13 @@ export const interventionObservations = sqliteTable("intervention_observations",
   answer: text("answer", { enum: ["met", "not_met", "unknown", "no_opportunity"] }).notNull(),
   notes: text("notes").notNull().default(""),
 }, (t) => [uniqueIndex("observation_reference_idx").on(t.interventionId, t.referenceDate)]);
+
+export const interventionTasks = sqliteTable("intervention_tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  interventionId: integer("intervention_id").notNull().references(() => interventions.id, { onDelete: "cascade" }),
+  key: text("task_key").notNull(),
+  taskId: integer("task_id").references(() => workItems.id, { onDelete: "set null" }),
+  originalTaskId: integer("original_task_id").notNull(), title: text("title").notNull(),
+  input: text("input", { mode: "json" }).$type<import("@machbar/shared").InterventionTaskPlan>().notNull(),
+  createdAt: text("created_at").notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+}, (t) => [uniqueIndex("intervention_task_key_idx").on(t.interventionId, t.key)]);

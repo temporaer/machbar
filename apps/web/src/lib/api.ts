@@ -549,6 +549,7 @@ export interface AcceptAssessmentProposalInput {
 }
 
 export interface BackInterventionInput {
+  tasks?: import("@machbar/shared").InterventionTaskPlan[];
   title?: string;
   scheduledDate?: string;
   repeatAfterDays?: number;
