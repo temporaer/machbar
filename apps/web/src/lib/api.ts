@@ -506,6 +506,7 @@ export interface UpdateGoalInput {
 }
 
 export interface StartInterventionInput {
+  observationPlan?: import("@machbar/shared").ObservationPlan;
   type: InterventionType;
   commitment: string;
   rationale?: string;
@@ -514,6 +515,7 @@ export interface StartInterventionInput {
 }
 
 export interface AdjustInterventionInput {
+  observationPlan?: import("@machbar/shared").ObservationPlan;
   type?: InterventionType;
   commitment?: string;
   rationale?: string;
@@ -1118,6 +1120,8 @@ export const api = {
     request<Task>(`/tasks/${taskId}/excluded-tags/${tagId}`, { method: "DELETE" }),
 
   // --- Goals & interventions (feature spec §9) -----------------------------
+  observationHistory: (id: number) => request<import("@machbar/shared").InterventionObservationHistory>(`/interventions/${id}/observations`),
+  recordObservation: (id: number, input: { referenceDate: string; answer: import("@machbar/shared").ObservationAnswer; notes?: string; expectedRevision: number }) => request<import("@machbar/shared").InterventionObservation>(`/interventions/${id}/observations`, { method: "PUT", body: JSON.stringify(input) }),
   listGoals: () => request<GoalWithInterventions[]>("/goals"),
   getGoal: (id: number) => request<GoalWithInterventions>(`/goals/${id}`),
   createGoal: (input: CreateGoalInput) =>

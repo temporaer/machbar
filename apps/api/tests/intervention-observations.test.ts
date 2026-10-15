@@ -56,3 +56,16 @@ it("uses local wall clocks across both DST transitions and same-day window closu
   expect(observationIsAnswerable(sameDay, "2026-10-24", new Date("2026-10-24T20:00:00Z"))).toBe(true);
   expect(observationIsAnswerable(sameDay, "2026-10-24", new Date("2026-10-24T22:01:00Z"))).toBe(true);
 });
+it("offers only answerable recent questions in the owner's personal Today; a negative answer finishes reporting", async () => {
+  const { buildAgendaInterventionFocus } = await import("../src/domain/agendaInterventions.js");
+  const { intervention: i, access } = setup(); const db = ctx.handle.db;
+  setObservationPlan(db, i.id, { plan: daily, expectedRevision: 1 }, access, new Date("2026-10-24T10:00:00Z"));
+  const options = { memberId: access.ownerMemberId, scope: "mine" as const, today: "2026-10-25", now: new Date("2026-10-25T06:00:00Z") };
+  expect(buildAgendaInterventionFocus(db, { ...options, now: new Date("2026-10-25T05:59:00Z") }).reports).toEqual([]);
+  expect(buildAgendaInterventionFocus(db, options).reports?.map((r) => r.referenceDate)).toEqual(["2026-10-24"]);
+  expect(buildAgendaInterventionFocus(db, { ...options, memberId: access.ownerMemberId + 1 }).reports).toEqual([]);
+  expect(buildAgendaInterventionFocus(db, { ...options, scope: "work" }).reports).toEqual([]);
+  recordObservation(db, i.id, { referenceDate: "2026-10-24", answer: "not_met", expectedRevision: 0 }, access, options.now);
+  expect(buildAgendaInterventionFocus(db, options).reports).toEqual([]);
+  expect(buildAgendaInterventionFocus(db, { ...options, today: "2027-01-01", now: new Date("2027-01-01T10:00:00Z") }).reports?.length).toBeLessThanOrEqual(7);
+});

@@ -1,3 +1,4 @@
+import { InterventionObservationPanel } from "../components/InterventionObservationPanel";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type {
@@ -201,7 +202,7 @@ function GoalCard({
   const active = goal.status === "active";
 
   return (
-    <section className="card stack goal-card" aria-label={goal.title}>
+    <section className="card stack goal-card" id={`goal-${goal.id}`} aria-label={goal.title}>
       <div className="row goal-card-head">
         <h3>{goal.title}</h3>
         <span className="badge">
@@ -240,6 +241,7 @@ function GoalCard({
               <p className="text-muted">
                 {intervention.startDate} – {intervention.revisitDate}
               </p>
+              <InterventionObservationPanel interventionId={intervention.id} goalId={goal.id} goalTitle={goal.title} />
               <div className="row goal-intervention-actions">
                 {active && intervention.derivedState === "running" ? (
                   <>

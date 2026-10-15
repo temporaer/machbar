@@ -22,6 +22,11 @@ export interface InterventionObservation {
   answer: ObservationAnswer; notes: string;
 }
 export interface InterventionObservationHistory {
+  recentReports?: Array<{ referenceDate: string; plan: ObservationPlanVersion }>;
   plans: ObservationPlanVersion[];
   observations: InterventionObservation[];
+}
+export interface DueInterventionReport {
+  interventionId: number; goalId: number; goalTitle: string;
+  referenceDate: string; plan: ObservationPlanVersion;
 }

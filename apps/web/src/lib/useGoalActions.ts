@@ -35,6 +35,8 @@ export function useGoalActions() {
   const { run, isPending, errors, clearError } =
     useRetainedMutations<never>();
 
+  const recordObservation = useCallback((id: number, input: Parameters<typeof api.recordObservation>[1]) => run({ id, mutate: () => api.recordObservation(id, input), throwOnError: true }), [run]);
+
   const createGoal = useCallback(
     (input: CreateGoalInput) =>
       run<GoalWithInterventions>({
@@ -180,6 +182,7 @@ export function useGoalActions() {
     errors,
     clearError,
     createGoalKey: CREATE_GOAL_KEY,
+    recordObservation,
     createGoal,
     updateGoal,
     concludeGoal,

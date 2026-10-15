@@ -749,7 +749,35 @@ export const goalLifecycleSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
 });
 
+/** Explicit bounded observation plans, validated equally for manual and AI input. */
+export const observationTargetSchema = z.object({
+  successfulDays: z.number().int().min(1).max(7),
+  window: z.enum(["calendar_week", "seven_days"]),
+  anchorDate: isoDate.optional(),
+}).strict().refine((v) => v.window !== "seven_days" || v.anchorDate !== undefined, {
+  message: "A seven-day target requires an explicit anchor date.",
+});
+export const observationPlanSchema = z.union([
+  z.object({ method: z.enum(["task_evidence", "reflection"]) }).strict(),
+  z.object({
+    method: z.literal("daily_report"), question: z.string().trim().min(1).max(500),
+    reference: z.enum(["day", "night"]), reportDayOffset: z.union([z.literal(0), z.literal(1)]),
+    availableAfter: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+    opportunityBased: z.boolean(), target: observationTargetSchema.optional(),
+  }).strict().refine((v) => v.reference !== "night" || v.reportDayOffset === 1, {
+    message: "A night report is available the following day.",
+  }),
+]);
+export const setObservationPlanSchema = z.object({
+  plan: observationPlanSchema, expectedRevision: z.number().int().positive(),
+});
+export const recordObservationSchema = z.object({
+  referenceDate: isoDate, answer: z.enum(["met", "not_met", "unknown", "no_opportunity"]),
+  notes: z.string().max(2000).optional(), expectedRevision: z.number().int().nonnegative(),
+});
+
 export const startInterventionSchema = z.object({
+  observationPlan: observationPlanSchema.optional(),
   type: z.enum(interventionTypes),
   commitment: z.string().min(1, "An intervention needs a commitment."),
   rationale: z.string().optional(),
@@ -758,6 +786,7 @@ export const startInterventionSchema = z.object({
 });
 
 export const adjustInterventionSchema = z.object({
+  observationPlan: observationPlanSchema.optional(),
   type: z.enum(interventionTypes).optional(),
   commitment: z.string().min(1).optional(),
   rationale: z.string().optional(),
@@ -808,31 +837,4 @@ export const acceptAssessmentSchema = z.object({
   band: z.enum(assessmentBands).optional(),
   rationaleMd: z.string().min(1).optional(),
   countedItemIds: z.array(z.number().int().positive()).optional(),
-});
-
-/** Explicit bounded observation plans, validated equally for manual and AI input. */
-export const observationTargetSchema = z.object({
-  successfulDays: z.number().int().min(1).max(7),
-  window: z.enum(["calendar_week", "seven_days"]),
-  anchorDate: isoDate.optional(),
-}).strict().refine((v) => v.window !== "seven_days" || v.anchorDate !== undefined, {
-  message: "A seven-day target requires an explicit anchor date.",
-});
-export const observationPlanSchema = z.union([
-  z.object({ method: z.enum(["task_evidence", "reflection"]) }).strict(),
-  z.object({
-    method: z.literal("daily_report"), question: z.string().trim().min(1).max(500),
-    reference: z.enum(["day", "night"]), reportDayOffset: z.union([z.literal(0), z.literal(1)]),
-    availableAfter: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-    opportunityBased: z.boolean(), target: observationTargetSchema.optional(),
-  }).strict().refine((v) => v.reference !== "night" || v.reportDayOffset === 1, {
-    message: "A night report is available the following day.",
-  }),
-]);
-export const setObservationPlanSchema = z.object({
-  plan: observationPlanSchema, expectedRevision: z.number().int().positive(),
-});
-export const recordObservationSchema = z.object({
-  referenceDate: isoDate, answer: z.enum(["met", "not_met", "unknown", "no_opportunity"]),
-  notes: z.string().max(2000).optional(), expectedRevision: z.number().int().nonnegative(),
 });

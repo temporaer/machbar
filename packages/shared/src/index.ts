@@ -1167,6 +1167,7 @@ export interface AgendaInterventionBacking {
  * are still inside the 7-day window. Reviewed interventions appear in neither.
  */
 export interface AgendaInterventionFocus {
+  reports?: import("./interventionObservation.js").DueInterventionReport[];
   running: AgendaIntervention[];
   review: AgendaIntervention[];
 }
@@ -1502,6 +1503,7 @@ export interface Goal {
 }
 
 export interface Intervention {
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
   id: number;
   revision: number;
   goalId: number;

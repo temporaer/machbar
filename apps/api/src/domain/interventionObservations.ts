@@ -62,3 +62,17 @@ export function recordObservation(db: Db, interventionId: number, raw: z.input<t
     return tx.insert(schema.interventionObservations).values({ interventionId, planVersionId: version.id, referenceDate: input.referenceDate, answer: input.answer, notes: input.notes ?? "", submittedAt: timestamp, updatedAt: timestamp }).returning().get();
   });
 }
+
+/** A bounded recent window, not an accumulating overdue queue. No automatic backfill. */
+export function recentInterventionReports(db: Db, interventionId: number, access: GoalAccess, now = new Date()): Array<{ referenceDate: string; plan: ObservationPlanVersion }> {
+  const history = observationHistory(db, interventionId, access);
+  const intervention = db.select().from(schema.interventions).where(eq(schema.interventions.id, interventionId)).get()!;
+  if (intervention.status !== "active") return [];
+  const reports = [];
+  for (let offset = 0; offset < 7; offset++) {
+    const date = addCalendarDays(householdToday(db, now), -offset);
+    const plan = observationPlanForDate(history.plans, date);
+    if (date >= intervention.startDate && plan && observationIsAnswerable(plan, date, now) && !history.observations.some((o) => o.referenceDate === date)) reports.push({ referenceDate: date, plan });
+  }
+  return reports;
+}

@@ -1,3 +1,5 @@
+import { ObservationPlanEditor } from "./ObservationPlanEditor";
+import type { ObservationPlan } from "@machbar/shared";
 import { useState } from "react";
 import {
   calendarDateForInstant,
@@ -13,6 +15,7 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
 export interface InterventionDraft {
+  observationPlan?: ObservationPlan;
   type: InterventionType;
   commitment: string;
   rationale: string;
@@ -42,6 +45,7 @@ export function InterventionFormSheet({
     calendarDateForInstant(new Date().toISOString(), timezone) ??
     toIsoCalendarDate(new Date());
 
+  const [observationPlan, setObservationPlan] = useState<ObservationPlan>(intervention?.observationPlan ?? { method: "reflection" });
   const [type, setType] = useState<InterventionType>(intervention?.type ?? "frequency_habit");
   const [commitment, setCommitment] = useState(intervention?.commitment ?? "");
   const [rationale, setRationale] = useState(intervention?.rationale ?? "");
@@ -72,7 +76,7 @@ export function InterventionFormSheet({
     setSaving(true);
     setError(null);
     try {
-      await onSave({ type, commitment: trimmed, rationale: rationale.trim(), startDate, revisitDate });
+      await onSave({ ...(JSON.stringify(observationPlan) !== JSON.stringify(intervention?.observationPlan) ? { observationPlan } : {}), type, commitment: trimmed, rationale: rationale.trim(), startDate, revisitDate });
       onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -145,6 +149,7 @@ export function InterventionFormSheet({
             onValidityChange={setRevisitValid}
           />
         </div>
+        <ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} />
         {error ? (
           <div className="task-row-error" role="alert">
             {error}

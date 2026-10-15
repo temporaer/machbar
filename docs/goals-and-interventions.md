@@ -733,3 +733,17 @@ and coverage into the shared review evidence, rather than adding a scorer here.
 mutations with the three corresponding MCP tools. All require the parent goal's
 owner. A negative answer successfully records a report and never creates debt.
 Migration 0027 only adds empty tables; original goals and assessments survive.
+
+## Manual observation collection (#213, Phase 3)
+
+The existing intervention editor authors the evidence plan in the same journal
+transaction. Commitment changes snapshot the ongoing plan prospectively too.
+Today separates the standing reminder from reporting: only an answerable period
+gets response buttons, labelled with its actual reference date and a goal link.
+A next-morning question refers to yesterday's night. No AI is required.
+
+Today shows the latest question per intervention; the goal exposes only seven
+recent unanswered days plus the most recent 30 recorded reports for correction.
+Older missing reports do not accumulate as tasks or overdue debt. Reporting No
+is a successful submission. Notes are optional. Task-only plans ask no question.
+German and English catalogs cover all controls. History preserves plan wording.

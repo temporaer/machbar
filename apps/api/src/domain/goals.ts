@@ -10,8 +10,9 @@
  * `running | finished | reviewed` progression is derived at read time
  * (interventionState.ts), never stored.
  */
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
+  ObservationPlan,
   AssessmentBand,
   Goal,
   GoalArea,
@@ -29,6 +30,7 @@ import { isIsoCalendarDate } from "./calendarDate.js";
 import { deriveInterventionState } from "./interventionState.js";
 import { createTaskInTransaction } from "./taskCrud.js";
 import { cancelTask } from "./taskWorkflow.js";
+import { setObservationPlan } from "./interventionObservations.js";
 import { type MutationContext, nowIso } from "./workItemShared.js";
 
 type GoalRow = typeof schema.goals.$inferSelect;
@@ -56,6 +58,7 @@ export interface UpdateGoalInput {
 }
 
 export interface StartInterventionInput {
+  observationPlan?: ObservationPlan;
   type: InterventionType;
   commitment: string;
   rationale?: string;
@@ -65,6 +68,7 @@ export interface StartInterventionInput {
 }
 
 export interface AdjustInterventionInput {
+  observationPlan?: ObservationPlan;
   type?: InterventionType;
   commitment?: string;
   rationale?: string;
@@ -282,6 +286,7 @@ function assessmentsForInterventions(
 }
 
 function buildInterventionView(
+  db: Db,
   intervention: InterventionRow,
   assessments: AssessmentRow[],
   today: string,
@@ -294,6 +299,7 @@ function buildInterventionView(
   });
   return {
     ...mapIntervention(intervention),
+    observationPlan: db.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, intervention.id)).orderBy(desc(schema.interventionObservationPlans.effectiveFrom)).get()?.plan,
     derivedState: state.derivedState,
     withinReviewWindow: state.withinReviewWindow,
     assessments: assessments.map(mapAssessment),
@@ -314,7 +320,7 @@ function assembleGoals(db: Db, goalRows: GoalRow[], today: string): GoalWithInte
     ...mapGoal(goal),
     interventions: (interventionsByGoal.get(goal.id) ?? []).map((intervention) =>
       buildInterventionView(
-        intervention,
+        db, intervention,
         assessmentsByIntervention.get(intervention.id) ?? [],
         today,
       ),
@@ -483,7 +489,12 @@ export function startIntervention(
       })
       .returning()
       .get();
-    return buildInterventionView(created, [], today);
+    if (input.observationPlan) {
+      const owner = requireGoalRow(tx, goalId).ownerMemberId;
+      if (owner === null) throw AppError.badRequest("goal_owner_required", "An observation plan needs an owner.");
+      setObservationPlan(tx as unknown as Db, created.id, { plan: input.observationPlan, expectedRevision: created.revision }, { ownerMemberId: owner });
+    }
+    return buildInterventionView(tx as unknown as Db, requireInterventionRow(tx, created.id), [], today);
   });
 }
 
@@ -522,9 +533,16 @@ export function adjustIntervention(
       .set(patch)
       .where(eq(schema.interventions.id, interventionId))
       .run();
+    const previousPlan = tx.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, interventionId)).orderBy(desc(schema.interventionObservationPlans.effectiveFrom)).get()?.plan;
+    const plan = input.observationPlan ?? (commitment !== undefined && commitment !== current.commitment ? previousPlan : undefined);
+    if (plan) {
+      const owner = requireGoalRow(tx, current.goalId).ownerMemberId;
+      if (owner === null) throw AppError.badRequest("goal_owner_required", "An observation plan needs an owner.");
+      setObservationPlan(tx as unknown as Db, interventionId, { plan, expectedRevision: current.revision + 1 }, { ownerMemberId: owner });
+    }
     const updated = requireInterventionRow(tx, interventionId);
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
-    return buildInterventionView(updated, assessments, today);
+    return buildInterventionView(tx as unknown as Db, updated, assessments, today);
   });
 }
 
@@ -605,7 +623,7 @@ export function backIntervention(
       .run();
     const updated = requireInterventionRow(tx, interventionId);
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
-    return buildInterventionView(updated, assessments, today);
+    return buildInterventionView(tx as unknown as Db, updated, assessments, today);
   });
 }
 
@@ -646,7 +664,7 @@ export function concludeIntervention(
       .run();
     const updated = requireInterventionRow(tx, interventionId);
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
-    return buildInterventionView(updated, assessments, today);
+    return buildInterventionView(tx as unknown as Db, updated, assessments, today);
   });
 }
 

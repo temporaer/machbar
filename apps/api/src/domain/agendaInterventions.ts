@@ -1,3 +1,4 @@
+import { recentInterventionReports } from "./interventionObservations.js";
 /**
  * Builds the Heute "standing focus" intervention section (feature spec §6).
  *
@@ -36,6 +37,7 @@ export interface AgendaInterventionFocusOptions {
   memberId?: number;
   scope: "mine" | "all" | "work";
   today: string;
+  now?: Date;
 }
 
 function periodProgress(intervention: InterventionView, today: string): {
@@ -170,5 +172,7 @@ export function buildAgendaInterventionFocus(
       }
     }
   }
-  return { running, review };
+  const reports = goals.flatMap((goal) => goal.interventions.flatMap((intervention) =>
+    recentInterventionReports(db, intervention.id, { ownerMemberId: options.memberId! }, options.now).map((report) => ({ ...report, interventionId: intervention.id, goalId: goal.id, goalTitle: goal.title }))));
+  return { running, review, reports };
 }

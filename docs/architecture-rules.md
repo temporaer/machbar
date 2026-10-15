@@ -393,3 +393,12 @@ live in `packages/shared/src/interventionObservation.ts`; structural validation
 is in `schemas.ts`. Plans are prospective, reports retain reference dates and
 initial submission times, and absence is missing. This is separate from task
 completion and extends the existing journal, not a reporting task subsystem.
+
+### Manual intervention collection
+
+`InterventionFormSheet` composes draft-only `ObservationPlanEditor`; canonical
+`startIntervention`/`adjustIntervention` atomically snapshot plans alongside
+journal edits. `recentInterventionReports` projects bounded answerable periods
+for `agendaInterventions.ts` and the existing history endpoint.
+`InterventionReportCard` is reused by Today focus and goal history, and writes
+only through `useGoalActions.recordObservation`. Questions never become tasks.
