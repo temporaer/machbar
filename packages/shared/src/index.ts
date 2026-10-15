@@ -1378,8 +1378,13 @@ export interface SearchFilters {
 export const goalStatuses = ["active", "concluded"] as const;
 export type GoalStatus = (typeof goalStatuses)[number];
 
-/** Goals reuse the work-item scope vocabulary; personal goals are `work`. */
-export type GoalScope = WorkItemScope;
+/**
+ * A goal's `area` is decoupled from its (always per-user) ownership: it does
+ * not change visibility, only which of the owner's Heute views surfaces the
+ * intervention focus strip (§3/§6). `personal` is the default.
+ */
+export const goalAreas = ["personal", "work"] as const;
+export type GoalArea = (typeof goalAreas)[number];
 
 export const interventionTypes = [
   "frequency_habit",
@@ -1418,7 +1423,7 @@ export interface Goal {
   id: number;
   revision: number;
   ownerMemberId: number | null;
-  scope: GoalScope;
+  area: GoalArea;
   title: string;
   notes: string;
   status: GoalStatus;

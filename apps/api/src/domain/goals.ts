@@ -14,7 +14,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   AssessmentBand,
   Goal,
-  GoalScope,
+  GoalArea,
   GoalWithInterventions,
   Intervention,
   InterventionAssessment,
@@ -35,13 +35,13 @@ type AssessmentRow = typeof schema.interventionAssessments.$inferSelect;
 
 export interface GoalListFilter {
   ownerMemberId?: number;
-  scope?: GoalScope;
+  area?: GoalArea;
 }
 
 export interface CreateGoalInput {
   title: string;
   notes?: string;
-  scope?: GoalScope;
+  area?: GoalArea;
   ownerMemberId?: number | null;
   createdByMemberId?: number | null;
 }
@@ -49,6 +49,7 @@ export interface CreateGoalInput {
 export interface UpdateGoalInput {
   title?: string;
   notes?: string;
+  area?: GoalArea;
   expectedRevision?: number;
 }
 
@@ -84,7 +85,7 @@ function mapGoal(row: GoalRow): Goal {
     id: row.id,
     revision: row.revision,
     ownerMemberId: row.ownerMemberId,
-    scope: row.scope,
+    area: row.area,
     title: row.title,
     notes: row.notes,
     status: row.status,
@@ -306,8 +307,8 @@ export function listGoals(
   if (filter.ownerMemberId !== undefined) {
     conditions.push(eq(schema.goals.ownerMemberId, filter.ownerMemberId));
   }
-  if (filter.scope !== undefined) {
-    conditions.push(eq(schema.goals.scope, filter.scope));
+  if (filter.area !== undefined) {
+    conditions.push(eq(schema.goals.area, filter.area));
   }
   const rows = db
     .select()
@@ -325,22 +326,22 @@ export function getGoal(db: Db, goalId: number, today: string): GoalWithInterven
 
 export interface GoalAccess {
   ownerMemberId: number;
-  scope: GoalScope;
 }
 
 /**
- * Enforces the owner-and-scope visibility an MCP credential carries (§9): a
- * credential only ever sees its own owner's goals within its scope. Throws
- * `goal_not_found` rather than leaking existence across owners/scopes.
+ * Enforces the owner-only visibility an MCP credential carries (§9): goals are
+ * always owner-scoped per-user, so a credential only ever sees its own owner's
+ * goals — regardless of each goal's `area`. Throws `goal_not_found` rather than
+ * leaking existence across owners.
  */
 export function assertGoalAccessible(db: Db, goalId: number, access: GoalAccess): void {
   const row = requireGoalRow(db, goalId);
-  if (row.ownerMemberId !== access.ownerMemberId || row.scope !== access.scope) {
+  if (row.ownerMemberId !== access.ownerMemberId) {
     throw AppError.notFound("goal_not_found", "The goal was not found.", { goalId });
   }
 }
 
-/** Same owner/scope guard as {@link assertGoalAccessible}, via the parent goal. */
+/** Same owner guard as {@link assertGoalAccessible}, via the parent goal. */
 export function assertInterventionAccessible(
   db: Db,
   interventionId: number,
@@ -352,7 +353,7 @@ export function assertInterventionAccessible(
     .from(schema.goals)
     .where(eq(schema.goals.id, intervention.goalId))
     .get();
-  if (!goal || goal.ownerMemberId !== access.ownerMemberId || goal.scope !== access.scope) {
+  if (!goal || goal.ownerMemberId !== access.ownerMemberId) {
     throw AppError.notFound("intervention_not_found", "The intervention was not found.", {
       interventionId,
     });
@@ -369,7 +370,7 @@ export function createGoal(db: Db, input: CreateGoalInput, today: string): GoalW
       .values({
         title,
         notes: input.notes ?? "",
-        scope: input.scope ?? "work",
+        area: input.area ?? "personal",
         ownerMemberId: input.ownerMemberId ?? null,
         createdByMemberId: input.createdByMemberId ?? null,
       })
@@ -392,6 +393,7 @@ export function updateGoal(
     const patch: Partial<GoalRow> = { revision: current.revision + 1, updatedAt: nowIso() };
     if (title !== undefined) patch.title = title;
     if (input.notes !== undefined) patch.notes = input.notes;
+    if (input.area !== undefined) patch.area = input.area;
     tx.update(schema.goals).set(patch).where(eq(schema.goals.id, goalId)).run();
     return assembleGoals(tx, [requireGoalRow(tx, goalId)], today)[0]!;
   });

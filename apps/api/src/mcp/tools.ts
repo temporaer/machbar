@@ -17,6 +17,7 @@ import {
   normalizeNullableContractValue,
   resolveOwnerSuggestion,
   interventionTypes,
+  goalAreas,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import { buildAgenda } from "../domain/agenda.js";
@@ -1387,16 +1388,19 @@ export function createMachbarMcpServer({
   );
 
   // --- Goals & interventions (manual authoring; no AI) ---------------------
-  const goalAccess = { ownerMemberId: memberId, scope: agentScope };
+  // Goals are always owner-scoped per-user; a credential sees only its own
+  // member's goals, regardless of each goal's `area` (§3/§9).
+  const goalAccess = { ownerMemberId: memberId };
   const goalId = z.number().int().positive();
   const interventionId = z.number().int().positive();
   const interventionTypeSchema = z.enum(interventionTypes);
+  const goalAreaSchema = z.enum(goalAreas);
 
   server.registerTool(
     "machbar_list_goals",
     {
       description:
-        "List this owner's goals in the current scope, each with its interventions and their derived running/finished/reviewed state and assessment history. Goals are a standing-focus journal, separate from tasks and projects; they never appear in Today/Week/Review.",
+        "List this member's goals, each with its interventions and their derived running/finished/reviewed state and assessment history. Goals are always owner-scoped (per-user, never shared); their `area` only decides which Heute view shows the focus strip. Goals are a standing-focus journal, separate from tasks and projects; they never appear in Today/Week/Review.",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -1408,17 +1412,18 @@ export function createMachbarMcpServer({
     "machbar_create_goal",
     {
       description:
-        "Create a goal (a durable intention), owned by the authenticated member in the credential's scope. Interventions are authored separately with machbar_start_intervention.",
+        "Create a goal (a durable intention), owned by the authenticated member. `area` (personal default, or work) only decides which Heute view surfaces its focus strip; goals are never shared. Interventions are authored separately with machbar_start_intervention.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
+        area: goalAreaSchema.optional(),
       },
     },
-    async ({ title, notes }) =>
+    async ({ title, notes, area }) =>
       result(
         createGoal(
           db,
-          { title, notes, scope: agentScope, ownerMemberId: memberId, createdByMemberId: memberId },
+          { title, notes, area, ownerMemberId: memberId, createdByMemberId: memberId },
           householdToday(db),
         ),
       ),
@@ -1428,17 +1433,20 @@ export function createMachbarMcpServer({
     "machbar_update_goal",
     {
       description:
-        "Edit a goal's title and/or notes using its current revision. Lifecycle (concluding) is a separate command, not a metadata edit.",
+        "Edit a goal's title, notes, and/or area using its current revision. Lifecycle (concluding) is a separate command, not a metadata edit.",
       inputSchema: {
         goalId,
         expectedRevision,
         title: z.string().min(1).optional(),
         notes: z.string().optional(),
+        area: goalAreaSchema.optional(),
       },
     },
-    async ({ goalId: id, expectedRevision: rev, title, notes }) => {
+    async ({ goalId: id, expectedRevision: rev, title, notes, area }) => {
       assertGoalAccessible(db, id, goalAccess);
-      return result(updateGoal(db, id, { title, notes, expectedRevision: rev }, householdToday(db)));
+      return result(
+        updateGoal(db, id, { title, notes, area, expectedRevision: rev }, householdToday(db)),
+      );
     },
   );
 
