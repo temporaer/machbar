@@ -1850,6 +1850,25 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     "Optional: IDs der Einträge, die du für diesen Rückblick zählst, durch Komma getrennt.",
   assessmentCountedItemsEmpty: "Keine gezählten Einträge",
   saveAssessment: "Rückblick speichern",
+  goalCoachSuggest: "Vorschläge vom Coach",
+  goalCoachWorking: "Coach denkt nach …",
+  goalCoachReviewHint:
+    "Noch wurde nichts verändert. Prüfe einen Vorschlag und übernimm ihn ausdrücklich.",
+  goalCoachAccept: "Diesen Vorschlag übernehmen",
+  goalCoachAccepting: "Wird übernommen …",
+  goalCoachFailed: "Der Coach konnte keinen verlässlichen Vorschlag erstellen.",
+  goalCoachHomeAssistantUnavailable:
+    "Der Coach braucht eine verbundene Home-Assistant-Integration. Deine manuellen Ziele und Rückblicke funktionieren weiter.",
+  goalCoachAiTaskNotConfigured:
+    "Für den Coach ist in Home Assistant noch kein AI Task eingerichtet. Du kannst das Experiment weiterhin manuell planen und auswerten.",
+  goalCoachStillWorking:
+    "Der Coach braucht länger als erwartet. Versuche es gleich noch einmal.",
+  goalCoachPrepareAssessment: "Rückblick mit Coach vorbereiten",
+  goalCoachAssessmentReviewHint:
+    "Der Coach hat die Felder vorbefüllt. Prüfe und ändere sie, bevor du den Rückblick übernimmst.",
+  goalCoachAssessmentFailed:
+    "Der Coach konnte keinen verlässlichen Rückblick vorbereiten.",
+  goalCoachAcceptAssessment: "Coach-Rückblick übernehmen",
   assessedOn: (date: string) => `Rückblick am ${date}`,
   todayInterventionFocusTitle: "Dein Experiment",
   todayInterventionReviewTitle: "Rückblick fällig",

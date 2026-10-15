@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type {
+  AssessmentProposal,
   GoalArea,
+  GoalSuggestionProposal,
   GoalWithInterventions,
   InterventionView,
 } from "@machbar/shared";
@@ -17,6 +19,7 @@ import {
 } from "../components/InterventionAssessSheet";
 import { BottomSheet } from "../components/BottomSheet";
 import { api } from "../lib/api";
+import { hasApiErrorCode, localizedErrorMessage } from "../lib/errorMessage";
 import { useAsync } from "../lib/useAsync";
 import { useGoalActions } from "../lib/useGoalActions";
 import { useStrings } from "../lib/strings";
@@ -60,6 +63,105 @@ function AssessmentArc({ intervention }: { intervention: InterventionView }) {
   );
 }
 
+function GoalCoachSuggestions({
+  goal,
+  pending,
+  onRequest,
+  onAccept,
+}: {
+  goal: GoalWithInterventions;
+  pending: boolean;
+  onRequest: (goalId: number) => Promise<GoalSuggestionProposal>;
+  onAccept: (goalId: number, requestId: string, index: number) => Promise<unknown>;
+}) {
+  const strings = useStrings();
+  const [proposal, setProposal] = useState<GoalSuggestionProposal | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [accepting, setAccepting] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const request = async () => {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+    setProposal(null);
+    try {
+      const next = await onRequest(goal.id);
+      setProposal(next);
+      if (next.status === "failed") {
+        setError(next.error ?? strings.goalCoachFailed);
+      } else if (next.status !== "ready") {
+        setError(strings.goalCoachStillWorking);
+      }
+    } catch (cause) {
+      setError(
+        hasApiErrorCode(cause, "home_assistant_not_connected")
+          ? strings.goalCoachHomeAssistantUnavailable
+          : hasApiErrorCode(cause, "ai_task_not_configured")
+            ? strings.goalCoachAiTaskNotConfigured
+            : localizedErrorMessage(cause, strings),
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const accept = async (index: number) => {
+    if (!proposal || accepting !== null) return;
+    setAccepting(index);
+    setError(null);
+    try {
+      await onAccept(goal.id, proposal.requestId, index);
+      setProposal(null);
+    } catch (cause) {
+      setError(localizedErrorMessage(cause, strings));
+    } finally {
+      setAccepting(null);
+    }
+  };
+
+  return (
+    <div className="stack goal-coach" data-testid={`goal-coach-${goal.id}`}>
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled={pending || loading || accepting !== null}
+        onClick={() => void request()}
+      >
+        {loading ? strings.goalCoachWorking : strings.goalCoachSuggest}
+      </button>
+      {proposal?.status === "ready" ? (
+        <div className="stack">
+          <p className="text-muted">{strings.goalCoachReviewHint}</p>
+          {proposal.interventions.map((intervention, index) => (
+            <article className="card stack" key={`${intervention.type}-${index}`}>
+              <span className="badge">
+                {strings.interventionTypeLabels[intervention.type]}
+              </span>
+              <strong>{intervention.commitment}</strong>
+              {intervention.rationale ? <p>{intervention.rationale}</p> : null}
+              <p className="text-muted">
+                {intervention.startDate} – {intervention.revisitDate}
+              </p>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={accepting !== null}
+                onClick={() => void accept(index)}
+              >
+                {accepting === index
+                  ? strings.goalCoachAccepting
+                  : strings.goalCoachAccept}
+              </button>
+            </article>
+          ))}
+        </div>
+      ) : null}
+      {error ? <div className="task-row-error" role="alert">{error}</div> : null}
+    </div>
+  );
+}
+
 function GoalCard({
   goal,
   onEditGoal,
@@ -69,6 +171,8 @@ function GoalCard({
   onBackIntervention,
   onConcludeIntervention,
   onAssess,
+  onRequestSuggestion,
+  onAcceptSuggestion,
   pending,
 }: {
   goal: GoalWithInterventions;
@@ -79,6 +183,12 @@ function GoalCard({
   onBackIntervention: (intervention: InterventionView) => void;
   onConcludeIntervention: (intervention: InterventionView) => void;
   onAssess: (intervention: InterventionView) => void;
+  onRequestSuggestion: (goalId: number) => Promise<GoalSuggestionProposal>;
+  onAcceptSuggestion: (
+    goalId: number,
+    requestId: string,
+    index: number,
+  ) => Promise<unknown>;
   pending: boolean;
 }) {
   const strings = useStrings();
@@ -183,33 +293,41 @@ function GoalCard({
       </div>
 
       {active ? (
-        <div className="row goal-card-actions">
-          {hasOpenIntervention ? null : (
+        <div className="stack">
+          <GoalCoachSuggestions
+            goal={goal}
+            pending={pending}
+            onRequest={onRequestSuggestion}
+            onAccept={onAcceptSuggestion}
+          />
+          <div className="row goal-card-actions">
+            {hasOpenIntervention ? null : (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={pending}
+                onClick={() => onStartIntervention(goal)}
+              >
+                {strings.startIntervention}
+              </button>
+            )}
             <button
               type="button"
-              className="btn btn-sm btn-primary"
+              className="btn btn-sm"
               disabled={pending}
-              onClick={() => onStartIntervention(goal)}
+              onClick={() => onEditGoal(goal)}
             >
-              {strings.startIntervention}
+              {strings.editGoal}
             </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={pending}
-            onClick={() => onEditGoal(goal)}
-          >
-            {strings.editGoal}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={pending}
-            onClick={() => onConcludeGoal(goal)}
-          >
-            {strings.concludeGoal}
-          </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={pending}
+              onClick={() => onConcludeGoal(goal)}
+            >
+              {strings.concludeGoal}
+            </button>
+          </div>
         </div>
       ) : null}
     </section>
@@ -252,8 +370,23 @@ export function GoalsPage() {
   };
 
   const assess = async (intervention: InterventionView, draft: AssessmentDraft) => {
+    if (draft.coachRequestId) {
+      await actions.acceptAssessmentProposal(
+        intervention.id,
+        draft.coachRequestId,
+        {
+          band: draft.band,
+          rationaleMd: draft.rationaleMd,
+          countedItemIds: draft.countedItemIds,
+        },
+      );
+      return;
+    }
     await actions.assessIntervention(intervention.id, draft);
   };
+
+  const requestAssessment = (interventionId: number): Promise<AssessmentProposal> =>
+    actions.loadAssessmentProposal(interventionId);
 
   const backIntervention = (intervention: InterventionView) => {
     void actions.backIntervention(intervention);
@@ -318,6 +451,10 @@ export function GoalsPage() {
                   onBackIntervention={backIntervention}
                   onConcludeIntervention={concludeIntervention}
                   onAssess={setAssessing}
+                  onRequestSuggestion={actions.loadGoalSuggestion}
+                  onAcceptSuggestion={(goalId, requestId, index) =>
+                    actions.acceptGoalSuggestion(goalId, requestId, { index })
+                  }
                 />
               ))
             )}
@@ -341,6 +478,10 @@ export function GoalsPage() {
                     onBackIntervention={backIntervention}
                     onConcludeIntervention={concludeIntervention}
                     onAssess={setAssessing}
+                    onRequestSuggestion={actions.loadGoalSuggestion}
+                    onAcceptSuggestion={(goalId, requestId, index) =>
+                      actions.acceptGoalSuggestion(goalId, requestId, { index })
+                    }
                   />
                 ))}
               </div>
@@ -383,6 +524,7 @@ export function GoalsPage() {
           intervention={assessing}
           onClose={() => setAssessing(null)}
           onSave={(draft) => assess(assessing, draft)}
+          onRequestCoach={() => requestAssessment(assessing.id)}
         />
       ) : null}
       {concludingBacked ? (

@@ -87,6 +87,22 @@ planning, waiting, movement, cancellation, or dependency operations on the
 same item, along with duplicate title/notes writes, before the transaction
 starts mutating work.
 
+## Goals and advisory coach proposals
+
+Goals and interventions are an owner-scoped journal, not work-item roles.
+Manual writes and accepted coach proposals share the domain mutations in
+`apps/api/src/domain/goals.ts`; no `goal_id` is added to work items and goals
+remain outside Review.
+
+The two Home Assistant requests are advisory. `goal_suggest` stores intervention
+proposals and `goal_assess` stores a review proposal on the reverse-request row.
+The web polls those existing request resources with a bounded cadence, presents
+the result for editing, and applies it only through the explicit accept
+endpoint. Suggestion acceptance creates one coach-sourced intervention.
+Assessment acceptance uses the same assessment-authoring path as the manual
+sheet. A missing Home Assistant connection or AI Task only disables the coach
+assist; manual goal and assessment workflows remain available.
+
 This document is the technical deep dive for contributors. For product
 concepts, start with the [household workflow](workflow.md). For operating the
 application, see [deployment](deployment.md) and

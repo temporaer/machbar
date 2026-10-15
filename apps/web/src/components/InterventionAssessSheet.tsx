@@ -1,10 +1,11 @@
 import { useState } from "react";
 import {
   assessmentBands,
+  type AssessmentProposal,
   type AssessmentBand,
   type InterventionView,
 } from "@machbar/shared";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { hasApiErrorCode, localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
@@ -15,6 +16,7 @@ export interface AssessmentDraft {
   countedItemIds: number[];
   digestWindowStart: string;
   digestWindowEnd: string;
+  coachRequestId?: string;
 }
 
 function parseCountedItemIds(raw: string): number[] {
@@ -37,10 +39,12 @@ export function InterventionAssessSheet({
   intervention,
   onClose,
   onSave,
+  onRequestCoach,
 }: {
   intervention: InterventionView;
   onClose: () => void;
   onSave: (draft: AssessmentDraft) => Promise<void>;
+  onRequestCoach: () => Promise<AssessmentProposal>;
 }) {
   const strings = useStrings();
   const [band, setBand] = useState<AssessmentBand>("mostly_achieved");
@@ -52,6 +56,46 @@ export function InterventionAssessSheet({
   const [endValid, setEndValid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachRequestId, setCoachRequestId] = useState<string | null>(null);
+
+  const requestCoach = async () => {
+    if (saving || coachLoading) return;
+    setCoachLoading(true);
+    setCoachRequestId(null);
+    setError(null);
+    try {
+      const proposal = await onRequestCoach();
+      if (
+        proposal.status !== "ready" ||
+        proposal.band === null ||
+        proposal.rationaleMd === null
+      ) {
+        setError(
+          proposal.status === "failed"
+            ? proposal.error ?? strings.goalCoachAssessmentFailed
+            : strings.goalCoachStillWorking,
+        );
+        return;
+      }
+      setBand(proposal.band);
+      setRationale(proposal.rationaleMd);
+      setCountedItems(proposal.countedItemIds.join(", "));
+      setWindowStart(proposal.windowStart ?? intervention.startDate);
+      setWindowEnd(proposal.windowEnd ?? intervention.revisitDate);
+      setCoachRequestId(proposal.requestId);
+    } catch (cause) {
+      setError(
+        hasApiErrorCode(cause, "home_assistant_not_connected")
+          ? strings.goalCoachHomeAssistantUnavailable
+          : hasApiErrorCode(cause, "ai_task_not_configured")
+            ? strings.goalCoachAiTaskNotConfigured
+            : localizedErrorMessage(cause, strings),
+      );
+    } finally {
+      setCoachLoading(false);
+    }
+  };
 
   const submit = async () => {
     if (saving) return;
@@ -73,6 +117,7 @@ export function InterventionAssessSheet({
         countedItemIds: parseCountedItemIds(countedItems),
         digestWindowStart: windowStart,
         digestWindowEnd: windowEnd,
+        ...(coachRequestId ? { coachRequestId } : {}),
       });
       onClose();
     } catch (cause) {
@@ -91,6 +136,21 @@ export function InterventionAssessSheet({
     >
       <div className="stack">
         <p className="text-muted">{intervention.commitment}</p>
+        <div className="stack">
+          <button
+            type="button"
+            className="btn"
+            disabled={saving || coachLoading}
+            onClick={() => void requestCoach()}
+          >
+            {coachLoading
+              ? strings.goalCoachWorking
+              : strings.goalCoachPrepareAssessment}
+          </button>
+          {coachRequestId ? (
+            <p className="text-muted">{strings.goalCoachAssessmentReviewHint}</p>
+          ) : null}
+        </div>
         <div className="field">
           <span className="field-label">{strings.assessmentBandLabel}</span>
           <div className="choice-group" role="group" aria-label={strings.assessmentBandLabel}>
@@ -100,7 +160,7 @@ export function InterventionAssessSheet({
                 type="button"
                 className="choice-chip"
                 aria-pressed={band === value}
-                disabled={saving}
+                disabled={saving || coachLoading}
                 onClick={() => setBand(value)}
               >
                 {strings.assessmentBandLabels[value]}
@@ -113,7 +173,7 @@ export function InterventionAssessSheet({
           <textarea
             value={rationale}
             rows={3}
-            disabled={saving}
+            disabled={saving || coachLoading}
             onChange={(event) => setRationale(event.target.value)}
           />
         </label>
@@ -122,7 +182,7 @@ export function InterventionAssessSheet({
           <HumanDateInput
             id="assessment-window-start"
             value={windowStart}
-            disabled={saving}
+            disabled={saving || coachLoading || coachRequestId !== null}
             onChange={(date) => setWindowStart(date ?? "")}
             onValidityChange={setStartValid}
           />
@@ -132,7 +192,7 @@ export function InterventionAssessSheet({
           <HumanDateInput
             id="assessment-window-end"
             value={windowEnd}
-            disabled={saving}
+            disabled={saving || coachLoading || coachRequestId !== null}
             onChange={(date) => setWindowEnd(date ?? "")}
             onValidityChange={setEndValid}
           />
@@ -143,7 +203,7 @@ export function InterventionAssessSheet({
             type="text"
             value={countedItems}
             inputMode="numeric"
-            disabled={saving}
+            disabled={saving || coachLoading}
             placeholder={strings.assessmentCountedItemsHint}
             onChange={(event) => setCountedItems(event.target.value)}
           />
@@ -157,10 +217,12 @@ export function InterventionAssessSheet({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={saving || !startValid || !endValid}
+            disabled={saving || coachLoading || !startValid || !endValid}
             onClick={() => void submit()}
           >
-            {strings.saveAssessment}
+            {coachRequestId
+              ? strings.goalCoachAcceptAssessment
+              : strings.saveAssessment}
           </button>
           <button type="button" className="btn" disabled={saving} onClick={onClose}>
             {strings.cancel}
