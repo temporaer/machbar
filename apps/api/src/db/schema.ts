@@ -1024,3 +1024,126 @@ export const notificationDeliveries = sqliteTable(
     ),
   ],
 );
+
+/**
+ * Goals & interventions (feature spec: docs/goals-and-interventions.md §4).
+ *
+ * A goal is a long-horizon intention. It is deliberately NOT a `work_items`
+ * role and there is no `goal_id` on `work_items` and no join table — the
+ * goal↔activity relevance is inferred semantically, not stored (§2, §4).
+ * Interventions are time-boxed behavioral experiments belonging to one goal;
+ * each assessment is an append-only history row so a goal reads as an arc.
+ *
+ * Stored lifecycle `status` is only `active | concluded`. The user-facing
+ * `running / finished / reviewed` progression is derived at read time from
+ * `revisitDate` and whether an assessment row exists — never stored, no cron
+ * (§4, §5).
+ */
+export const goals = sqliteTable("goals", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  revision: integer("revision").notNull().default(1),
+  ownerMemberId: integer("owner_member_id").references(() => members.id, {
+    onDelete: "set null",
+  }),
+  // household | work. Personal goals are owner-only "work"-like (firm v1
+  // decision, §3), hence the "work" default.
+  scope: text("scope", { enum: ["household", "work"] })
+    .notNull()
+    .default("work"),
+  title: text("title").notNull(),
+  notes: text("notes").notNull().default(""),
+  status: text("status", { enum: ["active", "concluded"] })
+    .notNull()
+    .default("active"),
+  concludedAt: text("concluded_at"),
+  createdByMemberId: integer("created_by_member_id").references(
+    () => members.id,
+    { onDelete: "set null" },
+  ),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+});
+
+export const interventions = sqliteTable(
+  "interventions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    revision: integer("revision").notNull().default(1),
+    goalId: integer("goal_id")
+      .notNull()
+      .references(() => goals.id, { onDelete: "cascade" }),
+    type: text("type", {
+      enum: [
+        "frequency_habit",
+        "obstacle_removal",
+        "commitment_stake",
+        "exploration_step",
+        "composition_ratio",
+      ],
+    }).notNull(),
+    // One-line behavioral commitment (if-then phrased, §7.1).
+    commitment: text("commitment").notNull(),
+    rationale: text("rationale").notNull().default(""),
+    startDate: text("start_date").notNull(),
+    // End of the period = end of the digest window passed to the assess pass;
+    // drives Today surfacing. Strict YYYY-MM-DD.
+    revisitDate: text("revisit_date").notNull(),
+    status: text("status", { enum: ["active", "concluded"] })
+      .notNull()
+      .default("active"),
+    concludedAt: text("concluded_at"),
+    // Loose, optional pointer to a single recurring/check-in task created by
+    // this intervention (frequency types only, §8). NOT the per-task goal
+    // link §2 forbids; set null if that task is deleted.
+    backingTaskId: integer("backing_task_id").references(() => workItems.id, {
+      onDelete: "set null",
+    }),
+    source: text("source", { enum: ["coach", "manual"] }).notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [index("interventions_goal_idx").on(t.goalId)],
+);
+
+export const interventionAssessments = sqliteTable(
+  "intervention_assessments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    interventionId: integer("intervention_id")
+      .notNull()
+      .references(() => interventions.id, { onDelete: "cascade" }),
+    assessedAt: text("assessed_at").notNull(),
+    // Qualitative band, never a numeric %.
+    band: text("band", {
+      enum: [
+        "no_evidence",
+        "attempted_partial",
+        "mostly_achieved",
+        "achieved",
+        "exceeded",
+      ],
+    }).notNull(),
+    // The after-action review: what was counted, what was inferred, caveats.
+    rationaleMd: text("rationale_md").notNull(),
+    digestWindowStart: text("digest_window_start").notNull(),
+    digestWindowEnd: text("digest_window_end").notNull(),
+    // JSON array of work-item ids the coach deemed relevant, shown for
+    // sanity-checking.
+    countedItemIdsJson: text("counted_item_ids_json").notNull(),
+    source: text("source", { enum: ["coach", "manual"] }).notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [
+    index("intervention_assessments_intervention_idx").on(t.interventionId),
+  ],
+);
