@@ -27,7 +27,9 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { isIsoCalendarDate } from "./calendarDate.js";
 import { deriveInterventionState } from "./interventionState.js";
-import { nowIso } from "./workItemShared.js";
+import { createTaskInTransaction } from "./taskCrud.js";
+import { cancelTask } from "./taskWorkflow.js";
+import { type MutationContext, nowIso } from "./workItemShared.js";
 
 type GoalRow = typeof schema.goals.$inferSelect;
 type InterventionRow = typeof schema.interventions.$inferSelect;
@@ -79,6 +81,28 @@ export interface ManualAssessmentInput {
   digestWindowEnd: string;
   assessedAt?: string;
 }
+
+/**
+ * Phase 4 recurring-task backing (§8). Only `frequency_habit` interventions may
+ * be backed. The recurring check-in is created through the canonical task path
+ * ({@link createTaskInTransaction}) — never a parallel mutation — using the
+ * caller-chosen cadence (defaulting to a daily check-in).
+ */
+export interface BackInterventionInput {
+  title?: string;
+  scheduledDate?: string;
+  repeatAfterDays?: number;
+  allowedDeviationDays?: number;
+  expectedRevision?: number;
+}
+
+/**
+ * How to treat a backed intervention's recurring check-in when the intervention
+ * concludes (§8, decided). Defaults to `"stop"`: silently orphaning the task
+ * would be surprising, so the default ends it, while `"keep"` lets a habit with
+ * standing value live on as ordinary recurring work.
+ */
+export type BackingCleanup = "keep" | "stop";
 
 function mapGoal(row: GoalRow): Goal {
   return {
@@ -504,12 +528,91 @@ export function adjustIntervention(
   });
 }
 
+/**
+ * Back a `frequency_habit` intervention with a recurring check-in task (§8).
+ *
+ * The check-in is created through the canonical task path
+ * ({@link createTaskInTransaction}) inside the same transaction that stores the
+ * pointer, so there is no parallel task-mutation module and no window in which
+ * the task exists without its backing reference. The task is owner-only
+ * (`scope: "work"`, explicit owner = the goal owner) so it surfaces in the
+ * owner's reflection digest — the assess pass then reads its crisp hit/miss.
+ */
+export function backIntervention(
+  db: Db,
+  interventionId: number,
+  input: BackInterventionInput,
+  today: string,
+  context?: MutationContext,
+): InterventionView {
+  return db.transaction((tx) => {
+    const current = requireInterventionRow(tx, interventionId);
+    assertInterventionRevision(current, input.expectedRevision);
+    if (current.type !== "frequency_habit") {
+      throw AppError.conflict(
+        "intervention_backing_unavailable",
+        "Only a frequency-habit intervention can be backed by a recurring check-in.",
+        { interventionId, type: current.type },
+      );
+    }
+    if (current.status === "concluded") {
+      throw AppError.conflict(
+        "intervention_transition_invalid",
+        "A concluded intervention cannot be backed.",
+        { interventionId },
+      );
+    }
+    if (current.backingTaskId !== null) {
+      throw AppError.conflict(
+        "intervention_already_backed",
+        "This intervention already has a recurring check-in.",
+        { interventionId, backingTaskId: current.backingTaskId },
+      );
+    }
+    const goal = requireGoalRow(tx, current.goalId);
+    // Start the check-in no earlier than today so the first occurrence is not
+    // already overdue, but never before the intervention's own start date.
+    const scheduledDate =
+      input.scheduledDate ?? (current.startDate < today ? today : current.startDate);
+    const repeatAfterDays = input.repeatAfterDays ?? 1;
+    const allowedDeviationDays = input.allowedDeviationDays ?? 0;
+    const title = (input.title ?? current.commitment).trim();
+    const created = createTaskInTransaction(
+      tx as unknown as Db,
+      {
+        title,
+        scope: "work",
+        ownerMemberId: goal.ownerMemberId,
+        ownerInheritanceMode: "explicit",
+        createdByMemberId: context?.actorMemberId ?? null,
+        scheduledDate,
+        repeatAfterDays,
+        allowedDeviationDays,
+      },
+      context,
+    );
+    tx.update(schema.interventions)
+      .set({
+        backingTaskId: created.id,
+        revision: current.revision + 1,
+        updatedAt: nowIso(),
+      })
+      .where(eq(schema.interventions.id, interventionId))
+      .run();
+    const updated = requireInterventionRow(tx, interventionId);
+    const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
+    return buildInterventionView(updated, assessments, today);
+  });
+}
+
 export function concludeIntervention(
   db: Db,
   interventionId: number,
   expectedRevision: number | undefined,
   today: string,
+  options: { backingCleanup?: BackingCleanup; context?: MutationContext } = {},
 ): InterventionView {
+  const backingCleanup: BackingCleanup = options.backingCleanup ?? "stop";
   return db.transaction((tx) => {
     const current = requireInterventionRow(tx, interventionId);
     assertInterventionRevision(current, expectedRevision);
@@ -520,10 +623,18 @@ export function concludeIntervention(
         { interventionId },
       );
     }
+    // Cleanup on conclude (§8, decided): resolve the backing recurring check-in
+    // before flipping status. "keep" just clears the pointer so the task lives
+    // on as ordinary recurring work; "stop" (default) ends it through the
+    // canonical task path — never a parallel mutation — leaving no orphan.
+    if (current.backingTaskId !== null && backingCleanup === "stop") {
+      cancelTask(tx as unknown as Db, current.backingTaskId, undefined, options.context);
+    }
     tx.update(schema.interventions)
       .set({
         status: "concluded",
         concludedAt: nowIso(),
+        backingTaskId: null,
         revision: current.revision + 1,
         updatedAt: nowIso(),
       })

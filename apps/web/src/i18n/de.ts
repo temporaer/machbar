@@ -1767,6 +1767,10 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     intervention_revisit_invalid: "Das Rückblickdatum darf nicht vor dem Startdatum liegen.",
     intervention_transition_invalid: "Dieser Experimentwechsel ist nicht möglich.",
     intervention_assessment_invalid: "Die Einschätzung ist unvollständig oder ungültig.",
+    intervention_backing_unavailable:
+      "Nur Häufigkeits-Gewohnheiten können mit einer wiederkehrenden Check-in-Aufgabe hinterlegt werden.",
+    intervention_already_backed:
+      "Dieses Experiment ist bereits mit einer Check-in-Aufgabe hinterlegt.",
     goal_owner_required: "Ein Ziel braucht eine zuständige Person.",
     coach_request_not_found: "Der Coach-Vorschlag wurde nicht gefunden.",
     coach_proposal_not_ready: "Der Coach-Vorschlag ist noch nicht bereit.",
@@ -1825,6 +1829,15 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   interventionReviewedBadge: "Rückblick erledigt",
   interventionPeriodProgress: (day: number, length: number) =>
     `Tag ${day} von ${length}`,
+  backIntervention: "Mit Check-in hinterlegen",
+  interventionBackedBadge: "Hinterlegt",
+  interventionBackingTally: (hits: number, misses: number) =>
+    `Treffer ${hits} · Verpasst ${misses}`,
+  concludeBackingTitle: "Check-in-Aufgabe",
+  concludeBackingPrompt:
+    "Dieses Experiment hat eine wiederkehrende Check-in-Aufgabe. Was soll damit passieren?",
+  concludeBackingStop: "Aufgabe beenden (Standard)",
+  concludeBackingKeep: "Aufgabe behalten",
   assessmentHistory: "Rückblicke",
   noAssessments: "Noch kein Rückblick",
   reviewIntervention: "Rückblick auf dein Experiment",

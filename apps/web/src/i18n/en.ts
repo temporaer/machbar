@@ -1776,6 +1776,10 @@ When the person ends the reflection, provide a concise human-readable summary an
     intervention_revisit_invalid: "The revisit date must not be before the start date.",
     intervention_transition_invalid: "That intervention change is not possible.",
     intervention_assessment_invalid: "The assessment is incomplete or invalid.",
+    intervention_backing_unavailable:
+      "Only frequency habits can be backed by a recurring check-in task.",
+    intervention_already_backed:
+      "This intervention is already backed by a check-in task.",
     goal_owner_required: "A goal needs a responsible person.",
     coach_request_not_found: "The coach proposal was not found.",
     coach_proposal_not_ready: "The coach proposal is not ready yet.",
@@ -1834,6 +1838,15 @@ When the person ends the reflection, provide a concise human-readable summary an
   interventionReviewedBadge: "Reviewed",
   interventionPeriodProgress: (day: number, length: number) =>
     `Day ${day} of ${length}`,
+  backIntervention: "Back with a check-in",
+  interventionBackedBadge: "Backed",
+  interventionBackingTally: (hits: number, misses: number) =>
+    `Hits ${hits} · Misses ${misses}`,
+  concludeBackingTitle: "Check-in task",
+  concludeBackingPrompt:
+    "This experiment has a recurring check-in task. What should happen to it?",
+  concludeBackingStop: "End the task (default)",
+  concludeBackingKeep: "Keep the task",
   assessmentHistory: "Reviews",
   noAssessments: "No review yet",
   reviewIntervention: "Review your experiment",

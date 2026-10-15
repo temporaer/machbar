@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type {
   GoalWithInterventions,
   InterventionAssessment,
@@ -13,6 +14,8 @@ vi.mock("../lib/api", () => ({
   api: {
     listGoals: vi.fn(),
     getMembers: vi.fn(() => Promise.resolve([])),
+    backIntervention: vi.fn(() => Promise.resolve({})),
+    concludeIntervention: vi.fn(() => Promise.resolve({})),
   },
 }));
 
@@ -129,5 +132,91 @@ describe("GoalsPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/\(1\)/)).toBeInTheDocument();
     });
+  });
+
+  it("offers backing only for a running, unbacked frequency habit", async () => {
+    const running = makeIntervention({
+      status: "active",
+      concludedAt: null,
+      derivedState: "running",
+      assessments: [],
+      backingTaskId: null,
+    });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [running] })]);
+    renderWithProviders(<GoalsPage />);
+
+    const backButton = await screen.findByRole("button", {
+      name: "Mit Check-in hinterlegen",
+    });
+    await userEvent.click(backButton);
+    expect(mockedApi.backIntervention).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({ expectedRevision: 2 }),
+    );
+  });
+
+  it("hides backing for a non-frequency-habit intervention", async () => {
+    const running = makeIntervention({
+      type: "obstacle_removal",
+      status: "active",
+      concludedAt: null,
+      derivedState: "running",
+      assessments: [],
+      backingTaskId: null,
+    });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [running] })]);
+    renderWithProviders(<GoalsPage />);
+
+    await screen.findByText("Run three times a week");
+    expect(
+      screen.queryByRole("button", { name: "Mit Check-in hinterlegen" }),
+    ).toBeNull();
+  });
+
+  it("prompts keep/stop when concluding a backed intervention and defaults to stop", async () => {
+    const backed = makeIntervention({
+      status: "active",
+      concludedAt: null,
+      derivedState: "running",
+      assessments: [],
+      backingTaskId: 77,
+    });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [backed] })]);
+    renderWithProviders(<GoalsPage />);
+
+    const concludeButton = await screen.findByRole("button", {
+      name: "Experiment beenden",
+    });
+    await userEvent.click(concludeButton);
+
+    // A keep/stop prompt appears rather than concluding immediately.
+    const prompt = await screen.findByTestId("conclude-backing-prompt");
+    expect(mockedApi.concludeIntervention).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      within(prompt).getByRole("button", { name: "Aufgabe beenden (Standard)" }),
+    );
+    expect(mockedApi.concludeIntervention).toHaveBeenCalledWith(10, 2, "stop");
+  });
+
+  it("keeps the backing task when chosen on conclude", async () => {
+    const backed = makeIntervention({
+      status: "active",
+      concludedAt: null,
+      derivedState: "running",
+      assessments: [],
+      backingTaskId: 77,
+    });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [backed] })]);
+    renderWithProviders(<GoalsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Experiment beenden" }),
+    );
+    const prompt = await screen.findByTestId("conclude-backing-prompt");
+    await userEvent.click(
+      within(prompt).getByRole("button", { name: "Aufgabe behalten" }),
+    );
+    expect(mockedApi.concludeIntervention).toHaveBeenCalledWith(10, 2, "keep");
   });
 });

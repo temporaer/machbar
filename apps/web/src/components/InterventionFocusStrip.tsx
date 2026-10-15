@@ -33,6 +33,17 @@ export function InterventionFocusStrip({ focus }: { focus: AgendaInterventionFoc
                 <p className="text-muted">
                   {strings.interventionPeriodProgress(item.periodDay, item.periodLength)}
                 </p>
+                {item.backing ? (
+                  <p
+                    className="text-muted intervention-focus-backing"
+                    data-testid="intervention-focus-backing"
+                  >
+                    {strings.interventionBackingTally(
+                      item.backing.hits,
+                      item.backing.misses,
+                    )}
+                  </p>
+                ) : null}
               </li>
             ))}
           </ul>

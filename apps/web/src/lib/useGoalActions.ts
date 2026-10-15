@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import {
   api,
   type AdjustInterventionInput,
+  type BackInterventionInput,
+  type BackingCleanup,
   type CreateGoalInput,
   type GoalWithInterventions,
   type Intervention,
@@ -88,12 +90,30 @@ export function useGoalActions() {
     [run],
   );
 
-  const concludeIntervention = useCallback(
-    (intervention: Intervention) =>
+  const backIntervention = useCallback(
+    (intervention: Intervention, input: BackInterventionInput = {}) =>
       run<Intervention>({
         id: intervention.id,
         mutate: () =>
-          api.concludeIntervention(intervention.id, intervention.revision),
+          api.backIntervention(intervention.id, {
+            ...input,
+            expectedRevision: input.expectedRevision ?? intervention.revision,
+          }),
+        throwOnError: true,
+      }),
+    [run],
+  );
+
+  const concludeIntervention = useCallback(
+    (intervention: Intervention, backingCleanup?: BackingCleanup) =>
+      run<Intervention>({
+        id: intervention.id,
+        mutate: () =>
+          api.concludeIntervention(
+            intervention.id,
+            intervention.revision,
+            backingCleanup,
+          ),
         throwOnError: true,
       }),
     [run],
@@ -119,6 +139,7 @@ export function useGoalActions() {
     concludeGoal,
     startIntervention,
     adjustIntervention,
+    backIntervention,
     concludeIntervention,
     assessIntervention,
   };

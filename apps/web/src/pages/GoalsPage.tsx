@@ -15,6 +15,7 @@ import {
   InterventionAssessSheet,
   type AssessmentDraft,
 } from "../components/InterventionAssessSheet";
+import { BottomSheet } from "../components/BottomSheet";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useGoalActions } from "../lib/useGoalActions";
@@ -65,6 +66,7 @@ function GoalCard({
   onConcludeGoal,
   onStartIntervention,
   onAdjustIntervention,
+  onBackIntervention,
   onConcludeIntervention,
   onAssess,
   pending,
@@ -74,6 +76,7 @@ function GoalCard({
   onConcludeGoal: (goal: GoalWithInterventions) => void;
   onStartIntervention: (goal: GoalWithInterventions) => void;
   onAdjustIntervention: (intervention: InterventionView) => void;
+  onBackIntervention: (intervention: InterventionView) => void;
   onConcludeIntervention: (intervention: InterventionView) => void;
   onAssess: (intervention: InterventionView) => void;
   pending: boolean;
@@ -112,6 +115,11 @@ function GoalCard({
                   {strings.interventionTypeLabels[intervention.type]}
                 </span>
                 <span className="badge">{derivedStateBadge(intervention, strings)}</span>
+                {intervention.backingTaskId !== null ? (
+                  <span className="badge" data-testid="intervention-backed-badge">
+                    {strings.interventionBackedBadge}
+                  </span>
+                ) : null}
               </div>
               <p>
                 <strong>{intervention.commitment}</strong>
@@ -133,6 +141,17 @@ function GoalCard({
                     >
                       {strings.editIntervention}
                     </button>
+                    {intervention.type === "frequency_habit" &&
+                    intervention.backingTaskId === null ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={pending}
+                        onClick={() => onBackIntervention(intervention)}
+                      >
+                        {strings.backIntervention}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="btn btn-sm"
@@ -206,6 +225,7 @@ export function GoalsPage() {
   const [editingGoal, setEditingGoal] = useState<GoalWithInterventions | null>(null);
   const [interventionGoal, setInterventionGoal] = useState<GoalWithInterventions | null>(null);
   const [adjustingIntervention, setAdjustingIntervention] = useState<InterventionView | null>(null);
+  const [concludingBacked, setConcludingBacked] = useState<InterventionView | null>(null);
   const [assessing, setAssessing] = useState<InterventionView | null>(null);
 
   const goals = goalsState.data ?? [];
@@ -233,6 +253,26 @@ export function GoalsPage() {
 
   const assess = async (intervention: InterventionView, draft: AssessmentDraft) => {
     await actions.assessIntervention(intervention.id, draft);
+  };
+
+  const backIntervention = (intervention: InterventionView) => {
+    void actions.backIntervention(intervention);
+  };
+
+  const concludeIntervention = (intervention: InterventionView) => {
+    if (intervention.backingTaskId !== null) {
+      setConcludingBacked(intervention);
+      return;
+    }
+    void actions.concludeIntervention(intervention);
+  };
+
+  const finishConcludeBacked = (cleanup: "keep" | "stop") => {
+    const target = concludingBacked;
+    setConcludingBacked(null);
+    if (target) {
+      void actions.concludeIntervention(target, cleanup);
+    }
   };
 
   const anyPending = goalsState.loading;
@@ -275,9 +315,8 @@ export function GoalsPage() {
                   onConcludeGoal={(target) => void actions.concludeGoal(target)}
                   onStartIntervention={setInterventionGoal}
                   onAdjustIntervention={setAdjustingIntervention}
-                  onConcludeIntervention={(intervention) =>
-                    void actions.concludeIntervention(intervention)
-                  }
+                  onBackIntervention={backIntervention}
+                  onConcludeIntervention={concludeIntervention}
                   onAssess={setAssessing}
                 />
               ))
@@ -299,9 +338,8 @@ export function GoalsPage() {
                     onConcludeGoal={(target) => void actions.concludeGoal(target)}
                     onStartIntervention={setInterventionGoal}
                     onAdjustIntervention={setAdjustingIntervention}
-                    onConcludeIntervention={(intervention) =>
-                      void actions.concludeIntervention(intervention)
-                    }
+                    onBackIntervention={backIntervention}
+                    onConcludeIntervention={concludeIntervention}
                     onAssess={setAssessing}
                   />
                 ))}
@@ -346,6 +384,32 @@ export function GoalsPage() {
           onClose={() => setAssessing(null)}
           onSave={(draft) => assess(assessing, draft)}
         />
+      ) : null}
+      {concludingBacked ? (
+        <BottomSheet
+          title={strings.concludeBackingTitle}
+          onClose={() => setConcludingBacked(null)}
+        >
+          <div className="stack" data-testid="conclude-backing-prompt">
+            <p>{strings.concludeBackingPrompt}</p>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => finishConcludeBacked("stop")}
+              >
+                {strings.concludeBackingStop}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => finishConcludeBacked("keep")}
+              >
+                {strings.concludeBackingKeep}
+              </button>
+            </div>
+          </div>
+        </BottomSheet>
       ) : null}
     </div>
   );
