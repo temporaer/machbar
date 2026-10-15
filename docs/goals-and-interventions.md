@@ -73,7 +73,9 @@ A late report still uses the plan that applied to its reference day.
 separate. Absence of a row is missing evidence. No opportunity is appropriate for
 a response requiring a trigger; a trigger-free avoidance window is not silently
 classified that way. Negative reporting is a successful submission, not unfinished
-work. Daily timing compares local calendar dates and wall-clock times across DST.
+work. Availability resolves local calendar time to an instant: an overlapping hour
+uses its later occurrence, and a nonexistent time shifts forward by the DST gap.
+Once available, a question cannot become unavailable when the clock moves back.
 
 Calendar-week targets mean Monday–Sunday. Fixed seven-day targets require an
 explicit anchor defining consecutive non-overlapping periods. Supported targets

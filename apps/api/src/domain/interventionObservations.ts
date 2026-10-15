@@ -1,3 +1,4 @@
+import { Temporal } from "@js-temporal/polyfill";
 import { and, asc, eq } from "drizzle-orm";
 import type { InterventionObservation, InterventionObservationHistory, ObservationPlanVersion } from "@machbar/shared";
 import type { z } from "zod";
@@ -20,14 +21,13 @@ export function observationHistory(db: Db, interventionId: number, access: GoalA
 export function observationPlanForDate(plans: ObservationPlanVersion[], date: string): ObservationPlanVersion | undefined {
   return plans.filter((p) => p.effectiveFrom <= date).sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0];
 }
-/** Wall-clock comparison deliberately avoids assuming that local days are 24 hours. */
+/** Resolve local availability once: later overlap and forward gap, then compare instants. */
 export function observationIsAnswerable(version: ObservationPlanVersion, referenceDate: string, now: Date): boolean {
   if (version.plan.method !== "daily_report" || referenceDate < version.effectiveFrom) return false;
   const availableDate = addCalendarDays(referenceDate, version.plan.reportDayOffset);
-  const today = localDate(now, version.timezone);
-  if (today !== availableDate) return today > availableDate;
-  const time = new Intl.DateTimeFormat("en-GB", { timeZone: version.timezone, hourCycle: "h23", hour: "2-digit", minute: "2-digit" }).format(now);
-  return time >= version.plan.availableAfter;
+  const available = Temporal.PlainDateTime.from(`${availableDate}T${version.plan.availableAfter}`)
+    .toZonedDateTime(version.timezone, { disambiguation: "later" });
+  return now.getTime() >= available.epochMilliseconds;
 }
 export function setObservationPlan(db: Db, interventionId: number, raw: z.input<typeof setObservationPlanSchema>, access: GoalAccess, now = new Date()): ObservationPlanVersion {
   const input = parseOrThrow(setObservationPlanSchema, raw);

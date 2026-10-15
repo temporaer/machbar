@@ -69,3 +69,14 @@ it("offers only answerable recent questions in the owner's personal Today; a neg
   expect(buildAgendaInterventionFocus(db, options).reports).toEqual([]);
   expect(buildAgendaInterventionFocus(db, { ...options, today: "2027-01-01", now: new Date("2027-01-01T10:00:00Z") }).reports?.length).toBeLessThanOrEqual(7);
 });
+
+it("keeps availability monotonic during a repeated hour and shifts nonexistent times forward", () => {
+  const version: ObservationPlanVersion = { id: 1, interventionId: 1, effectiveFrom: "2026-01-01", timezone: "Europe/Berlin", commitment: "Night", plan: { ...daily, availableAfter: "02:30" }, createdAt: "2026-01-01T00:00:00Z" };
+  // The later occurrence is deliberate: the first 02:45 must not be followed by unavailable 02:15.
+  expect(observationIsAnswerable(version, "2026-10-24", new Date("2026-10-25T00:45:00Z"))).toBe(false);
+  expect(observationIsAnswerable(version, "2026-10-24", new Date("2026-10-25T01:15:00Z"))).toBe(false);
+  expect(observationIsAnswerable(version, "2026-10-24", new Date("2026-10-25T01:30:00Z"))).toBe(true);
+  expect(observationIsAnswerable(version, "2026-10-24", new Date("2026-10-25T01:45:00Z"))).toBe(true);
+  expect(observationIsAnswerable(version, "2026-03-28", new Date("2026-03-29T01:29:00Z"))).toBe(false);
+  expect(observationIsAnswerable(version, "2026-03-28", new Date("2026-03-29T01:30:00Z"))).toBe(true);
+});
