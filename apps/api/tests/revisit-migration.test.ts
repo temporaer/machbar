@@ -146,7 +146,7 @@ describe("revisit migration", () => {
         handle.sqlite
           .prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations")
           .get(),
-      ).toEqual({ count: 26 });
+      ).toEqual({ count: journal.entries.length });
     } finally {
       handle.close();
     }
