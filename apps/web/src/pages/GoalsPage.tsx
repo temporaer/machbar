@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type {
-  GoalScope,
+  GoalArea,
   GoalWithInterventions,
   InterventionView,
 } from "@machbar/shared";
@@ -92,7 +92,7 @@ function GoalCard({
       <div className="row goal-card-head">
         <h3>{goal.title}</h3>
         <span className="badge">
-          {goal.scope === "work" ? strings.goalScopeWork : strings.goalScopeHousehold}
+          {goal.area === "work" ? strings.goalAreaWork : strings.goalAreaPersonal}
         </span>
         <span className="badge">
           {active ? strings.goalActiveBadge : strings.goalConcludedBadge}
@@ -212,13 +212,13 @@ export function GoalsPage() {
   const activeGoals = goals.filter((goal) => goal.status === "active");
   const concludedGoals = goals.filter((goal) => goal.status !== "active");
 
-  const createGoal = async (input: { title: string; notes: string; scope: GoalScope }) => {
+  const createGoal = async (input: { title: string; notes: string; area: GoalArea }) => {
     await actions.createGoal(input);
   };
 
   const saveGoal = async (
     goal: GoalWithInterventions,
-    input: { title: string; notes: string; scope: GoalScope },
+    input: { title: string; notes: string; area: GoalArea },
   ) => {
     await actions.updateGoal(goal, { title: input.title, notes: input.notes });
   };

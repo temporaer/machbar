@@ -10,8 +10,9 @@ import { closeTestContext, createTestContext, type TestContext } from "./helpers
 /**
  * Phase 2 Heute intervention focus: the running/finished sibling section is a
  * read-time projection over the Phase 1 journal. It must classify running vs
- * review-window interventions by the household date, respect owner/scope, drop
- * reviewed ones, and never leak into the derived Review queue.
+ * review-window interventions by the household date, place goals by their
+ * `area` into the viewer's own Heute views, drop reviewed ones, and never leak
+ * into the derived Review queue.
  */
 describe("Agenda intervention focus (Phase 2)", () => {
   let ctx: TestContext;
@@ -78,7 +79,7 @@ describe("Agenda intervention focus (Phase 2)", () => {
     const member = await createMember();
     const goal = await createGoal(member.id, {
       title: "Run a half marathon",
-      scope: "work",
+      area: "work",
     });
     const intervention = await startIntervention(member.id, goal.id, {
       type: "frequency_habit",
@@ -122,7 +123,7 @@ describe("Agenda intervention focus (Phase 2)", () => {
 
   it("drops the experiment from Heute once it has been reviewed", async () => {
     const member = await createMember();
-    const goal = await createGoal(member.id, { title: "Sleep earlier", scope: "work" });
+    const goal = await createGoal(member.id, { title: "Sleep earlier", area: "work" });
     const intervention = await startIntervention(member.id, goal.id, {
       type: "frequency_habit",
       commitment: "Lights out by 23:00",
@@ -149,11 +150,11 @@ describe("Agenda intervention focus (Phase 2)", () => {
     expect(reviewed.interventions.review).toHaveLength(0);
   });
 
-  it("scopes the section by owner and goal scope", async () => {
+  it("places goals into the viewer's own Heute by area, never into the household overview", async () => {
     const owner = await createMember("Owner");
     const other = await createMember("Other");
 
-    const workGoal = await createGoal(owner.id, { title: "Work goal", scope: "work" });
+    const workGoal = await createGoal(owner.id, { title: "Work goal", area: "work" });
     await startIntervention(owner.id, workGoal.id, {
       type: "frequency_habit",
       commitment: "Work commitment",
@@ -161,37 +162,40 @@ describe("Agenda intervention focus (Phase 2)", () => {
       revisitDate: "2026-03-20",
     });
 
-    const householdGoal = await createGoal(owner.id, {
-      title: "Household goal",
-      scope: "household",
+    const personalGoal = await createGoal(owner.id, {
+      title: "Personal goal",
+      area: "personal",
     });
-    await startIntervention(owner.id, householdGoal.id, {
+    await startIntervention(owner.id, personalGoal.id, {
       type: "frequency_habit",
-      commitment: "Household commitment",
+      commitment: "Personal commitment",
       startDate: "2026-03-01",
       revisitDate: "2026-03-20",
     });
 
-    // Owner's work view: only the work goal.
+    // Owner's work view: only the work-area goal.
     const work = await agenda(owner.id, "work", "2026-03-05");
     expect(work.interventions.running.map((i) => i.goalTitle)).toEqual(["Work goal"]);
 
-    // Owner's household ("mine") view: only the household goal.
+    // Owner's personal ("mine") view: only the personal-area goal.
     const mine = await agenda(owner.id, "mine", "2026-03-05");
-    expect(mine.interventions.running.map((i) => i.goalTitle)).toEqual(["Household goal"]);
+    expect(mine.interventions.running.map((i) => i.goalTitle)).toEqual(["Personal goal"]);
 
-    // Household-wide "all" view: every owner's household goals, not work goals.
+    // Household-wide "all" overview: no goals at all (goals are never shared).
     const all = await agenda(undefined, "all", "2026-03-05");
-    expect(all.interventions.running.map((i) => i.goalTitle)).toEqual(["Household goal"]);
+    expect(all.interventions.running).toHaveLength(0);
+    expect(all.interventions.review).toHaveLength(0);
 
-    // A different member's work view sees none of the owner's experiments.
+    // A different member's views never see the owner's experiments.
     const otherWork = await agenda(other.id, "work", "2026-03-05");
     expect(otherWork.interventions.running).toHaveLength(0);
+    const otherMine = await agenda(other.id, "mine", "2026-03-05");
+    expect(otherMine.interventions.running).toHaveLength(0);
   });
 
   it("keeps interventions out of the derived Review queue", async () => {
     const member = await createMember();
-    const goal = await createGoal(member.id, { title: "Journal daily", scope: "work" });
+    const goal = await createGoal(member.id, { title: "Journal daily", area: "work" });
     await startIntervention(member.id, goal.id, {
       type: "frequency_habit",
       commitment: "Write one line each night",

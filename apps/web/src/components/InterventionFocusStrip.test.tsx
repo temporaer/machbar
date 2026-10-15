@@ -10,7 +10,7 @@ function makeIntervention(
   return {
     goalId: 1,
     goalTitle: "Run a half marathon",
-    goalScope: "work",
+    goalArea: "work",
     interventionId: 10,
     revision: 1,
     type: "frequency_habit",

@@ -1,12 +1,12 @@
 import { useState } from "react";
-import type { GoalScope, GoalWithInterventions } from "@machbar/shared";
+import type { GoalArea, GoalWithInterventions } from "@machbar/shared";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 
 /**
  * Create or edit a goal's authored fields (title, notes, and — on creation —
- * its scope). Atomic goal metadata saves through the one canonical goal
+ * its area). Atomic goal metadata saves through the one canonical goal
  * mutation path owned by the Goals page; this sheet only collects input.
  */
 export function GoalFormSheet({
@@ -16,13 +16,13 @@ export function GoalFormSheet({
 }: {
   goal?: GoalWithInterventions;
   onClose: () => void;
-  onSave: (input: { title: string; notes: string; scope: GoalScope }) => Promise<void>;
+  onSave: (input: { title: string; notes: string; area: GoalArea }) => Promise<void>;
 }) {
   const strings = useStrings();
   const editing = goal !== undefined;
   const [title, setTitle] = useState(goal?.title ?? "");
   const [notes, setNotes] = useState(goal?.notes ?? "");
-  const [scope, setScope] = useState<GoalScope>(goal?.scope ?? "work");
+  const [area, setArea] = useState<GoalArea>(goal?.area ?? "personal");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +36,7 @@ export function GoalFormSheet({
     setSaving(true);
     setError(null);
     try {
-      await onSave({ title: trimmed, notes: notes.trim(), scope });
+      await onSave({ title: trimmed, notes: notes.trim(), area });
       onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -73,21 +73,21 @@ export function GoalFormSheet({
         </label>
         {editing ? null : (
           <div className="field">
-            <span className="field-label">{strings.goalScopeLabel}</span>
-            <div className="choice-group" role="group" aria-label={strings.goalScopeLabel}>
+            <span className="field-label">{strings.goalAreaLabel}</span>
+            <div className="choice-group" role="group" aria-label={strings.goalAreaLabel}>
               {(
                 [
-                  ["work", strings.goalScopeWork],
-                  ["household", strings.goalScopeHousehold],
+                  ["personal", strings.goalAreaPersonal],
+                  ["work", strings.goalAreaWork],
                 ] as const
               ).map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
                   className="choice-chip"
-                  aria-pressed={scope === value}
+                  aria-pressed={area === value}
                   disabled={saving}
-                  onClick={() => setScope(value)}
+                  onClick={() => setArea(value)}
                 >
                   {label}
                 </button>
