@@ -19,6 +19,8 @@ from .client import (
     UnsupportedVersion,
 )
 from .const import BACKOFF_INITIAL, BACKOFF_MAX, LONG_POLL_SECONDS
+from .const import GOAL_ASSESS, GOAL_SUGGEST
+from .goal_coach import async_analyze_goal_assess, async_analyze_goal_suggest
 from .intake import AdapterError, async_analyze
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,6 +90,14 @@ class RequestWorker:
                 )
             elif kind == "cleanup_round_analyze":
                 result = await async_analyze_cleanup_round(
+                    self.hass, self.entry.options.get("ai_task_entity_id"), payload
+                )
+            elif kind == GOAL_SUGGEST:
+                result = await async_analyze_goal_suggest(
+                    self.hass, self.entry.options.get("ai_task_entity_id"), payload
+                )
+            elif kind == GOAL_ASSESS:
+                result = await async_analyze_goal_assess(
                     self.hass, self.entry.options.get("ai_task_entity_id"), payload
                 )
             elif kind == "calendar_create":
