@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import {
   api,
   type AdjustInterventionInput,
+  type AcceptAssessmentProposalInput,
+  type AcceptGoalSuggestionInput,
   type BackInterventionInput,
   type BackingCleanup,
   type CreateGoalInput,
@@ -12,6 +14,7 @@ import {
   type StartInterventionInput,
   type UpdateGoalInput,
 } from "./api";
+import { pollCoachProposal } from "./goalCoach";
 import { useRetainedMutations } from "./useRetainedMutations";
 
 /**
@@ -76,6 +79,27 @@ export function useGoalActions() {
     [run],
   );
 
+  const loadGoalSuggestion = useCallback(async (goalId: number) => {
+    const initial = await api.requestGoalSuggestion(goalId);
+    return pollCoachProposal(initial, () =>
+      api.getGoalSuggestion(goalId, initial.requestId),
+    );
+  }, []);
+
+  const acceptGoalSuggestion = useCallback(
+    (
+      goalId: number,
+      requestId: string,
+      input: AcceptGoalSuggestionInput,
+    ) =>
+      run<Intervention>({
+        id: goalId,
+        mutate: () => api.acceptGoalSuggestion(goalId, requestId, input),
+        throwOnError: true,
+      }),
+    [run],
+  );
+
   const adjustIntervention = useCallback(
     (intervention: Intervention, patch: AdjustInterventionInput) =>
       run<Intervention>({
@@ -129,6 +153,28 @@ export function useGoalActions() {
     [run],
   );
 
+  const loadAssessmentProposal = useCallback(async (interventionId: number) => {
+    const initial = await api.requestAssessmentProposal(interventionId);
+    return pollCoachProposal(initial, () =>
+      api.getAssessmentProposal(interventionId, initial.requestId),
+    );
+  }, []);
+
+  const acceptAssessmentProposal = useCallback(
+    (
+      interventionId: number,
+      requestId: string,
+      input: AcceptAssessmentProposalInput,
+    ) =>
+      run<InterventionAssessment>({
+        id: interventionId,
+        mutate: () =>
+          api.acceptAssessmentProposal(interventionId, requestId, input),
+        throwOnError: true,
+      }),
+    [run],
+  );
+
   return {
     isPending,
     errors,
@@ -137,10 +183,14 @@ export function useGoalActions() {
     createGoal,
     updateGoal,
     concludeGoal,
+    loadGoalSuggestion,
+    acceptGoalSuggestion,
     startIntervention,
     adjustIntervention,
     backIntervention,
     concludeIntervention,
     assessIntervention,
+    loadAssessmentProposal,
+    acceptAssessmentProposal,
   };
 }

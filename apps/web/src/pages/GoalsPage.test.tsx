@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
   GoalWithInterventions,
@@ -16,6 +16,13 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(() => Promise.resolve([])),
     backIntervention: vi.fn(() => Promise.resolve({})),
     concludeIntervention: vi.fn(() => Promise.resolve({})),
+    requestGoalSuggestion: vi.fn(),
+    getGoalSuggestion: vi.fn(),
+    acceptGoalSuggestion: vi.fn(() => Promise.resolve({})),
+    assessIntervention: vi.fn(() => Promise.resolve({})),
+    requestAssessmentProposal: vi.fn(),
+    getAssessmentProposal: vi.fn(),
+    acceptAssessmentProposal: vi.fn(() => Promise.resolve({})),
   },
 }));
 
@@ -90,6 +97,7 @@ describe("GoalsPage", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -218,5 +226,176 @@ describe("GoalsPage", () => {
       within(prompt).getByRole("button", { name: "Aufgabe behalten" }),
     );
     expect(mockedApi.concludeIntervention).toHaveBeenCalledWith(10, 2, "keep");
+  });
+
+  it("requests, polls, displays, and explicitly accepts a coach suggestion", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [] })]);
+    mockedApi.requestGoalSuggestion.mockResolvedValue({
+      requestId: "suggest-1",
+      goalId: 1,
+      status: "queued",
+      interventions: [],
+      error: null,
+    });
+    mockedApi.getGoalSuggestion.mockResolvedValue({
+      requestId: "suggest-1",
+      goalId: 1,
+      status: "ready",
+      interventions: [{
+        type: "frequency_habit",
+        commitment: "Wenn ich Feierabend mache, gehe ich 20 Minuten spazieren.",
+        rationale: "Klein, beobachtbar und an einen bestehenden Anker gebunden.",
+        startDate: "2026-01-01",
+        revisitDate: "2026-01-15",
+      }],
+      error: null,
+    });
+
+    renderWithProviders(<GoalsPage />);
+    await user.click(
+      await screen.findByRole("button", { name: "Vorschläge vom Coach" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(
+      await screen.findByText(
+        "Wenn ich Feierabend mache, gehe ich 20 Minuten spazieren.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockedApi.acceptGoalSuggestion).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Diesen Vorschlag übernehmen" }),
+    );
+    expect(mockedApi.acceptGoalSuggestion).toHaveBeenCalledWith(
+      1,
+      "suggest-1",
+      { index: 0 },
+    );
+  });
+
+  it("shows a friendly inline message when Home Assistant is unavailable", async () => {
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [] })]);
+    mockedApi.requestGoalSuggestion.mockRejectedValue(
+      Object.assign(new Error("offline"), {
+        name: "ApiError",
+        code: "home_assistant_not_connected",
+      }),
+    );
+    renderWithProviders(<GoalsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Vorschläge vom Coach" }),
+    );
+    expect(
+      await screen.findByText(/Coach braucht eine verbundene Home-Assistant-Integration/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Experiment starten" }),
+    ).toBeInTheDocument();
+  });
+
+  it("preserves the manual assessment path without requesting the coach", async () => {
+    const finished = makeIntervention({
+      derivedState: "finished",
+      assessments: [],
+    });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [finished] })]);
+    renderWithProviders(<GoalsPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Rückblick auf dein Experiment" }),
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Was ist passiert?" }),
+      "Vier von sechs Läufen haben geklappt.",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Rückblick speichern" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.assessIntervention).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({
+          band: "mostly_achieved",
+          rationaleMd: "Vier von sechs Läufen haben geklappt.",
+        }),
+      ),
+    );
+    expect(mockedApi.requestAssessmentProposal).not.toHaveBeenCalled();
+  });
+
+  it("polls an assessment proposal and accepts the reviewed prefill", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const finished = makeIntervention({
+      derivedState: "finished",
+      assessments: [],
+    });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [finished] })]);
+    mockedApi.requestAssessmentProposal.mockResolvedValue({
+      requestId: "assess-1",
+      interventionId: 10,
+      status: "queued",
+      band: null,
+      rationaleMd: null,
+      countedItemIds: [],
+      windowStart: "2026-01-01",
+      windowEnd: "2026-01-15",
+      nextMove: null,
+      error: null,
+    });
+    mockedApi.getAssessmentProposal.mockResolvedValue({
+      requestId: "assess-1",
+      interventionId: 10,
+      status: "ready",
+      band: "achieved",
+      rationaleMd: "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
+      countedItemIds: [7, 8],
+      windowStart: "2026-01-01",
+      windowEnd: "2026-01-15",
+      nextMove: "Noch zwei Wochen fortsetzen.",
+      error: null,
+    });
+    renderWithProviders(<GoalsPage />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Rückblick auf dein Experiment" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Rückblick mit Coach vorbereiten" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(
+      screen.getByDisplayValue(
+        "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("7, 8")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Coach-Rückblick übernehmen" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Coach-Rückblick übernehmen" }),
+    );
+    expect(mockedApi.acceptAssessmentProposal).toHaveBeenCalledWith(
+      10,
+      "assess-1",
+      {
+        band: "achieved",
+        rationaleMd: "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
+        countedItemIds: [7, 8],
+      },
+    );
+    expect(mockedApi.assessIntervention).not.toHaveBeenCalled();
   });
 });

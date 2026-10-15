@@ -19,7 +19,9 @@ import type {
   ExternalWorkItemRef,
   Goal,
   GoalArea,
+  GoalSuggestionProposal,
   GoalWithInterventions,
+  AssessmentProposal,
   Intervention,
   InterventionAssessment,
   InterventionType,
@@ -526,6 +528,22 @@ export interface ManualAssessmentInput {
   countedItemIds?: number[];
   digestWindowStart: string;
   digestWindowEnd: string;
+}
+
+export interface AcceptGoalSuggestionInput {
+  index?: number;
+  type?: InterventionType;
+  commitment?: string;
+  rationale?: string;
+  startDate?: string;
+  revisitDate?: string;
+}
+
+export interface AcceptAssessmentProposalInput {
+  band?: AssessmentBand;
+  rationaleMd?: string;
+  countedItemIds?: number[];
+  assessedAt?: string;
 }
 
 export interface BackInterventionInput {
@@ -1119,6 +1137,19 @@ export const api = {
         expectedRevision === undefined ? {} : { expectedRevision },
       ),
     }),
+  requestGoalSuggestion: (id: number) =>
+    request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST" }),
+  getGoalSuggestion: (id: number, requestId: string) =>
+    request<GoalSuggestionProposal>(`/goals/${id}/suggest/${requestId}`),
+  acceptGoalSuggestion: (
+    id: number,
+    requestId: string,
+    input: AcceptGoalSuggestionInput,
+  ) =>
+    request<Intervention>(`/goals/${id}/suggest/${requestId}/accept`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   startIntervention: (goalId: number, input: StartInterventionInput) =>
     request<Intervention>(`/goals/${goalId}/interventions`, {
       method: "POST",
@@ -1151,4 +1182,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  requestAssessmentProposal: (id: number) =>
+    request<AssessmentProposal>(`/interventions/${id}/assess`, { method: "POST" }),
+  getAssessmentProposal: (id: number, requestId: string) =>
+    request<AssessmentProposal>(`/interventions/${id}/assess/${requestId}`),
+  acceptAssessmentProposal: (
+    id: number,
+    requestId: string,
+    input: AcceptAssessmentProposalInput,
+  ) =>
+    request<InterventionAssessment>(
+      `/interventions/${id}/assess/${requestId}/accept`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
 };

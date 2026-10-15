@@ -1859,6 +1859,25 @@ When the person ends the reflection, provide a concise human-readable summary an
     "Optional: IDs of the items you count for this review, separated by commas.",
   assessmentCountedItemsEmpty: "No counted items",
   saveAssessment: "Save review",
+  goalCoachSuggest: "Suggestions from the coach",
+  goalCoachWorking: "Coach is thinking …",
+  goalCoachReviewHint:
+    "Nothing has changed yet. Review a proposal and explicitly accept it.",
+  goalCoachAccept: "Accept this proposal",
+  goalCoachAccepting: "Accepting …",
+  goalCoachFailed: "The coach could not create a reliable proposal.",
+  goalCoachHomeAssistantUnavailable:
+    "The coach needs a connected Home Assistant integration. Your manual goals and reviews still work.",
+  goalCoachAiTaskNotConfigured:
+    "No AI Task is configured for the coach in Home Assistant yet. You can still plan and review the experiment manually.",
+  goalCoachStillWorking:
+    "The coach is taking longer than expected. Try again in a moment.",
+  goalCoachPrepareAssessment: "Prepare review with coach",
+  goalCoachAssessmentReviewHint:
+    "The coach prefilled the fields. Review and edit them before accepting the review.",
+  goalCoachAssessmentFailed:
+    "The coach could not prepare a reliable review.",
+  goalCoachAcceptAssessment: "Accept coach review",
   assessedOn: (date: string) => `Reviewed on ${date}`,
   todayInterventionFocusTitle: "Your experiment",
   todayInterventionReviewTitle: "Review due",
