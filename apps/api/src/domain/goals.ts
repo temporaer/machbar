@@ -62,6 +62,7 @@ export interface UpdateGoalInput {
 }
 
 export interface StartInterventionInput {
+  reminderEnabled?: boolean;
   observationPlan?: ObservationPlan;
   type: InterventionType;
   commitment: string;
@@ -72,6 +73,7 @@ export interface StartInterventionInput {
 }
 
 export interface AdjustInterventionInput {
+  reminderEnabled?: boolean;
   observationPlan?: ObservationPlan;
   type?: InterventionType;
   commitment?: string;
@@ -82,6 +84,9 @@ export interface AdjustInterventionInput {
 }
 
 export interface ManualAssessmentInput {
+  reminderEnabled?: boolean;
+  countedObservationIds?: number[];
+  evidence?: import("@machbar/shared").InterventionEvidence;
   reviewKey?: string;
   decision?: "continue" | "adjust" | "stop";
   benefit?: "helped" | "not_helped" | "uncertain";
@@ -152,6 +157,7 @@ function mapIntervention(row: InterventionRow): Intervention {
     concludedAt: row.concludedAt,
     backingTaskId: row.backingTaskId,
     reviewWindowStart: row.reviewWindowStart,
+    reminderEnabled: row.reminderEnabled,
     source: row.source,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -174,6 +180,7 @@ function mapAssessment(row: AssessmentRow): InterventionAssessment {
   return {
     id: row.id,
     interventionId: row.interventionId,
+    countedObservationIds: parseCountedItemIds(row.countedObservationIdsJson),
     reviewKey: row.reviewKey, decision: row.decision, benefit: row.benefit, obstacle: row.obstacle, evidence: row.evidence,
     assessedAt: row.assessedAt,
     band: row.band,
@@ -301,6 +308,11 @@ function assessmentsForInterventions(
   return grouped;
 }
 
+/** Public provenance projection; stored creation inputs remain internal. */
+export function generatedTasksForIntervention(db: Db, interventionId: number): import("@machbar/shared").InterventionGeneratedTask[] {
+  return db.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).orderBy(asc(schema.interventionTasks.id)).all().map(({ id, key, taskId, originalTaskId, title, createdAt }) => ({ id, key, taskId, originalTaskId, title, createdAt }));
+}
+
 function buildInterventionView(
   db: Db,
   intervention: InterventionRow,
@@ -309,13 +321,13 @@ function buildInterventionView(
 ): InterventionView {
   const state = deriveInterventionState({
     revisitDate: intervention.revisitDate,
-    hasAssessment: intervention.status === "concluded" && assessments.length > 0,
+    hasAssessment: assessments.length > 0,
     today,
     concluded: intervention.status === "concluded",
   });
   return {
     ...mapIntervention(intervention),
-    generatedTasks: db.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, intervention.id)).all(),
+    generatedTasks: generatedTasksForIntervention(db, intervention.id),
     observationPlan: db.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, intervention.id)).orderBy(desc(schema.interventionObservationPlans.effectiveFrom)).get()?.plan,
     derivedState: state.derivedState,
     withinReviewWindow: state.withinReviewWindow,
@@ -497,6 +509,7 @@ export function startIntervention(
       .insert(schema.interventions)
       .values({
         goalId,
+        reminderEnabled: input.reminderEnabled,
         type: input.type,
         commitment,
         rationale: input.rationale ?? "",
@@ -532,6 +545,7 @@ export function adjustIntervention(
   return db.transaction((tx) => {
     const current = requireInterventionRow(tx, interventionId);
     assertInterventionRevision(current, input.expectedRevision);
+    if (input.startDate !== undefined && input.startDate !== current.startDate && tx.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, interventionId)).get()) throw AppError.conflict("intervention_revisit_invalid", "An intervention with observation history keeps its original start date. Adjust its future plan instead.");
     const startDate = input.startDate ?? current.startDate;
     const revisitDate = input.revisitDate ?? current.revisitDate;
     if (input.startDate !== undefined || input.revisitDate !== undefined) {
@@ -541,6 +555,7 @@ export function adjustIntervention(
       revision: current.revision + 1,
       updatedAt: nowIso(),
     };
+    if (input.reminderEnabled !== undefined) patch.reminderEnabled = input.reminderEnabled;
     if (input.type !== undefined) patch.type = input.type;
     if (commitment !== undefined) patch.commitment = commitment;
     if (input.rationale !== undefined) patch.rationale = input.rationale;
@@ -698,18 +713,27 @@ export function insertAssessment(
     if (input.decision && (!input.reviewKey || input.expectedRevision === undefined)) throw AppError.badRequest("intervention_assessment_invalid", "A checkpoint decision needs its revision and stable acceptance key.");
     if (input.decision) assertInterventionRevision(current, input.expectedRevision);
     const owner = requireGoalRow(tx, current.goalId).ownerMemberId;
-    const evidence = owner === null ? null : buildInterventionEvidence(tx as unknown as Db, interventionId, { ownerMemberId: owner }, { startDate: input.digestWindowStart, endDate: input.digestWindowEnd });
+    const evidence = input.evidence ?? (owner === null ? null : buildInterventionEvidence(tx as unknown as Db, interventionId, { ownerMemberId: owner }, { startDate: input.digestWindowStart, endDate: input.digestWindowEnd }));
+    if ((input.countedObservationIds ?? []).some((id) => !evidence?.observations.some((o) => o.id === id))) throw AppError.badRequest("intervention_assessment_invalid", "Observation references must come from the reviewed evidence.");
+    if (input.decision && evidence) {
+      const candidates = new Set([
+        ...evidence.activity.history.finiteCompletions.flatMap((item) => item.id === null ? [] : [item.id]),
+        ...evidence.activity.history.bulkCompletionGroups.map((item) => item.id),
+        ...evidence.activity.history.recurringWork.map((item) => item.taskId),
+      ]);
+      if ((input.countedItemIds ?? []).some((id) => !candidates.has(id))) throw AppError.badRequest("intervention_assessment_invalid", "Task references must come from the reviewed evidence.");
+    }
     if (input.decision) {
       if (current.status !== "active") throw AppError.conflict("intervention_transition_invalid", "This behavior has already stopped.");
       if (input.digestWindowStart !== (current.reviewWindowStart ?? current.startDate)) throw AppError.conflict("stale_write_conflict", "This review window has already advanced.");
       if (input.decision === "stop") {
-        if (current.backingTaskId !== null && input.backingCleanup === undefined) throw AppError.badRequest("intervention_assessment_invalid", "Choose whether to keep or stop generated tasks.");
+        if (tx.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all().some((task) => task.taskId !== null) && input.backingCleanup === undefined) throw AppError.badRequest("intervention_assessment_invalid", "Choose whether to keep or stop generated tasks.");
         concludeIntervention(tx as unknown as Db, interventionId, current.revision, householdToday(tx as unknown as Db), { backingCleanup: input.backingCleanup });
       } else {
         const today = householdToday(tx as unknown as Db);
         const next = input.nextRevisitDate ?? addCalendarDays(today, 14);
         if (!isIsoCalendarDate(next) || next <= today || next <= input.digestWindowEnd) throw AppError.badRequest("intervention_revisit_invalid", "The next checkpoint must be in the future.");
-        if (input.decision === "adjust") adjustIntervention(tx as unknown as Db, interventionId, { ...(input.commitment ? { commitment: input.commitment } : {}), ...(input.observationPlan ? { observationPlan: input.observationPlan } : {}), expectedRevision: current.revision }, today);
+        if (input.decision === "adjust") adjustIntervention(tx as unknown as Db, interventionId, { ...(input.reminderEnabled === undefined ? {} : { reminderEnabled: input.reminderEnabled }), ...(input.commitment ? { commitment: input.commitment } : {}), ...(input.observationPlan ? { observationPlan: input.observationPlan } : {}), expectedRevision: current.revision }, today);
         const updated = requireInterventionRow(tx, interventionId);
         tx.update(schema.interventions).set({ revisitDate: next, reviewWindowStart: addCalendarDays(input.digestWindowEnd, 1), revision: updated.revision + 1, updatedAt: nowIso() }).where(eq(schema.interventions.id, interventionId)).run();
       }
@@ -718,6 +742,7 @@ export function insertAssessment(
       .insert(schema.interventionAssessments)
       .values({
         interventionId,
+        countedObservationIdsJson: JSON.stringify(input.countedObservationIds ?? []),
         reviewKey: input.reviewKey, decision: input.decision, benefit: input.benefit, obstacle: input.obstacle ?? "", evidence,
         assessedAt: input.assessedAt ?? nowIso(),
         band: input.band,

@@ -1,3 +1,4 @@
+import { requestAssessmentSchema } from "../schemas.js";
 import { requestGoalSuggestionSchema } from "../schemas.js";
 import { buildInterventionEvidence } from "../domain/interventionEvidence.js";
 import { recentInterventionReports, observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
@@ -230,6 +231,7 @@ export function registerGoalRoutes(
       parseId(request.params.id, "intervention"),
       viewerMemberId(request) ?? null,
       signal,
+      parseOrThrow(requestAssessmentSchema, request.body ?? {}),
     );
     reply.status(202);
     return getAssessmentProposal(

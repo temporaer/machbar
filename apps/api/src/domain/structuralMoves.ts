@@ -61,6 +61,13 @@ function reindexGroup(tx: Db, orderedIds: number[], movingId: number) {
  * concrete destination; this command validates concurrency and hierarchy
  * invariants, moves the whole subtree, and normalizes both sibling groups.
  */
+/** Keep private subtrees outside shared container lifecycle cascades. */
+function assertPrivateHierarchy(source: { privacyOwnerMemberId?: number | null }, destination: { privacyOwnerMemberId?: number | null } | null): void {
+  if (source.privacyOwnerMemberId != null && destination !== null && source.privacyOwnerMemberId !== destination.privacyOwnerMemberId) {
+    throw AppError.conflict("scope_mismatch", "Private work can only be nested within the same private owner's hierarchy or moved to top level.");
+  }
+}
+
 export function moveTask(
   db: Db,
   taskId: number,
@@ -90,6 +97,7 @@ export function moveTask(
         );
       }
       const newParent = getTaskOrThrow(txDb, newParentTaskId);
+      assertPrivateHierarchy(task, newParent);
       assertParentAcceptsChildren(txDb, newParentTaskId);
       if (wouldCreateHierarchyCycle(txDb, taskId, newParentTaskId)) {
         throw AppError.conflict(
@@ -157,6 +165,8 @@ export function moveTask(
 
     const movingWithinSameGroup =
       newParentTaskId === task.parentTaskId && newProjectId === task.projectId;
+
+    assertPrivateHierarchy(task, newParentTaskId !== null ? getTaskOrThrow(txDb, newParentTaskId) : newProjectId !== null ? getProjectOrThrow(txDb, newProjectId) : null);
 
     const destinationSiblings = getDirectChildren(txDb, newParentTaskId ?? newProjectId)
       .filter((item) => item.id !== taskId);
@@ -313,6 +323,7 @@ export function moveProject(db: Db, projectId: number, input: MoveProjectInput, 
       throw AppError.conflict("project_transition_invalid", "A project cannot move into itself or its descendants.");
     }
     const destination = input.parentId === null ? null : getProjectOrThrow(txDb, input.parentId);
+    assertPrivateHierarchy(project, destination);
     if (destination && destination.scope !== project.scope) throw AppError.conflict("scope_mismatch", "A project cannot move across household/work scope.");
     const requiredIds = [projectId, ...descendants, ...getAncestorIds(txDb, projectId),
       ...(destination ? [destination.id, ...getAncestorIds(txDb, destination.id)] : [])];

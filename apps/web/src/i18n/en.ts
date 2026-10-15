@@ -1879,6 +1879,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     "The coach could not prepare a reliable review.",
   goalCoachAcceptAssessment: "Accept coach review",
   assessedOn: (date: string) => `Reviewed on ${date}`,
+  observationOlder: "Show older reports",
+  interventionStandingReminder: "Show standing reminder in Today",
   goalCoachAnswer: "Use answer for the proposal",
   interventionEvidenceTitle: "Review evidence",
   interventionMissing: "Missing",

@@ -160,3 +160,13 @@ def test_suggestion_preserves_clarification_and_complete_evidence_plan():
     assert normalize_goal_suggest_response({"clarificationQuestion": " What happens after brushing? ", "interventions": []}) == {"clarificationQuestion": "What happens after brushing?", "interventions": []}
     proposal = {"type": "exploration_step", "commitment": "Book a lesson", "rationale": "Try piano", "startDate": "2026-10-15", "revisitDate": "2026-10-29", "observationPlan": {"method": "task_evidence"}, "tasks": [{"key": "trial", "title": "Book trial lesson"}]}
     assert normalize_goal_suggest_response({"interventions": [proposal]})["interventions"][0] == proposal
+
+
+def test_review_preserves_observation_references_and_lighter_tracking_proposal():
+    raw = {"band": "mostly_achieved", "rationaleMd": "Sparse reports; benefit remains uncertain", "countedItemIds": [], "countedObservationIds": [4], "recommendedDecision": "adjust", "observationPlan": {"method": "reflection"}, "reminderEnabled": False}
+    result = normalize_goal_assess_response(raw, [], [4], True)
+    assert result["countedObservationIds"] == [4]
+    assert result["observationPlan"] == {"method": "reflection"}
+    assert result["reminderEnabled"] is False
+    with pytest.raises(AdapterError):
+        normalize_goal_assess_response({**raw, "countedObservationIds": [999]}, [], [4], True)

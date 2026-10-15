@@ -30,12 +30,14 @@ export function InterventionReportCard({ report, observation }: { report: DueInt
 }
 export function InterventionObservationPanel({ interventionId, goalId, goalTitle }: { interventionId: number; goalId: number; goalTitle: string }) {
   const s = useStrings();
+  const [historyLimit, setHistoryLimit] = useState(30);
   const { data, error } = useAsync(() => api.observationHistory(interventionId), [interventionId]);
   return <details><summary>{s.observationHistory}</summary>
     {error ? <p role="alert">{localizedErrorMessage(error, s)}</p> : null}
     {data ? <div className="stack">
       {(data.recentReports ?? []).map((r) => <InterventionReportCard key={`missing-${r.referenceDate}`} report={{ ...r, interventionId, goalId, goalTitle }} />)}
-      {data.observations.slice(-30).reverse().map((o) => { const plan = data.plans.find((p) => p.id === o.planVersionId); return plan ? <InterventionReportCard key={`${o.id}-${o.revision}`} report={{ interventionId, goalId, goalTitle, referenceDate: o.referenceDate, plan }} observation={o} /> : null; })}
+      {data.observations.slice(-historyLimit).reverse().map((o) => { const plan = data.plans.find((p) => p.id === o.planVersionId); return plan ? <InterventionReportCard key={`${o.id}-${o.revision}`} report={{ interventionId, goalId, goalTitle, referenceDate: o.referenceDate, plan }} observation={o} /> : null; })}
+      {data.observations.length > historyLimit ? <button type="button" className="btn" onClick={() => setHistoryLimit((limit) => limit + 30)}>{s.observationOlder}</button> : null}
       {!data.plans.length ? <p>{s.observationNoPlan}</p> : null}
     </div> : null}
   </details>;

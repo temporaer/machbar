@@ -1503,6 +1503,7 @@ export interface Goal {
 }
 
 export interface Intervention {
+  reminderEnabled?: boolean;
   reviewWindowStart?: string | null;
   generatedTasks?: import("./interventionObservation.js").InterventionGeneratedTask[];
   observationPlan?: import("./interventionObservation.js").ObservationPlan;
@@ -1523,6 +1524,7 @@ export interface Intervention {
 }
 
 export interface InterventionAssessment {
+  countedObservationIds?: number[];
   reviewKey?: string | null;
   decision?: import("./interventionObservation.js").InterventionReviewDecision | null;
   benefit?: import("./interventionObservation.js").InterventionBenefit | null;
@@ -1614,6 +1616,13 @@ export interface GoalSuggestionProposal {
  * on so the user can sanity-check the evidence.
  */
 export interface AssessmentProposal {
+  reminderEnabled?: boolean;
+  evidence?: import("./interventionObservation.js").InterventionEvidence;
+  countedObservationIds?: number[];
+  recommendedDecision?: import("./interventionObservation.js").InterventionReviewDecision;
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
+  commitment?: string;
+  nextRevisitDate?: string;
   requestId: string;
   interventionId: number;
   status: CoachRequestStatus;

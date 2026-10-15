@@ -1503,9 +1503,11 @@ export function createMachbarMcpServer({
     "machbar_start_intervention",
     {
       description:
-        "Author a manual intervention under a goal: a time-boxed behavioral experiment with a one-line commitment and a revisit date. startDate and revisitDate are YYYY-MM-DD only; revisitDate must not precede startDate.",
+        "Author a manual intervention under a goal: a behavioral experiment with a one-line commitment and review checkpoint and a revisit date. startDate and revisitDate are YYYY-MM-DD only; revisitDate must not precede startDate.",
       inputSchema: {
         goalId,
+        observationPlan: observationPlanSchema.optional(),
+        reminderEnabled: z.boolean().optional(),
         type: interventionTypeSchema,
         commitment: z.string().min(1),
         rationale: z.string().optional(),
@@ -1513,13 +1515,13 @@ export function createMachbarMcpServer({
         revisitDate: z.string(),
       },
     },
-    async ({ goalId: id, type, commitment, rationale, startDate, revisitDate }) => {
+    async ({ goalId: id, observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate }) => {
       assertGoalAccessible(db, id, goalAccess);
       return result(
         startIntervention(
           db,
           id,
-          { type, commitment, rationale, startDate, revisitDate, source: "manual" },
+          { observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate, source: "manual" },
           householdToday(db),
         ),
       );
@@ -1533,6 +1535,8 @@ export function createMachbarMcpServer({
         "Adjust an intervention (type, commitment, rationale, start or revisit date) using its current revision. Concluding is a separate command.",
       inputSchema: {
         interventionId,
+        observationPlan: observationPlanSchema.optional(),
+        reminderEnabled: z.boolean().optional(),
         expectedRevision,
         type: interventionTypeSchema.optional(),
         commitment: z.string().min(1).optional(),
@@ -1541,13 +1545,13 @@ export function createMachbarMcpServer({
         revisitDate: z.string().optional(),
       },
     },
-    async ({ interventionId: id, expectedRevision: rev, type, commitment, rationale, startDate, revisitDate }) => {
+    async ({ interventionId: id, expectedRevision: rev, observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate }) => {
       assertInterventionAccessible(db, id, goalAccess);
       return result(
         adjustIntervention(
           db,
           id,
-          { type, commitment, rationale, startDate, revisitDate, expectedRevision: rev },
+          { observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate, expectedRevision: rev },
           householdToday(db),
         ),
       );
@@ -1638,12 +1642,12 @@ export function createMachbarMcpServer({
     "machbar_assess_intervention",
     {
       description:
-        "Ask the goal coach to review a finished intervention over its own period (start_date → revisit_date), producing a qualitative band and an after-action review citing the counted items — never a numeric percentage. Advisory only: this stores a proposal and returns its requestId and status; nothing is recorded until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise the manual self-assessment path still works.",
-      inputSchema: { interventionId },
+        "Ask the goal coach to review the current intervention checkpoint using shared deterministic evidence and optional benefit/obstacle reflection, producing a qualitative band and an after-action review citing the counted items — never a numeric percentage. Advisory only: this stores a proposal and returns its requestId and status; nothing is recorded until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise the manual self-assessment path still works.",
+      inputSchema: { interventionId, benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional() },
     },
-    async ({ interventionId: id }) => {
+    async ({ interventionId: id, benefit, obstacle }) => {
       assertInterventionAccessible(db, id, goalAccess);
-      const requestId = requestInterventionAssessment(db, id, memberId);
+      const requestId = requestInterventionAssessment(db, id, memberId, undefined, { benefit, obstacle });
       return result(getAssessmentProposal(db, id, requestId, memberId));
     },
   );

@@ -1,4 +1,4 @@
-import { InterventionEvidencePanel } from "./InterventionEvidencePanel";
+import { InterventionEvidenceFacts, InterventionEvidencePanel } from "./InterventionEvidencePanel";
 import { ObservationPlanEditor } from "./ObservationPlanEditor";
 import type { ObservationPlan, InterventionReviewDecision, InterventionBenefit } from "@machbar/shared";
 import { useState } from "react";
@@ -14,6 +14,7 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
 export interface AssessmentDraft {
+  countedObservationIds?: number[]; reminderEnabled?: boolean;
   reviewKey?: string; decision?: InterventionReviewDecision; benefit?: InterventionBenefit; obstacle?: string;
   expectedRevision?: number; nextRevisitDate?: string; backingCleanup?: "keep" | "stop";
   observationPlan?: ObservationPlan; commitment?: string;
@@ -50,9 +51,12 @@ export function InterventionAssessSheet({
   intervention: InterventionView;
   onClose: () => void;
   onSave: (draft: AssessmentDraft) => Promise<void>;
-  onRequestCoach: () => Promise<AssessmentProposal>;
+  onRequestCoach: (input?: { benefit?: InterventionBenefit; obstacle?: string }) => Promise<AssessmentProposal>;
 }) {
   const strings = useStrings();
+  const [coachEvidence, setCoachEvidence] = useState<AssessmentProposal["evidence"]>();
+  const [countedObservationIds, setCountedObservationIds] = useState<number[]>([]);
+  const [reminderEnabled, setReminderEnabled] = useState(intervention.reminderEnabled ?? true);
   const [reviewKey] = useState(() => crypto.randomUUID());
   const [decision, setDecision] = useState<InterventionReviewDecision>("continue");
   const [benefit, setBenefit] = useState<InterventionBenefit>("uncertain");
@@ -79,7 +83,7 @@ export function InterventionAssessSheet({
     setCoachRequestId(null);
     setError(null);
     try {
-      const proposal = await onRequestCoach();
+      const proposal = await onRequestCoach({ benefit, obstacle });
       if (
         proposal.status !== "ready" ||
         proposal.band === null ||
@@ -92,6 +96,13 @@ export function InterventionAssessSheet({
         );
         return;
       }
+      setCoachEvidence(proposal.evidence);
+      setCountedObservationIds(proposal.countedObservationIds ?? []);
+      if (proposal.recommendedDecision) setDecision(proposal.recommendedDecision);
+      if (proposal.observationPlan) setObservationPlan(proposal.observationPlan);
+      if (proposal.commitment) setCommitment(proposal.commitment);
+      if (proposal.nextRevisitDate) setNextRevisitDate(proposal.nextRevisitDate);
+      if (proposal.reminderEnabled !== undefined) setReminderEnabled(proposal.reminderEnabled);
       setBand(proposal.band);
       setRationale(proposal.rationaleMd);
       setCountedItems(proposal.countedItemIds.join(", "));
@@ -126,7 +137,7 @@ export function InterventionAssessSheet({
     setError(null);
     try {
       await onSave({
-        reviewKey, expectedRevision: intervention.revision, decision, benefit, obstacle, backingCleanup,
+        countedObservationIds, reminderEnabled, reviewKey, expectedRevision: intervention.revision, decision, benefit, obstacle, backingCleanup,
         ...(nextRevisitDate ? { nextRevisitDate } : {}),
         ...(decision === "adjust" ? { observationPlan, commitment } : {}),
         band,
@@ -153,11 +164,11 @@ export function InterventionAssessSheet({
     >
       <div className="stack">
         <p className="text-muted">{intervention.commitment}</p>
-        <InterventionEvidencePanel interventionId={intervention.id} startDate={windowStart} endDate={windowEnd} />
+        {coachEvidence ? <InterventionEvidenceFacts evidence={coachEvidence} /> : <InterventionEvidencePanel interventionId={intervention.id} startDate={windowStart} endDate={windowEnd} />}
         <label className="field">{strings.interventionBenefitQuestion}<select value={benefit} onChange={(e) => setBenefit(e.target.value as InterventionBenefit)}>{(["helped", "not_helped", "uncertain"] as const).map((v) => <option key={v} value={v}>{strings.interventionBenefitLabels[v]}</option>)}</select></label>
         <label className="field">{strings.interventionObstacleQuestion}<textarea value={obstacle} maxLength={2000} onChange={(e) => setObstacle(e.target.value)} /></label>
         <label className="field">{strings.interventionNextMove}<select value={decision} onChange={(e) => setDecision(e.target.value as InterventionReviewDecision)}>{(["continue", "adjust", "stop"] as const).map((v) => <option key={v} value={v}>{strings.interventionDecisionLabels[v]}</option>)}</select></label>
-        {decision === "adjust" ? <><label className="field">{strings.interventionCommitmentLabel}<input value={commitment} onChange={(e) => setCommitment(e.target.value)} /></label><ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} /></> : null}
+        {decision === "adjust" ? <><label><input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} /> {strings.interventionStandingReminder}</label><label className="field">{strings.interventionCommitmentLabel}<input value={commitment} onChange={(e) => setCommitment(e.target.value)} /></label><ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} /></> : null}
         {decision !== "stop" ? <label className="field">{strings.interventionNextCheckpoint}<input type="date" value={nextRevisitDate} onChange={(e) => setNextRevisitDate(e.target.value)} /></label> : <label className="field">{strings.interventionRemainingTasks}<select value={backingCleanup} onChange={(e) => setBackingCleanup(e.target.value as "keep" | "stop")}><option value="keep">{strings.interventionKeepTasks}</option><option value="stop">{strings.interventionStopTasks}</option></select></label>}
         <div className="stack">
           <button

@@ -1870,6 +1870,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     "Der Coach konnte keinen verlässlichen Rückblick vorbereiten.",
   goalCoachAcceptAssessment: "Coach-Rückblick übernehmen",
   assessedOn: (date: string) => `Rückblick am ${date}`,
+  observationOlder: "Ältere Rückmeldungen anzeigen",
+  interventionStandingReminder: "Stehende Erinnerung in Heute anzeigen",
   goalCoachAnswer: "Antwort für den Vorschlag verwenden",
   interventionEvidenceTitle: "Belege für den Rückblick",
   interventionMissing: "Unbeantwortet",

@@ -155,8 +155,8 @@ export function useGoalActions() {
     [run],
   );
 
-  const loadAssessmentProposal = useCallback(async (interventionId: number) => {
-    const initial = await api.requestAssessmentProposal(interventionId);
+  const loadAssessmentProposal = useCallback(async (interventionId: number, input?: Parameters<typeof api.requestAssessmentProposal>[1]) => {
+    const initial = input ? await api.requestAssessmentProposal(interventionId, input) : await api.requestAssessmentProposal(interventionId);
     return pollCoachProposal(initial, () =>
       api.getAssessmentProposal(interventionId, initial.requestId),
     );

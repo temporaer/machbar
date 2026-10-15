@@ -430,3 +430,17 @@ canonical journal, observation and backing commands. The web reuses
 `ObservationPlanEditor` and `InterventionTasksEditor` for proposal review;
 `useGoalActions` still owns polling and acceptance. HA `goal_coach.py` preserves
 the same envelope; no generic conversation or automatic task creation exists.
+
+### Evidence-based coach review and lighter continuation
+
+Coach assessment requests snapshot `buildInterventionEvidence` and optional user
+reflection. Typed task/observation references are validated against that snapshot;
+accepted interpretation uses canonical `insertAssessment` checkpoint transitions.
+Migration 0030 stores observation citations and independent standing-reminder
+visibility. Daily collection can end prospectively while ordinary tasks continue.
+The HA 0.7.0 adapter preserves these fields and requires installation plus restart.
+
+Public task/project routes also check private destination and dependency references
+before writes using `assertPrivateWorkItemAccessible`. Canonical hierarchy moves
+keep private subtrees within the same owner's private hierarchy or at top level,
+so shared-container lifecycle commands cannot mutate another owner's private work.

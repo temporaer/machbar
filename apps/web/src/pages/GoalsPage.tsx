@@ -2,6 +2,7 @@ import { ObservationPlanEditor } from "../components/ObservationPlanEditor";
 import { InterventionTasksEditor } from "../components/InterventionTasksSheet";
 import type { ProposedIntervention } from "@machbar/shared";
 import type { AcceptGoalSuggestionInput } from "../lib/api";
+import { InterventionEvidenceFacts } from "../components/InterventionEvidencePanel";
 import { InterventionTasksSheet } from "../components/InterventionTasksSheet";
 import { InterventionObservationPanel } from "../components/InterventionObservationPanel";
 import { useState } from "react";
@@ -58,6 +59,10 @@ function AssessmentArc({ intervention }: { intervention: InterventionView }) {
             </span>
           </div>
           <p>{assessment.rationaleMd}</p>
+          {assessment.decision ? <p>{strings.interventionDecisionLabels[assessment.decision]}</p> : null}
+          {assessment.benefit ? <p>{strings.interventionBenefitLabels[assessment.benefit]}</p> : null}
+          {assessment.obstacle ? <p>{assessment.obstacle}</p> : null}
+          {assessment.evidence ? <details><summary>{strings.interventionEvidenceTitle}</summary><InterventionEvidenceFacts evidence={assessment.evidence} /></details> : null}
           <p className="text-muted">
             {assessment.countedItemIds.length > 0
               ? `${strings.assessmentCountedItemsLabel}: ${assessment.countedItemIds.join(", ")}`
@@ -82,6 +87,7 @@ function GoalCoachSuggestions({
 }) {
   const strings = useStrings();
   const [proposal, setProposal] = useState<GoalSuggestionProposal | null>(null);
+  const [pendingTaskEditors, setPendingTaskEditors] = useState<Record<number, boolean>>({});
   const [answer, setAnswer] = useState("");
   const [edits, setEdits] = useState<Record<number, Partial<ProposedIntervention>>>({});
   const patch = (index: number, value: Partial<ProposedIntervention>) => setEdits((current) => ({ ...current, [index]: { ...current[index], ...value } }));
@@ -97,6 +103,7 @@ function GoalCoachSuggestions({
     try {
       const next = await onRequest(goal.id, followup && proposal ? { clarificationRequestId: proposal.requestId, clarificationAnswer: answer } : undefined);
       setEdits({});
+      setPendingTaskEditors({});
       setProposal(next);
       if (next.status === "failed") {
         setError(next.error ?? strings.goalCoachFailed);
@@ -164,11 +171,11 @@ function GoalCoachSuggestions({
                 <label className="field">{strings.interventionRevisitDateLabel}<input type="date" value={edits[index]?.revisitDate ?? intervention.revisitDate} onChange={(e) => patch(index, { revisitDate: e.target.value })} /></label>
               </details>
               <ObservationPlanEditor value={edits[index]?.observationPlan ?? intervention.observationPlan ?? { method: "reflection" }} onChange={(observationPlan) => patch(index, { observationPlan })} disabled={accepting !== null} />
-              <InterventionTasksEditor tasks={edits[index]?.tasks ?? intervention.tasks ?? []} onChange={(tasks) => patch(index, { tasks })} disabled={accepting !== null} />
+              <InterventionTasksEditor tasks={edits[index]?.tasks ?? intervention.tasks ?? []} onChange={(tasks) => patch(index, { tasks })} onPendingChange={(pending) => setPendingTaskEditors((current) => current[index] === pending ? current : { ...current, [index]: pending })} disabled={accepting !== null} />
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={accepting !== null}
+                disabled={accepting !== null || pendingTaskEditors[index] === true}
                 onClick={() => void accept(index)}
               >
                 {accepting === index
@@ -396,25 +403,21 @@ export function GoalsPage() {
       await actions.acceptAssessmentProposal(
         intervention.id,
         draft.coachRequestId,
-        {
-          band: draft.band,
-          rationaleMd: draft.rationaleMd,
-          countedItemIds: draft.countedItemIds,
-        },
+        (({ coachRequestId: _requestId, digestWindowStart: _start, digestWindowEnd: _end, ...input }) => input)(draft),
       );
       return;
     }
     await actions.assessIntervention(intervention.id, draft);
   };
 
-  const requestAssessment = (interventionId: number): Promise<AssessmentProposal> =>
-    actions.loadAssessmentProposal(interventionId);
+  const requestAssessment = (interventionId: number, input?: { benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string }): Promise<AssessmentProposal> =>
+    actions.loadAssessmentProposal(interventionId, input);
 
   const [taskBacking, setTaskBacking] = useState<InterventionView | null>(null);
   const backIntervention = (intervention: InterventionView) => setTaskBacking(intervention);
 
   const concludeIntervention = (intervention: InterventionView) => {
-    if (intervention.backingTaskId !== null) {
+    if (intervention.backingTaskId !== null || intervention.generatedTasks?.some((task) => task.taskId !== null)) {
       setConcludingBacked(intervention);
       return;
     }
@@ -546,7 +549,7 @@ export function GoalsPage() {
           intervention={assessing}
           onClose={() => setAssessing(null)}
           onSave={(draft) => assess(assessing, draft)}
-          onRequestCoach={() => requestAssessment(assessing.id)}
+          onRequestCoach={(input) => requestAssessment(assessing.id, input)}
         />
       ) : null}
       {concludingBacked ? (

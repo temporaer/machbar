@@ -1,3 +1,4 @@
+import { setObservationPlan, recordObservation, recentInterventionReports } from "../src/domain/interventionObservations.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
@@ -210,7 +211,9 @@ describe("Goals coach AI passes (Phase 3)", () => {
     await complete(token, leased, {
       band: "achieved",
       rationaleMd: "You wiped the counters on most evenings — a solid rate, not perfection.",
-      countedItemIds: [done.id, 999999],
+      countedItemIds: [done.id],
+      countedObservationIds: [],
+      recommendedDecision: "continue",
       nextMove: "Continue for another two weeks.",
     });
 
@@ -353,6 +356,37 @@ describe("Goals coach AI passes (Phase 3)", () => {
     const followup = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers, payload: { clarificationRequestId: questionRequest.requestId, clarificationAnswer: "Finding time" } })).json();
     await complete(token, await lease(token), { clarificationQuestion: "Another question?", interventions: [] });
     expect((await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${followup.requestId}`, headers })).json().status).toBe("failed");
+  });
+
+  it("reviews a deterministic sparse snapshot, cites observations and reduces tracking only on acceptance", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Sleep earlier" } })).json();
+    const intervention = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/interventions`, headers, payload: { type: "frequency_habit", commitment: "Bed after brushing", startDate: "2026-10-01", revisitDate: "2026-10-07" } })).json();
+    const access = { ownerMemberId: member.id };
+    setObservationPlan(ctx.handle.db, intervention.id, { expectedRevision: 1, plan: { method: "daily_report", question: "In bed?", reference: "night", reportDayOffset: 1, availableAfter: "07:00", opportunityBased: false } }, access, new Date("2026-10-01T10:00:00Z"));
+    const report = recordObservation(ctx.handle.db, intervention.id, { referenceDate: "2026-10-01", answer: "met", expectedRevision: 0 }, access, new Date("2026-10-02T10:00:00Z"));
+    const taskResponse = await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/backing`, headers, payload: { tasks: [{ key: "routine", title: "Useful bedtime routine" }] } });
+    const taskId = taskResponse.json().backingTaskId;
+    const token = await pair();
+    const requested = (await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess`, headers, payload: { benefit: "not_helped", obstacle: "I did it but did not notice benefit" } })).json();
+    const leased = await lease(token);
+    const payload = JSON.parse(ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.id, leased.id)).get()!.payloadJson);
+    expect(payload.evidence.counts).toMatchObject({ met: 1, missing: 6, notMet: 0 });
+    expect(payload.reflection).toMatchObject({ benefit: "not_helped" });
+    expect(leased.payload.instructions).toContain("High adherence with little benefit");
+    await complete(token, leased, { band: "attempted_partial", rationaleMd: "Only one report; benefit is uncertain. Try lighter reflection.", countedItemIds: [], countedObservationIds: [report.id], recommendedDecision: "adjust", observationPlan: { method: "reflection" }, reminderEnabled: false, nextMove: "Reduce tracking while keeping the routine." });
+    expect(ctx.handle.db.select().from(schema.interventionAssessments).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.interventionObservationPlans).all()).toHaveLength(1);
+    // A later report does not rewrite the facts the coach actually reviewed.
+    recordObservation(ctx.handle.db, intervention.id, { referenceDate: "2026-10-02", answer: "met", expectedRevision: 0 }, access, new Date("2026-10-03T10:00:00Z"));
+    const accept = () => ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess/${requested.requestId}/accept`, headers, payload: {} });
+    const accepted = await accept(); expect(accepted.statusCode, accepted.body).toBe(201);
+    expect(accepted.json()).toMatchObject({ countedObservationIds: [report.id], decision: "adjust", benefit: "not_helped", evidence: { counts: { met: 1, missing: 6 } } });
+    expect((await accept()).json().id).toBe(accepted.json().id);
+    const updated = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}`, headers })).json().interventions[0];
+    expect(updated).toMatchObject({ status: "active", reminderEnabled: false, observationPlan: { method: "reflection" } });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, taskId)).get()!.status).toBe("active");
+    expect(recentInterventionReports(ctx.handle.db, intervention.id, access, new Date("2026-10-17T10:00:00Z"))).toEqual([]);
   });
 
 });

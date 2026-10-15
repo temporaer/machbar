@@ -1104,6 +1104,7 @@ export const interventions = sqliteTable(
     // drives Today surfacing. Strict YYYY-MM-DD.
     revisitDate: text("revisit_date").notNull(),
     reviewWindowStart: text("review_window_start"),
+    reminderEnabled: integer("reminder_enabled", { mode: "boolean" }).notNull().default(true),
     status: text("status", { enum: ["active", "concluded"] })
       .notNull()
       .default("active"),
@@ -1128,6 +1129,7 @@ export const interventions = sqliteTable(
 export const interventionAssessments = sqliteTable(
   "intervention_assessments",
   {
+    countedObservationIdsJson: text("counted_observation_ids_json").notNull().default("[]"),
     reviewKey: text("review_key"),
     decision: text("decision", { enum: ["continue", "adjust", "stop"] }),
     benefit: text("benefit", { enum: ["helped", "not_helped", "uncertain"] }),

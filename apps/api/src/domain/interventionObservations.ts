@@ -68,6 +68,8 @@ export function recentInterventionReports(db: Db, interventionId: number, access
   const history = observationHistory(db, interventionId, access);
   const intervention = db.select().from(schema.interventions).where(eq(schema.interventions.id, interventionId)).get()!;
   if (intervention.status !== "active") return [];
+  const currentPlan = observationPlanForDate(history.plans, householdToday(db, now));
+  if (currentPlan?.plan.method !== "daily_report") return [];
   const reports = [];
   for (let offset = 0; offset < 7; offset++) {
     const date = addCalendarDays(householdToday(db, now), -offset);

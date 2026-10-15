@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { InterventionEvidence, ObservationCounts, ObservationPlanVersion, InterventionObservation } from "@machbar/shared";
+import type { InterventionEvidence, ObservationCounts, InterventionObservation } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -7,7 +7,7 @@ import { buildReflectionBriefing } from "../reflection/briefing.js";
 import { observationHistory, observationPlanForDate, observationIsAnswerable } from "./interventionObservations.js";
 import { addCalendarDays, calendarDaysBetween } from "./calendarDate.js";
 import { householdToday } from "./householdCalendar.js";
-import type { GoalAccess } from "./goals.js";
+import { generatedTasksForIntervention, type GoalAccess } from "./goals.js";
 
 export function observationCounts(days: string[], observations: InterventionObservation[]): ObservationCounts {
   const rows = observations.filter((o) => days.includes(o.referenceDate));
@@ -19,13 +19,14 @@ export function observationCounts(days: string[], observations: InterventionObse
 export function buildInterventionEvidence(db: Db, interventionId: number, access: GoalAccess, options: { startDate?: string; endDate?: string; now?: Date } = {}): InterventionEvidence {
   const history = observationHistory(db, interventionId, access);
   const intervention = db.select().from(schema.interventions).where(eq(schema.interventions.id, interventionId)).get()!;
-  const goal = db.select().from(schema.goals).where(eq(schema.goals.id, intervention.goalId)).get()!;
   const now = options.now ?? new Date(), today = householdToday(db, now);
   const startDate = options.startDate ?? intervention.reviewWindowStart ?? intervention.startDate;
   const endDate = options.endDate ?? (intervention.revisitDate < today ? intervention.revisitDate : today);
   const days = calendarDaysBetween(startDate, endDate) + 1;
-  if (days < 1 || days > 366 || endDate > today || startDate < intervention.startDate) throw AppError.badRequest("intervention_assessment_invalid", "Review a past or current window of at most 366 calendar days.");
-  const eligibleDays = Array.from({ length: days }, (_, n) => addCalendarDays(startDate, n)).filter((date) => {
+  if (days < 1 || endDate > today || startDate < intervention.startDate) throw AppError.badRequest("intervention_assessment_invalid", "Review a past or current calendar window.");
+  const dailyStart = history.plans[0] && history.plans[0].effectiveFrom > startDate ? history.plans[0].effectiveFrom : startDate;
+  const observationDays = history.plans.length ? Math.max(0, calendarDaysBetween(dailyStart, endDate) + 1) : 0;
+  const eligibleDays = Array.from({ length: observationDays }, (_, n) => addCalendarDays(dailyStart, n)).filter((date) => {
     const plan = observationPlanForDate(history.plans, date);
     return plan && observationIsAnswerable(plan, date, now);
   });
@@ -50,7 +51,7 @@ export function buildInterventionEvidence(db: Db, interventionId: number, access
   }
   return { interventionId, generatedAt: now.toISOString(), window: { startDate, endDate }, plans: history.plans,
     observations, counts: observationCounts(eligibleDays, observations), periods,
-    generatedTasks: db.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all(),
-    activity: buildReflectionBriefing(db, { subjectMemberId: access.ownerMemberId, days, scope: goal.area === "work" ? "work" : "household", now, window: { startDate, endDate } }),
+    generatedTasks: generatedTasksForIntervention(db, interventionId),
+    activity: buildReflectionBriefing(db, { subjectMemberId: access.ownerMemberId, days, scope: "all", now, window: { startDate, endDate } }),
   };
 }

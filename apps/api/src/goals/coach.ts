@@ -1,3 +1,7 @@
+import { buildInterventionEvidence } from "../domain/interventionEvidence.js";
+import type { InterventionEvidence, InterventionReviewDecision } from "@machbar/shared";
+import type { ManualAssessmentInput } from "../domain/goals.js";
+import { requestAssessmentSchema } from "../schemas.js";
 import { z } from "zod";
 import { observationPlanSchema, interventionTaskPlanSchema, requestGoalSuggestionSchema } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
@@ -23,13 +27,11 @@ import type {
   AssessmentBand,
   AssessmentProposal,
   CoachRequestStatus,
-  GoalArea,
   GoalSuggestAiResponse,
   GoalAssessAiResponse,
   GoalSuggestionProposal,
   InterventionType,
   ProposedIntervention,
-  ReflectionBriefingScope,
 } from "@machbar/shared";
 import { assessmentBands, interventionTypes } from "@machbar/shared";
 import type { Db } from "../db/client.js";
@@ -39,7 +41,6 @@ import { getHouseholdAiContext } from "../aiContext.js";
 import { householdToday } from "../domain/householdCalendar.js";
 import { isIsoCalendarDate, addCalendarDays } from "../domain/calendarDate.js";
 import { backIntervention, getGoal, insertAssessment, startIntervention } from "../domain/goals.js";
-import { buildReflectionBriefing } from "../reflection/briefing.js";
 import { activeHomeAssistantIntegration } from "../integrations/homeAssistant.js";
 import {
   enqueueHomeAssistantRequest,
@@ -68,6 +69,11 @@ interface StoredSuggestPayload {
 }
 
 interface StoredAssessPayload {
+  contractVersion?: 2;
+  evidence?: InterventionEvidence;
+  expectedRevision?: number;
+  reflection?: { benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string };
+  candidateObservationIds?: number[];
   interventionId: number;
   taskName: typeof TASK_NAME;
   instructions: string;
@@ -83,6 +89,12 @@ interface StoredSuggestProposal {
   interventions: ProposedIntervention[];
 }
 interface StoredAssessProposal {
+  reminderEnabled?: boolean;
+  countedObservationIds?: number[];
+  recommendedDecision?: InterventionReviewDecision;
+  observationPlan?: ObservationPlan;
+  commitment?: string;
+  nextRevisitDate?: string;
   band: AssessmentBand;
   rationaleMd: string;
   countedItemIds: number[];
@@ -102,12 +114,7 @@ export interface AcceptSuggestionInput {
 }
 
 /** Overrides a user may apply when accepting an assessment proposal. */
-export interface AcceptAssessmentInput {
-  band?: AssessmentBand;
-  rationaleMd?: string;
-  countedItemIds?: number[];
-  assessedAt?: string;
-}
+export type AcceptAssessmentInput = Partial<Omit<ManualAssessmentInput, "digestWindowStart" | "digestWindowEnd" | "evidence" | "reviewKey">>;
 
 // --- Shared guards & helpers ------------------------------------------------
 
@@ -162,10 +169,6 @@ function assertGoalOwner(goal: GoalRow, ownerMemberId: number | null): void {
   if (ownerMemberId === null || goal.ownerMemberId !== ownerMemberId) {
     throw AppError.notFound("goal_not_found", "The goal was not found.", { goalId: goal.id });
   }
-}
-
-function areaScope(area: GoalArea): ReflectionBriefingScope {
-  return area === "work" ? "work" : "all";
 }
 
 function parseResult<T>(json: string | null): T | null {
@@ -224,6 +227,8 @@ function validateSuggestResponse(raw: unknown, today: string, strict = false, al
 function validateAssessResponse(
   raw: unknown,
   candidateItemIds: number[],
+  candidateObservationIds: number[] = [],
+  strict = false,
 ): StoredAssessProposal | null {
   const response = raw as GoalAssessAiResponse | null | undefined;
   if (!response || typeof response !== "object") return null;
@@ -241,7 +246,21 @@ function validateAssessResponse(
     typeof response.nextMove === "string" && response.nextMove.trim().length > 0
       ? response.nextMove.trim()
       : null;
-  return { band, rationaleMd, countedItemIds, nextMove };
+  if (response.commitment !== undefined && (typeof response.commitment !== "string" || !response.commitment.trim() || response.commitment.length > 1000)) return null;
+  if (strict && !Array.isArray(response.countedItemIds)) return null;
+  const refs = response.countedObservationIds ?? [];
+  if (!Array.isArray(refs) || refs.some((id) => !Number.isInteger(id) || !candidateObservationIds.includes(id))) return null;
+  if (strict && (!Array.isArray(response.countedObservationIds) || !["continue", "adjust", "stop"].includes(response.recommendedDecision ?? ""))) return null;
+  if (strict && Array.isArray(response.countedItemIds) && response.countedItemIds.some((id) => !allowed.has(id))) return null;
+  const plan = response.observationPlan === undefined ? undefined : observationPlanSchema.safeParse(response.observationPlan);
+  if (plan && !plan.success) return null;
+  if (response.nextRevisitDate !== undefined && !isIsoCalendarDate(response.nextRevisitDate)) return null;
+  if (response.recommendedDecision === "adjust" && !response.commitment?.trim() && !plan && response.reminderEnabled === undefined) return null;
+  if (response.reminderEnabled !== undefined && typeof response.reminderEnabled !== "boolean") return null;
+  return { band, rationaleMd, countedItemIds, nextMove, countedObservationIds: refs,
+    reminderEnabled: response.reminderEnabled,
+    recommendedDecision: response.recommendedDecision, observationPlan: plan?.success ? plan.data : undefined,
+    commitment: response.commitment?.trim(), nextRevisitDate: response.nextRevisitDate };
 }
 
 // --- Suggest: request / read / analyze / accept -----------------------------
@@ -401,7 +420,9 @@ export function requestInterventionAssessment(
   interventionId: number,
   ownerMemberId: number | null,
   signal?: HomeAssistantRequestSignal,
+  rawReflection: { benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string } = {},
 ): string {
+  const reflection = parseOrThrow(requestAssessmentSchema, rawReflection);
   const integration = readyIntegration(db);
   const intervention = interventionRowOrThrow(db, interventionId);
   const goal = goalRowOrThrow(db, intervention.goalId);
@@ -413,18 +434,12 @@ export function requestInterventionAssessment(
       { goalId: goal.id },
     );
   }
-  // Reuse the reflection digest over the intervention's own period (§7.3): the
-  // start_date → revisit_date window, one canonical completion/admin/recurring
-  // split, no new activity reader.
-  const briefing = buildReflectionBriefing(db, {
-    subjectMemberId: goal.ownerMemberId,
-    days: DEFAULT_DURATION_DAYS,
-    scope: areaScope(goal.area),
-    window: { startDate: intervention.startDate, endDate: intervention.revisitDate },
-  });
-  const digest = summarizeAssessDigest(briefing);
+  const evidence = buildInterventionEvidence(db, interventionId, { ownerMemberId: goal.ownerMemberId });
+  const digest = summarizeAssessDigest(evidence.activity);
   const candidateItemIds = assessCandidateItemIds(digest);
   const payload: StoredAssessPayload = {
+    contractVersion: 2, evidence, reflection, expectedRevision: intervention.revision,
+    candidateObservationIds: evidence.observations.map((o) => o.id),
     interventionId,
     taskName: TASK_NAME,
     instructions: buildInterventionAssessInstructions({
@@ -436,12 +451,12 @@ export function requestInterventionAssessment(
         startDate: intervention.startDate,
         revisitDate: intervention.revisitDate,
       },
-      digest,
+      digest, evidence, reflection,
       aiContext: getHouseholdAiContext(db),
       backingTaskId: intervention.backingTaskId,
     }),
-    windowStart: intervention.startDate,
-    windowEnd: intervention.revisitDate,
+    windowStart: evidence.window.startDate,
+    windowEnd: evidence.window.endDate,
     candidateItemIds,
   };
   return db.transaction((tx) =>
@@ -490,6 +505,11 @@ export function getAssessmentProposal(
     band: proposal?.band ?? null,
     rationaleMd: proposal?.rationaleMd ?? null,
     countedItemIds: proposal?.countedItemIds ?? [],
+    countedObservationIds: proposal?.countedObservationIds ?? [],
+    reminderEnabled: proposal?.reminderEnabled,
+    recommendedDecision: proposal?.recommendedDecision,
+    observationPlan: proposal?.observationPlan, commitment: proposal?.commitment, nextRevisitDate: proposal?.nextRevisitDate,
+    evidence: payload.evidence,
     windowStart: payload.windowStart,
     windowEnd: payload.windowEnd,
     nextMove: proposal?.nextMove ?? null,
@@ -500,7 +520,7 @@ export function getAssessmentProposal(
 /** Owner handler: validate the AI output and store (or fail) the proposal. */
 export function onInterventionAssessAnalyzed(db: Db, row: RequestRow, raw: unknown): void {
   const payload = parseResult<StoredAssessPayload>(row.payloadJson);
-  const proposal = payload ? validateAssessResponse(raw, payload.candidateItemIds) : null;
+  const proposal = payload ? validateAssessResponse(raw, payload.candidateItemIds, payload.candidateObservationIds, payload.contractVersion === 2) : null;
   if (!proposal) {
     db.update(schema.homeAssistantRequests)
       .set({
@@ -548,6 +568,18 @@ export function acceptAssessmentProposal(
     db,
     interventionId,
     {
+      ...overrides,
+      reviewKey: `coach:${requestId}`,
+      expectedRevision: overrides.expectedRevision ?? payload.expectedRevision ?? intervention.revision,
+      decision: overrides.decision ?? proposal.recommendedDecision ?? "continue",
+      reminderEnabled: overrides.reminderEnabled ?? proposal.reminderEnabled,
+      benefit: overrides.benefit ?? payload.reflection?.benefit,
+      obstacle: overrides.obstacle ?? payload.reflection?.obstacle,
+      observationPlan: overrides.observationPlan ?? proposal.observationPlan,
+      commitment: overrides.commitment ?? proposal.commitment,
+      nextRevisitDate: overrides.nextRevisitDate ?? proposal.nextRevisitDate,
+      countedObservationIds: overrides.countedObservationIds ?? proposal.countedObservationIds ?? [],
+      evidence: payload.evidence,
       band: overrides.band ?? proposal.band,
       rationaleMd: overrides.rationaleMd ?? proposal.rationaleMd,
       countedItemIds: overrides.countedItemIds ?? proposal.countedItemIds,

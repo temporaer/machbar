@@ -1257,6 +1257,10 @@ export interface GoalSuggestAnalyzePayload {
 
 /** Payload for the advisory `intervention_assess` coach pass (§7.2). */
 export interface GoalAssessAnalyzePayload {
+  candidateItemIds?: number[];
+  contractVersion?: 2;
+  candidateObservationIds?: number[];
+  evidence?: import("./interventionObservation.js").InterventionEvidence;
   interventionId: number;
   taskName: "Machbar Zielcoach";
   instructions: string;
@@ -1283,6 +1287,12 @@ export interface GoalSuggestAiResponse {
 
 /** Raw model output of an `intervention_assess` pass before validation. */
 export interface GoalAssessAiResponse {
+  reminderEnabled?: boolean;
+  countedObservationIds?: number[];
+  recommendedDecision?: "continue" | "adjust" | "stop";
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
+  commitment?: string;
+  nextRevisitDate?: string;
   band: string;
   rationaleMd: string;
   countedItemIds: number[];

@@ -777,6 +777,7 @@ export const recordObservationSchema = z.object({
 });
 
 export const startInterventionSchema = z.object({
+  reminderEnabled: z.boolean().optional(),
   observationPlan: observationPlanSchema.optional(),
   type: z.enum(interventionTypes),
   commitment: z.string().min(1, "An intervention needs a commitment."),
@@ -786,6 +787,7 @@ export const startInterventionSchema = z.object({
 });
 
 export const adjustInterventionSchema = z.object({
+  reminderEnabled: z.boolean().optional(),
   observationPlan: observationPlanSchema.optional(),
   type: z.enum(interventionTypes).optional(),
   commitment: z.string().min(1).optional(),
@@ -820,6 +822,8 @@ export const backInterventionSchema = z.object({
 });
 
 export const manualAssessmentSchema = z.object({
+  reminderEnabled: z.boolean().optional(),
+  countedObservationIds: z.array(z.number().int().positive()).optional(),
   reviewKey: z.string().min(1).max(100).optional(), decision: z.enum(["continue", "adjust", "stop"]).optional(),
   benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional(),
   expectedRevision: z.number().int().positive().optional(), nextRevisitDate: isoDate.optional(),
@@ -846,11 +850,10 @@ export const acceptSuggestionSchema = z.object({
 });
 
 /** Accept an assessment proposal; all fields are optional user overrides. */
-export const acceptAssessmentSchema = z.object({
-  band: z.enum(assessmentBands).optional(),
-  rationaleMd: z.string().min(1).optional(),
-  countedItemIds: z.array(z.number().int().positive()).optional(),
-});
+export const acceptAssessmentSchema = manualAssessmentSchema.omit({ digestWindowStart: true, digestWindowEnd: true, reviewKey: true }).partial();
+export const requestAssessmentSchema = z.object({
+  benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional(),
+}).strict();
 
 export const requestGoalSuggestionSchema = z.object({
   clarificationRequestId: z.string().min(1).optional(), clarificationAnswer: z.string().trim().min(1).max(2000).optional(),

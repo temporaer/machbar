@@ -506,6 +506,7 @@ export interface UpdateGoalInput {
 }
 
 export interface StartInterventionInput {
+  reminderEnabled?: boolean;
   observationPlan?: import("@machbar/shared").ObservationPlan;
   type: InterventionType;
   commitment: string;
@@ -515,6 +516,7 @@ export interface StartInterventionInput {
 }
 
 export interface AdjustInterventionInput {
+  reminderEnabled?: boolean;
   observationPlan?: import("@machbar/shared").ObservationPlan;
   type?: InterventionType;
   commitment?: string;
@@ -525,6 +527,8 @@ export interface AdjustInterventionInput {
 }
 
 export interface ManualAssessmentInput {
+  reminderEnabled?: boolean;
+  countedObservationIds?: number[];
   reviewKey?: string; decision?: "continue" | "adjust" | "stop"; benefit?: "helped" | "not_helped" | "uncertain";
   obstacle?: string; expectedRevision?: number; nextRevisitDate?: string; backingCleanup?: "keep" | "stop";
   observationPlan?: import("@machbar/shared").ObservationPlan; commitment?: string;
@@ -546,12 +550,7 @@ export interface AcceptGoalSuggestionInput {
   revisitDate?: string;
 }
 
-export interface AcceptAssessmentProposalInput {
-  band?: AssessmentBand;
-  rationaleMd?: string;
-  countedItemIds?: number[];
-  assessedAt?: string;
-}
+export type AcceptAssessmentProposalInput = Partial<Omit<ManualAssessmentInput, "digestWindowStart" | "digestWindowEnd" | "reviewKey">>;
 
 export interface BackInterventionInput {
   tasks?: import("@machbar/shared").InterventionTaskPlan[];
@@ -1193,8 +1192,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  requestAssessmentProposal: (id: number) =>
-    request<AssessmentProposal>(`/interventions/${id}/assess`, { method: "POST" }),
+  requestAssessmentProposal: (id: number, input?: { benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string }) =>
+    request<AssessmentProposal>(`/interventions/${id}/assess`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getAssessmentProposal: (id: number, requestId: string) =>
     request<AssessmentProposal>(`/interventions/${id}/assess/${requestId}`),
   acceptAssessmentProposal: (

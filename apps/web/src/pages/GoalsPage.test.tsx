@@ -392,11 +392,11 @@ describe("GoalsPage", () => {
     expect(mockedApi.acceptAssessmentProposal).toHaveBeenCalledWith(
       10,
       "assess-1",
-      {
+      expect.objectContaining({
         band: "achieved",
         rationaleMd: "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
-        countedItemIds: [7, 8],
-      },
+        countedItemIds: [7, 8], countedObservationIds: [], decision: "continue", expectedRevision: 2,
+      }),
     );
     expect(mockedApi.assessIntervention).not.toHaveBeenCalled();
   });
