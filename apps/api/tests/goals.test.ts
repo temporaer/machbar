@@ -46,7 +46,7 @@ describe("Goals & interventions (Phase 1)", () => {
       method: "POST",
       url: "/api/goals",
       headers: actor,
-      payload: { title: "Run a half marathon", notes: "Spring race", scope: "work" },
+      payload: { title: "Run a half marathon", notes: "Spring race", area: "work" },
     });
     expect(createRes.statusCode).toBe(201);
     const goal = createRes.json() as GoalWithInterventions;
@@ -56,7 +56,7 @@ describe("Goals & interventions (Phase 1)", () => {
       title: "Run a half marathon",
       notes: "Spring race",
       ownerMemberId: member.id,
-      scope: "work",
+      area: "work",
       interventions: [],
     });
 
@@ -242,10 +242,10 @@ describe("Goals & interventions (Phase 1)", () => {
 
     const created = await client.callTool({
       name: "machbar_create_goal",
-      arguments: { title: "Ship the feature", notes: "This quarter" },
+      arguments: { title: "Ship the feature", notes: "This quarter", area: "work" },
     });
     const goal = (created.structuredContent as { result: GoalWithInterventions }).result;
-    expect(goal).toMatchObject({ title: "Ship the feature", scope: "work", status: "active" });
+    expect(goal).toMatchObject({ title: "Ship the feature", area: "work", status: "active" });
     expect(goal.ownerMemberId).toBe(member.id);
 
     const started = await client.callTool({
@@ -278,33 +278,50 @@ describe("Goals & interventions (Phase 1)", () => {
     await server.close();
   });
 
-  it("hides goals from an MCP credential in a different scope", async () => {
-    const member = await createMember();
-    const work = await connectMcp(member.id, "work");
+  it("keeps goals owner-scoped: visible to the same owner regardless of credential scope, hidden from other members", async () => {
+    const owner = await createMember("Owner");
+    const other = await createMember("Other");
+
+    // A goal created under the work credential is a personal, owner-scoped item.
+    const work = await connectMcp(owner.id, "work");
     const created = await work.client.callTool({
       name: "machbar_create_goal",
-      arguments: { title: "Work-only goal" },
+      arguments: { title: "Personal goal", area: "personal" },
     });
     const goal = (created.structuredContent as { result: GoalWithInterventions }).result;
     await work.client.close();
     await work.server.close();
 
-    const household = await connectMcp(member.id, "household");
-    const listed = await household.client.callTool({
+    // The same owner on a different credential scope still sees and can act on it:
+    // goal access is purely owner-based, independent of the credential's area.
+    const household = await connectMcp(owner.id, "household");
+    const ownerListed = await household.client.callTool({
       name: "machbar_list_goals",
       arguments: {},
     });
     expect(
-      (listed.structuredContent as { result: GoalWithInterventions[] }).result,
+      (ownerListed.structuredContent as { result: GoalWithInterventions[] }).result,
+    ).toHaveLength(1);
+    await household.client.close();
+    await household.server.close();
+
+    // A different member never sees or acts on another owner's goal.
+    const stranger = await connectMcp(other.id, "work");
+    const strangerListed = await stranger.client.callTool({
+      name: "machbar_list_goals",
+      arguments: {},
+    });
+    expect(
+      (strangerListed.structuredContent as { result: GoalWithInterventions[] }).result,
     ).toHaveLength(0);
 
-    const blocked = await household.client.callTool({
+    const blocked = await stranger.client.callTool({
       name: "machbar_conclude_goal",
       arguments: { goalId: goal.id, expectedRevision: goal.revision },
     });
     expect(blocked.isError).toBe(true);
 
-    await household.client.close();
-    await household.server.close();
+    await stranger.client.close();
+    await stranger.server.close();
   });
 });

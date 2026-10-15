@@ -19,6 +19,7 @@ import {
   taskSizes,
   taskStatuses,
   workItemScopes,
+  goalAreas,
   interventionTypes,
   assessmentBands,
   isoCalendarDateSchema,
@@ -733,13 +734,14 @@ export const moveProjectSchema = z.object({
 export const createGoalSchema = z.object({
   title: z.string().min(1, "A goal needs a title."),
   notes: z.string().optional(),
-  scope: z.enum(workItemScopes).optional(),
+  area: z.enum(goalAreas).optional(),
   ownerMemberId: z.number().int().positive().nullable().optional(),
 });
 
 export const updateGoalSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
+  area: z.enum(goalAreas).optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
 

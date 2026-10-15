@@ -59,7 +59,7 @@ export function registerGoalRoutes(app: FastifyInstance, db: Db): void {
       {
         title: body.title,
         notes: body.notes,
-        scope: body.scope,
+        area: body.area,
         ownerMemberId: body.ownerMemberId === undefined ? (viewer ?? null) : body.ownerMemberId,
         createdByMemberId: viewer ?? null,
       },
