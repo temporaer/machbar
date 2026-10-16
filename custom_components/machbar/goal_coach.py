@@ -20,7 +20,7 @@ def _field(name: str, schema: Any) -> Any:
 def _observation_plan_schema() -> vol.Schema:
     return vol.Schema(
         {
-            _field("method", str): str,
+            _field("method", str): vol.In(["task_evidence", "reflection", "daily_report"]),
             vol.Optional("question"): str,
             vol.Optional("reference"): str,
             vol.Optional("reportDayOffset"): int,
@@ -37,6 +37,24 @@ def _observation_plan_schema() -> vol.Schema:
         },
         extra=vol.PREVENT_EXTRA,
     )
+
+
+def _normalize_observation_plan(value: Any, path: list[str | int]) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise _invalid(path, "an observation plan object", value=value)
+    method = value.get("method")
+    if method not in ("task_evidence", "reflection", "daily_report"):
+        raise _invalid(path + ["method"], "a supported observation method", value=method)
+    if method in ("task_evidence", "reflection"):
+        return {"method": method}
+    required = ("question", "reference", "reportDayOffset", "availableAfter", "opportunityBased")
+    if any(field not in value for field in required):
+        raise _invalid(path, "a complete daily report observation plan", value=value)
+    normalized = {"method": method}
+    normalized.update({field: value[field] for field in required})
+    if value.get("target") is not None:
+        normalized["target"] = value["target"]
+    return normalized
 
 
 def _task_reminder_schema() -> vol.Schema:
@@ -136,9 +154,9 @@ def normalize_goal_suggest_response(data: Any) -> dict[str, Any]:
             )
         normalized = {field: _strip(entry[field]) for field in required}
         if entry.get("observationPlan") is not None:
-            if not isinstance(entry["observationPlan"], dict):
-                raise _invalid(["interventions", index, "observationPlan"], "an observation plan object", value=entry["observationPlan"])
-            normalized["observationPlan"] = entry["observationPlan"]
+            normalized["observationPlan"] = _normalize_observation_plan(
+                entry["observationPlan"], ["interventions", index, "observationPlan"]
+            )
         if entry.get("tasks") is not None:
             if not isinstance(entry["tasks"], list) or any(not isinstance(task, dict) for task in entry["tasks"]):
                 raise _invalid(["interventions", index, "tasks"], "a list of task proposals", value=entry["tasks"])
@@ -191,7 +209,11 @@ def normalize_goal_assess_response(
         normalized["countedObservationIds"] = observation_ids
     for field in ("recommendedDecision", "observationPlan", "commitment", "nextRevisitDate", "reminderEnabled"):
         if field in data:
-            normalized[field] = data[field]
+            normalized[field] = (
+                _normalize_observation_plan(data[field], ["observationPlan"])
+                if field == "observationPlan"
+                else data[field]
+            )
     return normalized
 
 

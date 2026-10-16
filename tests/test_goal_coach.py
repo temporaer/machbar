@@ -185,6 +185,27 @@ def test_suggestion_preserves_clarification_and_complete_evidence_plan():
     assert normalize_goal_suggest_response({"interventions": [proposal]})["interventions"][0] == proposal
 
 
+def test_suggestion_removes_method_inapplicable_observation_fields():
+    proposal = {
+        "type": "exploration_step",
+        "commitment": "Invite a neighbour",
+        "rationale": "Create a small social opportunity.",
+        "startDate": "2026-10-15",
+        "revisitDate": "2026-10-29",
+        "observationPlan": {
+            "method": "reflection",
+            "question": "Did it help?",
+            "reference": "day",
+            "reportDayOffset": 0,
+            "availableAfter": "18:00",
+            "opportunityBased": False,
+            "target": {"successfulDays": 2, "window": "seven_days", "anchorDate": "2026-10-15"},
+        },
+    }
+    result = normalize_goal_suggest_response({"interventions": [proposal]})
+    assert result["interventions"][0]["observationPlan"] == {"method": "reflection"}
+
+
 def test_suggestion_treats_nullable_optional_fields_as_omitted():
     proposal = {
         "type": "exploration_step",
