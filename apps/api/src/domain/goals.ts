@@ -479,6 +479,7 @@ export function concludeGoal(
         { goalId },
       );
     }
+
     tx.update(schema.goals)
       .set({
         status: "concluded",
@@ -489,6 +490,37 @@ export function concludeGoal(
       .where(eq(schema.goals.id, goalId))
       .run();
     return assembleGoals(tx, [requireGoalRow(tx, goalId)], today)[0]!;
+  });
+}
+
+export function deleteGoal(
+  db: Db,
+  goalId: number,
+  expectedRevision: number | undefined,
+): void {
+  db.transaction((tx) => {
+    const current = requireGoalRow(tx, goalId);
+    assertGoalRevision(current, expectedRevision);
+    if (current.status !== "concluded") {
+      throw AppError.conflict(
+        "goal_transition_invalid",
+        "Only concluded goals can be deleted.",
+        { goalId },
+      );
+    }
+    const interventions = tx
+      .select()
+      .from(schema.interventions)
+      .where(eq(schema.interventions.goalId, goalId))
+      .all();
+    if (interventions.some((intervention) => intervention.status !== "concluded")) {
+      throw AppError.conflict(
+        "goal_transition_invalid",
+        "A goal with active interventions cannot be deleted.",
+        { goalId },
+      );
+    }
+    tx.delete(schema.goals).where(eq(schema.goals.id, goalId)).run();
   });
 }
 
@@ -640,6 +672,7 @@ export function concludeIntervention(
         { interventionId },
       );
     }
+
     // Cleanup on conclude (§8, decided): resolve the backing recurring check-in
     // before flipping status. "keep" just clears the pointer so the task lives
     // on as ordinary recurring work; "stop" (default) ends it through the
@@ -651,6 +684,7 @@ export function concludeIntervention(
         const task = tx.select().from(schema.workItems).where(eq(schema.workItems.id, row.taskId)).get();
         if (task && task.status !== "done" && task.status !== "cancelled") cancelTask(tx as unknown as Db, row.taskId, undefined, options.context);
       }
+
     }
     tx.update(schema.interventions)
       .set({
@@ -667,6 +701,38 @@ export function concludeIntervention(
     const updated = requireInterventionRow(tx, interventionId);
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
     return buildInterventionView(tx as unknown as Db, updated, assessments, today);
+  });
+}
+
+export function deleteIntervention(
+  db: Db,
+  interventionId: number,
+  expectedRevision: number | undefined,
+  context?: MutationContext,
+): void {
+  db.transaction((tx) => {
+    const current = requireInterventionRow(tx, interventionId);
+    assertInterventionRevision(current, expectedRevision);
+    if (current.status !== "concluded") {
+      throw AppError.conflict(
+        "intervention_transition_invalid",
+        "Only concluded interventions can be deleted.",
+        { interventionId },
+      );
+    }
+    const generated = tx
+      .select()
+      .from(schema.interventionTasks)
+      .where(eq(schema.interventionTasks.interventionId, interventionId))
+      .all();
+    for (const row of generated) {
+      if (row.taskId === null) continue;
+      const task = tx.select().from(schema.workItems).where(eq(schema.workItems.id, row.taskId)).get();
+      if (task && task.status !== "done" && task.status !== "cancelled") {
+        cancelTask(tx as unknown as Db, row.taskId, "cancel_children", context);
+      }
+    }
+    tx.delete(schema.interventions).where(eq(schema.interventions.id, interventionId)).run();
   });
 }
 

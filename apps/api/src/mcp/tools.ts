@@ -54,6 +54,8 @@ import {
   concludeGoal,
   concludeIntervention,
   createGoal,
+  deleteGoal,
+  deleteIntervention,
   createManualAssessment,
   listGoals,
   startIntervention,
@@ -1500,6 +1502,18 @@ export function createMachbarMcpServer({
   );
 
   server.registerTool(
+    "machbar_delete_goal",
+    {
+      description: "Delete one of your concluded goals. Active goals or goals with active interventions are protected; dependent concluded interventions are removed by the database cascade.",
+      inputSchema: { goalId, expectedRevision },
+    },
+    async ({ goalId: id, expectedRevision: rev }) => {
+      assertGoalAccessible(db, id, goalAccess);
+      return result(deleteGoal(db, id, rev));
+    },
+  );
+
+  server.registerTool(
     "machbar_start_intervention",
     {
       description:
@@ -1614,6 +1628,18 @@ export function createMachbarMcpServer({
           context: { actorMemberId: memberId },
         }),
       );
+    },
+  );
+
+  server.registerTool(
+    "machbar_delete_intervention",
+    {
+      description: "Delete one of your concluded interventions. Any generated open tasks are cancelled through the canonical task lifecycle before the intervention and its history are removed.",
+      inputSchema: { interventionId, expectedRevision },
+    },
+    async ({ interventionId: id, expectedRevision: rev }) => {
+      assertInterventionAccessible(db, id, goalAccess);
+      return result(deleteIntervention(db, id, rev, { actorMemberId: memberId }));
     },
   );
 

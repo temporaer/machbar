@@ -30,6 +30,7 @@ import {
   type AssessmentDraft,
 } from "../components/InterventionAssessSheet";
 import { BottomSheet } from "../components/BottomSheet";
+import { ConfirmDeleteSheet } from "../components/ConfirmDeleteSheet";
 import { api } from "../lib/api";
 import { hasApiErrorCode, localizedErrorMessage } from "../lib/errorMessage";
 import { useAsync } from "../lib/useAsync";
@@ -231,10 +232,12 @@ function GoalCard({
   goal,
   onEditGoal,
   onConcludeGoal,
+  onDeleteGoal,
   onStartIntervention,
   onAdjustIntervention,
   onBackIntervention,
   onConcludeIntervention,
+  onDeleteIntervention,
   onAssess,
   onRequestSuggestion,
   onCheckSuggestion,
@@ -244,10 +247,12 @@ function GoalCard({
   goal: GoalWithInterventions;
   onEditGoal: (goal: GoalWithInterventions) => void;
   onConcludeGoal: (goal: GoalWithInterventions) => void;
+  onDeleteGoal: (goal: GoalWithInterventions) => void;
   onStartIntervention: (goal: GoalWithInterventions) => void;
   onAdjustIntervention: (intervention: InterventionView) => void;
   onBackIntervention: (intervention: InterventionView) => void;
   onConcludeIntervention: (intervention: InterventionView) => void;
+  onDeleteIntervention: (intervention: InterventionView) => void;
   onAssess: (intervention: InterventionView) => void;
   onRequestSuggestion: (goalId: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) => Promise<GoalSuggestionProposal>;
   onCheckSuggestion: (goalId: number, requestId: string) => Promise<GoalSuggestionProposal>;
@@ -267,6 +272,7 @@ function GoalCard({
     (intervention) => intervention.status === "active",
   );
   const active = goal.status === "active";
+  const deletableGoal = !active && interventions.every((intervention) => intervention.status === "concluded");
 
   return (
     <section className="card stack goal-card" id={`goal-${goal.id}`} aria-label={goal.title}>
@@ -349,6 +355,16 @@ function GoalCard({
                     {strings.reviewIntervention}
                   </button>
                 ) : null}
+                {intervention.status === "concluded" ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    disabled={pending}
+                    onClick={() => onDeleteIntervention(intervention)}
+                  >
+                    {strings.deleteIntervention}
+                  </button>
+                ) : null}
               </div>
               <div className="stack goal-arc-block">
                 <h5>{strings.assessmentHistory}</h5>
@@ -395,6 +411,16 @@ function GoalCard({
             >
               {strings.concludeGoal}
             </button>
+            {deletableGoal ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                disabled={pending}
+                onClick={() => onDeleteGoal(goal)}
+              >
+                {strings.deleteGoal}
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -413,6 +439,8 @@ export function GoalsPage() {
   const [adjustingIntervention, setAdjustingIntervention] = useState<InterventionView | null>(null);
   const [concludingBacked, setConcludingBacked] = useState<InterventionView | null>(null);
   const [assessing, setAssessing] = useState<InterventionView | null>(null);
+  const [deletingGoal, setDeletingGoal] = useState<GoalWithInterventions | null>(null);
+  const [deletingIntervention, setDeletingIntervention] = useState<InterventionView | null>(null);
 
   const goals = goalsState.data ?? [];
   const activeGoals = goals.filter((goal) => goal.status === "active");
@@ -510,10 +538,12 @@ export function GoalsPage() {
                   pending={anyPending}
                   onEditGoal={setEditingGoal}
                   onConcludeGoal={(target) => void actions.concludeGoal(target)}
+                  onDeleteGoal={setDeletingGoal}
                   onStartIntervention={setInterventionGoal}
                   onAdjustIntervention={setAdjustingIntervention}
                   onBackIntervention={backIntervention}
                   onConcludeIntervention={concludeIntervention}
+                  onDeleteIntervention={setDeletingIntervention}
                   onAssess={setAssessing}
                   onRequestSuggestion={actions.loadGoalSuggestion}
                   onCheckSuggestion={actions.checkGoalSuggestion}
@@ -538,10 +568,12 @@ export function GoalsPage() {
                     pending={anyPending}
                     onEditGoal={setEditingGoal}
                     onConcludeGoal={(target) => void actions.concludeGoal(target)}
+                    onDeleteGoal={setDeletingGoal}
                     onStartIntervention={setInterventionGoal}
                     onAdjustIntervention={setAdjustingIntervention}
                     onBackIntervention={backIntervention}
                     onConcludeIntervention={concludeIntervention}
+                    onDeleteIntervention={setDeletingIntervention}
                     onAssess={setAssessing}
                     onRequestSuggestion={actions.loadGoalSuggestion}
                     onCheckSuggestion={actions.checkGoalSuggestion}
@@ -619,6 +651,34 @@ export function GoalsPage() {
             </div>
           </div>
         </BottomSheet>
+      ) : null}
+      {deletingGoal ? (
+        <ConfirmDeleteSheet
+          title={strings.deleteGoal}
+          itemTitle={deletingGoal.title}
+          prompt={strings.deleteGoalConfirm}
+          busy={actions.isPending(deletingGoal.id)}
+          onClose={() => setDeletingGoal(null)}
+          onConfirm={() => {
+            const target = deletingGoal;
+            setDeletingGoal(null);
+            void actions.deleteGoal(target);
+          }}
+        />
+      ) : null}
+      {deletingIntervention ? (
+        <ConfirmDeleteSheet
+          title={strings.deleteIntervention}
+          itemTitle={deletingIntervention.commitment}
+          prompt={strings.deleteInterventionConfirm}
+          busy={actions.isPending(deletingIntervention.id)}
+          onClose={() => setDeletingIntervention(null)}
+          onConfirm={() => {
+            const target = deletingIntervention;
+            setDeletingIntervention(null);
+            void actions.deleteIntervention(target);
+          }}
+        />
       ) : null}
     </div>
   );

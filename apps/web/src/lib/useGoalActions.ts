@@ -73,6 +73,16 @@ export function useGoalActions() {
     [run],
   );
 
+  const deleteGoal = useCallback(
+    (goal: GoalWithInterventions) =>
+      run<void>({
+        id: goal.id,
+        mutate: () => api.deleteGoal(goal.id, goal.revision),
+        throwOnError: true,
+      }),
+    [run],
+  );
+
   const startIntervention = useCallback(
     (goalId: number, input: StartInterventionInput) =>
       run<Intervention>({
@@ -152,6 +162,16 @@ export function useGoalActions() {
     [run],
   );
 
+  const deleteIntervention = useCallback(
+    (intervention: Intervention) =>
+      run<void>({
+        id: intervention.id,
+        mutate: () => api.deleteIntervention(intervention.id, intervention.revision),
+        throwOnError: true,
+      }),
+    [run],
+  );
+
   const assessIntervention = useCallback(
     (interventionId: number, input: ManualAssessmentInput) =>
       run<InterventionAssessment>({
@@ -198,6 +218,7 @@ export function useGoalActions() {
     createGoal,
     updateGoal,
     concludeGoal,
+    deleteGoal,
     loadGoalSuggestion,
     checkGoalSuggestion,
     acceptGoalSuggestion,
@@ -205,6 +226,7 @@ export function useGoalActions() {
     adjustIntervention,
     backIntervention,
     concludeIntervention,
+    deleteIntervention,
     assessIntervention,
     loadAssessmentProposal,
     checkAssessmentProposal,
