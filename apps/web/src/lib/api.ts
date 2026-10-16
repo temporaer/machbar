@@ -1147,6 +1147,11 @@ export const api = {
         expectedRevision === undefined ? {} : { expectedRevision },
       ),
     }),
+  deleteGoal: (id: number, expectedRevision?: number) =>
+    request<void>(`/goals/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify(expectedRevision === undefined ? {} : { expectedRevision }),
+    }),
   requestGoalSuggestion: (id: number, input?: { locale?: "de" | "en"; clarificationRequestId?: string; clarificationAnswer?: string }) =>
     request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getGoalSuggestion: (id: number, requestId: string) =>
@@ -1186,6 +1191,11 @@ export const api = {
         ...(expectedRevision === undefined ? {} : { expectedRevision }),
         ...(backingCleanup === undefined ? {} : { backingCleanup }),
       }),
+    }),
+  deleteIntervention: (id: number, expectedRevision?: number) =>
+    request<void>(`/interventions/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify(expectedRevision === undefined ? {} : { expectedRevision }),
     }),
   assessIntervention: (id: number, input: ManualAssessmentInput) =>
     request<InterventionAssessment>(`/interventions/${id}/assessments`, {

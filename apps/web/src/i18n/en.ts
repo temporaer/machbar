@@ -1814,6 +1814,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   saveGoal: "Save",
   concludeGoal: "Conclude goal",
   concludeGoalConfirm: "Really conclude this goal?",
+  deleteGoal: "Delete goal",
+  deleteGoalConfirm: "Really delete this concluded goal and its experiments?",
   goalTitleLabel: "Title",
   goalNotesLabel: "Notes",
   goalAreaLabel: "Area",
@@ -1827,6 +1829,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   concludeIntervention: "End experiment",
   concludeInterventionConfirm:
     "End this experiment now? Afterwards you can write a review.",
+  deleteIntervention: "Delete experiment",
+  deleteInterventionConfirm: "Really delete this concluded experiment?",
   interventionTypeLabel: "Type",
   interventionCommitmentLabel: "Commitment",
   interventionCommitmentHint: "The one concrete thing you will do.",

@@ -1805,6 +1805,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   saveGoal: "Speichern",
   concludeGoal: "Ziel abschließen",
   concludeGoalConfirm: "Dieses Ziel wirklich abschließen?",
+  deleteGoal: "Ziel löschen",
+  deleteGoalConfirm: "Dieses abgeschlossene Ziel und seine Experimente wirklich löschen?",
   goalTitleLabel: "Titel",
   goalNotesLabel: "Notizen",
   goalAreaLabel: "Bereich",
@@ -1818,6 +1820,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   concludeIntervention: "Experiment beenden",
   concludeInterventionConfirm:
     "Dieses Experiment jetzt beenden? Danach kannst du einen Rückblick machen.",
+  deleteIntervention: "Experiment löschen",
+  deleteInterventionConfirm: "Dieses abgeschlossene Experiment wirklich löschen?",
   interventionTypeLabel: "Art",
   interventionCommitmentLabel: "Zusage",
   interventionCommitmentHint: "Die eine konkrete Sache, die du tun wirst.",

@@ -325,4 +325,84 @@ describe("Goals & interventions (Phase 1)", () => {
     await stranger.client.close();
     await stranger.server.close();
   });
+
+  it("rejects active deletion and cascades concluded goal history", async () => {
+    const owner = await createMember("Owner");
+    const other = await createMember("Other");
+    const actor = { [ACTIVITY_ACTOR_HEADER]: String(owner.id) };
+    const goal = (await ctx.app.inject({
+      method: "POST", url: "/api/goals", headers: actor, payload: { title: "Delete me" },
+    })).json() as GoalWithInterventions;
+    const activeDelete = await ctx.app.inject({
+      method: "DELETE", url: `/api/goals/${goal.id}`, headers: actor,
+      payload: { expectedRevision: goal.revision },
+    });
+    expect(activeDelete.statusCode).toBe(409);
+    expect(activeDelete.json().error.code).toBe("goal_transition_invalid");
+
+    const intervention = (await ctx.app.inject({
+      method: "POST", url: `/api/goals/${goal.id}/interventions`, headers: actor,
+      payload: {
+        type: "exploration_step", commitment: "Try it", startDate: "2000-01-01", revisitDate: "2000-01-02",
+      },
+    })).json() as InterventionView;
+    const concludedIntervention = await ctx.app.inject({
+      method: "POST", url: `/api/interventions/${intervention.id}/conclude`, headers: actor,
+      payload: { expectedRevision: intervention.revision },
+    });
+    const goalAfterIntervention = (await ctx.app.inject({
+      method: "GET", url: `/api/goals/${goal.id}`, headers: actor,
+    })).json() as GoalWithInterventions;
+    await ctx.app.inject({
+      method: "POST", url: `/api/goals/${goal.id}/conclude`, headers: actor,
+      payload: { expectedRevision: goalAfterIntervention.revision },
+    });
+    const deleted = await ctx.app.inject({
+      method: "DELETE", url: `/api/goals/${goal.id}`, headers: actor,
+      payload: { expectedRevision: goalAfterIntervention.revision + 1 },
+    });
+    expect(deleted.statusCode).toBe(204);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}`, headers: actor })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/interventions/${intervention.id}/evidence`, headers: actor })).statusCode).toBe(404);
+
+    const strangerDelete = await ctx.app.inject({
+      method: "DELETE", url: `/api/goals/${goal.id}`, headers: { [ACTIVITY_ACTOR_HEADER]: String(other.id) },
+      payload: { expectedRevision: 1 },
+    });
+    expect(strangerDelete.statusCode).toBe(404);
+    expect(concludedIntervention.statusCode).toBe(200);
+  });
+
+  it("deletes concluded interventions after cancelling generated tasks", async () => {
+    const owner = await createMember();
+    const actor = { [ACTIVITY_ACTOR_HEADER]: String(owner.id) };
+    const goal = (await ctx.app.inject({
+      method: "POST", url: "/api/goals", headers: actor, payload: { title: "Backed goal" },
+    })).json() as GoalWithInterventions;
+    const intervention = (await ctx.app.inject({
+      method: "POST", url: `/api/goals/${goal.id}/interventions`, headers: actor,
+      payload: { type: "frequency_habit", commitment: "Practice", startDate: "2000-01-01", revisitDate: "2000-01-02" },
+    })).json() as InterventionView;
+    const backed = (await ctx.app.inject({
+      method: "POST", url: `/api/interventions/${intervention.id}/backing`, headers: actor,
+      payload: { title: "Generated check-in", scheduledDate: "2000-01-01", repeatAfterDays: 1, expectedRevision: intervention.revision },
+    })).json() as InterventionView;
+    const concluded = (await ctx.app.inject({
+      method: "POST", url: `/api/interventions/${intervention.id}/conclude`, headers: actor,
+      payload: { expectedRevision: backed.revision },
+    })).json() as InterventionView;
+    const deleted = await ctx.app.inject({
+      method: "DELETE", url: `/api/interventions/${intervention.id}`, headers: actor,
+      payload: { expectedRevision: concluded.revision },
+    });
+    expect(deleted.statusCode).toBe(204);
+    const generatedTaskId = backed.generatedTasks?.[0]?.taskId;
+    expect(generatedTaskId).not.toBeNull();
+    const taskAfterCleanup = await ctx.app.inject({
+      method: "GET", url: `/api/tasks/${generatedTaskId}`, headers: actor,
+    });
+    expect(taskAfterCleanup.statusCode).toBe(200);
+    expect(taskAfterCleanup.json().status).toBe("cancelled");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/interventions/${intervention.id}/evidence`, headers: actor })).statusCode).toBe(404);
+  });
 });

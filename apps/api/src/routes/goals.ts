@@ -29,6 +29,8 @@ import {
   concludeIntervention,
   createGoal,
   createManualAssessment,
+  deleteGoal,
+  deleteIntervention,
   getGoal,
   listGoals,
   startIntervention,
@@ -121,6 +123,13 @@ export function registerGoalRoutes(
     return concludeGoal(db, parseId(request.params.id, "goal"), body.expectedRevision, householdToday(db));
   });
 
+  app.delete<{ Params: { id: string } }>("/api/goals/:id", async (request, reply) => {
+    const body = parseOrThrow(goalLifecycleSchema, request.body ?? {});
+    deleteGoal(db, parseId(request.params.id, "goal"), body.expectedRevision);
+    reply.status(204);
+    return null;
+  });
+
   app.post<{ Params: { id: string } }>("/api/goals/:id/interventions", async (request, reply) => {
     const body = parseOrThrow(startInterventionSchema, request.body ?? {});
     const intervention = startIntervention(
@@ -163,6 +172,18 @@ export function registerGoalRoutes(
         context: { actorMemberId: request.activityActor?.id ?? null },
       },
     );
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/interventions/:id", async (request, reply) => {
+    const body = parseOrThrow(interventionLifecycleSchema, request.body ?? {});
+    deleteIntervention(
+      db,
+      parseId(request.params.id, "intervention"),
+      body.expectedRevision,
+      { actorMemberId: request.activityActor?.id ?? null },
+    );
+    reply.status(204);
+    return null;
   });
 
   app.post<{ Params: { id: string } }>("/api/interventions/:id/assessments", async (request, reply) => {
