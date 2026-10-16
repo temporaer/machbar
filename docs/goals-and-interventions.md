@@ -231,7 +231,7 @@ Old stored/in-flight suggestions remain readable. A suggestion missing an eviden
 plan needs explicit user selection before acceptance. Old assessments remain usable;
 new requests require typed decisions and observation citations. An outdated adapter's
 incomplete new result fails safely; manual authoring/review remains available.
-Install Home Assistant component **0.7.1** through HACS and restart Home Assistant
+Install Home Assistant component **0.7.2** through HACS and restart Home Assistant
 to load the new Python adapter. Server and integration versions are independent.
 
 ## Research context and boundaries

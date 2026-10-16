@@ -76,7 +76,7 @@ def _suggest_intervention_schema() -> vol.Schema:
             _field("rationale", str): str,
             _field("startDate", str): str,
             _field("revisitDate", str): str,
-            vol.Optional("observationPlan"): _observation_plan_schema(),
+            _field("observationPlan", _observation_plan_schema()): _observation_plan_schema(),
             vol.Optional("tasks"): [_intervention_task_schema()],
         },
         extra=vol.PREVENT_EXTRA,
