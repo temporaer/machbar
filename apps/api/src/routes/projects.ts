@@ -1,3 +1,4 @@
+import { assertPrivateWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -84,6 +85,19 @@ function projectWithIssues(graph: Graph, id: number) {
 }
 
 export function registerProjectRoutes(app: FastifyInstance, db: Db) {
+  app.addHook("preHandler", async (request) => {
+    const path = request.routeOptions.url ?? "";
+    if (!path.startsWith("/api/projects")) return;
+    const viewer = viewerMemberId(request);
+    const rawId = (request.params as { id?: string }).id;
+    if (rawId !== undefined) assertPrivateWorkItemAccessible(db, parseId(rawId), viewer);
+    const body = request.body as Record<string, unknown> | undefined;
+    for (const field of ["parentTaskId", "projectId", "parentId", "dependsOnTaskId"]) {
+      const id = body?.[field];
+      if (typeof id === "number") assertPrivateWorkItemAccessible(db, id, viewer);
+    }
+  });
+
   app.get("/api/projects", async (request) => {
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     return graph.listProjectsWithComputed();

@@ -1248,6 +1248,8 @@ export type HomeAssistantLeasedRequest =
  * the owner is read back from our own stored request row on completion.
  */
 export interface GoalSuggestAnalyzePayload {
+  contractVersion?: 2;
+  clarification?: { question: string; answer: string };
   goalId: number;
   taskName: "Machbar Zielcoach";
   instructions: string;
@@ -1255,6 +1257,10 @@ export interface GoalSuggestAnalyzePayload {
 
 /** Payload for the advisory `intervention_assess` coach pass (§7.2). */
 export interface GoalAssessAnalyzePayload {
+  candidateItemIds?: number[];
+  contractVersion?: 2;
+  candidateObservationIds?: number[];
+  evidence?: import("./interventionObservation.js").InterventionEvidence;
   interventionId: number;
   taskName: "Machbar Zielcoach";
   instructions: string;
@@ -1267,7 +1273,10 @@ export interface GoalAssessAnalyzePayload {
  * fields are received as plain strings and validated in the domain handler.
  */
 export interface GoalSuggestAiResponse {
+  clarificationQuestion?: string | null;
   interventions: Array<{
+    observationPlan?: import("./interventionObservation.js").ObservationPlan;
+    tasks?: import("./interventionObservation.js").InterventionTaskPlan[];
     type: string;
     commitment: string;
     rationale: string;
@@ -1278,6 +1287,12 @@ export interface GoalSuggestAiResponse {
 
 /** Raw model output of an `intervention_assess` pass before validation. */
 export interface GoalAssessAiResponse {
+  reminderEnabled?: boolean;
+  countedObservationIds?: number[];
+  recommendedDecision?: "continue" | "adjust" | "stop";
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
+  commitment?: string;
+  nextRevisitDate?: string;
   band: string;
   rationaleMd: string;
   countedItemIds: number[];

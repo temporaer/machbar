@@ -1,3 +1,4 @@
+import { useLocale } from "./locale";
 import { useCallback } from "react";
 import {
   api,
@@ -32,8 +33,11 @@ import { useRetainedMutations } from "./useRetainedMutations";
 const CREATE_GOAL_KEY = -1;
 
 export function useGoalActions() {
+  const { locale } = useLocale();
   const { run, isPending, errors, clearError } =
     useRetainedMutations<never>();
+
+  const recordObservation = useCallback((id: number, input: Parameters<typeof api.recordObservation>[1]) => run({ id, mutate: () => api.recordObservation(id, input), throwOnError: true }), [run]);
 
   const createGoal = useCallback(
     (input: CreateGoalInput) =>
@@ -79,12 +83,12 @@ export function useGoalActions() {
     [run],
   );
 
-  const loadGoalSuggestion = useCallback(async (goalId: number) => {
-    const initial = await api.requestGoalSuggestion(goalId);
+  const loadGoalSuggestion = useCallback(async (goalId: number, input?: Parameters<typeof api.requestGoalSuggestion>[1]) => {
+    const initial = await api.requestGoalSuggestion(goalId, { ...input, locale });
     return pollCoachProposal(initial, () =>
       api.getGoalSuggestion(goalId, initial.requestId),
     );
-  }, []);
+  }, [locale]);
 
   const acceptGoalSuggestion = useCallback(
     (
@@ -153,12 +157,12 @@ export function useGoalActions() {
     [run],
   );
 
-  const loadAssessmentProposal = useCallback(async (interventionId: number) => {
-    const initial = await api.requestAssessmentProposal(interventionId);
+  const loadAssessmentProposal = useCallback(async (interventionId: number, input?: Parameters<typeof api.requestAssessmentProposal>[1]) => {
+    const initial = await api.requestAssessmentProposal(interventionId, { ...input, locale });
     return pollCoachProposal(initial, () =>
       api.getAssessmentProposal(interventionId, initial.requestId),
     );
-  }, []);
+  }, [locale]);
 
   const acceptAssessmentProposal = useCallback(
     (
@@ -180,6 +184,7 @@ export function useGoalActions() {
     errors,
     clearError,
     createGoalKey: CREATE_GOAL_KEY,
+    recordObservation,
     createGoal,
     updateGoal,
     concludeGoal,

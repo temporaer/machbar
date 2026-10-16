@@ -1830,3 +1830,76 @@ outline by the member/scope selection so ownership cannot survive a logical
 selection change. Completion-triggered removal still retains the row in its
 owning section for the existing retention window. This is presentation
 ownership, not another eligibility rule or timer.
+
+### Intervention-generated task privacy
+
+`work_items.privacy_owner_member_id` is an internal durable owner-only boundary,
+independent of household/work placement. `domain/goals.ts` sets it through
+`createTaskInTransaction`; migration 0026 preserves it on children and moves.
+`Graph.load` filters it on viewer-aware reads. Task/project HTTP boundaries
+check visibility before direct-ID mutations. Activity snapshots retain privacy
+for deleted work; activity, digest, reflection and notification projections
+respect the same owner. Private work never earns shared contribution points.
+The existing `assertGoalAccessible`/`assertInterventionAccessible` guards own
+HTTP and MCP journal access; coach requests require a concrete matching owner.
+
+### Intervention observation history
+
+`domain/interventionObservations.ts` owns explicit immutable plan snapshots and
+revision-aware daily records; HTTP and MCP share these mutations. Contracts
+live in `packages/shared/src/interventionObservation.ts`; structural validation
+is in `schemas.ts`. Plans are prospective, reports retain reference dates and
+initial submission times, and absence is missing. This is separate from task
+completion and extends the existing journal, not a reporting task subsystem.
+
+### Manual intervention collection
+
+`InterventionFormSheet` composes draft-only `ObservationPlanEditor`; canonical
+`startIntervention`/`adjustIntervention` atomically snapshot plans alongside
+journal edits. `recentInterventionReports` projects bounded answerable periods
+for `agendaInterventions.ts` and the existing history endpoint.
+`InterventionReportCard` is reused by Today focus and goal history, and writes
+only through `useGoalActions.recordObservation`. Questions never become tasks.
+
+### Ordinary intervention-created tasks
+
+`domain/goals.ts::backIntervention` is the single backing mutation for all
+intervention types, using canonical task creation and `intervention_tasks`
+provenance with stable proposal-local keys. `InterventionTasksEditor` authors
+only drafts; `InterventionTasksSheet` commits through `useGoalActions`.
+The singular backing pointer is a presentation summary; provenance is durable
+and retains deleted-work identity. Migration 0028 converts existing pointers.
+
+### Intervention evidence and checkpoint decisions
+
+`domain/interventionEvidence.ts::buildInterventionEvidence` combines versioned
+reports with the canonical `buildReflectionBriefing`. Both manual and coach
+reviews consume it. `goals.ts::insertAssessment` snapshots evidence and applies
+explicit revision-aware continue/adjust/stop transitions transactionally; a
+stable review key prevents duplicate acceptance. `InterventionEvidenceFacts`
+renders method-appropriate facts and human-readable dated citations in manual, coach and historical review. Its optional selection callbacks edit assessment references only; report records and deterministic totals remain independent.
+
+Read-only `ObservationPlanSummary` in `ObservationPlanEditor.tsx` presents the same plan wording in proposal summaries and historical evidence. Detailed proposal editors and review-window corrections use disclosure; manual review requires an explicit outcome and rationale.
+
+### Bounded coach clarification
+
+`goals/coach.ts` retains one question/answer on the existing reverse request,
+validates complete version-2 proposals, and transactionally accepts through the
+canonical journal, observation and backing commands. The web reuses
+`ObservationPlanEditor` and `InterventionTasksEditor` for proposal review;
+`useGoalActions` still owns polling and acceptance and supplies the UI locale. Coach instructions include household timezone, bounded owner-scoped running interventions and recent reviews for the current goal. Clarification state survives failed submissions for direct retry. HA `goal_coach.py` preserves
+the same envelope; no generic conversation or automatic task creation exists.
+
+### Evidence-based coach review and lighter continuation
+
+Coach assessment requests snapshot `buildInterventionEvidence` and optional user
+reflection. Typed task/observation references are validated against that snapshot;
+accepted interpretation uses canonical `insertAssessment` checkpoint transitions.
+Migration 0030 stores observation citations and independent standing-reminder
+visibility. Daily collection can end prospectively while ordinary tasks continue.
+The HA 0.7.0 adapter preserves these fields and requires installation plus restart.
+
+Public task/project routes also check private destination and dependency references
+before writes using `assertPrivateWorkItemAccessible`. Canonical hierarchy moves
+keep private subtrees within the same owner's private hierarchy or at top level,
+so shared-container lifecycle commands cannot mutate another owner's private work.

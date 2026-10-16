@@ -1,3 +1,8 @@
+import { requestAssessmentSchema } from "../schemas.js";
+import { requestGoalSuggestionSchema } from "../schemas.js";
+import { buildInterventionEvidence } from "../domain/interventionEvidence.js";
+import { recentInterventionReports, observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
+import { recordObservationSchema, setObservationPlanSchema } from "../schemas.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -16,6 +21,8 @@ import {
 } from "../schemas.js";
 import { householdToday } from "../domain/householdCalendar.js";
 import {
+  assertGoalAccessible,
+  assertInterventionAccessible,
   adjustIntervention,
   backIntervention,
   concludeGoal,
@@ -59,6 +66,21 @@ export function registerGoalRoutes(
   db: Db,
   signal: HomeAssistantRequestSignal = new HomeAssistantRequestSignal(),
 ): void {
+  app.addHook("preHandler", async (request) => {
+    const path = request.routeOptions.url ?? "";
+    if (!/^\/api\/(goals|interventions)(?:\/|$)/.test(path)) return;
+    const viewer = viewerMemberId(request);
+    if (viewer === undefined) {
+      throw AppError.unauthorized("authentication_required", "Choose a member before accessing private goals.");
+    }
+    const id = (request.params as { id?: string }).id;
+    if (id !== undefined) {
+      const access = { ownerMemberId: viewer };
+      if (path.startsWith("/api/goals/")) assertGoalAccessible(db, parseId(id, "goal"), access);
+      else assertInterventionAccessible(db, parseId(id, "intervention"), access);
+    }
+  });
+
   app.get("/api/goals", async (request) => {
     const viewer = viewerMemberId(request);
     return listGoals(db, viewer === undefined ? {} : { ownerMemberId: viewer }, householdToday(db));
@@ -71,6 +93,9 @@ export function registerGoalRoutes(
   app.post("/api/goals", async (request, reply) => {
     const body = parseOrThrow(createGoalSchema, request.body ?? {});
     const viewer = viewerMemberId(request);
+    if (body.ownerMemberId !== undefined && body.ownerMemberId !== viewer) {
+      throw AppError.badRequest("goal_owner_required", "Private goals must belong to the current member.");
+    }
     const goal = createGoal(
       db,
       {
@@ -147,6 +172,17 @@ export function registerGoalRoutes(
     return assessment;
   });
 
+  app.get<{ Params: { id: string } }>("/api/interventions/:id/observations", async (request) =>
+    ({ ...observationHistory(db, parseId(request.params.id, "intervention"), { ownerMemberId: viewerMemberId(request)! }),
+       recentReports: recentInterventionReports(db, parseId(request.params.id, "intervention"), { ownerMemberId: viewerMemberId(request)! }) }));
+  app.put<{ Params: { id: string } }>("/api/interventions/:id/observation-plan", async (request) =>
+    setObservationPlan(db, parseId(request.params.id, "intervention"), parseOrThrow(setObservationPlanSchema, request.body), { ownerMemberId: viewerMemberId(request)! }));
+  app.put<{ Params: { id: string } }>("/api/interventions/:id/observations", async (request) =>
+    recordObservation(db, parseId(request.params.id, "intervention"), parseOrThrow(recordObservationSchema, request.body), { ownerMemberId: viewerMemberId(request)! }));
+
+  app.get<{ Params: { id: string }; Querystring: { startDate?: string; endDate?: string } }>("/api/interventions/:id/evidence", async (request) =>
+    buildInterventionEvidence(db, parseId(request.params.id, "intervention"), { ownerMemberId: viewerMemberId(request)! }, request.query));
+
   // --- Coach AI passes (advisory, proposal-not-applied; §7/§9) --------------
 
   app.post<{ Params: { id: string } }>("/api/goals/:id/suggest", async (request, reply) => {
@@ -155,6 +191,7 @@ export function registerGoalRoutes(
       parseId(request.params.id, "goal"),
       viewerMemberId(request) ?? null,
       signal,
+      parseOrThrow(requestGoalSuggestionSchema, request.body ?? {}),
     );
     reply.status(202);
     return getGoalSuggestion(db, parseId(request.params.id, "goal"), requestId, viewerMemberId(request) ?? null);
@@ -194,6 +231,7 @@ export function registerGoalRoutes(
       parseId(request.params.id, "intervention"),
       viewerMemberId(request) ?? null,
       signal,
+      parseOrThrow(requestAssessmentSchema, request.body ?? {}),
     );
     reply.status(202);
     return getAssessmentProposal(

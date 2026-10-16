@@ -195,6 +195,9 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | AI Klärungsrunde execution (sampling, prompt, validation, jobs) | `apps/api/src/cleanupRound/` (`sampler.ts`, `prompt.ts`, `validate.ts`, `jobs.ts`, and `actions.ts` for the narrow confirmed micro-flow actions that call the canonical domain functions and dismiss the card in one transaction), `apps/api/src/routes/cleanupRounds.ts`, `apps/web/src/pages/CleanupRoundPage.tsx`, the pure surface-to-action mapping in `apps/web/src/lib/cleanupRound.ts`, and `apps/web/src/components/CleanupRoundActionSheet.tsx` for explicit, user-confirmed micro-flows that call those action endpoints (never a generic mutation followed by a separate card dismissal); AI results never mutate work items by themselves, and only “Hinten anstellen” uses the review acknowledgement primitives |
 | Home Assistant reverse request bridge | `apps/api/src/integrations/homeAssistantRequests.ts` and `custom_components/machbar/worker.py`; exactly `intake_analyze`, `cleanup_round_analyze`, `goal_suggest`, `goal_assess`, and `calendar_create`, not an RPC mechanism |
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, `custom_components/machbar/goal_coach.py`, and `custom_components/machbar/calendar_bridge.py` |
+| Owner-only generated task privacy | `work_items.privacy_owner_member_id`, migration 0026 inheritance constraints, viewer-aware `Graph.load`, task/project HTTP pre-handler guards, activity snapshots and existing reflection/notification readers |
+| Intervention observation plans and records | `interventionObservation.ts` shared contracts, `domain/interventionObservations.ts` canonical history, plan and report mutations; existing goals routes and MCP tools |
+| Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` (method-aware facts and citation selection), `ObservationPlanSummary` in `ObservationPlanEditor.tsx`, and `InterventionAssessSheet`; existing reflection evidence is reused |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
@@ -370,3 +373,76 @@ the registry in the same change.
 Run `npm run architecture` before typecheck, tests, and build. The checker
 protects selected mechanical boundaries; the pull request template makes
 semantic reuse, deletion, endpoint need, and documentation decisions visible.
+
+### Intervention-generated task privacy
+
+`work_items.privacy_owner_member_id` is an internal durable owner-only boundary,
+independent of household/work placement. `domain/goals.ts` sets it through
+`createTaskInTransaction`; migration 0026 preserves it on children and moves.
+`Graph.load` filters it on viewer-aware reads. Task/project HTTP boundaries
+check visibility before direct-ID mutations. Activity snapshots retain privacy
+for deleted work; activity, digest, reflection and notification projections
+respect the same owner. Private work never earns shared contribution points.
+The existing `assertGoalAccessible`/`assertInterventionAccessible` guards own
+HTTP and MCP journal access; coach requests require a concrete matching owner.
+
+### Intervention observation history
+
+`domain/interventionObservations.ts` owns explicit immutable plan snapshots and
+revision-aware daily records; HTTP and MCP share these mutations. Contracts
+live in `packages/shared/src/interventionObservation.ts`; structural validation
+is in `schemas.ts`. Plans are prospective, reports retain reference dates and
+initial submission times, and absence is missing. This is separate from task
+completion and extends the existing journal, not a reporting task subsystem.
+
+### Manual intervention collection
+
+`InterventionFormSheet` composes draft-only `ObservationPlanEditor`; canonical
+`startIntervention`/`adjustIntervention` atomically snapshot plans alongside
+journal edits. `recentInterventionReports` projects bounded answerable periods
+for `agendaInterventions.ts` and the existing history endpoint.
+`InterventionReportCard` is reused by Today focus and goal history, and writes
+only through `useGoalActions.recordObservation`. Questions never become tasks.
+
+### Ordinary intervention-created tasks
+
+`domain/goals.ts::backIntervention` is the single backing mutation for all
+intervention types, using canonical task creation and `intervention_tasks`
+provenance with stable proposal-local keys. `InterventionTasksEditor` authors
+only drafts; `InterventionTasksSheet` commits through `useGoalActions`.
+The singular backing pointer is a presentation summary; provenance is durable
+and retains deleted-work identity. Migration 0028 converts existing pointers.
+
+### Intervention evidence and checkpoint decisions
+
+`domain/interventionEvidence.ts::buildInterventionEvidence` combines versioned
+reports with the canonical `buildReflectionBriefing`. Both manual and coach
+reviews consume it. `goals.ts::insertAssessment` snapshots evidence and applies
+explicit revision-aware continue/adjust/stop transitions transactionally; a
+stable review key prevents duplicate acceptance. `InterventionEvidenceFacts`
+renders method-appropriate facts and human-readable dated citations in manual, coach and historical review. Its optional selection callbacks edit assessment references only; report records and deterministic totals remain independent.
+
+Read-only `ObservationPlanSummary` in `ObservationPlanEditor.tsx` presents the same plan wording in proposal summaries and historical evidence. Detailed proposal editors and review-window corrections use disclosure; manual review requires an explicit outcome and rationale.
+
+### Bounded coach clarification
+
+`goals/coach.ts` retains one question/answer on the existing reverse request,
+validates complete version-2 proposals, and transactionally accepts through the
+canonical journal, observation and backing commands. The web reuses
+`ObservationPlanEditor` and `InterventionTasksEditor` for proposal review;
+`useGoalActions` still owns polling and acceptance and supplies the UI locale. Coach instructions include household timezone, bounded owner-scoped running interventions and recent reviews for the current goal. Clarification state survives failed submissions for direct retry. HA `goal_coach.py` preserves
+the same envelope; no generic conversation or automatic task creation exists.
+
+### Evidence-based coach review and lighter continuation
+
+Coach assessment requests snapshot `buildInterventionEvidence` and optional user
+reflection. Typed task/observation references are validated against that snapshot;
+accepted interpretation uses canonical `insertAssessment` checkpoint transitions.
+Migration 0030 stores observation citations and independent standing-reminder
+visibility. Daily collection can end prospectively while ordinary tasks continue.
+The HA 0.7.0 adapter preserves these fields and requires installation plus restart.
+
+Public task/project routes also check private destination and dependency references
+before writes using `assertPrivateWorkItemAccessible`. Canonical hierarchy moves
+keep private subtrees within the same owner's private hierarchy or at top level,
+so shared-container lifecycle commands cannot mutate another owner's private work.

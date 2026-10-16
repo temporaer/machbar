@@ -749,7 +749,36 @@ export const goalLifecycleSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
 });
 
+/** Explicit bounded observation plans, validated equally for manual and AI input. */
+export const observationTargetSchema = z.object({
+  successfulDays: z.number().int().min(1).max(7),
+  window: z.enum(["calendar_week", "seven_days"]),
+  anchorDate: isoDate.optional(),
+}).strict().refine((v) => v.window !== "seven_days" || v.anchorDate !== undefined, {
+  message: "A seven-day target requires an explicit anchor date.",
+});
+export const observationPlanSchema = z.union([
+  z.object({ method: z.enum(["task_evidence", "reflection"]) }).strict(),
+  z.object({
+    method: z.literal("daily_report"), question: z.string().trim().min(1).max(500),
+    reference: z.enum(["day", "night"]), reportDayOffset: z.union([z.literal(0), z.literal(1)]),
+    availableAfter: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+    opportunityBased: z.boolean(), target: observationTargetSchema.optional(),
+  }).strict().refine((v) => v.reference !== "night" || v.reportDayOffset === 1, {
+    message: "A night report is available the following day.",
+  }),
+]);
+export const setObservationPlanSchema = z.object({
+  plan: observationPlanSchema, expectedRevision: z.number().int().positive(),
+});
+export const recordObservationSchema = z.object({
+  referenceDate: isoDate, answer: z.enum(["met", "not_met", "unknown", "no_opportunity"]),
+  notes: z.string().max(2000).optional(), expectedRevision: z.number().int().nonnegative(),
+});
+
 export const startInterventionSchema = z.object({
+  reminderEnabled: z.boolean().optional(),
+  observationPlan: observationPlanSchema.optional(),
   type: z.enum(interventionTypes),
   commitment: z.string().min(1, "An intervention needs a commitment."),
   rationale: z.string().optional(),
@@ -758,6 +787,8 @@ export const startInterventionSchema = z.object({
 });
 
 export const adjustInterventionSchema = z.object({
+  reminderEnabled: z.boolean().optional(),
+  observationPlan: observationPlanSchema.optional(),
   type: z.enum(interventionTypes).optional(),
   commitment: z.string().min(1).optional(),
   rationale: z.string().optional(),
@@ -775,7 +806,14 @@ export const interventionLifecycleSchema = z.object({
  * Back a frequency_habit intervention with a recurring check-in (§8). Cadence
  * defaults to a daily check-in; a title defaults to the commitment.
  */
+export const interventionTaskPlanSchema = z.object({
+  key: z.string().min(1).max(80), title: z.string().trim().min(1).max(500), notes: z.string().max(4000).optional(),
+  scheduledDate: isoDate.optional(), dueDate: isoDate.optional(),
+  repeatAfterDays: z.number().int().positive().optional(), allowedDeviationDays: z.number().int().nonnegative().optional(),
+  reminders: taskRemindersSchema.optional(),
+}).strict();
 export const backInterventionSchema = z.object({
+  tasks: z.array(interventionTaskPlanSchema).min(1).max(8).optional(),
   title: z.string().min(1).optional(),
   scheduledDate: isoDate.optional(),
   repeatAfterDays: z.number().int().positive().optional(),
@@ -784,6 +822,12 @@ export const backInterventionSchema = z.object({
 });
 
 export const manualAssessmentSchema = z.object({
+  reminderEnabled: z.boolean().optional(),
+  countedObservationIds: z.array(z.number().int().positive()).optional(),
+  reviewKey: z.string().min(1).max(100).optional(), decision: z.enum(["continue", "adjust", "stop"]).optional(),
+  benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional(),
+  expectedRevision: z.number().int().positive().optional(), nextRevisitDate: isoDate.optional(),
+  backingCleanup: z.enum(["keep", "stop"]).optional(), observationPlan: observationPlanSchema.optional(), commitment: z.string().trim().min(1).optional(),
   band: z.enum(assessmentBands),
   rationaleMd: z.string().min(1, "An assessment needs a rationale."),
   countedItemIds: z.array(z.number().int().positive()).optional(),
@@ -795,6 +839,8 @@ export const manualAssessmentSchema = z.object({
 
 /** Accept a suggested intervention; all fields are optional user overrides. */
 export const acceptSuggestionSchema = z.object({
+  observationPlan: observationPlanSchema.optional(),
+  tasks: z.array(interventionTaskPlanSchema).max(8).optional(),
   index: z.number().int().min(0).optional(),
   type: z.enum(interventionTypes).optional(),
   commitment: z.string().min(1).optional(),
@@ -804,8 +850,13 @@ export const acceptSuggestionSchema = z.object({
 });
 
 /** Accept an assessment proposal; all fields are optional user overrides. */
-export const acceptAssessmentSchema = z.object({
-  band: z.enum(assessmentBands).optional(),
-  rationaleMd: z.string().min(1).optional(),
-  countedItemIds: z.array(z.number().int().positive()).optional(),
-});
+export const acceptAssessmentSchema = manualAssessmentSchema.omit({ digestWindowStart: true, digestWindowEnd: true, reviewKey: true }).partial();
+export const requestAssessmentSchema = z.object({
+  locale: z.enum(["de", "en"]).optional(),
+  benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional(),
+}).strict();
+
+export const requestGoalSuggestionSchema = z.object({
+  locale: z.enum(["de", "en"]).optional(),
+  clarificationRequestId: z.string().min(1).optional(), clarificationAnswer: z.string().trim().min(1).max(2000).optional(),
+}).strict().refine((v) => Boolean(v.clarificationRequestId) === Boolean(v.clarificationAnswer), { message: "A clarification answer needs its source question request." });

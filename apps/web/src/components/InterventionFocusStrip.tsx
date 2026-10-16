@@ -1,3 +1,4 @@
+import { InterventionReportCard } from "./InterventionObservationPanel";
 import { Link } from "react-router-dom";
 import type { AgendaInterventionFocus } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -12,12 +13,15 @@ import { useStrings } from "../lib/strings";
  */
 export function InterventionFocusStrip({ focus }: { focus: AgendaInterventionFocus }) {
   const strings = useStrings();
-  if (focus.running.length === 0 && focus.review.length === 0) {
+  if (focus.running.length === 0 && focus.review.length === 0 && !focus.reports?.length) {
     return null;
   }
 
   return (
     <div className="section intervention-focus" data-testid="intervention-focus">
+      {focus.reports?.length ? <><div className="section-title">{strings.observationDue}</div>
+        {focus.reports.filter((r, index, all) => all.findIndex((p) => p.interventionId === r.interventionId) === index).map((report) => <InterventionReportCard key={`${report.interventionId}-${report.referenceDate}`} report={report} />)}
+        <Link to="/more/goals">{strings.observationRecentHint}</Link></> : null}
       {focus.running.length > 0 ? (
         <>
           <div className="section-title">{strings.todayInterventionFocusTitle}</div>
@@ -28,7 +32,7 @@ export function InterventionFocusStrip({ focus }: { focus: AgendaInterventionFoc
                 className="card intervention-focus-card"
                 data-testid="intervention-focus-running"
               >
-                <strong>{item.goalTitle}</strong>
+                <Link to={`/more/goals#goal-${item.goalId}`}><strong>{item.goalTitle}</strong></Link>
                 <p>{item.commitment}</p>
                 <p className="text-muted">
                   {strings.interventionPeriodProgress(item.periodDay, item.periodLength)}
@@ -60,7 +64,7 @@ export function InterventionFocusStrip({ focus }: { focus: AgendaInterventionFoc
                 className="card intervention-focus-card"
                 data-testid="intervention-focus-review"
               >
-                <strong>{item.goalTitle}</strong>
+                <Link to={`/more/goals#goal-${item.goalId}`}><strong>{item.goalTitle}</strong></Link>
                 <p>{item.commitment}</p>
                 <Link className="btn btn-sm btn-primary" to="/more/goals">
                   {strings.reviewIntervention}

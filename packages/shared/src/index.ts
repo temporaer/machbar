@@ -336,6 +336,7 @@ export interface ActivityEventMetadata {
 
 /** Stable, privacy-safe state used to interpret activity after later edits. */
 export interface ActivityStateSnapshot {
+  privacyOwnerMemberId?: number | null;
   status?: TaskStatus | ProjectStatus;
   ownerMemberId?: number | null;
   effectiveOwnerId?: number | null;
@@ -469,6 +470,7 @@ export interface ReflectionWorkItemFact {
   title: string;
   notes?: string | null;
   status: string;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   href: string;
   owner: { id: number; name: string } | null;
@@ -732,6 +734,7 @@ export interface Project {
   discussionRequested: boolean;
   archivedAt: string | null;
   ownerMemberId: number | null;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -844,6 +847,7 @@ export interface Task {
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   contextInheritanceMode: InheritanceMode;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   createdByMemberId: number | null;
   dueDate: string | null;
@@ -1037,6 +1041,7 @@ export interface McpAgent {
   id: number;
   name: string;
   memberId: number;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   createdAt: string;
   lastUsedAt: string | null;
@@ -1162,6 +1167,7 @@ export interface AgendaInterventionBacking {
  * are still inside the 7-day window. Reviewed interventions appear in neither.
  */
 export interface AgendaInterventionFocus {
+  reports?: import("./interventionObservation.js").DueInterventionReport[];
   running: AgendaIntervention[];
   review: AgendaIntervention[];
 }
@@ -1497,6 +1503,10 @@ export interface Goal {
 }
 
 export interface Intervention {
+  reminderEnabled?: boolean;
+  reviewWindowStart?: string | null;
+  generatedTasks?: import("./interventionObservation.js").InterventionGeneratedTask[];
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
   id: number;
   revision: number;
   goalId: number;
@@ -1514,6 +1524,12 @@ export interface Intervention {
 }
 
 export interface InterventionAssessment {
+  countedObservationIds?: number[];
+  reviewKey?: string | null;
+  decision?: import("./interventionObservation.js").InterventionReviewDecision | null;
+  benefit?: import("./interventionObservation.js").InterventionBenefit | null;
+  obstacle?: string;
+  evidence?: import("./interventionObservation.js").InterventionEvidence | null;
   id: number;
   interventionId: number;
   assessedAt: string;
@@ -1568,6 +1584,8 @@ export type CoachRequestStatus = (typeof coachRequestStatuses)[number];
  * default period) so accepting it is a single `startIntervention` write.
  */
 export interface ProposedIntervention {
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
+  tasks?: import("./interventionObservation.js").InterventionTaskPlan[];
   type: InterventionType;
   /** The if-then implementation intention / single observable behaviour (§7.1). */
   commitment: string;
@@ -1581,6 +1599,7 @@ export interface ProposedIntervention {
  * accepting one entry authors a real coach-sourced intervention.
  */
 export interface GoalSuggestionProposal {
+  clarificationQuestion?: string | null;
   requestId: string;
   goalId: number;
   status: CoachRequestStatus;
@@ -1597,6 +1616,13 @@ export interface GoalSuggestionProposal {
  * on so the user can sanity-check the evidence.
  */
 export interface AssessmentProposal {
+  reminderEnabled?: boolean;
+  evidence?: import("./interventionObservation.js").InterventionEvidence;
+  countedObservationIds?: number[];
+  recommendedDecision?: import("./interventionObservation.js").InterventionReviewDecision;
+  observationPlan?: import("./interventionObservation.js").ObservationPlan;
+  commitment?: string;
+  nextRevisitDate?: string;
   requestId: string;
   interventionId: number;
   status: CoachRequestStatus;
@@ -1611,3 +1637,5 @@ export interface AssessmentProposal {
   /** Present when `status === "failed"`. */
   error: string | null;
 }
+
+export * from "./interventionObservation.js";

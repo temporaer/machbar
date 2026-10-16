@@ -129,7 +129,7 @@ describe("Intervention recurring-task backing (Phase 4)", () => {
     });
   });
 
-  it("rejects backing for a non-frequency-habit intervention", async () => {
+  it("creates a one-off backing task for non-frequency interventions", async () => {
     const member = await createMember();
     const goal = await createGoal(member.id);
     const intervention = await startIntervention(member.id, goal.id, {
@@ -142,13 +142,11 @@ describe("Intervention recurring-task backing (Phase 4)", () => {
       headers: { [ACTIVITY_ACTOR_HEADER]: String(member.id) },
       payload: {},
     });
-    expect(res.statusCode).toBe(409);
-    expect((res.json() as { error: { code: string } }).error.code).toBe(
-      "intervention_backing_unavailable",
-    );
+    expect(res.statusCode).toBe(201);
+    expect((await getTask(member.id, res.json().backingTaskId)).repeatAfterDays).toBeNull();
   });
 
-  it("rejects backing an already-backed intervention", async () => {
+  it("retries an identical backing acceptance without creating duplicate tasks", async () => {
     const member = await createMember();
     const actor = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
     const goal = await createGoal(member.id);
@@ -168,10 +166,9 @@ describe("Intervention recurring-task backing (Phase 4)", () => {
       headers: actor,
       payload: {},
     });
-    expect(second.statusCode).toBe(409);
-    expect((second.json() as { error: { code: string } }).error.code).toBe(
-      "intervention_already_backed",
-    );
+    expect(second.statusCode).toBe(201);
+    expect(second.json().backingTaskId).toBe(first.json().backingTaskId);
+    expect(second.json().generatedTasks).toHaveLength(1);
   });
 
   it("ends the backing task via the canonical path when concluding (default stop)", async () => {

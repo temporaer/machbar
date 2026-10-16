@@ -25,6 +25,8 @@ def _suggest_intervention_schema() -> vol.Schema:
             _field("rationale", str): str,
             _field("startDate", str): str,
             _field("revisitDate", str): str,
+            vol.Optional("observationPlan"): dict,
+            vol.Optional("tasks"): [dict],
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -32,6 +34,7 @@ def _suggest_intervention_schema() -> vol.Schema:
 
 GOAL_SUGGEST_STRUCTURE = vol.Schema(
     {
+        vol.Optional("clarificationQuestion", default=None): _NULL,
         _field("interventions", [_suggest_intervention_schema()]): [
             _suggest_intervention_schema()
         ],
@@ -45,6 +48,12 @@ GOAL_ASSESS_STRUCTURE = vol.Schema(
         _field("rationaleMd", str): str,
         _field("countedItemIds", [int]): [int],
         vol.Optional("nextMove", default=None): _NULL,
+        vol.Optional("countedObservationIds"): [int],
+        vol.Optional("recommendedDecision"): str,
+        vol.Optional("observationPlan"): dict,
+        vol.Optional("commitment"): str,
+        vol.Optional("nextRevisitDate"): str,
+        vol.Optional("reminderEnabled"): bool,
     },
     extra=vol.PREVENT_EXTRA,
 )
@@ -58,6 +67,11 @@ def normalize_goal_suggest_response(data: Any) -> dict[str, Any]:
     """Normalize the raw model envelope to the API's proposal DTO shape."""
     if not isinstance(data, dict) or not isinstance(data.get("interventions"), list):
         raise _invalid([], "an object with an interventions list", value=data)
+    question = data.get("clarificationQuestion")
+    if question is not None:
+        if not isinstance(question, str) or not question.strip() or data["interventions"]:
+            raise _invalid(["clarificationQuestion"], "one question without proposals", value=question)
+        return {"clarificationQuestion": question.strip(), "interventions": []}
     interventions: list[dict[str, Any]] = []
     for index, entry in enumerate(data["interventions"]):
         if not isinstance(entry, dict):
@@ -69,14 +83,22 @@ def normalize_goal_suggest_response(data: Any) -> dict[str, Any]:
                 "an intervention with string type, commitment, rationale, startDate, and revisitDate",
                 value=entry,
             )
-        interventions.append(
-            {field: _strip(entry[field]) for field in required}
-        )
+        normalized = {field: _strip(entry[field]) for field in required}
+        if "observationPlan" in entry:
+            if not isinstance(entry["observationPlan"], dict):
+                raise _invalid(["interventions", index, "observationPlan"], "an observation plan object", value=entry["observationPlan"])
+            normalized["observationPlan"] = entry["observationPlan"]
+        if "tasks" in entry:
+            if not isinstance(entry["tasks"], list) or any(not isinstance(task, dict) for task in entry["tasks"]):
+                raise _invalid(["interventions", index, "tasks"], "a list of task proposals", value=entry["tasks"])
+            normalized["tasks"] = entry["tasks"]
+        interventions.append(normalized)
     return {"interventions": interventions}
 
 
 def normalize_goal_assess_response(
-    data: Any, candidate_item_ids: list[int] | None = None
+    data: Any, candidate_item_ids: list[int] | None = None,
+    candidate_observation_ids: list[int] | None = None, strict: bool = False,
 ) -> dict[str, Any]:
     """Normalize an assessment and constrain cited evidence to candidate IDs."""
     if not isinstance(data, dict):
@@ -92,6 +114,8 @@ def normalize_goal_assess_response(
     ):
         raise _invalid(["countedItemIds"], "a list of integer IDs", value=data["countedItemIds"])
     allowed = set(candidate_item_ids) if candidate_item_ids is not None else None
+    if strict and allowed is not None and any(item_id not in allowed for item_id in data["countedItemIds"]):
+        raise _invalid(["countedItemIds"], "only provided evidence IDs", value=data["countedItemIds"])
     counted = [
         item_id for item_id in data["countedItemIds"]
         if allowed is None or item_id in allowed
@@ -99,12 +123,25 @@ def normalize_goal_assess_response(
     next_move = data.get("nextMove")
     if next_move is not None and not isinstance(next_move, str):
         raise _invalid(["nextMove"], "a string or null", value=next_move)
-    return {
+    observation_ids = data.get("countedObservationIds", [])
+    if not isinstance(observation_ids, list) or any(not isinstance(value, int) or isinstance(value, bool) for value in observation_ids):
+        raise _invalid(["countedObservationIds"], "integer observation IDs", value=observation_ids)
+    if candidate_observation_ids is not None and any(value not in candidate_observation_ids for value in observation_ids):
+        raise _invalid(["countedObservationIds"], "only provided observation IDs", value=observation_ids)
+    if strict and ("countedObservationIds" not in data or data.get("recommendedDecision") not in ("continue", "adjust", "stop")):
+        raise _invalid([], "observation references and a supported review decision", value=data)
+    normalized = {
         "band": _strip(data["band"]),
         "rationaleMd": _strip(data["rationaleMd"]),
         "countedItemIds": counted,
         "nextMove": _strip(next_move),
     }
+    if "countedObservationIds" in data:
+        normalized["countedObservationIds"] = observation_ids
+    for field in ("recommendedDecision", "observationPlan", "commitment", "nextRevisitDate", "reminderEnabled"):
+        if field in data:
+            normalized[field] = data[field]
+    return normalized
 
 
 async def _generate(
@@ -144,4 +181,5 @@ async def async_analyze_goal_assess(
     data = await _generate(hass, entity_id, payload, GOAL_ASSESS_STRUCTURE)
     candidate_ids = payload.get("candidateItemIds")
     candidates = candidate_ids if isinstance(candidate_ids, list) else None
-    return normalize_goal_assess_response(data, candidates)
+    observation_ids = payload.get("candidateObservationIds")
+    return normalize_goal_assess_response(data, candidates, observation_ids if isinstance(observation_ids, list) else None, payload.get("contractVersion") == 2)

@@ -1,3 +1,4 @@
+import { assertPrivateWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -108,6 +109,19 @@ function taskOrThrow(
 }
 
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {
+  app.addHook("preHandler", async (request) => {
+    const path = request.routeOptions.url ?? "";
+    if (!path.startsWith("/api/tasks")) return;
+    const viewer = viewerMemberId(request);
+    const rawId = (request.params as { id?: string }).id;
+    if (rawId !== undefined) assertPrivateWorkItemAccessible(db, parseId(rawId), viewer);
+    const body = request.body as Record<string, unknown> | undefined;
+    for (const field of ["parentTaskId", "projectId", "parentId", "dependsOnTaskId"]) {
+      const id = body?.[field];
+      if (typeof id === "number") assertPrivateWorkItemAccessible(db, id, viewer);
+    }
+  });
+
   app.get<{ Params: { id: string } }>("/api/tasks/:id", async (request) => {
     const id = parseId(request.params.id);
     return taskOrThrow(db, id, viewerMemberId(request));

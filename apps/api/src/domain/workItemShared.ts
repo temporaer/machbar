@@ -162,3 +162,12 @@ export function appendNoteContent(existing: string, incoming: string): string {
   if (existing.endsWith("\n")) return `${existing}\n${appended}`;
   return `${existing}\n\n${appended}`;
 }
+
+/** Public route boundary for internal durable privacy, including destination references. */
+export function assertPrivateWorkItemAccessible(db: Db, id: number, viewerMemberId: number | undefined): void {
+  if (!Number.isSafeInteger(id)) return;
+  const row = db.select({ role: schema.workItems.role, privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId }).from(schema.workItems).where(eq(schema.workItems.id, id)).get();
+  if (row?.privacyOwnerMemberId != null && row.privacyOwnerMemberId !== viewerMemberId) {
+    throw AppError.notFound(row.role === "task" ? "task_not_found" : "project_not_found", "The requested work item was not found.");
+  }
+}

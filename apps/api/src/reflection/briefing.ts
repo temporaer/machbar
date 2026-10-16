@@ -10,7 +10,7 @@ import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 
 export interface ReflectionBriefingOptions { subjectMemberId: number; days: number; scope: ReflectionBriefingScope; now?: Date; window?: { startDate: string; endDate: string } }
 type Scope = "household" | "work";
-type CurrentVisibility = { scope: Scope; owner: number | null };
+type CurrentVisibility = { scope: Scope; owner: number | null; privacyOwnerMemberId: number | null };
 /** A work item needs a short runway before being described as an old commitment. */
 const INACTIVE_COMMITMENT_AGE_DAYS = 14;
 
@@ -45,6 +45,8 @@ function snapshotOwner(metadata: ActivityEventMetadata): { known: boolean; owner
 function visibleScope(metadata: ActivityEventMetadata, entityId: number | null, current: Map<number, CurrentVisibility>, subject: number): Scope | null {
   const id = metadata.affectedWorkItemId ?? entityId;
   const row = id === null ? undefined : current.get(id);
+  const privacyOwner = row?.privacyOwnerMemberId ?? metadata.after?.privacyOwnerMemberId ?? metadata.before?.privacyOwnerMemberId;
+  if (privacyOwner != null && privacyOwner !== subject) return null;
   // A currently private item is only visible to its current owner, regardless of historical scope.
   if (row?.scope === "work" && row.owner !== subject) return null;
   // Event-time scope is required; current scope is not a historical substitute.
@@ -61,6 +63,7 @@ function visibleScope(metadata: ActivityEventMetadata, entityId: number | null, 
 function visibleReference(id: number, metadata: ActivityEventMetadata, current: Map<number, CurrentVisibility>, subject: number): boolean {
   const row = current.get(id);
   if (!row || (metadata.scope !== "household" && metadata.scope !== "work") || row.scope !== metadata.scope) return false;
+  if (row.privacyOwnerMemberId !== null && row.privacyOwnerMemberId !== subject) return false;
   if (metadata.scope === "household") return true;
   const eventOwner = snapshotOwner(metadata);
   return row.owner === subject && eventOwner.known && eventOwner.owner === subject;
@@ -154,9 +157,9 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const waitingItems = tasks.filter((t) => t.status === "actionable" && (t.externalWait !== null || t.blocked || (t.revisitAt !== null && t.revisitAt > now.toISOString()))).map(fact);
   const backlog = [...projects.filter((p) => p.status === "backlog").map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "someday" || t.status === "captured").map(fact)];
   const areaCommitments = [...projects.filter((p) => p.status === "active" && p.effectiveTags.some((tag) => tag.kind === "area")).map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "actionable" && t.effectiveAreaTags.length > 0 && (t.scope === "household" || t.effectiveOwnerId === options.subjectMemberId)).map(fact)];
-  const currentRows = db.select({ id: schema.workItems.id, scope: schema.workItems.scope, role: schema.workItems.role, ownerMemberId: schema.workItems.ownerMemberId }).from(schema.workItems).all();
+  const currentRows = db.select({ id: schema.workItems.id, scope: schema.workItems.scope, privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId, role: schema.workItems.role, ownerMemberId: schema.workItems.ownerMemberId }).from(schema.workItems).all();
   const owners = getEffectiveOwners(db);
-  const currentVisibility = new Map<number, CurrentVisibility>(currentRows.map((r) => [r.id, { scope: r.scope as Scope, owner: r.role === "task" ? owners.get(r.id)?.ownerId ?? null : r.ownerMemberId }]));
+  const currentVisibility = new Map<number, CurrentVisibility>(currentRows.map((r) => [r.id, { scope: r.scope as Scope, privacyOwnerMemberId: r.privacyOwnerMemberId, owner: r.role === "task" ? owners.get(r.id)?.ownerId ?? null : r.ownerMemberId }]));
   const lower = new Date(`${startDate}T00:00:00Z`); lower.setUTCDate(lower.getUTCDate() - 1); const upper = new Date(`${shiftDate(endDate, 1)}T00:00:00Z`); upper.setUTCDate(upper.getUTCDate() + 1);
   const eventRows = db.select().from(schema.activityEvents).where(and(gte(schema.activityEvents.createdAt, lower.toISOString()), lt(schema.activityEvents.createdAt, upper.toISOString()))).all();
   const inWindow = eventRows.filter((e) => { const d = localDate(new Date(e.createdAt), timezone); return d >= startDate && d <= endDate; }).filter((e) => {

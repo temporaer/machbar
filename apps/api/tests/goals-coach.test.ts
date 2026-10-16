@@ -1,3 +1,4 @@
+import { setObservationPlan, recordObservation, recentInterventionReports } from "../src/domain/interventionObservations.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
@@ -114,6 +115,7 @@ describe("Goals coach AI passes (Phase 3)", () => {
     await complete(token, leased, {
       interventions: [
         {
+          observationPlan: { method: "reflection" },
           type: "frequency_habit",
           commitment: "If it is a weekday evening, then I cook dinner at home on 4 of 5 days.",
           rationale: "Anchored to weekday evenings; a rate, not perfection.",
@@ -167,6 +169,7 @@ describe("Goals coach AI passes (Phase 3)", () => {
         url: `/api/goals/${goal.id}/interventions`,
         headers: actor,
         payload: {
+          observationPlan: { method: "reflection" },
           type: "frequency_habit",
           commitment: "If dinner is over, then I wipe the counters.",
           startDate: start,
@@ -208,7 +211,9 @@ describe("Goals coach AI passes (Phase 3)", () => {
     await complete(token, leased, {
       band: "achieved",
       rationaleMd: "You wiped the counters on most evenings — a solid rate, not perfection.",
-      countedItemIds: [done.id, 999999],
+      countedItemIds: [done.id],
+      countedObservationIds: [],
+      recommendedDecision: "continue",
       nextMove: "Continue for another two weeks.",
     });
 
@@ -266,6 +271,7 @@ describe("Goals coach AI passes (Phase 3)", () => {
         url: `/api/goals/${goal.id}/interventions`,
         headers: actor,
         payload: {
+          observationPlan: { method: "reflection" },
           type: "frequency_habit",
           commitment: "If it is morning, then I walk for 10 minutes.",
           startDate: "2025-01-01",
@@ -315,4 +321,125 @@ describe("Goals coach AI passes (Phase 3)", () => {
     expect(digest.finiteCompletions).toContainEqual(expect.objectContaining({ id: done.id, title: "Tidy up" }));
     expect(assessCandidateItemIds(digest)).toContain(done.id);
   });
+  it("asks one tailored question, carries the answer, and atomically accepts complete work once", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Sleep earlier" } })).json();
+    const token = await pair();
+    const first = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers })).json();
+    await complete(token, await lease(token), { clarificationQuestion: "What happens between brushing and bed?", interventions: [] });
+    const question = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${first.requestId}`, headers })).json();
+    expect(question).toMatchObject({ status: "ready", clarificationQuestion: "What happens between brushing and bed?", interventions: [] });
+    const next = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers, payload: { clarificationRequestId: first.requestId, clarificationAnswer: "I start browsing after brushing." } })).json();
+    const leased = await lease(token);
+    expect(leased.payload.instructions).toContain("I start browsing after brushing.");
+    await complete(token, leased, { interventions: [{ type: "obstacle_removal", commitment: "Leave the phone outside before brushing", rationale: "Tests removing browsing friction before the cue.", startDate: "2026-10-15", revisitDate: "2026-10-29", observationPlan: { method: "daily_report", question: "Last night: in bed after brushing?", reference: "night", reportDayOffset: 1, availableAfter: "07:00", opportunityBased: false }, tasks: [{ key: "charger", title: "Move charger outside the bedroom" }] }] });
+    expect(ctx.handle.db.select().from(schema.interventions).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    const accept = () => ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest/${next.requestId}/accept`, headers, payload: {} });
+    const accepted = await accept(); expect(accepted.statusCode, accepted.body).toBe(201);
+    expect((await accept()).json().id).toBe(accepted.json().id);
+    expect(ctx.handle.db.select().from(schema.interventions).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    expect(accepted.json().rationale).toContain("I start browsing after brushing.");
+  });
+
+  it("rejects a second clarification and unsupported AI task references without creating work", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Piano Tuesdays and Thursdays at 19:00" } })).json();
+    const token = await pair();
+    const first = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers })).json();
+    await complete(token, await lease(token), { interventions: [{ type: "frequency_habit", commitment: "Practise", rationale: "Useful", startDate: "2026-10-15", revisitDate: "2026-10-29", observationPlan: { method: "task_evidence" }, tasks: [{ key: "x", title: "Practise", taskId: 999 }] }] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${first.requestId}`, headers })).json().status).toBe("failed");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    const questionRequest = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers })).json();
+    await complete(token, await lease(token), { clarificationQuestion: "Which obstacle matters?", interventions: [] });
+    const followup = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers, payload: { clarificationRequestId: questionRequest.requestId, clarificationAnswer: "Finding time" } })).json();
+    await complete(token, await lease(token), { clarificationQuestion: "Another question?", interventions: [] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${followup.requestId}`, headers })).json().status).toBe("failed");
+  });
+
+  it("reviews a deterministic sparse snapshot, cites observations and reduces tracking only on acceptance", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Sleep earlier" } })).json();
+    const intervention = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/interventions`, headers, payload: { type: "frequency_habit", commitment: "Bed after brushing", startDate: "2026-10-01", revisitDate: "2026-10-07" } })).json();
+    const access = { ownerMemberId: member.id };
+    setObservationPlan(ctx.handle.db, intervention.id, { expectedRevision: 1, plan: { method: "daily_report", question: "In bed?", reference: "night", reportDayOffset: 1, availableAfter: "07:00", opportunityBased: false } }, access, new Date("2026-10-01T10:00:00Z"));
+    const report = recordObservation(ctx.handle.db, intervention.id, { referenceDate: "2026-10-01", answer: "met", expectedRevision: 0 }, access, new Date("2026-10-02T10:00:00Z"));
+    const taskResponse = await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/backing`, headers, payload: { tasks: [{ key: "routine", title: "Useful bedtime routine" }] } });
+    const taskId = taskResponse.json().backingTaskId;
+    const token = await pair();
+    const requested = (await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess`, headers, payload: { benefit: "not_helped", obstacle: "I did it but did not notice benefit" } })).json();
+    const leased = await lease(token);
+    const payload = JSON.parse(ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.id, leased.id)).get()!.payloadJson);
+    expect(payload.evidence.counts).toMatchObject({ met: 1, missing: 6, notMet: 0 });
+    expect(payload.reflection).toMatchObject({ benefit: "not_helped" });
+    expect(leased.payload.instructions).toContain("High adherence with little benefit");
+    await complete(token, leased, { band: "attempted_partial", rationaleMd: "Only one report; benefit is uncertain. Try lighter reflection.", countedItemIds: [], countedObservationIds: [report.id], recommendedDecision: "adjust", observationPlan: { method: "reflection" }, reminderEnabled: false, nextMove: "Reduce tracking while keeping the routine." });
+    expect(ctx.handle.db.select().from(schema.interventionAssessments).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.interventionObservationPlans).all()).toHaveLength(1);
+    // A later report does not rewrite the facts the coach actually reviewed.
+    recordObservation(ctx.handle.db, intervention.id, { referenceDate: "2026-10-02", answer: "met", expectedRevision: 0 }, access, new Date("2026-10-03T10:00:00Z"));
+    const accept = () => ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess/${requested.requestId}/accept`, headers, payload: {} });
+    const accepted = await accept(); expect(accepted.statusCode, accepted.body).toBe(201);
+    expect(accepted.json()).toMatchObject({ countedObservationIds: [report.id], decision: "adjust", benefit: "not_helped", evidence: { counts: { met: 1, missing: 6 } } });
+    expect((await accept()).json().id).toBe(accepted.json().id);
+    const updated = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}`, headers })).json().interventions[0];
+    expect(updated).toMatchObject({ status: "active", reminderEnabled: false, observationPlan: { method: "reflection" } });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, taskId)).get()!.status).toBe("active");
+    expect(recentInterventionReports(ctx.handle.db, intervention.id, access, new Date("2026-10-17T10:00:00Z")).some((r) => r.referenceDate === "2026-10-16")).toBe(true);
+  });
+
+  it("accepts a coach final review after ending an experiment before its checkpoint", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Final reflection" } })).json();
+    const intervention = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/interventions`, headers, payload: { type: "frequency_habit", commitment: "Try a routine", startDate: "2026-01-01", revisitDate: "2099-01-15" } })).json();
+    const endedResponse = await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/conclude`, headers, payload: { expectedRevision: intervention.revision, backingCleanup: "keep" } });
+    expect(endedResponse.statusCode, endedResponse.body).toBe(200);
+    const ended = endedResponse.json();
+    const token = await pair();
+    const requestedResponse = await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess`, headers });
+    expect(requestedResponse.statusCode, requestedResponse.body).toBe(202);
+    const requested = requestedResponse.json();
+    const leased = await lease(token);
+    await complete(token, leased, { band: "attempted_partial", rationaleMd: "Final reflection on the stopped routine.", countedItemIds: [], countedObservationIds: [], recommendedDecision: "continue" });
+    const accept = () => ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess/${requested.requestId}/accept`, headers, payload: {} });
+    const accepted = await accept();
+    expect(accepted.statusCode, accepted.body).toBe(201);
+    expect(accepted.json()).toMatchObject({ decision: "stop", source: "coach", digestWindowEnd: ended.concludedAt.slice(0, 10) });
+    expect((await accept()).json().id).toBe(accepted.json().id);
+    const updated = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}`, headers })).json().interventions[0];
+    expect(updated).toMatchObject({ status: "concluded", revision: ended.revision, concludedAt: ended.concludedAt, derivedState: "reviewed" });
+  });
+
+  it.each([
+    { title: "Früher ins Bett nach dem Zähneputzen", locale: "de", language: "German (de)" },
+    { title: "Piano Tuesdays and Thursdays at 19:00", locale: "en", language: "English (en)" },
+  ] as const)("renders private adaptive context and calendar/language for $title", async ({ title, locale, language }) => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const other = await createMember("Other"); const otherHeaders = { [ACTIVITY_ACTOR_HEADER]: String(other.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title } })).json();
+    const second = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Owner second goal" } })).json();
+    const privateGoal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers: otherHeaders, payload: { title: "SECRET OTHER GOAL" } })).json();
+    for (const [goalId, commitment, status] of [[goal.id, "Current routine", "active"], [second.id, "Second running routine", "active"], [privateGoal.id, "SECRET OTHER ROUTINE", "active"], [goal.id, "Unhelpful previous routine", "concluded"]] as const) {
+      const row = ctx.handle.db.insert(schema.interventions).values({ goalId, commitment, status, type: "frequency_habit", startDate: "2026-10-01", revisitDate: "2026-10-15", source: "manual" }).returning().get();
+      if (status === "concluded") ctx.handle.db.insert(schema.interventionAssessments).values({ interventionId: row.id, assessedAt: "2026-10-15T10:00:00Z", band: "achieved", benefit: "not_helped", obstacle: "Browsing continued after brushing", rationaleMd: "Adherence did not improve sleep", digestWindowStart: "2026-10-01", digestWindowEnd: "2026-10-15", countedItemIdsJson: "[]", source: "manual" }).run();
+    }
+    ctx.handle.db.insert(schema.householdSettings).values({ key: "timezone", value: "Europe/Berlin" }).onConflictDoUpdate({ target: schema.householdSettings.key, set: { value: "Europe/Berlin" } }).run();
+    const token = await pair();
+    const request = await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers, payload: { locale } });
+    expect(request.statusCode, request.body).toBe(202);
+    const instructions = (await lease(token)).payload.instructions;
+    expect(instructions).toContain(title);
+    expect(instructions).toContain('"runningCount":2');
+    expect(instructions).toContain("Second running routine");
+    expect(instructions).toContain("Unhelpful previous routine");
+    expect(instructions).toContain("not_helped");
+    expect(instructions).toContain("Browsing continued after brushing");
+    expect(instructions).toContain("Adherence did not improve sleep");
+    expect(instructions).toContain(language);
+    expect(instructions).toContain("Household timezone: Europe/Berlin");
+    expect(instructions).not.toContain("SECRET OTHER");
+    if (locale === "en") expect(instructions).toContain("separate dated tasks/reminders");
+  });
+
 });

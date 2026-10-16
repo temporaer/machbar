@@ -534,6 +534,8 @@ export const workItems = sqliteTable(
     ownerMemberId: integer("owner_member_id").references(() => members.id, {
       onDelete: "set null",
     }),
+    // Durable privacy, independent of household/work placement. Internal creation only.
+    privacyOwnerMemberId: integer("privacy_owner_member_id"),
     ownerInheritanceMode: text("owner_inheritance_mode")
       .notNull()
       .default("inherit"), // inherit | explicit | none
@@ -1101,6 +1103,8 @@ export const interventions = sqliteTable(
     // End of the period = end of the digest window passed to the assess pass;
     // drives Today surfacing. Strict YYYY-MM-DD.
     revisitDate: text("revisit_date").notNull(),
+    reviewWindowStart: text("review_window_start"),
+    reminderEnabled: integer("reminder_enabled", { mode: "boolean" }).notNull().default(true),
     status: text("status", { enum: ["active", "concluded"] })
       .notNull()
       .default("active"),
@@ -1125,6 +1129,12 @@ export const interventions = sqliteTable(
 export const interventionAssessments = sqliteTable(
   "intervention_assessments",
   {
+    countedObservationIdsJson: text("counted_observation_ids_json").notNull().default("[]"),
+    reviewKey: text("review_key"),
+    decision: text("decision", { enum: ["continue", "adjust", "stop"] }),
+    benefit: text("benefit", { enum: ["helped", "not_helped", "uncertain"] }),
+    obstacle: text("obstacle").notNull().default(""),
+    evidence: text("evidence", { mode: "json" }).$type<import("@machbar/shared").InterventionEvidence | null>(),
     id: integer("id").primaryKey({ autoIncrement: true }),
     interventionId: integer("intervention_id")
       .notNull()
@@ -1154,5 +1164,35 @@ export const interventionAssessments = sqliteTable(
   },
   (t) => [
     index("intervention_assessments_intervention_idx").on(t.interventionId),
+    uniqueIndex("intervention_review_key_idx").on(t.interventionId, t.reviewKey),
   ],
 );
+
+/** Immutable prospective plan snapshots: old observations retain their meaning. */
+export const interventionObservationPlans = sqliteTable("intervention_observation_plans", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  interventionId: integer("intervention_id").notNull().references(() => interventions.id, { onDelete: "cascade" }),
+  effectiveFrom: text("effective_from").notNull(), timezone: text("timezone").notNull(),
+  commitment: text("commitment").notNull(),
+  plan: text("plan", { mode: "json" }).$type<import("@machbar/shared").ObservationPlan>().notNull(),
+  createdAt: text("created_at").notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+}, (t) => [uniqueIndex("observation_plan_effective_idx").on(t.interventionId, t.effectiveFrom)]);
+export const interventionObservations = sqliteTable("intervention_observations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  interventionId: integer("intervention_id").notNull().references(() => interventions.id, { onDelete: "cascade" }),
+  planVersionId: integer("plan_version_id").notNull().references(() => interventionObservationPlans.id),
+  revision: integer("revision").notNull().default(1), referenceDate: text("reference_date").notNull(),
+  submittedAt: text("submitted_at").notNull(), updatedAt: text("updated_at").notNull(),
+  answer: text("answer", { enum: ["met", "not_met", "unknown", "no_opportunity"] }).notNull(),
+  notes: text("notes").notNull().default(""),
+}, (t) => [uniqueIndex("observation_reference_idx").on(t.interventionId, t.referenceDate)]);
+
+export const interventionTasks = sqliteTable("intervention_tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  interventionId: integer("intervention_id").notNull().references(() => interventions.id, { onDelete: "cascade" }),
+  key: text("task_key").notNull(),
+  taskId: integer("task_id").references(() => workItems.id, { onDelete: "set null" }),
+  originalTaskId: integer("original_task_id").notNull(), title: text("title").notNull(),
+  input: text("input", { mode: "json" }).$type<import("@machbar/shared").InterventionTaskPlan>().notNull(),
+  createdAt: text("created_at").notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+}, (t) => [uniqueIndex("intervention_task_key_idx").on(t.interventionId, t.key)]);

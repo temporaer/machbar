@@ -115,6 +115,7 @@ interface RawTask {
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   physicalContextInheritanceMode: InheritanceMode;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   createdByMemberId: number | null;
   dueDate: string | null;
@@ -147,6 +148,7 @@ interface RawProject {
   discussionRequested: boolean;
   archivedAt: string | null;
   ownerMemberId: number | null;
+  privacyOwnerMemberId?: number | null;
   scope: WorkItemScope;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -317,7 +319,9 @@ export class Graph {
       .from(schema.workItems)
       .all()
       .filter((row) => {
-        if (row.scope !== "work" || !restrictToViewer) return true;
+        if (!restrictToViewer) return true;
+        if (row.privacyOwnerMemberId !== null && row.privacyOwnerMemberId !== viewerMemberId) return false;
+        if (row.scope !== "work") return true;
         const ownerId =
           row.role === "task"
             ? (effectiveOwners.get(row.id)?.ownerId ?? null)
@@ -356,6 +360,7 @@ export class Graph {
         discussionRequested: row.discussionRequested,
         archivedAt: row.archivedAt,
         ownerMemberId: row.ownerMemberId,
+        privacyOwnerMemberId: row.privacyOwnerMemberId,
         scope: row.scope as WorkItemScope,
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
@@ -387,6 +392,7 @@ export class Graph {
         ownerInheritanceMode: row.ownerInheritanceMode as InheritanceMode,
         physicalContextInheritanceMode:
           row.physicalContextInheritanceMode as InheritanceMode,
+        privacyOwnerMemberId: row.privacyOwnerMemberId,
         scope: row.scope as WorkItemScope,
         createdByMemberId: row.createdByMemberId,
         dueDate: row.dueDate,
@@ -645,6 +651,7 @@ export class Graph {
         discussionRequested: p.discussionRequested,
         archivedAt: p.archivedAt,
         ownerMemberId: p.ownerMemberId,
+        privacyOwnerMemberId: p.privacyOwnerMemberId,
         scope: p.scope,
         dueDate: p.dueDate,
         scheduledDate: p.scheduledDate,
@@ -796,6 +803,7 @@ export class Graph {
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
         contextInheritanceMode: raw.physicalContextInheritanceMode,
+        privacyOwnerMemberId: raw.privacyOwnerMemberId,
         scope: raw.scope,
         createdByMemberId: raw.createdByMemberId,
         dueDate: raw.dueDate,

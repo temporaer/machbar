@@ -189,3 +189,17 @@ export function makeStuckProject(overrides: Partial<StuckProjectWithActions> = {
     ...overrides,
   };
 }
+
+export function makeReflectionBriefing(history: Partial<import("@machbar/shared").ReflectionBriefing["history"]> = {}): import("@machbar/shared").ReflectionBriefing {
+  return {
+    generatedAt: "2026-10-16T10:00:00Z", subject: { id: 1, name: "Owner" }, scope: "all", timezone: "Europe/Berlin",
+    window: { days: 15, startDate: "2026-10-01", endDate: "2026-10-15" },
+    current: { activeProjects: [], executableNextActions: [], waitingItems: [], backlog: [], areaCommitments: [] },
+    history: {
+      finiteCompletions: [], bulkCompletionGroups: [], recurringWork: [], inactiveWork: [], postponements: [],
+      progress: { lastOutcomeProgressAt: null, lastWorkEnablingProgressAt: null, lastActivityAt: null, projectsWithRecordedChildOutcomes: [], checkedAcceptanceCriteria: [], verifiedUnblocking: [] },
+      activityCounts: { administrative: 0, finiteOutcomes: 0, milestones: 0, recurringOccurrences: 0, explicitPostponements: 0, unresolvedActiveWork: 0 },
+      evidence: { incomplete: true, notes: ["Only recorded activity"] }, ...history,
+    }, markdown: "Recorded activity",
+  };
+}

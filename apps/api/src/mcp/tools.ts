@@ -1,3 +1,7 @@
+import { buildInterventionEvidence } from "../domain/interventionEvidence.js";
+import { manualAssessmentSchema } from "../schemas.js";
+import { observationHistory, setObservationPlan, recordObservation } from "../domain/interventionObservations.js";
+import { interventionTaskPlanSchema, observationPlanSchema } from "../schemas.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type {
@@ -50,6 +54,7 @@ import {
   concludeGoal,
   concludeIntervention,
   createGoal,
+  createManualAssessment,
   listGoals,
   startIntervention,
   updateGoal,
@@ -1394,6 +1399,30 @@ export function createMachbarMcpServer({
     },
   );
 
+  server.registerTool("machbar_intervention_evidence", {
+    description: "Read deterministic observation coverage, historical targets and task/activity evidence for your review checkpoint.",
+    inputSchema: { interventionId: z.number().int().positive() },
+  }, async ({ interventionId }) => result(buildInterventionEvidence(db, interventionId, { ownerMemberId: memberId })));
+  server.registerTool("machbar_review_intervention", {
+    description: "Explicitly record your review and choose continue, adjust or stop. Requires a stable review key and current revision for checkpoint transitions. Never creates duplicate tasks.",
+    inputSchema: { interventionId: z.number().int().positive(), ...manualAssessmentSchema.shape },
+  }, async ({ interventionId, ...input }) => {
+    assertInterventionAccessible(db, interventionId, { ownerMemberId: memberId });
+    return result(createManualAssessment(db, interventionId, input));
+  });
+  server.registerTool("machbar_intervention_observations", {
+    description: "Read your intervention's immutable observation plans and report history.",
+    inputSchema: { interventionId: z.number().int().positive() },
+  }, async ({ interventionId }) => result(observationHistory(db, interventionId, { ownerMemberId: memberId })));
+  server.registerTool("machbar_set_observation_plan", {
+    description: "Set an explicit evidence plan; later plans apply prospectively tomorrow and preserve historical meaning.",
+    inputSchema: { interventionId: z.number().int().positive(), expectedRevision: z.number().int().positive(), plan: observationPlanSchema },
+  }, async ({ interventionId, ...input }) => result(setObservationPlan(db, interventionId, input, { ownerMemberId: memberId })));
+  server.registerTool("machbar_record_observation", {
+    description: "Report a reference day after its window closes. Revision 0 creates; a current revision corrects. Missing reports are never failures.",
+    inputSchema: { interventionId: z.number().int().positive(), referenceDate: z.string(), answer: z.enum(["met", "not_met", "unknown", "no_opportunity"]), notes: z.string().optional(), expectedRevision: z.number().int().nonnegative() },
+  }, async ({ interventionId, ...input }) => result(recordObservation(db, interventionId, input, { ownerMemberId: memberId })));
+
   // --- Goals & interventions (manual authoring; no AI) ---------------------
   // Goals are always owner-scoped per-user; a credential sees only its own
   // member's goals, regardless of each goal's `area` (§3/§9).
@@ -1474,9 +1503,11 @@ export function createMachbarMcpServer({
     "machbar_start_intervention",
     {
       description:
-        "Author a manual intervention under a goal: a time-boxed behavioral experiment with a one-line commitment and a revisit date. startDate and revisitDate are YYYY-MM-DD only; revisitDate must not precede startDate.",
+        "Author a manual intervention under a goal: a behavioral experiment with a one-line commitment and review checkpoint and a revisit date. startDate and revisitDate are YYYY-MM-DD only; revisitDate must not precede startDate.",
       inputSchema: {
         goalId,
+        observationPlan: observationPlanSchema.optional(),
+        reminderEnabled: z.boolean().optional(),
         type: interventionTypeSchema,
         commitment: z.string().min(1),
         rationale: z.string().optional(),
@@ -1484,13 +1515,13 @@ export function createMachbarMcpServer({
         revisitDate: z.string(),
       },
     },
-    async ({ goalId: id, type, commitment, rationale, startDate, revisitDate }) => {
+    async ({ goalId: id, observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate }) => {
       assertGoalAccessible(db, id, goalAccess);
       return result(
         startIntervention(
           db,
           id,
-          { type, commitment, rationale, startDate, revisitDate, source: "manual" },
+          { observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate, source: "manual" },
           householdToday(db),
         ),
       );
@@ -1504,6 +1535,8 @@ export function createMachbarMcpServer({
         "Adjust an intervention (type, commitment, rationale, start or revisit date) using its current revision. Concluding is a separate command.",
       inputSchema: {
         interventionId,
+        observationPlan: observationPlanSchema.optional(),
+        reminderEnabled: z.boolean().optional(),
         expectedRevision,
         type: interventionTypeSchema.optional(),
         commitment: z.string().min(1).optional(),
@@ -1512,13 +1545,13 @@ export function createMachbarMcpServer({
         revisitDate: z.string().optional(),
       },
     },
-    async ({ interventionId: id, expectedRevision: rev, type, commitment, rationale, startDate, revisitDate }) => {
+    async ({ interventionId: id, expectedRevision: rev, observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate }) => {
       assertInterventionAccessible(db, id, goalAccess);
       return result(
         adjustIntervention(
           db,
           id,
-          { type, commitment, rationale, startDate, revisitDate, expectedRevision: rev },
+          { observationPlan, reminderEnabled, type, commitment, rationale, startDate, revisitDate, expectedRevision: rev },
           householdToday(db),
         ),
       );
@@ -1529,9 +1562,10 @@ export function createMachbarMcpServer({
     "machbar_back_intervention",
     {
       description:
-        "Back a frequency_habit intervention with a recurring check-in task (only this type can be backed). The check-in is created through the canonical task path and becomes the intervention's Heute presence, recording hit/miss. Cadence defaults to a daily check-in; the title defaults to the commitment.",
+        "Create ordinary one-off, scheduled or recurring tasks for an intervention after explicit acceptance. Stable task keys make retries idempotent. No arbitrary existing-task tagging.",
       inputSchema: {
         interventionId,
+        tasks: z.array(interventionTaskPlanSchema).min(1).max(8).optional(),
         expectedRevision: expectedRevision.optional(),
         title: z.string().min(1).optional(),
         scheduledDate: z.string().optional(),
@@ -1541,6 +1575,7 @@ export function createMachbarMcpServer({
     },
     async ({
       interventionId: id,
+      tasks,
       expectedRevision: rev,
       title,
       scheduledDate,
@@ -1552,7 +1587,7 @@ export function createMachbarMcpServer({
         backIntervention(
           db,
           id,
-          { title, scheduledDate, repeatAfterDays, allowedDeviationDays, expectedRevision: rev },
+          { tasks, title, scheduledDate, repeatAfterDays, allowedDeviationDays, expectedRevision: rev },
           householdToday(db),
           { actorMemberId: memberId },
         ),
@@ -1594,11 +1629,11 @@ export function createMachbarMcpServer({
     {
       description:
         "Ask the goal coach to propose one small two-week behavioral experiment for a goal. Advisory only: this stores a proposal and returns its requestId and status — nothing is applied until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise it reports home_assistant_not_connected / ai_task_not_configured and the manual machbar_start_intervention path still works.",
-      inputSchema: { goalId },
+      inputSchema: { goalId, clarificationRequestId: z.string().optional(), clarificationAnswer: z.string().max(2000).optional() },
     },
-    async ({ goalId: id }) => {
+    async ({ goalId: id, clarificationRequestId, clarificationAnswer }) => {
       assertGoalAccessible(db, id, goalAccess);
-      const requestId = requestGoalSuggestion(db, id, memberId);
+      const requestId = requestGoalSuggestion(db, id, memberId, undefined, { clarificationRequestId, clarificationAnswer });
       return result(getGoalSuggestion(db, id, requestId, memberId));
     },
   );
@@ -1607,12 +1642,12 @@ export function createMachbarMcpServer({
     "machbar_assess_intervention",
     {
       description:
-        "Ask the goal coach to review a finished intervention over its own period (start_date → revisit_date), producing a qualitative band and an after-action review citing the counted items — never a numeric percentage. Advisory only: this stores a proposal and returns its requestId and status; nothing is recorded until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise the manual self-assessment path still works.",
-      inputSchema: { interventionId },
+        "Ask the goal coach to review the current intervention checkpoint using shared deterministic evidence and optional benefit/obstacle reflection, producing a qualitative band and an after-action review citing the counted items — never a numeric percentage. Advisory only: this stores a proposal and returns its requestId and status; nothing is recorded until the user explicitly accepts it. Requires a configured Home Assistant AI Task; otherwise the manual self-assessment path still works.",
+      inputSchema: { interventionId, benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional() },
     },
-    async ({ interventionId: id }) => {
+    async ({ interventionId: id, benefit, obstacle }) => {
       assertInterventionAccessible(db, id, goalAccess);
-      const requestId = requestInterventionAssessment(db, id, memberId);
+      const requestId = requestInterventionAssessment(db, id, memberId, undefined, { benefit, obstacle });
       return result(getAssessmentProposal(db, id, requestId, memberId));
     },
   );

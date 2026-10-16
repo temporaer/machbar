@@ -101,6 +101,7 @@ export interface CreateTaskInput {
   createdByMemberId?: number | null;
   /** Only meaningful for a root task (no parent/project); a child/successor
    * always inherits its parent's scope regardless of this field. */
+  privacyOwnerMemberId?: number;
   scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
@@ -465,6 +466,7 @@ function insertTask(
       ? true
       : input.needsClarification ?? false,
     scope,
+    privacyOwnerMemberId: input.privacyOwnerMemberId,
     ownerMemberId: input.ownerMemberId,
     ownerInheritanceMode: input.ownerInheritanceMode,
     physicalContextInheritanceMode: input.contextInheritanceMode ?? "inherit",

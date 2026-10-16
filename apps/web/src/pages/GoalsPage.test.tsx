@@ -1,3 +1,4 @@
+import { makeReflectionBriefing } from "../test/fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -142,7 +143,7 @@ describe("GoalsPage", () => {
     });
   });
 
-  it("offers backing only for a running, unbacked frequency habit", async () => {
+  it("reviews task drafts before creating ordinary backing work", async () => {
     const running = makeIntervention({
       status: "active",
       concludedAt: null,
@@ -154,16 +155,18 @@ describe("GoalsPage", () => {
     renderWithProviders(<GoalsPage />);
 
     const backButton = await screen.findByRole("button", {
-      name: "Mit Check-in hinterlegen",
+      name: "Aufgaben dazu erstellen",
     });
     await userEvent.click(backButton);
+    expect(mockedApi.backIntervention).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben erstellen" }));
     expect(mockedApi.backIntervention).toHaveBeenCalledWith(
       10,
       expect.objectContaining({ expectedRevision: 2 }),
     );
   });
 
-  it("hides backing for a non-frequency-habit intervention", async () => {
+  it("offers ordinary tasks for a non-frequency intervention", async () => {
     const running = makeIntervention({
       type: "obstacle_removal",
       status: "active",
@@ -177,8 +180,8 @@ describe("GoalsPage", () => {
 
     await screen.findByText("Run three times a week");
     expect(
-      screen.queryByRole("button", { name: "Mit Check-in hinterlegen" }),
-    ).toBeNull();
+      screen.queryByRole("button", { name: "Aufgaben dazu erstellen" }),
+    ).toBeInTheDocument();
   });
 
   it("prompts keep/stop when concluding a backed intervention and defaults to stop", async () => {
@@ -274,7 +277,7 @@ describe("GoalsPage", () => {
     expect(mockedApi.acceptGoalSuggestion).toHaveBeenCalledWith(
       1,
       "suggest-1",
-      { index: 0 },
+      { index: 0, observationPlan: { method: "reflection" } },
     );
   });
 
@@ -299,10 +302,12 @@ describe("GoalsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("preserves the manual assessment path without requesting the coach", async () => {
+  it("reviews an experiment ended before its future checkpoint without repeating lifecycle changes", async () => {
     const finished = makeIntervention({
+      revisitDate: "2099-01-15",
       derivedState: "finished",
-      assessments: [],
+      reviewWindowStart: "2026-01-09",
+      assessments: [makeAssessment({ decision: "continue", digestWindowEnd: "2026-01-08" })],
     });
     mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [finished] })]);
     renderWithProviders(<GoalsPage />);
@@ -310,10 +315,13 @@ describe("GoalsPage", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Rückblick auf dein Experiment" }),
     );
+    expect(screen.getByRole("button", { name: "Rückblick speichern" })).toBeDisabled();
     await userEvent.type(
       screen.getByRole("textbox", { name: "Was ist passiert?" }),
       "Vier von sechs Läufen haben geklappt.",
     );
+    expect(screen.getByRole("button", { name: "Rückblick speichern" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Größtenteils erreicht" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Rückblick speichern" }),
     );
@@ -324,6 +332,9 @@ describe("GoalsPage", () => {
         expect.objectContaining({
           band: "mostly_achieved",
           rationaleMd: "Vier von sechs Läufen haben geklappt.",
+          decision: "stop",
+          digestWindowStart: "2026-01-09",
+          digestWindowEnd: "2026-01-15",
         }),
       ),
     );
@@ -357,6 +368,14 @@ describe("GoalsPage", () => {
       band: "achieved",
       rationaleMd: "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
       countedItemIds: [7, 8],
+      countedObservationIds: [77],
+      evidence: {
+        interventionId: 10, generatedAt: "2026-01-16T10:00:00Z", window: { startDate: "2026-01-01", endDate: "2026-01-15" },
+        plans: [{ id: 1, interventionId: 10, effectiveFrom: "2026-01-01", timezone: "Europe/Berlin", commitment: "Run three times", createdAt: "2026-01-01T10:00:00Z", plan: { method: "daily_report", question: "Did you run?", reference: "day", reportDayOffset: 0, availableAfter: "22:00", opportunityBased: false } }],
+        observations: [{ id: 77, interventionId: 10, planVersionId: 1, revision: 1, referenceDate: "2026-01-14", answer: "met", notes: "A short run", submittedAt: "2026-01-15T10:00:00Z", updatedAt: "2026-01-15T10:00:00Z" }],
+        counts: { eligible: 15, reported: 1, met: 1, notMet: 0, unknown: 0, noOpportunity: 0, missing: 14 }, periods: [], generatedTasks: [],
+        activity: makeReflectionBriefing({ finiteCompletions: [{ id: 7, type: "task", title: "First run", date: "2026-01-07", href: null, currentItemAvailable: true }, { id: 8, type: "task", title: "Second run", date: "2026-01-14", href: null, currentItemAvailable: true }], bulkCompletionGroups: [], recurringWork: [] }),
+      },
       windowStart: "2026-01-01",
       windowEnd: "2026-01-15",
       nextMove: "Noch zwei Wochen fortsetzen.",
@@ -379,23 +398,62 @@ describe("GoalsPage", () => {
         "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByDisplayValue("7, 8")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("7, 8")).toBeNull();
     expect(
       screen.getByRole("button", { name: "Coach-Rückblick übernehmen" }),
     ).toBeInTheDocument();
 
+    expect(screen.getByText("A short run")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Für die Einschätzung ausgewählt: 2026-01-14" }));
+    await user.click(screen.getByRole("checkbox", { name: /First run/ }));
     await user.click(
       screen.getByRole("button", { name: "Coach-Rückblick übernehmen" }),
     );
     expect(mockedApi.acceptAssessmentProposal).toHaveBeenCalledWith(
       10,
       "assess-1",
-      {
+      expect.objectContaining({
         band: "achieved",
         rationaleMd: "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
-        countedItemIds: [7, 8],
-      },
+        countedItemIds: [8], countedObservationIds: [], decision: "stop", expectedRevision: 2,
+      }),
     );
     expect(mockedApi.assessIntervention).not.toHaveBeenCalled();
   });
+  it("answers one tailored coach question and carries it into the next proposal request", async () => {
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [] })]);
+    mockedApi.requestGoalSuggestion.mockResolvedValueOnce({ requestId: "question-1", goalId: 1, status: "ready", interventions: [], clarificationQuestion: "What happens after brushing?", error: null }).mockRejectedValueOnce(new Error("Offline")).mockResolvedValueOnce({ requestId: "answer-1", goalId: 1, status: "ready", interventions: [{ type: "obstacle_removal", commitment: "Leave phone outside", rationale: "Reduce browsing friction", startDate: "2026-10-15", revisitDate: "2026-10-29", observationPlan: { method: "reflection" } }], error: null });
+    const user = userEvent.setup(); renderWithProviders(<GoalsPage />);
+    await user.click(await screen.findByRole("button", { name: "Vorschläge vom Coach" }));
+    await user.type(await screen.findByLabelText("What happens after brushing?"), "I start browsing");
+    await user.click(screen.getByRole("button", { name: "Antwort für den Vorschlag verwenden" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Offline");
+    expect(screen.getByRole("textbox", { name: "What happens after brushing?" })).toHaveValue("I start browsing");
+    await user.click(screen.getByRole("button", { name: "Antwort erneut senden" }));
+    expect(await screen.findByText("Leave phone outside")).toBeInTheDocument();
+    expect(mockedApi.requestGoalSuggestion).toHaveBeenLastCalledWith(1, { clarificationRequestId: "question-1", clarificationAnswer: "I start browsing", locale: "de" });
+    expect(mockedApi.acceptGoalSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("summarizes task-only piano practice before exposing detailed proposal editors", async () => {
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [] })]);
+    mockedApi.requestGoalSuggestion.mockResolvedValue({
+      requestId: "piano", goalId: 1, status: "ready", error: null,
+      interventions: [{ type: "frequency_habit", commitment: "Klavier dienstags und donnerstags um 19 Uhr", rationale: "Zwei geplante Termine ausprobieren.", startDate: "2026-10-20", revisitDate: "2026-11-03", observationPlan: { method: "task_evidence" }, tasks: [
+        { key: "tuesday", title: "Klavier am Dienstag", scheduledDate: "2026-10-20", reminders: [{ kind: "absolute", at: "2026-10-20T19:00:00+02:00" }] },
+        { key: "thursday", title: "Klavier am Donnerstag", scheduledDate: "2026-10-22", reminders: [{ kind: "absolute", at: "2026-10-22T19:00:00+02:00" }] },
+      ] }],
+    });
+    const user = userEvent.setup(); renderWithProviders(<GoalsPage />);
+    await user.click(await screen.findByRole("button", { name: "Vorschläge vom Coach" }));
+    expect(await screen.findByText("Klavier am Dienstag", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByText("Erinnerungen: 20.10.2026, 19:00")).toBeInTheDocument();
+    expect(screen.getByText("Planung: 20.10.2026")).toBeInTheDocument();
+    expect(screen.queryByText("2026-10-20T19:00:00+02:00")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Beobachtungsmethode" })).toBeNull();
+    expect(mockedApi.acceptGoalSuggestion).not.toHaveBeenCalled();
+    await user.click(screen.getByText("Experiment anpassen", { selector: "summary" }));
+    expect(screen.getByDisplayValue("Klavier dienstags und donnerstags um 19 Uhr")).toBeVisible();
+  });
+
 });

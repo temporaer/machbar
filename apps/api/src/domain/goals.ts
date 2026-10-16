@@ -1,3 +1,6 @@
+import { buildInterventionEvidence } from "./interventionEvidence.js";
+import { addCalendarDays } from "./calendarDate.js";
+import { householdToday, householdTimezone, localDate } from "./householdCalendar.js";
 /**
  * Goals & interventions domain layer (feature spec: docs/goals-and-interventions.md
  * §4, §5, §9). Mirrors the typed parse-schema → domain-mutation → transaction
@@ -10,8 +13,10 @@
  * `running | finished | reviewed` progression is derived at read time
  * (interventionState.ts), never stored.
  */
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
+  InterventionTaskPlan,
+  ObservationPlan,
   AssessmentBand,
   Goal,
   GoalArea,
@@ -29,6 +34,7 @@ import { isIsoCalendarDate } from "./calendarDate.js";
 import { deriveInterventionState } from "./interventionState.js";
 import { createTaskInTransaction } from "./taskCrud.js";
 import { cancelTask } from "./taskWorkflow.js";
+import { setObservationPlan, observationPlanForDate, observationIsAnswerable } from "./interventionObservations.js";
 import { type MutationContext, nowIso } from "./workItemShared.js";
 
 type GoalRow = typeof schema.goals.$inferSelect;
@@ -56,6 +62,8 @@ export interface UpdateGoalInput {
 }
 
 export interface StartInterventionInput {
+  reminderEnabled?: boolean;
+  observationPlan?: ObservationPlan;
   type: InterventionType;
   commitment: string;
   rationale?: string;
@@ -65,6 +73,8 @@ export interface StartInterventionInput {
 }
 
 export interface AdjustInterventionInput {
+  reminderEnabled?: boolean;
+  observationPlan?: ObservationPlan;
   type?: InterventionType;
   commitment?: string;
   rationale?: string;
@@ -74,6 +84,18 @@ export interface AdjustInterventionInput {
 }
 
 export interface ManualAssessmentInput {
+  reminderEnabled?: boolean;
+  countedObservationIds?: number[];
+  evidence?: import("@machbar/shared").InterventionEvidence;
+  reviewKey?: string;
+  decision?: "continue" | "adjust" | "stop";
+  benefit?: "helped" | "not_helped" | "uncertain";
+  obstacle?: string;
+  expectedRevision?: number;
+  nextRevisitDate?: string;
+  backingCleanup?: BackingCleanup;
+  observationPlan?: ObservationPlan;
+  commitment?: string;
   band: AssessmentBand;
   rationaleMd: string;
   countedItemIds?: number[];
@@ -89,6 +111,7 @@ export interface ManualAssessmentInput {
  * caller-chosen cadence (defaulting to a daily check-in).
  */
 export interface BackInterventionInput {
+  tasks?: InterventionTaskPlan[];
   title?: string;
   scheduledDate?: string;
   repeatAfterDays?: number;
@@ -133,6 +156,8 @@ function mapIntervention(row: InterventionRow): Intervention {
     status: row.status,
     concludedAt: row.concludedAt,
     backingTaskId: row.backingTaskId,
+    reviewWindowStart: row.reviewWindowStart,
+    reminderEnabled: row.reminderEnabled,
     source: row.source,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -155,6 +180,8 @@ function mapAssessment(row: AssessmentRow): InterventionAssessment {
   return {
     id: row.id,
     interventionId: row.interventionId,
+    countedObservationIds: parseCountedItemIds(row.countedObservationIdsJson),
+    reviewKey: row.reviewKey, decision: row.decision, benefit: row.benefit, obstacle: row.obstacle, evidence: row.evidence,
     assessedAt: row.assessedAt,
     band: row.band,
     rationaleMd: row.rationaleMd,
@@ -281,19 +308,32 @@ function assessmentsForInterventions(
   return grouped;
 }
 
+/** Public provenance projection; stored creation inputs remain internal. */
+export function generatedTasksForIntervention(db: Db, interventionId: number): import("@machbar/shared").InterventionGeneratedTask[] {
+  return db.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).orderBy(asc(schema.interventionTasks.id)).all().map(({ id, key, taskId, originalTaskId, title, createdAt }) => ({ id, key, taskId, originalTaskId, title, createdAt }));
+}
+
 function buildInterventionView(
+  db: Db,
   intervention: InterventionRow,
   assessments: AssessmentRow[],
   today: string,
 ): InterventionView {
+  const stopDate = intervention.concludedAt ? localDate(new Date(intervention.concludedAt), householdTimezone(db)) : null;
+  const reviewStart = intervention.reviewWindowStart ?? intervention.startDate;
+  const hasFinalAssessment = stopDate !== null && assessments.some((assessment) =>
+    (assessment.decision === null || assessment.decision === "stop") &&
+    assessment.digestWindowStart <= reviewStart && assessment.digestWindowEnd >= stopDate);
   const state = deriveInterventionState({
     revisitDate: intervention.revisitDate,
-    hasAssessment: assessments.length > 0,
+    hasFinalAssessment,
     today,
     concluded: intervention.status === "concluded",
   });
   return {
     ...mapIntervention(intervention),
+    generatedTasks: generatedTasksForIntervention(db, intervention.id),
+    observationPlan: db.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, intervention.id)).orderBy(desc(schema.interventionObservationPlans.effectiveFrom)).get()?.plan,
     derivedState: state.derivedState,
     withinReviewWindow: state.withinReviewWindow,
     assessments: assessments.map(mapAssessment),
@@ -314,7 +354,7 @@ function assembleGoals(db: Db, goalRows: GoalRow[], today: string): GoalWithInte
     ...mapGoal(goal),
     interventions: (interventionsByGoal.get(goal.id) ?? []).map((intervention) =>
       buildInterventionView(
-        intervention,
+        db, intervention,
         assessmentsByIntervention.get(intervention.id) ?? [],
         today,
       ),
@@ -474,6 +514,7 @@ export function startIntervention(
       .insert(schema.interventions)
       .values({
         goalId,
+        reminderEnabled: input.reminderEnabled,
         type: input.type,
         commitment,
         rationale: input.rationale ?? "",
@@ -483,7 +524,12 @@ export function startIntervention(
       })
       .returning()
       .get();
-    return buildInterventionView(created, [], today);
+    if (input.observationPlan) {
+      const owner = requireGoalRow(tx, goalId).ownerMemberId;
+      if (owner === null) throw AppError.badRequest("goal_owner_required", "An observation plan needs an owner.");
+      setObservationPlan(tx as unknown as Db, created.id, { plan: input.observationPlan, expectedRevision: created.revision }, { ownerMemberId: owner });
+    }
+    return buildInterventionView(tx as unknown as Db, requireInterventionRow(tx, created.id), [], today);
   });
 }
 
@@ -504,6 +550,7 @@ export function adjustIntervention(
   return db.transaction((tx) => {
     const current = requireInterventionRow(tx, interventionId);
     assertInterventionRevision(current, input.expectedRevision);
+    if (input.startDate !== undefined && input.startDate !== current.startDate && tx.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, interventionId)).get()) throw AppError.conflict("intervention_revisit_invalid", "An intervention with observation history keeps its original start date. Adjust its future plan instead.");
     const startDate = input.startDate ?? current.startDate;
     const revisitDate = input.revisitDate ?? current.revisitDate;
     if (input.startDate !== undefined || input.revisitDate !== undefined) {
@@ -513,6 +560,7 @@ export function adjustIntervention(
       revision: current.revision + 1,
       updatedAt: nowIso(),
     };
+    if (input.reminderEnabled !== undefined) patch.reminderEnabled = input.reminderEnabled;
     if (input.type !== undefined) patch.type = input.type;
     if (commitment !== undefined) patch.commitment = commitment;
     if (input.rationale !== undefined) patch.rationale = input.rationale;
@@ -522,86 +570,55 @@ export function adjustIntervention(
       .set(patch)
       .where(eq(schema.interventions.id, interventionId))
       .run();
+    const previousPlan = tx.select().from(schema.interventionObservationPlans).where(eq(schema.interventionObservationPlans.interventionId, interventionId)).orderBy(desc(schema.interventionObservationPlans.effectiveFrom)).get()?.plan;
+    const plan = input.observationPlan ?? (commitment !== undefined && commitment !== current.commitment ? previousPlan : undefined);
+    if (plan) {
+      const owner = requireGoalRow(tx, current.goalId).ownerMemberId;
+      if (owner === null) throw AppError.badRequest("goal_owner_required", "An observation plan needs an owner.");
+      setObservationPlan(tx as unknown as Db, interventionId, { plan, expectedRevision: current.revision + 1 }, { ownerMemberId: owner });
+    }
     const updated = requireInterventionRow(tx, interventionId);
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
-    return buildInterventionView(updated, assessments, today);
+    return buildInterventionView(tx as unknown as Db, updated, assessments, today);
   });
 }
 
-/**
- * Back a `frequency_habit` intervention with a recurring check-in task (§8).
- *
- * The check-in is created through the canonical task path
- * ({@link createTaskInTransaction}) inside the same transaction that stores the
- * pointer, so there is no parallel task-mutation module and no window in which
- * the task exists without its backing reference. The task is owner-only
- * (`scope: "work"`, explicit owner = the goal owner) so it surfaces in the
- * owner's reflection digest — the assess pass then reads its crisp hit/miss.
- */
+/** Atomically create ordinary work with bounded provenance through canonical task creation. */
 export function backIntervention(
-  db: Db,
-  interventionId: number,
-  input: BackInterventionInput,
-  today: string,
-  context?: MutationContext,
+  db: Db, interventionId: number, input: BackInterventionInput, today: string, context?: MutationContext,
 ): InterventionView {
   return db.transaction((tx) => {
     const current = requireInterventionRow(tx, interventionId);
+    const existing = tx.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all();
+    const tasks = input.tasks ?? [{ key: "legacy-check-in", title: (input.title ?? current.commitment).trim(),
+      scheduledDate: input.scheduledDate ?? (current.startDate < today ? today : current.startDate),
+      ...(current.type === "frequency_habit" ? { repeatAfterDays: input.repeatAfterDays ?? 1, allowedDeviationDays: input.allowedDeviationDays ?? 0 } : {}),
+    }];
+    if (new Set(tasks.map((t) => t.key)).size !== tasks.length || tasks.length > 8) throw AppError.badRequest("intervention_backing_unavailable", "Each generated task needs a unique key; at most eight tasks per acceptance.");
+    // Stable proposal-local keys make an identical retry a read, even after a lost response.
+    if (tasks.every((task) => existing.some((row) => row.key === task.key && JSON.stringify(row.input) === JSON.stringify(task)))) {
+      const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
+      return buildInterventionView(tx as unknown as Db, current, assessments, today);
+    }
     assertInterventionRevision(current, input.expectedRevision);
-    if (current.type !== "frequency_habit") {
-      throw AppError.conflict(
-        "intervention_backing_unavailable",
-        "Only a frequency-habit intervention can be backed by a recurring check-in.",
-        { interventionId, type: current.type },
-      );
-    }
-    if (current.status === "concluded") {
-      throw AppError.conflict(
-        "intervention_transition_invalid",
-        "A concluded intervention cannot be backed.",
-        { interventionId },
-      );
-    }
-    if (current.backingTaskId !== null) {
-      throw AppError.conflict(
-        "intervention_already_backed",
-        "This intervention already has a recurring check-in.",
-        { interventionId, backingTaskId: current.backingTaskId },
-      );
-    }
+    if (current.status === "concluded") throw AppError.conflict("intervention_transition_invalid", "A concluded intervention cannot create tasks.");
+    if (existing.length + tasks.length > 16 || tasks.some((t) => existing.some((row) => row.key === t.key))) throw AppError.conflict("intervention_already_backed", "These task keys were already accepted or the intervention already has sixteen generated tasks.");
     const goal = requireGoalRow(tx, current.goalId);
-    // Start the check-in no earlier than today so the first occurrence is not
-    // already overdue, but never before the intervention's own start date.
-    const scheduledDate =
-      input.scheduledDate ?? (current.startDate < today ? today : current.startDate);
-    const repeatAfterDays = input.repeatAfterDays ?? 1;
-    const allowedDeviationDays = input.allowedDeviationDays ?? 0;
-    const title = (input.title ?? current.commitment).trim();
-    const created = createTaskInTransaction(
-      tx as unknown as Db,
-      {
-        title,
-        scope: "work",
-        ownerMemberId: goal.ownerMemberId,
-        ownerInheritanceMode: "explicit",
+    if (goal.ownerMemberId === null) throw AppError.badRequest("goal_owner_required", "An owner is required before creating private tasks.");
+    let firstTaskId = current.backingTaskId;
+    for (const task of tasks) {
+      const { key, ...taskInput } = task;
+      const created = createTaskInTransaction(tx as unknown as Db, {
+        ...taskInput, ...(taskInput.repeatAfterDays ? { allowedDeviationDays: taskInput.allowedDeviationDays ?? 0 } : {}), status: "actionable", scope: goal.area === "work" ? "work" : "household",
+        privacyOwnerMemberId: goal.ownerMemberId, ownerMemberId: goal.ownerMemberId, ownerInheritanceMode: "explicit",
         createdByMemberId: context?.actorMemberId ?? null,
-        scheduledDate,
-        repeatAfterDays,
-        allowedDeviationDays,
-      },
-      context,
-    );
-    tx.update(schema.interventions)
-      .set({
-        backingTaskId: created.id,
-        revision: current.revision + 1,
-        updatedAt: nowIso(),
-      })
-      .where(eq(schema.interventions.id, interventionId))
-      .run();
-    const updated = requireInterventionRow(tx, interventionId);
+      }, context);
+      tx.insert(schema.interventionTasks).values({ interventionId, key, taskId: created.id, originalTaskId: created.id, title: task.title, input: task }).run();
+      firstTaskId ??= created.id;
+    }
+    tx.update(schema.interventions).set({ backingTaskId: firstTaskId, revision: current.revision + 1, updatedAt: nowIso() }).where(eq(schema.interventions.id, interventionId)).run();
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
-    return buildInterventionView(updated, assessments, today);
+    return buildInterventionView(tx as unknown as Db, requireInterventionRow(tx, interventionId), assessments, today);
   });
 }
 
@@ -627,13 +644,20 @@ export function concludeIntervention(
     // before flipping status. "keep" just clears the pointer so the task lives
     // on as ordinary recurring work; "stop" (default) ends it through the
     // canonical task path — never a parallel mutation — leaving no orphan.
-    if (current.backingTaskId !== null && backingCleanup === "stop") {
-      cancelTask(tx as unknown as Db, current.backingTaskId, undefined, options.context);
+    if (backingCleanup === "stop") {
+      const generated = tx.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all();
+      for (const row of generated) {
+        if (row.taskId === null) continue;
+        const task = tx.select().from(schema.workItems).where(eq(schema.workItems.id, row.taskId)).get();
+        if (task && task.status !== "done" && task.status !== "cancelled") cancelTask(tx as unknown as Db, row.taskId, undefined, options.context);
+      }
     }
     tx.update(schema.interventions)
       .set({
         status: "concluded",
         concludedAt: nowIso(),
+        // Ending on the same day as a checkpoint still leaves a valid final-review period.
+        reviewWindowStart: current.reviewWindowStart && current.reviewWindowStart > today ? today : current.reviewWindowStart,
         backingTaskId: null,
         revision: current.revision + 1,
         updatedAt: nowIso(),
@@ -642,7 +666,7 @@ export function concludeIntervention(
       .run();
     const updated = requireInterventionRow(tx, interventionId);
     const assessments = assessmentsForInterventions(tx, [interventionId]).get(interventionId) ?? [];
-    return buildInterventionView(updated, assessments, today);
+    return buildInterventionView(tx as unknown as Db, updated, assessments, today);
   });
 }
 
@@ -688,11 +712,59 @@ export function insertAssessment(
   }
   const countedItemIds = input.countedItemIds ?? [];
   return db.transaction((tx) => {
-    requireInterventionRow(tx, interventionId);
+    const current = requireInterventionRow(tx, interventionId);
+    if (input.reviewKey) {
+      const existing = tx.select().from(schema.interventionAssessments).where(and(eq(schema.interventionAssessments.interventionId, interventionId), eq(schema.interventionAssessments.reviewKey, input.reviewKey))).get();
+      if (existing) return mapAssessment(existing);
+    }
+    if (input.decision && (!input.reviewKey || input.expectedRevision === undefined)) throw AppError.badRequest("intervention_assessment_invalid", "A checkpoint decision needs its revision and stable acceptance key.");
+    if (input.decision) assertInterventionRevision(current, input.expectedRevision);
+    const owner = requireGoalRow(tx, current.goalId).ownerMemberId;
+    const evidence = input.evidence ?? (owner === null ? null : buildInterventionEvidence(tx as unknown as Db, interventionId, { ownerMemberId: owner }, { startDate: input.digestWindowStart, endDate: input.digestWindowEnd }));
+    if ((input.countedObservationIds ?? []).some((id) => !evidence?.observations.some((o) => o.id === id))) throw AppError.badRequest("intervention_assessment_invalid", "Observation references must come from the reviewed evidence.");
+    if (input.decision && evidence) {
+      const candidates = new Set([
+        ...evidence.activity.history.finiteCompletions.flatMap((item) => item.id === null ? [] : [item.id]),
+        ...evidence.activity.history.bulkCompletionGroups.map((item) => item.id),
+        ...evidence.activity.history.recurringWork.map((item) => item.taskId),
+      ]);
+      if ((input.countedItemIds ?? []).some((id) => !candidates.has(id))) throw AppError.badRequest("intervention_assessment_invalid", "Task references must come from the reviewed evidence.");
+    }
+    if (input.decision) {
+      if (current.status !== "active" && input.decision !== "stop") throw AppError.conflict("intervention_transition_invalid", "A stopped behavior can only receive a final review.");
+      if (input.digestWindowStart !== (current.reviewWindowStart ?? current.startDate)) throw AppError.conflict("stale_write_conflict", "This review window has already advanced.");
+      // Final reviews record evidence without repeating task cleanup or lifecycle changes.
+      if (current.status === "active" && input.decision === "stop") {
+        if (tx.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all().some((task) => task.taskId !== null) && input.backingCleanup === undefined) throw AppError.badRequest("intervention_assessment_invalid", "Choose whether to keep or stop generated tasks.");
+        concludeIntervention(tx as unknown as Db, interventionId, current.revision, householdToday(tx as unknown as Db), { backingCleanup: input.backingCleanup });
+      } else if (current.status === "active") {
+        const today = householdToday(tx as unknown as Db);
+        const next = input.nextRevisitDate ?? addCalendarDays(today, 14);
+        if (!isIsoCalendarDate(next) || next <= today || next <= input.digestWindowEnd) throw AppError.badRequest("intervention_revisit_invalid", "The next checkpoint must be in the future.");
+        if (input.decision === "adjust") adjustIntervention(tx as unknown as Db, interventionId, { ...(input.reminderEnabled === undefined ? {} : { reminderEnabled: input.reminderEnabled }), ...(input.commitment ? { commitment: input.commitment } : {}), ...(input.observationPlan ? { observationPlan: input.observationPlan } : {}), expectedRevision: current.revision }, today);
+        const updated = requireInterventionRow(tx, interventionId);
+        // Carry the earliest not-yet-answerable reference period into the next
+        // review, including same-day evening reports and next-morning reports.
+        let nextWindowStart = addCalendarDays(input.digestWindowEnd, 1);
+        if (evidence) {
+          const reviewedAt = new Date(evidence.generatedAt);
+          for (let date = input.digestWindowStart; date <= input.digestWindowEnd; date = addCalendarDays(date, 1)) {
+            const plan = observationPlanForDate(evidence.plans, date);
+            if (plan?.plan.method === "daily_report" && !observationIsAnswerable(plan, date, reviewedAt)) {
+              nextWindowStart = date;
+              break;
+            }
+          }
+        }
+        tx.update(schema.interventions).set({ revisitDate: next, reviewWindowStart: nextWindowStart, revision: updated.revision + 1, updatedAt: nowIso() }).where(eq(schema.interventions.id, interventionId)).run();
+      }
+    }
     const created = tx
       .insert(schema.interventionAssessments)
       .values({
         interventionId,
+        countedObservationIdsJson: JSON.stringify(input.countedObservationIds ?? []),
+        reviewKey: input.reviewKey, decision: input.decision, benefit: input.benefit, obstacle: input.obstacle ?? "", evidence,
         assessedAt: input.assessedAt ?? nowIso(),
         band: input.band,
         rationaleMd: input.rationaleMd,

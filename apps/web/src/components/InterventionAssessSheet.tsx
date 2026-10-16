@@ -1,31 +1,32 @@
+import { InterventionEvidenceFacts, InterventionEvidencePanel } from "./InterventionEvidencePanel";
+import { ObservationPlanEditor } from "./ObservationPlanEditor";
+import type { ObservationPlan, InterventionReviewDecision, InterventionBenefit } from "@machbar/shared";
 import { useState } from "react";
 import {
   assessmentBands,
+  calendarDateForInstant,
   type AssessmentProposal,
   type AssessmentBand,
   type InterventionView,
 } from "@machbar/shared";
 import { hasApiErrorCode, localizedErrorMessage } from "../lib/errorMessage";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
+import { toIsoCalendarDate } from "../lib/naturalDate";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
 export interface AssessmentDraft {
+  countedObservationIds?: number[]; reminderEnabled?: boolean;
+  reviewKey?: string; decision?: InterventionReviewDecision; benefit?: InterventionBenefit; obstacle?: string;
+  expectedRevision?: number; nextRevisitDate?: string; backingCleanup?: "keep" | "stop";
+  observationPlan?: ObservationPlan; commitment?: string;
   band: AssessmentBand;
   rationaleMd: string;
   countedItemIds: number[];
   digestWindowStart: string;
   digestWindowEnd: string;
   coachRequestId?: string;
-}
-
-function parseCountedItemIds(raw: string): number[] {
-  return raw
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .map((part) => Number.parseInt(part, 10))
-    .filter((value) => Number.isInteger(value));
 }
 
 /**
@@ -44,14 +45,30 @@ export function InterventionAssessSheet({
   intervention: InterventionView;
   onClose: () => void;
   onSave: (draft: AssessmentDraft) => Promise<void>;
-  onRequestCoach: () => Promise<AssessmentProposal>;
+  onRequestCoach: (input?: { benefit?: InterventionBenefit; obstacle?: string }) => Promise<AssessmentProposal>;
 }) {
   const strings = useStrings();
-  const [band, setBand] = useState<AssessmentBand>("mostly_achieved");
+  const { timezone } = useHouseholdTimezone();
+  const concluded = intervention.status === "concluded";
+  const today = calendarDateForInstant(new Date().toISOString(), timezone) ?? toIsoCalendarDate(new Date());
+  const stoppedDate = intervention.concludedAt ? calendarDateForInstant(intervention.concludedAt, timezone) : null;
+  const defaultEnd = (concluded ? stoppedDate : intervention.revisitDate) ?? today;
+  const [coachEvidence, setCoachEvidence] = useState<AssessmentProposal["evidence"]>();
+  const [countedObservationIds, setCountedObservationIds] = useState<number[]>([]);
+  const [reminderEnabled, setReminderEnabled] = useState(intervention.reminderEnabled ?? true);
+  const [reviewKey] = useState(() => crypto.randomUUID());
+  const [decision, setDecision] = useState<InterventionReviewDecision>(concluded ? "stop" : "continue");
+  const [benefit, setBenefit] = useState<InterventionBenefit>("uncertain");
+  const [obstacle, setObstacle] = useState("");
+  const [nextRevisitDate, setNextRevisitDate] = useState("");
+  const [backingCleanup, setBackingCleanup] = useState<"keep" | "stop">("keep");
+  const [observationPlan, setObservationPlan] = useState<ObservationPlan>(intervention.observationPlan ?? { method: "reflection" });
+  const [commitment, setCommitment] = useState(intervention.commitment);
+  const [band, setBand] = useState<AssessmentBand | null>(null);
   const [rationale, setRationale] = useState("");
-  const [windowStart, setWindowStart] = useState(intervention.startDate);
-  const [windowEnd, setWindowEnd] = useState(intervention.revisitDate);
-  const [countedItems, setCountedItems] = useState("");
+  const [windowStart, setWindowStart] = useState(intervention.reviewWindowStart ?? intervention.startDate);
+  const [windowEnd, setWindowEnd] = useState(defaultEnd < today ? defaultEnd : today);
+  const [countedItems, setCountedItems] = useState<number[]>([]);
   const [startValid, setStartValid] = useState(true);
   const [endValid, setEndValid] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -65,7 +82,7 @@ export function InterventionAssessSheet({
     setCoachRequestId(null);
     setError(null);
     try {
-      const proposal = await onRequestCoach();
+      const proposal = await onRequestCoach({ benefit, obstacle });
       if (
         proposal.status !== "ready" ||
         proposal.band === null ||
@@ -78,9 +95,16 @@ export function InterventionAssessSheet({
         );
         return;
       }
+      setCoachEvidence(proposal.evidence);
+      setCountedObservationIds(proposal.countedObservationIds ?? []);
+      if (proposal.recommendedDecision && !concluded) setDecision(proposal.recommendedDecision);
+      if (proposal.observationPlan) setObservationPlan(proposal.observationPlan);
+      if (proposal.commitment) setCommitment(proposal.commitment);
+      if (proposal.nextRevisitDate) setNextRevisitDate(proposal.nextRevisitDate);
+      if (proposal.reminderEnabled !== undefined) setReminderEnabled(proposal.reminderEnabled);
       setBand(proposal.band);
       setRationale(proposal.rationaleMd);
-      setCountedItems(proposal.countedItemIds.join(", "));
+      setCountedItems(proposal.countedItemIds);
       setWindowStart(proposal.windowStart ?? intervention.startDate);
       setWindowEnd(proposal.windowEnd ?? intervention.revisitDate);
       setCoachRequestId(proposal.requestId);
@@ -99,6 +123,7 @@ export function InterventionAssessSheet({
 
   const submit = async () => {
     if (saving) return;
+    if (!band) { setError(strings.interventionChooseOutcome); return; }
     const trimmedRationale = rationale.trim();
     if (!trimmedRationale) {
       setError(strings.assessmentRationaleLabel);
@@ -112,9 +137,12 @@ export function InterventionAssessSheet({
     setError(null);
     try {
       await onSave({
+        countedObservationIds, reminderEnabled, reviewKey, expectedRevision: intervention.revision, decision, benefit, obstacle, backingCleanup,
+        ...(nextRevisitDate ? { nextRevisitDate } : {}),
+        ...(decision === "adjust" ? { observationPlan, commitment } : {}),
         band,
         rationaleMd: trimmedRationale,
-        countedItemIds: parseCountedItemIds(countedItems),
+        countedItemIds: countedItems,
         digestWindowStart: windowStart,
         digestWindowEnd: windowEnd,
         ...(coachRequestId ? { coachRequestId } : {}),
@@ -136,6 +164,9 @@ export function InterventionAssessSheet({
     >
       <div className="stack">
         <p className="text-muted">{intervention.commitment}</p>
+        {coachEvidence ? <InterventionEvidenceFacts evidence={coachEvidence} selection={{ observationIds: countedObservationIds, itemIds: countedItems, onObservationChange: setCountedObservationIds, onItemChange: setCountedItems }} /> : <InterventionEvidencePanel interventionId={intervention.id} startDate={windowStart} endDate={windowEnd} selection={{ observationIds: countedObservationIds, itemIds: countedItems, onObservationChange: setCountedObservationIds, onItemChange: setCountedItems }} />}
+        <label className="field">{strings.interventionBenefitQuestion}<select value={benefit} onChange={(e) => setBenefit(e.target.value as InterventionBenefit)}>{(["helped", "not_helped", "uncertain"] as const).map((v) => <option key={v} value={v}>{strings.interventionBenefitLabels[v]}</option>)}</select></label>
+        <label className="field">{strings.interventionObstacleQuestion}<textarea value={obstacle} maxLength={2000} onChange={(e) => setObstacle(e.target.value)} /></label>
         <div className="stack">
           <button
             type="button"
@@ -153,6 +184,7 @@ export function InterventionAssessSheet({
         </div>
         <div className="field">
           <span className="field-label">{strings.assessmentBandLabel}</span>
+          {!band ? <p>{strings.interventionChooseOutcome}</p> : null}
           <div className="choice-group" role="group" aria-label={strings.assessmentBandLabel}>
             {assessmentBands.map((value) => (
               <button
@@ -177,6 +209,11 @@ export function InterventionAssessSheet({
             onChange={(event) => setRationale(event.target.value)}
           />
         </label>
+        {!concluded ? <label className="field">{strings.interventionNextMove}<select value={decision} onChange={(e) => setDecision(e.target.value as InterventionReviewDecision)}>{(["continue", "adjust", "stop"] as const).map((v) => <option key={v} value={v}>{strings.interventionDecisionLabels[v]}</option>)}</select></label> : null}
+        {decision === "adjust" ? <><label><input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} /> {strings.interventionStandingReminder}</label><label className="field">{strings.interventionCommitmentLabel}<input value={commitment} onChange={(e) => setCommitment(e.target.value)} /></label><ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} /></> : null}
+        {!concluded && decision === "stop" && ((intervention.generatedTasks?.length ?? 0) > 0 || intervention.backingTaskId !== null) ? <label className="field">{strings.interventionRemainingTasks}<select value={backingCleanup} onChange={(e) => setBackingCleanup(e.target.value as "keep" | "stop")}><option value="keep">{strings.interventionKeepTasks}</option><option value="stop">{strings.interventionStopTasks}</option></select></label> : null}
+        <details><summary>{strings.interventionAdvancedReview}</summary>
+        {!concluded && decision !== "stop" ? <label className="field">{strings.interventionNextCheckpoint}<input type="date" value={nextRevisitDate} onChange={(e) => setNextRevisitDate(e.target.value)} /></label> : null}
         <div className="field">
           <span className="field-label">{strings.assessmentWindowStartLabel}</span>
           <HumanDateInput
@@ -197,17 +234,7 @@ export function InterventionAssessSheet({
             onValidityChange={setEndValid}
           />
         </div>
-        <label className="field">
-          <span className="field-label">{strings.assessmentCountedItemsLabel}</span>
-          <input
-            type="text"
-            value={countedItems}
-            inputMode="numeric"
-            disabled={saving || coachLoading}
-            placeholder={strings.assessmentCountedItemsHint}
-            onChange={(event) => setCountedItems(event.target.value)}
-          />
-        </label>
+        </details>
         {error ? (
           <div className="task-row-error" role="alert">
             {error}
@@ -217,7 +244,7 @@ export function InterventionAssessSheet({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={saving || coachLoading || !startValid || !endValid}
+            disabled={saving || coachLoading || !startValid || !endValid || !band || !rationale.trim()}
             onClick={() => void submit()}
           >
             {coachRequestId

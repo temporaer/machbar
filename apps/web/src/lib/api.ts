@@ -506,6 +506,8 @@ export interface UpdateGoalInput {
 }
 
 export interface StartInterventionInput {
+  reminderEnabled?: boolean;
+  observationPlan?: import("@machbar/shared").ObservationPlan;
   type: InterventionType;
   commitment: string;
   rationale?: string;
@@ -514,6 +516,8 @@ export interface StartInterventionInput {
 }
 
 export interface AdjustInterventionInput {
+  reminderEnabled?: boolean;
+  observationPlan?: import("@machbar/shared").ObservationPlan;
   type?: InterventionType;
   commitment?: string;
   rationale?: string;
@@ -523,6 +527,11 @@ export interface AdjustInterventionInput {
 }
 
 export interface ManualAssessmentInput {
+  reminderEnabled?: boolean;
+  countedObservationIds?: number[];
+  reviewKey?: string; decision?: "continue" | "adjust" | "stop"; benefit?: "helped" | "not_helped" | "uncertain";
+  obstacle?: string; expectedRevision?: number; nextRevisitDate?: string; backingCleanup?: "keep" | "stop";
+  observationPlan?: import("@machbar/shared").ObservationPlan; commitment?: string;
   band: AssessmentBand;
   rationaleMd: string;
   countedItemIds?: number[];
@@ -531,6 +540,8 @@ export interface ManualAssessmentInput {
 }
 
 export interface AcceptGoalSuggestionInput {
+  observationPlan?: import("@machbar/shared").ObservationPlan;
+  tasks?: import("@machbar/shared").InterventionTaskPlan[];
   index?: number;
   type?: InterventionType;
   commitment?: string;
@@ -539,14 +550,10 @@ export interface AcceptGoalSuggestionInput {
   revisitDate?: string;
 }
 
-export interface AcceptAssessmentProposalInput {
-  band?: AssessmentBand;
-  rationaleMd?: string;
-  countedItemIds?: number[];
-  assessedAt?: string;
-}
+export type AcceptAssessmentProposalInput = Partial<Omit<ManualAssessmentInput, "digestWindowStart" | "digestWindowEnd" | "reviewKey">>;
 
 export interface BackInterventionInput {
+  tasks?: import("@machbar/shared").InterventionTaskPlan[];
   title?: string;
   scheduledDate?: string;
   repeatAfterDays?: number;
@@ -1118,6 +1125,9 @@ export const api = {
     request<Task>(`/tasks/${taskId}/excluded-tags/${tagId}`, { method: "DELETE" }),
 
   // --- Goals & interventions (feature spec §9) -----------------------------
+  interventionEvidence: (id: number, startDate?: string, endDate?: string) => request<import("@machbar/shared").InterventionEvidence>(`/interventions/${id}/evidence?${new URLSearchParams({ ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) })}`),
+  observationHistory: (id: number) => request<import("@machbar/shared").InterventionObservationHistory>(`/interventions/${id}/observations`),
+  recordObservation: (id: number, input: { referenceDate: string; answer: import("@machbar/shared").ObservationAnswer; notes?: string; expectedRevision: number }) => request<import("@machbar/shared").InterventionObservation>(`/interventions/${id}/observations`, { method: "PUT", body: JSON.stringify(input) }),
   listGoals: () => request<GoalWithInterventions[]>("/goals"),
   getGoal: (id: number) => request<GoalWithInterventions>(`/goals/${id}`),
   createGoal: (input: CreateGoalInput) =>
@@ -1137,8 +1147,8 @@ export const api = {
         expectedRevision === undefined ? {} : { expectedRevision },
       ),
     }),
-  requestGoalSuggestion: (id: number) =>
-    request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST" }),
+  requestGoalSuggestion: (id: number, input?: { locale?: "de" | "en"; clarificationRequestId?: string; clarificationAnswer?: string }) =>
+    request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getGoalSuggestion: (id: number, requestId: string) =>
     request<GoalSuggestionProposal>(`/goals/${id}/suggest/${requestId}`),
   acceptGoalSuggestion: (
@@ -1182,8 +1192,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  requestAssessmentProposal: (id: number) =>
-    request<AssessmentProposal>(`/interventions/${id}/assess`, { method: "POST" }),
+  requestAssessmentProposal: (id: number, input?: { locale?: "de" | "en"; benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string }) =>
+    request<AssessmentProposal>(`/interventions/${id}/assess`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getAssessmentProposal: (id: number, requestId: string) =>
     request<AssessmentProposal>(`/interventions/${id}/assess/${requestId}`),
   acceptAssessmentProposal: (

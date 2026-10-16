@@ -8,6 +8,7 @@ type TaskRowInput = {
   title: string;
   status: TaskStatus;
   needsClarification?: boolean;
+  privacyOwnerMemberId?: number;
   scope: WorkItemScope;
   taskKind?: TaskKind;
   notes?: string;
@@ -65,6 +66,7 @@ export function insertTaskRow(db: Db, input: TaskRowInput) {
     physicalContextInheritanceMode: input.physicalContextInheritanceMode ?? "inherit",
     createdByMemberId: input.createdByMemberId ?? null,
     scope: input.scope,
+    privacyOwnerMemberId: input.privacyOwnerMemberId,
     dueDate: input.dueDate ?? null,
     scheduledDate: input.scheduledDate ?? null,
     revisitAt: input.revisitAt ?? null,

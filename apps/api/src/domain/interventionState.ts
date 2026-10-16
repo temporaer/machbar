@@ -11,8 +11,8 @@ export const INTERVENTION_REVIEW_WINDOW_DAYS = 7;
 export interface InterventionStateInput {
   /** The intervention's revisit date (`YYYY-MM-DD`). */
   revisitDate: string;
-  /** Whether at least one assessment row exists for the intervention. */
-  hasAssessment: boolean;
+  /** An assessment covering the final period makes a concluded behavior reviewed. Earlier checkpoints do not. */
+  hasFinalAssessment: boolean;
   /** Current calendar date (`YYYY-MM-DD`) in the household timezone. */
   today: string;
   /**
@@ -34,13 +34,13 @@ export interface InterventionState {
 
 /**
  * Derives the user-facing `running | finished | reviewed` state (§5) purely
- * from the revisit date, whether an assessment exists, and today's household
+ * from the checkpoint date, concluded status, assessment history, and today's household
  * date. Nothing here is stored or time-triggered; every caller computes it at
  * read time. Calendar dates compare lexicographically because they are strict
  * `YYYY-MM-DD` values.
  */
 export function deriveInterventionState(input: InterventionStateInput): InterventionState {
-  if (input.hasAssessment) {
+  if (input.hasFinalAssessment && input.concluded) {
     return { derivedState: "reviewed", withinReviewWindow: false };
   }
   const reached = input.today >= input.revisitDate;

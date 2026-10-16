@@ -8,36 +8,36 @@ import { localDate } from "../src/domain/householdCalendar.js";
 describe("deriveInterventionState", () => {
   it("is running before the revisit date with no assessment", () => {
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: false, today: "2026-03-09" }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasFinalAssessment: false, today: "2026-03-09" }),
     ).toEqual({ derivedState: "running", withinReviewWindow: false });
   });
 
   it("is finished and within the review window on the revisit date", () => {
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: false, today: "2026-03-10" }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasFinalAssessment: false, today: "2026-03-10" }),
     ).toEqual({ derivedState: "finished", withinReviewWindow: true });
   });
 
   it("stays within the review window on the 7th day after revisit", () => {
     const today = "2026-03-17"; // revisit + 7
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: false, today }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasFinalAssessment: false, today }),
     ).toEqual({ derivedState: "finished", withinReviewWindow: true });
   });
 
   it("leaves the review window on the 8th day after revisit", () => {
     const today = "2026-03-18"; // revisit + 8
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: false, today }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasFinalAssessment: false, today }),
     ).toEqual({ derivedState: "finished", withinReviewWindow: false });
   });
 
-  it("is reviewed once an assessment exists, regardless of dates", () => {
+  it("is reviewed once a concluded intervention has a final-period assessment", () => {
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: true, today: "2026-03-09" }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasFinalAssessment: true, concluded: true, today: "2026-03-09" }),
     ).toEqual({ derivedState: "reviewed", withinReviewWindow: false });
     expect(
-      deriveInterventionState({ revisitDate: "2026-03-10", hasAssessment: true, today: "2026-04-01" }),
+      deriveInterventionState({ revisitDate: "2026-03-10", hasFinalAssessment: true, concluded: true, today: "2026-04-01" }),
     ).toEqual({ derivedState: "reviewed", withinReviewWindow: false });
   });
 
@@ -45,7 +45,7 @@ describe("deriveInterventionState", () => {
     expect(
       deriveInterventionState({
         revisitDate: "2026-03-10",
-        hasAssessment: false,
+        hasFinalAssessment: false,
         today: "2026-03-05",
         concluded: true,
       }),
@@ -67,7 +67,7 @@ describe("deriveInterventionState", () => {
       const today = localDate(instant, "Pacific/Kiritimati");
       expect(today).toBe("2026-03-11");
       expect(
-        deriveInterventionState({ revisitDate, hasAssessment: false, today }),
+        deriveInterventionState({ revisitDate, hasFinalAssessment: false, today }),
       ).toEqual({ derivedState: "finished", withinReviewWindow: true });
     });
 
@@ -75,7 +75,7 @@ describe("deriveInterventionState", () => {
       const today = localDate(instant, "Pacific/Niue");
       expect(today).toBe("2026-03-09");
       expect(
-        deriveInterventionState({ revisitDate, hasAssessment: false, today }),
+        deriveInterventionState({ revisitDate, hasFinalAssessment: false, today }),
       ).toEqual({ derivedState: "running", withinReviewWindow: false });
     });
   });
