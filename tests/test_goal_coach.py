@@ -229,6 +229,42 @@ def test_suggestion_treats_nullable_optional_fields_as_omitted():
     }
 
 
+def test_suggestion_treats_nullable_task_fields_as_omitted():
+    proposal = {
+        "type": "exploration_step",
+        "commitment": "Book a lesson",
+        "rationale": "Try piano",
+        "startDate": "2026-10-15",
+        "revisitDate": "2026-10-29",
+        "observationPlan": {"method": "task_evidence"},
+        "tasks": [
+            {
+                "key": "trial",
+                "title": "Book trial lesson",
+                "notes": None,
+                "scheduledDate": None,
+                "dueDate": None,
+                "repeatAfterDays": None,
+                "allowedDeviationDays": None,
+                "reminders": None,
+            }
+        ],
+    }
+    assert normalize_goal_suggest_response({"interventions": [proposal]}) == {
+        "interventions": [
+            {
+                "type": "exploration_step",
+                "commitment": "Book a lesson",
+                "rationale": "Try piano",
+                "startDate": "2026-10-15",
+                "revisitDate": "2026-10-29",
+                "observationPlan": {"method": "task_evidence"},
+                "tasks": [{"key": "trial", "title": "Book trial lesson"}],
+            }
+        ]
+    }
+
+
 def test_review_preserves_observation_references_and_lighter_tracking_proposal():
     raw = {"band": "mostly_achieved", "rationaleMd": "Sparse reports; benefit remains uncertain", "countedItemIds": [], "countedObservationIds": [4], "recommendedDecision": "adjust", "observationPlan": {"method": "reflection"}, "reminderEnabled": False}
     result = normalize_goal_assess_response(raw, [], [4], True)

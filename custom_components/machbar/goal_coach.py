@@ -86,6 +86,28 @@ def _intervention_task_schema() -> vol.Schema:
     )
 
 
+def _normalize_intervention_task(
+    value: Any, path: list[str | int]
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise _invalid(path, "an intervention task object", value=value)
+    required = ("key", "title")
+    if any(not isinstance(value.get(field), str) for field in required):
+        raise _invalid(path, "an intervention task with key and title", value=value)
+    normalized = {field: _strip(value[field]) for field in required}
+    for field in (
+        "notes",
+        "scheduledDate",
+        "dueDate",
+        "repeatAfterDays",
+        "allowedDeviationDays",
+        "reminders",
+    ):
+        if value.get(field) is not None:
+            normalized[field] = value[field]
+    return normalized
+
+
 def _suggest_intervention_schema() -> vol.Schema:
     return vol.Schema(
         {
@@ -160,7 +182,12 @@ def normalize_goal_suggest_response(data: Any) -> dict[str, Any]:
         if entry.get("tasks") is not None:
             if not isinstance(entry["tasks"], list) or any(not isinstance(task, dict) for task in entry["tasks"]):
                 raise _invalid(["interventions", index, "tasks"], "a list of task proposals", value=entry["tasks"])
-            normalized["tasks"] = entry["tasks"]
+            normalized["tasks"] = [
+                _normalize_intervention_task(
+                    task, ["interventions", index, "tasks", task_index]
+                )
+                for task_index, task in enumerate(entry["tasks"])
+            ]
         interventions.append(normalized)
     return {"interventions": interventions}
 

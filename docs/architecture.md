@@ -1920,7 +1920,7 @@ reflection. Typed task/observation references are validated against that snapsho
 accepted interpretation uses canonical `insertAssessment` checkpoint transitions.
 Migration 0030 stores observation citations and independent standing-reminder
 visibility. Daily collection can end prospectively while ordinary tasks continue.
-The HA 0.7.3 adapter preserves these fields and requires installation plus restart.
+The HA 0.7.4 adapter preserves these fields and requires installation plus restart.
 
 Public task/project routes also check private destination and dependency references
 before writes using `assertPrivateWorkItemAccessible`. Canonical hierarchy moves
