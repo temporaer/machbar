@@ -135,11 +135,11 @@ def normalize_goal_suggest_response(data: Any) -> dict[str, Any]:
                 value=entry,
             )
         normalized = {field: _strip(entry[field]) for field in required}
-        if "observationPlan" in entry:
+        if entry.get("observationPlan") is not None:
             if not isinstance(entry["observationPlan"], dict):
                 raise _invalid(["interventions", index, "observationPlan"], "an observation plan object", value=entry["observationPlan"])
             normalized["observationPlan"] = entry["observationPlan"]
-        if "tasks" in entry:
+        if entry.get("tasks") is not None:
             if not isinstance(entry["tasks"], list) or any(not isinstance(task, dict) for task in entry["tasks"]):
                 raise _invalid(["interventions", index, "tasks"], "a list of task proposals", value=entry["tasks"])
             normalized["tasks"] = entry["tasks"]
