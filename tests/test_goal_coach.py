@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from probatio import to_openapi
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.machbar.const import DOMAIN
@@ -17,6 +18,7 @@ from custom_components.machbar.goal_coach import (
 )
 from custom_components.machbar.intake import AdapterError
 from custom_components.machbar.worker import RequestWorker
+from tests.test_intake import _probatio_schema_from_voluptuous
 
 
 async def test_goal_suggest_uses_payload_prompt_and_normalizes(hass):
@@ -82,6 +84,26 @@ async def test_goal_assess_filters_counted_ids_to_candidates(hass):
         "nextMove": "Continue once more.",
     }
     assert generate.await_args.kwargs["structure"] is GOAL_ASSESS_STRUCTURE
+
+
+def test_goal_coach_structures_survive_strict_openai_schema_adjustment():
+    from homeassistant.components.openai_conversation.schema import adjust_schema
+
+    converted_suggest = to_openapi(
+        _probatio_schema_from_voluptuous(GOAL_SUGGEST_STRUCTURE),
+        openapi_version="3.1.0",
+    )
+    converted_assess = to_openapi(
+        _probatio_schema_from_voluptuous(GOAL_ASSESS_STRUCTURE),
+        openapi_version="3.1.0",
+    )
+    adjust_schema(converted_suggest)
+    adjust_schema(converted_assess)
+
+    suggest_intervention = converted_suggest["properties"]["interventions"]["items"]
+    assert "properties" in suggest_intervention["properties"]["observationPlan"]
+    assert "properties" in suggest_intervention["properties"]["tasks"]["items"]
+    assert "properties" in converted_assess["properties"]["observationPlan"]
 
 
 @pytest.mark.parametrize(
