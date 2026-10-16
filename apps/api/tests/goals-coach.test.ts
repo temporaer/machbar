@@ -155,6 +155,58 @@ describe("Goals coach AI passes (Phase 3)", () => {
     expect(afterAccept.interventions[0]).toMatchObject({ source: "coach" });
   });
 
+  it("exposes safe validation details and feeds them into a retry", async () => {
+    const member = await createMember();
+    const actor = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const token = await pair("ok");
+    const goal = await createGoal(actor, { title: "Meet neighbours more often", area: "personal" });
+
+    const requested = await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers: actor });
+    const pending = requested.json() as GoalSuggestionProposal;
+    const leased = await lease(token);
+    const failed = await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${leased.id}/complete`,
+      headers: { authorization: auth(token) },
+      payload: {
+        leaseToken: leased.leaseToken,
+        outcome: "succeeded",
+        result: {
+          interventions: [{
+            observationPlan: { method: "reflection" },
+            type: "frequency_habit",
+            commitment: "Invite a neighbour for coffee.",
+            rationale: "A small social experiment.",
+            startDate: "2025-01-15",
+            revisitDate: "2025-01-01",
+          }],
+        },
+      },
+    });
+    expect(failed.statusCode, failed.body).toBe(204);
+
+    const rejected = (
+      await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}/suggest/${pending.requestId}`, headers: actor })
+    ).json() as GoalSuggestionProposal;
+    expect(rejected.status).toBe("failed");
+    expect(rejected.errorDetails?.issues).toEqual([{
+      path: ["interventions", 0, "revisitDate"],
+      code: "date_order",
+      message: "revisitDate must be on or after startDate.",
+    }]);
+
+    const retry = await ctx.app.inject({
+      method: "POST",
+      url: `/api/goals/${goal.id}/suggest`,
+      headers: actor,
+      payload: { retryRequestId: pending.requestId },
+    });
+    expect(retry.statusCode, retry.body).toBe(202);
+    const retryLease = await lease(token);
+    expect(retryLease.payload.instructions).toContain("VALIDATION FEEDBACK FROM THE PREVIOUS ATTEMPT");
+    expect(retryLease.payload.instructions).toContain("date_order");
+  });
+
   it("assess: digest cites in-window completions and accept records one assessment with filtered counted ids", async () => {
     const member = await createMember();
     const actor = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };

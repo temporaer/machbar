@@ -1152,7 +1152,7 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify(expectedRevision === undefined ? {} : { expectedRevision }),
     }),
-  requestGoalSuggestion: (id: number, input?: { locale?: "de" | "en"; clarificationRequestId?: string; clarificationAnswer?: string }) =>
+  requestGoalSuggestion: (id: number, input?: { locale?: "de" | "en"; clarificationRequestId?: string; clarificationAnswer?: string; retryRequestId?: string }) =>
     request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getGoalSuggestion: (id: number, requestId: string) =>
     request<GoalSuggestionProposal>(`/goals/${id}/suggest/${requestId}`),
