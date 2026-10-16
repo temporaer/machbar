@@ -32,6 +32,7 @@ async def test_goal_suggest_uses_payload_prompt_and_normalizes(hass):
                         "rationale": "  Small and observable. ",
                         "startDate": "2026-10-15",
                         "revisitDate": "2026-10-29",
+                        "observationPlan": {"method": "task_evidence"},
                     }
                 ]
             }
