@@ -3,8 +3,8 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
-import { openDb, type DbHandle } from "../src/db/client.js";
-import { runMigrations } from "../src/db/migrate.js";
+import type { DbHandle } from "../src/db/client.js";
+import { createTestDatabase } from "./database.js";
 import { seedDatabase } from "../src/db/seed.js";
 import type { Env, McpOAuthConfig, OidcConfig } from "../src/env.js";
 import type { OidcProvider } from "../src/auth/oidcClient.js";
@@ -14,8 +14,6 @@ import type { PushTransport } from "../src/notifications/delivery.js";
 import type { PaperlessConfig } from "../src/env.js";
 import type { PaperlessClient } from "../src/paperless/client.js";
 import type { McpOAuthProvider } from "../src/integrations/mcpOAuth.js";
-import * as schema from "../src/db/schema.js";
-import type { Db } from "../src/db/client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,7 +23,7 @@ export interface TestContext {
   dataDir: string;
 }
 
-/** Builds a fresh in-memory database + Fastify app for a single test file. */
+/** Builds a fresh in-memory database + Fastify app for a single fixture. */
 export function createTestContext(options?: {
   seed?: boolean;
   oidc?: OidcConfig;
@@ -40,8 +38,7 @@ export function createTestContext(options?: {
   paperlessClient?: PaperlessClient;
   dataDir?: string;
 }): TestContext {
-  const handle = openDb(":memory:");
-  runMigrations(handle.db);
+  const handle = createTestDatabase();
   if (options?.seed) {
     seedDatabase(handle.db);
   }
@@ -79,61 +76,4 @@ export async function closeTestContext(ctx: TestContext) {
   if (ctx.dataDir.includes(".intake-data-")) fs.rmSync(ctx.dataDir, { recursive: true, force: true });
 }
 
-export function insertTestProject(
-  db: Db,
-  values: Partial<typeof schema.workItems.$inferInsert> & {
-    title: string;
-    status?: "backlog" | "active" | "completed" | "archived";
-  },
-) {
-  const { status = "backlog", ...rest } = values;
-  return db
-    .insert(schema.workItems)
-    .values({
-      ...rest,
-      role: "story",
-      status:
-        status === "completed"
-          ? "done"
-          : status === "archived"
-            ? "backlog"
-            : status,
-      archivedAt: status === "archived" ? new Date().toISOString() : null,
-    })
-    .returning()
-    .get();
-}
-
-export function insertTestTask(
-  db: Db,
-  values: Omit<Partial<typeof schema.workItems.$inferInsert>, "status"> & {
-    title: string;
-    status?: "captured" | "actionable" | "someday" | "done" | "cancelled";
-    projectId?: number | null;
-    parentTaskId?: number | null;
-  },
-) {
-  const {
-    status = "actionable",
-    projectId = null,
-    parentTaskId = null,
-    ...rest
-  } = values;
-  const row = db
-    .insert(schema.workItems)
-    .values({
-      ...rest,
-      role: "task",
-      parentId: parentTaskId ?? projectId,
-      status:
-        status === "actionable"
-          ? "active"
-          : status === "someday"
-            ? "backlog"
-            : status,
-      needsClarification: status === "captured",
-    })
-    .returning()
-    .get();
-  return { ...row, status, projectId, parentTaskId };
-}
+export { insertTestProject, insertTestTask } from "./database.js";

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { openDb, type DbHandle } from "../src/db/client.js";
-import { runMigrations } from "../src/db/migrate.js";
+import type { DbHandle } from "../src/db/client.js";
+import { createTestDatabase } from "./database.js";
 import * as schema from "../src/db/schema.js";
 import { createMember } from "../src/domain/members.js";
 import { createProject as createProjectMutation, updateProject } from "../src/domain/storyCrud.js";
@@ -1362,8 +1362,7 @@ describe("project workflow (service layer)", () => {
   let handle: DbHandle;
 
   beforeEach(() => {
-    handle = openDb(":memory:");
-    runMigrations(handle.db);
+    handle = createTestDatabase();
   });
 
   afterEach(() => {

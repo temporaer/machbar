@@ -20,6 +20,30 @@ Two halves make it work: a local/CI verifier that the project owns, and an
   skipped under `CODEX_SANDBOX_NETWORK_DISABLED=1` and are covered by CI
   instead. Do not try to make them pass inside the offline sandbox.
 
+## Test execution
+
+API and web suites use at most two Vitest workers. To compare worker counts on
+another machine, run `VITEST_MAX_WORKERS=1 npm test` and
+`VITEST_MAX_WORKERS=2 npm test` sequentially with the same code and dependencies.
+Keep Vitest's per-file isolation enabled.
+
+Web tests use jsdom by default. Add pure tests to `nodeTests` in
+`apps/web/vitest.config.ts` to run them in Node without the DOM setup file.
+Browser storage, React rendering, and interaction tests stay in the DOM project.
+Both projects are included in the normal test and watch commands.
+
+API global setup runs the real migrations once per Vitest invocation and writes
+an unseeded database image in a temporary directory. `createTestDatabase()`
+restores a separate in-memory connection for each fixture and enables foreign
+keys. HTTP fixtures build the full Fastify app on that database; domain tests
+can import the database helper directly. Seed data is applied only when requested.
+Migration tests continue constructing historical databases and applying SQL
+directly. The template is rebuilt for every invocation and watch rerun, and removed at
+teardown.
+
+Verification builds shared once before typechecking and testing, then runs
+`build:apps`. The standalone `npm run build` still builds shared first.
+
 ## Outer loop: review and fix (off-the-shelf)
 
 The review -> fix loop is **not** a repository-maintained workflow. Hand-rolling

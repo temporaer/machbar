@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDb, type DbHandle } from "../src/db/client.js";
-import { runMigrations } from "../src/db/migrate.js";
+import type { DbHandle } from "../src/db/client.js";
+import { createTestDatabase } from "./database.js";
 import {
   addCriterion,
   removeCriterion,
@@ -306,8 +306,7 @@ describe("project acceptance criteria (service layer)", () => {
   let handle: DbHandle;
 
   beforeEach(() => {
-    handle = openDb(":memory:");
-    runMigrations(handle.db);
+    handle = createTestDatabase();
   });
 
   afterEach(() => {
