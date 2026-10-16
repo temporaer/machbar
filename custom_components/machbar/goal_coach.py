@@ -17,6 +17,57 @@ def _field(name: str, schema: Any) -> Any:
     return vol.Required(name, description=f"Machbar goal coach field {name}")
 
 
+def _observation_plan_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            _field("method", str): str,
+            vol.Optional("question"): str,
+            vol.Optional("reference"): str,
+            vol.Optional("reportDayOffset"): int,
+            vol.Optional("availableAfter"): str,
+            vol.Optional("opportunityBased"): bool,
+            vol.Optional("target"): vol.Schema(
+                {
+                    vol.Optional("successfulDays"): int,
+                    vol.Optional("window"): str,
+                    vol.Optional("anchorDate"): str,
+                },
+                extra=vol.PREVENT_EXTRA,
+            ),
+        },
+        extra=vol.PREVENT_EXTRA,
+    )
+
+
+def _task_reminder_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Optional("kind"): str,
+            vol.Optional("at"): str,
+            vol.Optional("daysBefore"): int,
+            vol.Optional("time"): str,
+            vol.Optional("timezone"): str,
+        },
+        extra=vol.PREVENT_EXTRA,
+    )
+
+
+def _intervention_task_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            _field("key", str): str,
+            _field("title", str): str,
+            vol.Optional("notes"): str,
+            vol.Optional("scheduledDate"): str,
+            vol.Optional("dueDate"): str,
+            vol.Optional("repeatAfterDays"): int,
+            vol.Optional("allowedDeviationDays"): int,
+            vol.Optional("reminders"): [_task_reminder_schema()],
+        },
+        extra=vol.PREVENT_EXTRA,
+    )
+
+
 def _suggest_intervention_schema() -> vol.Schema:
     return vol.Schema(
         {
@@ -25,8 +76,8 @@ def _suggest_intervention_schema() -> vol.Schema:
             _field("rationale", str): str,
             _field("startDate", str): str,
             _field("revisitDate", str): str,
-            vol.Optional("observationPlan"): dict,
-            vol.Optional("tasks"): [dict],
+            vol.Optional("observationPlan"): _observation_plan_schema(),
+            vol.Optional("tasks"): [_intervention_task_schema()],
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -50,7 +101,7 @@ GOAL_ASSESS_STRUCTURE = vol.Schema(
         vol.Optional("nextMove", default=None): _NULL,
         vol.Optional("countedObservationIds"): [int],
         vol.Optional("recommendedDecision"): str,
-        vol.Optional("observationPlan"): dict,
+        vol.Optional("observationPlan"): _observation_plan_schema(),
         vol.Optional("commitment"): str,
         vol.Optional("nextRevisitDate"): str,
         vol.Optional("reminderEnabled"): bool,
