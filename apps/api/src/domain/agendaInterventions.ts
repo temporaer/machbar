@@ -158,7 +158,7 @@ export function buildAgendaInterventionFocus(
               hits: 0,
               misses: 0,
             };
-      if (intervention.reminderEnabled === false) continue;
+      if (intervention.status !== "active" || intervention.reminderEnabled === false) continue;
       if (intervention.derivedState === "running") {
         running.push(
           toAgendaIntervention(goal, intervention, options.today, backing),
@@ -173,7 +173,7 @@ export function buildAgendaInterventionFocus(
       }
     }
   }
-  const reports = goals.flatMap((goal) => goal.interventions.flatMap((intervention) =>
+  const reports = goals.flatMap((goal) => goal.interventions.filter((intervention) => intervention.status === "active").flatMap((intervention) =>
     recentInterventionReports(db, intervention.id, { ownerMemberId: options.memberId! }, options.now).map((report) => ({ ...report, interventionId: intervention.id, goalId: goal.id, goalTitle: goal.title }))));
   return { running, review, reports };
 }

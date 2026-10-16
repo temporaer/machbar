@@ -5,6 +5,10 @@ import type { AcceptGoalSuggestionInput } from "../lib/api";
 import { InterventionEvidenceFacts } from "../components/InterventionEvidencePanel";
 import { InterventionTasksSheet } from "../components/InterventionTasksSheet";
 import { InterventionObservationPanel } from "../components/InterventionObservationPanel";
+import { useLocale } from "../lib/locale";
+import { formatExactLocalDate } from "../lib/relativeDate";
+import { formatDateTime } from "../lib/format";
+import { formatReminderLabel } from "../lib/reminderLabels";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -88,6 +92,7 @@ function GoalCoachSuggestions({
 }) {
   const strings = useStrings();
   const { timezone } = useHouseholdTimezone();
+  const { locale } = useLocale();
   const [proposal, setProposal] = useState<GoalSuggestionProposal | null>(null);
   const [pendingTaskEditors, setPendingTaskEditors] = useState<Record<number, boolean>>({});
   const [answer, setAnswer] = useState("");
@@ -171,7 +176,7 @@ function GoalCoachSuggestions({
               </p>
               <ObservationPlanSummary plan={edits[index]?.observationPlan ?? intervention.observationPlan ?? { method: "reflection" }} />
               <p className="text-muted">{timezone}</p>
-              {(edits[index]?.tasks ?? intervention.tasks ?? []).map((task) => <div key={task.key}><strong>{task.title}</strong><p>{task.notes}</p><p>{task.scheduledDate} {task.dueDate} {task.repeatAfterDays ? strings.repeatAfterDays + ": " + task.repeatAfterDays : ""}</p>{task.reminders?.map((r, n) => <p key={n}>{r.kind === "absolute" ? r.at : `${r.daysBefore} · ${r.time} · ${r.timezone}`}</p>)}</div>)}
+              {(edits[index]?.tasks ?? intervention.tasks ?? []).map((task) => <div key={task.key}><strong>{task.title}</strong><p>{task.notes}</p>{task.scheduledDate ? <p>{strings.activityText.fieldLabels.scheduledDate}: {formatExactLocalDate(task.scheduledDate, locale)}</p> : null}{task.dueDate ? <p>{strings.activityText.fieldLabels.dueDate}: {formatExactLocalDate(task.dueDate, locale)}</p> : null}{task.repeatAfterDays ? <p>{strings.repeatAfterDays}: {task.repeatAfterDays}</p> : null}{task.reminders?.map((r, n) => <p key={n}>{strings.reminders}: {r.kind === "absolute" ? formatDateTime(r.at, locale, timezone) : formatReminderLabel(r, task.dueDate ?? null, strings, locale)}</p>)}</div>)}
               <details><summary>{strings.editIntervention}</summary>
                 <label className="field">{strings.interventionCommitmentLabel}<input value={edits[index]?.commitment ?? intervention.commitment} onChange={(e) => patch(index, { commitment: e.target.value })} /></label>
                 <label className="field">{strings.interventionRationaleLabel}<textarea value={edits[index]?.rationale ?? intervention.rationale} onChange={(e) => patch(index, { rationale: e.target.value })} /></label>

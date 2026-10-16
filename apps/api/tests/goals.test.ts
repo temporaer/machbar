@@ -8,6 +8,7 @@ import type {
   InterventionAssessment,
   InterventionView,
 } from "@machbar/shared";
+import { householdToday } from "../src/domain/householdCalendar.js";
 import { createMachbarMcpServer } from "../src/mcp/tools.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -142,7 +143,7 @@ describe("Goals & interventions (Phase 1)", () => {
         rationaleMd: "Ran twice most weeks.",
         countedItemIds: [11, 12],
         digestWindowStart: "2000-01-01",
-        digestWindowEnd: "2000-01-15",
+        digestWindowEnd: householdToday(ctx.handle.db),
       },
     });
     expect(assessRes.statusCode).toBe(201);

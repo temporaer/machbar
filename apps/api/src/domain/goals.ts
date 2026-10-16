@@ -1,6 +1,6 @@
 import { buildInterventionEvidence } from "./interventionEvidence.js";
 import { addCalendarDays } from "./calendarDate.js";
-import { householdToday } from "./householdCalendar.js";
+import { householdToday, householdTimezone, localDate } from "./householdCalendar.js";
 /**
  * Goals & interventions domain layer (feature spec: docs/goals-and-interventions.md
  * §4, §5, §9). Mirrors the typed parse-schema → domain-mutation → transaction
@@ -319,9 +319,14 @@ function buildInterventionView(
   assessments: AssessmentRow[],
   today: string,
 ): InterventionView {
+  const stopDate = intervention.concludedAt ? localDate(new Date(intervention.concludedAt), householdTimezone(db)) : null;
+  const reviewStart = intervention.reviewWindowStart ?? intervention.startDate;
+  const hasFinalAssessment = stopDate !== null && assessments.some((assessment) =>
+    (assessment.decision === null || assessment.decision === "stop") &&
+    assessment.digestWindowStart <= reviewStart && assessment.digestWindowEnd >= stopDate);
   const state = deriveInterventionState({
     revisitDate: intervention.revisitDate,
-    hasAssessment: assessments.length > 0,
+    hasFinalAssessment,
     today,
     concluded: intervention.status === "concluded",
   });
@@ -651,6 +656,8 @@ export function concludeIntervention(
       .set({
         status: "concluded",
         concludedAt: nowIso(),
+        // Ending on the same day as a checkpoint still leaves a valid final-review period.
+        reviewWindowStart: current.reviewWindowStart && current.reviewWindowStart > today ? today : current.reviewWindowStart,
         backingTaskId: null,
         revision: current.revision + 1,
         updatedAt: nowIso(),

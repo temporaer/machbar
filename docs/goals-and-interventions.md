@@ -168,7 +168,15 @@ date's historical plan. An already ended experiment accepts a final manual or
 coach review through its stopped date without repeating lifecycle changes or
 task cleanup.
 
-An assessment alone no longer permanently marks active behavior reviewed. Stored
+An assessment alone no longer permanently marks active behavior reviewed.
+After stopping, only a final assessment covering the current review period through
+the household-local stop date marks the intervention reviewed; earlier Continue
+or Adjust checkpoints leave final review available in Goals. Ending on the same
+day as a checkpoint retains a valid final day to review. Recent pending daily
+reports remain available in Goals for the bounded seven-day window, using each
+historical plan's timezone and never offering reference dates after conclusion.
+This remains true if a final review precedes report availability. Stopped
+interventions do not reappear as Today standing reminders or reporting prompts. Stored
 lifecycle remains active/concluded; running/finished/reviewed presentation is
 derived. Migration 0029 adds checkpoint and accepted-evidence fields while
 retaining old assessments.

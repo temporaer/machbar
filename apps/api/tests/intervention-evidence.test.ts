@@ -77,6 +77,7 @@ it("records an idempotent final review after early conclusion without changing t
   vi.setSystemTime(new Date("2026-10-08T10:00:00Z"));
   const backed = backIntervention(db, i.id, { tasks: [{ key: "routine", title: "Keep routine" }] }, "2026-10-08");
   const ended = concludeIntervention(db, i.id, backed.revision, "2026-10-08", { backingCleanup: "keep" });
+  expect(ended.derivedState).toBe("finished");
   const evidence = buildInterventionEvidence(db, i.id, access);
   expect(evidence.window.endDate).toBe("2026-10-08");
   const input = { band: "attempted_partial" as const, rationaleMd: "Final reflection", digestWindowStart: evidence.window.startDate, digestWindowEnd: evidence.window.endDate, decision: "stop" as const, reviewKey: "final", expectedRevision: ended.revision, backingCleanup: "stop" as const };
@@ -84,4 +85,33 @@ it("records an idempotent final review after early conclusion without changing t
   expect(createManualAssessment(db, i.id, input).id).toBe(assessment.id);
   expect(getGoal(db, goal.id, "2026-10-08").interventions[0]).toMatchObject({ revision: ended.revision, concludedAt: ended.concludedAt, derivedState: "reviewed" });
   expect(db.select().from(schema.workItems).where(eq(schema.workItems.id, backed.backingTaskId!)).get()!.status).toBe("active");
+});
+
+it("offers a final review after an earlier continued checkpoint and only marks the final period reviewed", () => {
+  const { db, intervention: i, goal, access } = setup();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-12T10:00:00Z"));
+  createManualAssessment(db, i.id, { band: "attempted_partial", rationaleMd: "Continue observing", digestWindowStart: i.startDate, digestWindowEnd: "2026-10-08", decision: "continue", reviewKey: "earlier-checkpoint", expectedRevision: 2 });
+  const continued = getGoal(db, goal.id, "2026-10-12").interventions[0]!;
+  expect(continued.reviewWindowStart).toBe("2026-10-09");
+  vi.setSystemTime(new Date("2026-10-16T10:00:00Z"));
+  const ended = concludeIntervention(db, i.id, continued.revision, "2026-10-16");
+  expect(ended).toMatchObject({ status: "concluded", derivedState: "finished" });
+  const evidence = buildInterventionEvidence(db, i.id, access);
+  expect(evidence.window).toEqual({ startDate: "2026-10-09", endDate: "2026-10-16" });
+  createManualAssessment(db, i.id, { band: "attempted_partial", rationaleMd: "Final period reflection", digestWindowStart: evidence.window.startDate, digestWindowEnd: evidence.window.endDate, decision: "stop", reviewKey: "final-period", expectedRevision: ended.revision });
+  expect(getGoal(db, goal.id, "2026-10-16").interventions[0]).toMatchObject({ derivedState: "reviewed", revision: ended.revision });
+});
+
+it("keeps a valid final period when ending on the same day as a completed checkpoint", () => {
+  const { db, intervention: i, goal, access } = setup();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-16T10:00:00Z"));
+  db.update(schema.interventionObservationPlans).set({ plan: { method: "reflection" } }).run();
+  createManualAssessment(db, i.id, { band: "no_evidence", rationaleMd: "Continue reflecting", digestWindowStart: i.startDate, digestWindowEnd: "2026-10-16", decision: "continue", reviewKey: "same-day-checkpoint", expectedRevision: 2 });
+  const continued = getGoal(db, goal.id, "2026-10-16").interventions[0]!;
+  expect(continued.reviewWindowStart).toBe("2026-10-17");
+  const ended = concludeIntervention(db, i.id, continued.revision, "2026-10-16");
+  expect(ended).toMatchObject({ derivedState: "finished", reviewWindowStart: "2026-10-16" });
+  expect(buildInterventionEvidence(db, i.id, access).window).toEqual({ startDate: "2026-10-16", endDate: "2026-10-16" });
 });

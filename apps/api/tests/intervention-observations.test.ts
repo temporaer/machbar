@@ -1,13 +1,14 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { createTestContext, closeTestContext, type TestContext } from "./helpers.js";
 import * as schema from "../src/db/schema.js";
-import { createGoal, startIntervention } from "../src/domain/goals.js";
+import { createGoal, startIntervention, concludeIntervention, createManualAssessment, getGoal } from "../src/domain/goals.js";
 import { setObservationPlan, recordObservation, observationHistory, observationIsAnswerable, recentInterventionReports } from "../src/domain/interventionObservations.js";
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type { ObservationPlanVersion } from "@machbar/shared";
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
-afterEach(async () => { await closeTestContext(ctx); });
+afterEach(async () => { vi.useRealTimers(); await closeTestContext(ctx); });
 const daily = { method: "daily_report", question: "In bed after brushing?", reference: "night", reportDayOffset: 1, availableAfter: "07:00", opportunityBased: false, target: { successfulDays: 4, window: "calendar_week" } } as const;
 function setup() {
   const member = ctx.handle.db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
@@ -90,4 +91,29 @@ it("keeps the final nightly report available after switching to reflection", () 
   expect(recentInterventionReports(db, i.id, access, now)).toMatchObject([{ referenceDate: "2026-10-24", plan: { id: first.id } }]);
   recordObservation(db, i.id, { referenceDate: "2026-10-24", answer: "not_met", expectedRevision: 0 }, access, now);
   expect(recentInterventionReports(db, i.id, access, now)).toEqual([]);
+});
+
+it.each([1, 0] as const)("keeps final pending reports in stopped history after final review, excluding Today and post-stop dates (offset %s)", async (reportDayOffset) => {
+  const { buildAgendaInterventionFocus } = await import("../src/domain/agendaInterventions.js");
+  const { intervention: i, access } = setup(); const db = ctx.handle.db;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
+  setObservationPlan(db, i.id, { plan: { ...daily, reference: reportDayOffset === 1 ? "night" : "day", reportDayOffset, availableAfter: reportDayOffset === 1 ? "07:00" : "22:00" }, expectedRevision: 1 }, access);
+  const stopped = concludeIntervention(db, i.id, 2, "2026-10-24");
+  expect(recentInterventionReports(db, i.id, access)).toEqual([]);
+  createManualAssessment(db, i.id, { band: "no_evidence", rationaleMd: "Stopped before final report becomes available", digestWindowStart: "2026-10-24", digestWindowEnd: "2026-10-24", decision: "stop", reviewKey: "final-before-report", expectedRevision: stopped.revision });
+  expect(getGoal(db, i.goalId, "2026-10-24").interventions[0]!.derivedState).toBe("reviewed");
+  vi.setSystemTime(new Date(reportDayOffset === 1 ? "2026-10-25T06:00:00Z" : "2026-10-24T20:00:00Z"));
+  const history = await ctx.app.inject({ method: "GET", url: `/api/interventions/${i.id}/observations`, headers: { [ACTIVITY_ACTOR_HEADER]: String(access.ownerMemberId) } });
+  expect(history.statusCode, history.body).toBe(200);
+  expect(history.json().recentReports.map((r: { referenceDate: string }) => r.referenceDate)).toEqual(["2026-10-24"]);
+  const focus = buildAgendaInterventionFocus(db, { memberId: access.ownerMemberId, scope: "mine", today: "2026-10-25" });
+  expect(focus.running).toEqual([]); expect(focus.review).toEqual([]); expect(focus.reports).toEqual([]);
+  vi.setSystemTime(new Date("2026-10-26T10:00:00Z"));
+  expect(recentInterventionReports(db, i.id, access).map((r) => r.referenceDate)).toEqual(["2026-10-24"]);
+  expect(recentInterventionReports(db, i.id, access, new Date("2026-11-01T10:00:00Z"))).toEqual([]);
+  expect(() => recordObservation(db, i.id, { referenceDate: "2026-10-25", answer: "met", expectedRevision: 0 }, access)).toThrow();
+  const observation = recordObservation(db, i.id, { referenceDate: "2026-10-24", answer: "unknown", expectedRevision: 0 }, access);
+  expect(observation.referenceDate).toBe("2026-10-24");
+  expect(recentInterventionReports(db, i.id, access)).toEqual([]);
 });

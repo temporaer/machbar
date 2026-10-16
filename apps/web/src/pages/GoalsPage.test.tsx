@@ -306,7 +306,8 @@ describe("GoalsPage", () => {
     const finished = makeIntervention({
       revisitDate: "2099-01-15",
       derivedState: "finished",
-      assessments: [],
+      reviewWindowStart: "2026-01-09",
+      assessments: [makeAssessment({ decision: "continue", digestWindowEnd: "2026-01-08" })],
     });
     mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [finished] })]);
     renderWithProviders(<GoalsPage />);
@@ -332,6 +333,7 @@ describe("GoalsPage", () => {
           band: "mostly_achieved",
           rationaleMd: "Vier von sechs Läufen haben geklappt.",
           decision: "stop",
+          digestWindowStart: "2026-01-09",
           digestWindowEnd: "2026-01-15",
         }),
       ),
@@ -445,7 +447,9 @@ describe("GoalsPage", () => {
     const user = userEvent.setup(); renderWithProviders(<GoalsPage />);
     await user.click(await screen.findByRole("button", { name: "Vorschläge vom Coach" }));
     expect(await screen.findByText("Klavier am Dienstag", { selector: "strong" })).toBeInTheDocument();
-    expect(screen.getByText("2026-10-20T19:00:00+02:00")).toBeInTheDocument();
+    expect(screen.getByText("Erinnerungen: 20.10.2026, 19:00")).toBeInTheDocument();
+    expect(screen.getByText("Planung: 20.10.2026")).toBeInTheDocument();
+    expect(screen.queryByText("2026-10-20T19:00:00+02:00")).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Beobachtungsmethode" })).toBeNull();
     expect(mockedApi.acceptGoalSuggestion).not.toHaveBeenCalled();
     await user.click(screen.getByText("Experiment anpassen", { selector: "summary" }));
