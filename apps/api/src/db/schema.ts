@@ -1164,6 +1164,7 @@ export const interventionAssessments = sqliteTable(
   },
   (t) => [
     index("intervention_assessments_intervention_idx").on(t.interventionId),
+    uniqueIndex("intervention_review_key_idx").on(t.interventionId, t.reviewKey),
   ],
 );
 

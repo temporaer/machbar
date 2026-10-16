@@ -301,8 +301,9 @@ describe("GoalsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("preserves the manual assessment path without requesting the coach", async () => {
+  it("reviews an experiment ended before its future checkpoint without repeating lifecycle changes", async () => {
     const finished = makeIntervention({
+      revisitDate: "2099-01-15",
       derivedState: "finished",
       assessments: [],
     });
@@ -326,6 +327,8 @@ describe("GoalsPage", () => {
         expect.objectContaining({
           band: "mostly_achieved",
           rationaleMd: "Vier von sechs Läufen haben geklappt.",
+          decision: "stop",
+          digestWindowEnd: "2026-01-15",
         }),
       ),
     );
@@ -395,7 +398,7 @@ describe("GoalsPage", () => {
       expect.objectContaining({
         band: "achieved",
         rationaleMd: "Die dokumentierten Läufe erfüllen die vereinbarte Rate.",
-        countedItemIds: [7, 8], countedObservationIds: [], decision: "continue", expectedRevision: 2,
+        countedItemIds: [7, 8], countedObservationIds: [], decision: "stop", expectedRevision: 2,
       }),
     );
     expect(mockedApi.assessIntervention).not.toHaveBeenCalled();

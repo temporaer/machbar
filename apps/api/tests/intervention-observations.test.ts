@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { createTestContext, closeTestContext, type TestContext } from "./helpers.js";
 import * as schema from "../src/db/schema.js";
 import { createGoal, startIntervention } from "../src/domain/goals.js";
-import { setObservationPlan, recordObservation, observationHistory, observationIsAnswerable } from "../src/domain/interventionObservations.js";
+import { setObservationPlan, recordObservation, observationHistory, observationIsAnswerable, recentInterventionReports } from "../src/domain/interventionObservations.js";
 import type { ObservationPlanVersion } from "@machbar/shared";
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
@@ -79,4 +79,15 @@ it("keeps availability monotonic during a repeated hour and shifts nonexistent t
   expect(observationIsAnswerable(version, "2026-10-24", new Date("2026-10-25T01:45:00Z"))).toBe(true);
   expect(observationIsAnswerable(version, "2026-03-28", new Date("2026-03-29T01:29:00Z"))).toBe(false);
   expect(observationIsAnswerable(version, "2026-03-28", new Date("2026-03-29T01:30:00Z"))).toBe(true);
+});
+
+
+it("keeps the final nightly report available after switching to reflection", () => {
+  const { intervention: i, access } = setup(); const db = ctx.handle.db;
+  const first = setObservationPlan(db, i.id, { plan: daily, expectedRevision: 1 }, access, new Date("2026-10-24T10:00:00Z"));
+  setObservationPlan(db, i.id, { plan: { method: "reflection" }, expectedRevision: 2 }, access, new Date("2026-10-24T11:00:00Z"));
+  const now = new Date("2026-10-25T06:00:00Z");
+  expect(recentInterventionReports(db, i.id, access, now)).toMatchObject([{ referenceDate: "2026-10-24", plan: { id: first.id } }]);
+  recordObservation(db, i.id, { referenceDate: "2026-10-24", answer: "not_met", expectedRevision: 0 }, access, now);
+  expect(recentInterventionReports(db, i.id, access, now)).toEqual([]);
 });

@@ -4,11 +4,14 @@ import type { ObservationPlan, InterventionReviewDecision, InterventionBenefit }
 import { useState } from "react";
 import {
   assessmentBands,
+  calendarDateForInstant,
   type AssessmentProposal,
   type AssessmentBand,
   type InterventionView,
 } from "@machbar/shared";
 import { hasApiErrorCode, localizedErrorMessage } from "../lib/errorMessage";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
+import { toIsoCalendarDate } from "../lib/naturalDate";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
@@ -54,11 +57,16 @@ export function InterventionAssessSheet({
   onRequestCoach: (input?: { benefit?: InterventionBenefit; obstacle?: string }) => Promise<AssessmentProposal>;
 }) {
   const strings = useStrings();
+  const { timezone } = useHouseholdTimezone();
+  const concluded = intervention.status === "concluded";
+  const today = calendarDateForInstant(new Date().toISOString(), timezone) ?? toIsoCalendarDate(new Date());
+  const stoppedDate = intervention.concludedAt ? calendarDateForInstant(intervention.concludedAt, timezone) : null;
+  const defaultEnd = (concluded ? stoppedDate : intervention.revisitDate) ?? today;
   const [coachEvidence, setCoachEvidence] = useState<AssessmentProposal["evidence"]>();
   const [countedObservationIds, setCountedObservationIds] = useState<number[]>([]);
   const [reminderEnabled, setReminderEnabled] = useState(intervention.reminderEnabled ?? true);
   const [reviewKey] = useState(() => crypto.randomUUID());
-  const [decision, setDecision] = useState<InterventionReviewDecision>("continue");
+  const [decision, setDecision] = useState<InterventionReviewDecision>(concluded ? "stop" : "continue");
   const [benefit, setBenefit] = useState<InterventionBenefit>("uncertain");
   const [obstacle, setObstacle] = useState("");
   const [nextRevisitDate, setNextRevisitDate] = useState("");
@@ -68,7 +76,7 @@ export function InterventionAssessSheet({
   const [band, setBand] = useState<AssessmentBand>("mostly_achieved");
   const [rationale, setRationale] = useState("");
   const [windowStart, setWindowStart] = useState(intervention.reviewWindowStart ?? intervention.startDate);
-  const [windowEnd, setWindowEnd] = useState(intervention.revisitDate);
+  const [windowEnd, setWindowEnd] = useState(defaultEnd < today ? defaultEnd : today);
   const [countedItems, setCountedItems] = useState("");
   const [startValid, setStartValid] = useState(true);
   const [endValid, setEndValid] = useState(true);
@@ -98,7 +106,7 @@ export function InterventionAssessSheet({
       }
       setCoachEvidence(proposal.evidence);
       setCountedObservationIds(proposal.countedObservationIds ?? []);
-      if (proposal.recommendedDecision) setDecision(proposal.recommendedDecision);
+      if (proposal.recommendedDecision && !concluded) setDecision(proposal.recommendedDecision);
       if (proposal.observationPlan) setObservationPlan(proposal.observationPlan);
       if (proposal.commitment) setCommitment(proposal.commitment);
       if (proposal.nextRevisitDate) setNextRevisitDate(proposal.nextRevisitDate);
@@ -167,9 +175,9 @@ export function InterventionAssessSheet({
         {coachEvidence ? <InterventionEvidenceFacts evidence={coachEvidence} /> : <InterventionEvidencePanel interventionId={intervention.id} startDate={windowStart} endDate={windowEnd} />}
         <label className="field">{strings.interventionBenefitQuestion}<select value={benefit} onChange={(e) => setBenefit(e.target.value as InterventionBenefit)}>{(["helped", "not_helped", "uncertain"] as const).map((v) => <option key={v} value={v}>{strings.interventionBenefitLabels[v]}</option>)}</select></label>
         <label className="field">{strings.interventionObstacleQuestion}<textarea value={obstacle} maxLength={2000} onChange={(e) => setObstacle(e.target.value)} /></label>
-        <label className="field">{strings.interventionNextMove}<select value={decision} onChange={(e) => setDecision(e.target.value as InterventionReviewDecision)}>{(["continue", "adjust", "stop"] as const).map((v) => <option key={v} value={v}>{strings.interventionDecisionLabels[v]}</option>)}</select></label>
+        {!concluded ? <label className="field">{strings.interventionNextMove}<select value={decision} onChange={(e) => setDecision(e.target.value as InterventionReviewDecision)}>{(["continue", "adjust", "stop"] as const).map((v) => <option key={v} value={v}>{strings.interventionDecisionLabels[v]}</option>)}</select></label> : null}
         {decision === "adjust" ? <><label><input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} /> {strings.interventionStandingReminder}</label><label className="field">{strings.interventionCommitmentLabel}<input value={commitment} onChange={(e) => setCommitment(e.target.value)} /></label><ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} /></> : null}
-        {decision !== "stop" ? <label className="field">{strings.interventionNextCheckpoint}<input type="date" value={nextRevisitDate} onChange={(e) => setNextRevisitDate(e.target.value)} /></label> : <label className="field">{strings.interventionRemainingTasks}<select value={backingCleanup} onChange={(e) => setBackingCleanup(e.target.value as "keep" | "stop")}><option value="keep">{strings.interventionKeepTasks}</option><option value="stop">{strings.interventionStopTasks}</option></select></label>}
+        {concluded ? null : decision !== "stop" ? <label className="field">{strings.interventionNextCheckpoint}<input type="date" value={nextRevisitDate} onChange={(e) => setNextRevisitDate(e.target.value)} /></label> : <label className="field">{strings.interventionRemainingTasks}<select value={backingCleanup} onChange={(e) => setBackingCleanup(e.target.value as "keep" | "stop")}><option value="keep">{strings.interventionKeepTasks}</option><option value="stop">{strings.interventionStopTasks}</option></select></label>}
         <div className="stack">
           <button
             type="button"

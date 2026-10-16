@@ -162,6 +162,12 @@ and a stable review key; repeated acceptance returns the recorded transition.
 - Stop explicitly keeps or stops remaining generated work through existing
   lifecycle commands.
 
+Review windows carry not-yet-answerable daily reference dates forward, even when
+the plan changes prospectively to reflection. Recent pending reports use each
+date's historical plan. An already ended experiment accepts a final manual or
+coach review through its stopped date without repeating lifecycle changes or
+task cleanup.
+
 An assessment alone no longer permanently marks active behavior reviewed. Stored
 lifecycle remains active/concluded; running/finished/reviewed presentation is
 derived. Migration 0029 adds checkpoint and accepted-evidence fields while

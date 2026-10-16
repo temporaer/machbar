@@ -6,7 +6,7 @@ import { AppError } from "../errors.js";
 import { buildReflectionBriefing } from "../reflection/briefing.js";
 import { observationHistory, observationPlanForDate, observationIsAnswerable } from "./interventionObservations.js";
 import { addCalendarDays, calendarDaysBetween } from "./calendarDate.js";
-import { householdToday } from "./householdCalendar.js";
+import { householdToday, householdTimezone, localDate } from "./householdCalendar.js";
 import { generatedTasksForIntervention, type GoalAccess } from "./goals.js";
 
 export function observationCounts(days: string[], observations: InterventionObservation[]): ObservationCounts {
@@ -21,9 +21,11 @@ export function buildInterventionEvidence(db: Db, interventionId: number, access
   const intervention = db.select().from(schema.interventions).where(eq(schema.interventions.id, interventionId)).get()!;
   const now = options.now ?? new Date(), today = householdToday(db, now);
   const startDate = options.startDate ?? intervention.reviewWindowStart ?? intervention.startDate;
-  const endDate = options.endDate ?? (intervention.revisitDate < today ? intervention.revisitDate : today);
+  const stopDate = intervention.concludedAt ? localDate(new Date(intervention.concludedAt), householdTimezone(db)) : null;
+  const defaultEnd = stopDate ?? intervention.revisitDate;
+  const endDate = options.endDate ?? (defaultEnd < today ? defaultEnd : today);
   const days = calendarDaysBetween(startDate, endDate) + 1;
-  if (days < 1 || endDate > today || startDate < intervention.startDate) throw AppError.badRequest("intervention_assessment_invalid", "Review a past or current calendar window.");
+  if (days < 1 || endDate > today || (stopDate !== null && endDate > stopDate) || startDate < intervention.startDate) throw AppError.badRequest("intervention_assessment_invalid", "Review a past or current calendar window.");
   const dailyStart = history.plans[0] && history.plans[0].effectiveFrom > startDate ? history.plans[0].effectiveFrom : startDate;
   const observationDays = history.plans.length ? Math.max(0, calendarDaysBetween(dailyStart, endDate) + 1) : 0;
   const eligibleDays = Array.from({ length: observationDays }, (_, n) => addCalendarDays(dailyStart, n)).filter((date) => {

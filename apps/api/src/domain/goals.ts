@@ -34,7 +34,7 @@ import { isIsoCalendarDate } from "./calendarDate.js";
 import { deriveInterventionState } from "./interventionState.js";
 import { createTaskInTransaction } from "./taskCrud.js";
 import { cancelTask } from "./taskWorkflow.js";
-import { setObservationPlan } from "./interventionObservations.js";
+import { setObservationPlan, observationPlanForDate, observationIsAnswerable } from "./interventionObservations.js";
 import { type MutationContext, nowIso } from "./workItemShared.js";
 
 type GoalRow = typeof schema.goals.$inferSelect;
@@ -724,18 +724,32 @@ export function insertAssessment(
       if ((input.countedItemIds ?? []).some((id) => !candidates.has(id))) throw AppError.badRequest("intervention_assessment_invalid", "Task references must come from the reviewed evidence.");
     }
     if (input.decision) {
-      if (current.status !== "active") throw AppError.conflict("intervention_transition_invalid", "This behavior has already stopped.");
+      if (current.status !== "active" && input.decision !== "stop") throw AppError.conflict("intervention_transition_invalid", "A stopped behavior can only receive a final review.");
       if (input.digestWindowStart !== (current.reviewWindowStart ?? current.startDate)) throw AppError.conflict("stale_write_conflict", "This review window has already advanced.");
-      if (input.decision === "stop") {
+      // Final reviews record evidence without repeating task cleanup or lifecycle changes.
+      if (current.status === "active" && input.decision === "stop") {
         if (tx.select().from(schema.interventionTasks).where(eq(schema.interventionTasks.interventionId, interventionId)).all().some((task) => task.taskId !== null) && input.backingCleanup === undefined) throw AppError.badRequest("intervention_assessment_invalid", "Choose whether to keep or stop generated tasks.");
         concludeIntervention(tx as unknown as Db, interventionId, current.revision, householdToday(tx as unknown as Db), { backingCleanup: input.backingCleanup });
-      } else {
+      } else if (current.status === "active") {
         const today = householdToday(tx as unknown as Db);
         const next = input.nextRevisitDate ?? addCalendarDays(today, 14);
         if (!isIsoCalendarDate(next) || next <= today || next <= input.digestWindowEnd) throw AppError.badRequest("intervention_revisit_invalid", "The next checkpoint must be in the future.");
         if (input.decision === "adjust") adjustIntervention(tx as unknown as Db, interventionId, { ...(input.reminderEnabled === undefined ? {} : { reminderEnabled: input.reminderEnabled }), ...(input.commitment ? { commitment: input.commitment } : {}), ...(input.observationPlan ? { observationPlan: input.observationPlan } : {}), expectedRevision: current.revision }, today);
         const updated = requireInterventionRow(tx, interventionId);
-        tx.update(schema.interventions).set({ revisitDate: next, reviewWindowStart: addCalendarDays(input.digestWindowEnd, 1), revision: updated.revision + 1, updatedAt: nowIso() }).where(eq(schema.interventions.id, interventionId)).run();
+        // Carry the earliest not-yet-answerable reference period into the next
+        // review, including same-day evening reports and next-morning reports.
+        let nextWindowStart = addCalendarDays(input.digestWindowEnd, 1);
+        if (evidence) {
+          const reviewedAt = new Date(evidence.generatedAt);
+          for (let date = input.digestWindowStart; date <= input.digestWindowEnd; date = addCalendarDays(date, 1)) {
+            const plan = observationPlanForDate(evidence.plans, date);
+            if (plan?.plan.method === "daily_report" && !observationIsAnswerable(plan, date, reviewedAt)) {
+              nextWindowStart = date;
+              break;
+            }
+          }
+        }
+        tx.update(schema.interventions).set({ revisitDate: next, reviewWindowStart: nextWindowStart, revision: updated.revision + 1, updatedAt: nowIso() }).where(eq(schema.interventions.id, interventionId)).run();
       }
     }
     const created = tx

@@ -571,7 +571,7 @@ export function acceptAssessmentProposal(
       ...overrides,
       reviewKey: `coach:${requestId}`,
       expectedRevision: overrides.expectedRevision ?? payload.expectedRevision ?? intervention.revision,
-      decision: overrides.decision ?? proposal.recommendedDecision ?? "continue",
+      decision: intervention.status === "concluded" ? "stop" : overrides.decision ?? proposal.recommendedDecision ?? "continue",
       reminderEnabled: overrides.reminderEnabled ?? proposal.reminderEnabled,
       benefit: overrides.benefit ?? payload.reflection?.benefit,
       obstacle: overrides.obstacle ?? payload.reflection?.obstacle,

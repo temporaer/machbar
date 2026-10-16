@@ -386,7 +386,29 @@ describe("Goals coach AI passes (Phase 3)", () => {
     const updated = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}`, headers })).json().interventions[0];
     expect(updated).toMatchObject({ status: "active", reminderEnabled: false, observationPlan: { method: "reflection" } });
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, taskId)).get()!.status).toBe("active");
-    expect(recentInterventionReports(ctx.handle.db, intervention.id, access, new Date("2026-10-17T10:00:00Z"))).toEqual([]);
+    expect(recentInterventionReports(ctx.handle.db, intervention.id, access, new Date("2026-10-17T10:00:00Z")).some((r) => r.referenceDate === "2026-10-16")).toBe(true);
+  });
+
+  it("accepts a coach final review after ending an experiment before its checkpoint", async () => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Final reflection" } })).json();
+    const intervention = (await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/interventions`, headers, payload: { type: "frequency_habit", commitment: "Try a routine", startDate: "2026-01-01", revisitDate: "2099-01-15" } })).json();
+    const endedResponse = await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/conclude`, headers, payload: { expectedRevision: intervention.revision, backingCleanup: "keep" } });
+    expect(endedResponse.statusCode, endedResponse.body).toBe(200);
+    const ended = endedResponse.json();
+    const token = await pair();
+    const requestedResponse = await ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess`, headers });
+    expect(requestedResponse.statusCode, requestedResponse.body).toBe(202);
+    const requested = requestedResponse.json();
+    const leased = await lease(token);
+    await complete(token, leased, { band: "attempted_partial", rationaleMd: "Final reflection on the stopped routine.", countedItemIds: [], countedObservationIds: [], recommendedDecision: "continue" });
+    const accept = () => ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess/${requested.requestId}/accept`, headers, payload: {} });
+    const accepted = await accept();
+    expect(accepted.statusCode, accepted.body).toBe(201);
+    expect(accepted.json()).toMatchObject({ decision: "stop", source: "coach", digestWindowEnd: ended.concludedAt.slice(0, 10) });
+    expect((await accept()).json().id).toBe(accepted.json().id);
+    const updated = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}`, headers })).json().interventions[0];
+    expect(updated).toMatchObject({ status: "concluded", revision: ended.revision, concludedAt: ended.concludedAt, derivedState: "reviewed" });
   });
 
 });

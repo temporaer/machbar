@@ -1,13 +1,13 @@
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { createTestContext, closeTestContext, type TestContext } from "./helpers.js";
 import * as schema from "../src/db/schema.js";
-import { createGoal, startIntervention, backIntervention, createManualAssessment, getGoal } from "../src/domain/goals.js";
+import { createGoal, startIntervention, backIntervention, createManualAssessment, getGoal, concludeIntervention } from "../src/domain/goals.js";
 import { setObservationPlan, recordObservation } from "../src/domain/interventionObservations.js";
 import { buildInterventionEvidence } from "../src/domain/interventionEvidence.js";
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
-afterEach(async () => { await closeTestContext(ctx); });
+afterEach(async () => { vi.useRealTimers(); await closeTestContext(ctx); });
 function setup() {
   const db = ctx.handle.db;
   const member = db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
@@ -54,4 +54,34 @@ it("evaluates weekly targets separately and preserves old targets after a prospe
   const changed = buildInterventionEvidence(db, i.id, access, { endDate: "2026-10-18", now: new Date("2026-10-19T10:00:00Z") });
   expect(changed.periods[0]!.target.successfulDays).toBe(4);
   expect(changed.periods.find((p) => p.planVersionId !== changed.periods[0]!.planVersionId)).toMatchObject({ partial: true, target: { successfulDays: 2 } });
+});
+
+
+it.each([1, 0] as const)("carries unavailable reference dates into the next review (offset %s)", (reportDayOffset) => {
+  const { db, intervention: i, goal, access } = setup();
+  // Freeze Date only: SQLite/Fastify cleanup keeps its normal timers.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-16T10:00:00Z"));
+  db.update(schema.interventionObservationPlans).set({ plan: { method: "daily_report", question: "Done?", reference: "day", reportDayOffset, availableAfter: reportDayOffset === 1 ? "07:00" : "22:00", opportunityBased: false } }).run();
+  const assessment = createManualAssessment(db, i.id, { band: "mostly_achieved", rationaleMd: "Continue", digestWindowStart: i.startDate, digestWindowEnd: "2026-10-16", decision: "continue", reviewKey: "pending", expectedRevision: 2 });
+  expect(assessment.evidence?.observations.some((o) => o.referenceDate === "2026-10-16")).toBe(false);
+  expect(getGoal(db, goal.id, "2026-10-16").interventions[0]!.reviewWindowStart).toBe("2026-10-16");
+  vi.setSystemTime(new Date("2026-10-17T23:00:00Z"));
+  const report = recordObservation(db, i.id, { referenceDate: "2026-10-16", answer: "met", expectedRevision: 0 }, access);
+  expect(buildInterventionEvidence(db, i.id, access).observations.map((o) => o.id)).toContain(report.id);
+});
+
+it("records an idempotent final review after early conclusion without changing tasks or lifecycle", () => {
+  const { db, intervention: i, goal, access } = setup();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-08T10:00:00Z"));
+  const backed = backIntervention(db, i.id, { tasks: [{ key: "routine", title: "Keep routine" }] }, "2026-10-08");
+  const ended = concludeIntervention(db, i.id, backed.revision, "2026-10-08", { backingCleanup: "keep" });
+  const evidence = buildInterventionEvidence(db, i.id, access);
+  expect(evidence.window.endDate).toBe("2026-10-08");
+  const input = { band: "attempted_partial" as const, rationaleMd: "Final reflection", digestWindowStart: evidence.window.startDate, digestWindowEnd: evidence.window.endDate, decision: "stop" as const, reviewKey: "final", expectedRevision: ended.revision, backingCleanup: "stop" as const };
+  const assessment = createManualAssessment(db, i.id, input);
+  expect(createManualAssessment(db, i.id, input).id).toBe(assessment.id);
+  expect(getGoal(db, goal.id, "2026-10-08").interventions[0]).toMatchObject({ revision: ended.revision, concludedAt: ended.concludedAt, derivedState: "reviewed" });
+  expect(db.select().from(schema.workItems).where(eq(schema.workItems.id, backed.backingTaskId!)).get()!.status).toBe("active");
 });
