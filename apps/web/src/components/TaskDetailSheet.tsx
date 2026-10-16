@@ -568,6 +568,23 @@ export function TaskDetailSheet() {
             )}
           </div>
           <ExternalRefBadge refs={loadedTask?.externalRefs ?? []} />
+          <div className="row">
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={taskMutationPending}
+              aria-pressed={task.discussionRequested}
+              onClick={async () => {
+                try {
+                  await dispatch({ type: "task.setDiscussion", task, requested: !task.discussionRequested });
+                } catch {
+                  // The shared action provider renders the mutation error below.
+                }
+              }}
+            >
+              {task.discussionRequested ? strings.removeDiscussion : strings.addDiscussion}
+            </button>
+          </div>
 
           {isReference ? (
             <div className="task-detail-reference-header">
@@ -628,12 +645,13 @@ export function TaskDetailSheet() {
                 type="button"
                 className="btn btn-sm"
                 disabled={taskMutationPending}
-                onClick={() => void taskActions.update(
-                  task,
-                  { needsClarification: !task.needsClarification },
-                  { needsClarification: !task.needsClarification },
-                  true,
-                )}
+                onClick={async () => {
+                  try {
+                    await dispatch({ type: "task.setClarification", task, requested: !task.needsClarification });
+                  } catch {
+                    // The shared action provider renders the mutation error below.
+                  }
+                }}
               >
                 {task.needsClarification ? strings.clarifyNow : strings.clarifyAgain}
               </button>

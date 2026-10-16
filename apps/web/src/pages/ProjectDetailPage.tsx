@@ -530,6 +530,22 @@ export function ProjectDetailPage() {
                   </div>
                 ) : null}
                 <div className="detail-meta-row">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={projectMutationPending}
+                    aria-pressed={project.discussionRequested}
+                    onClick={async () => {
+                      try {
+                        const confirmed = await dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested });
+                        if (confirmed && "availableActions" in confirmed) setConfirmedProject(confirmed);
+                      } catch {
+                        // The shared action provider renders the mutation error below.
+                      }
+                    }}
+                  >
+                    {project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion}
+                  </button>
                   {owner ? (
                     <DetailPropertyPill
                       label={strings.driver}

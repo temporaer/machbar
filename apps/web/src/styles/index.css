@@ -3331,7 +3331,7 @@ details[open] > .disclosure-summary::after {
 }
 
 .work-item-command-rail[data-kind="task"] {
-  padding-left: 44px;
+  padding-left: 8px;
 }
 
 .rail-main-grid {
@@ -3339,22 +3339,23 @@ details[open] > .disclosure-summary::after {
   gap: 8px;
 }
 
-.rail-secondary-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.4rem;
+.rail-empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 
 .rail-main-grid .btn {
+  display: block;
   width: 100%;
   min-width: 0;
   min-height: 44px;
   padding: 6px;
   font-size: 0.75rem;
   line-height: 1.2;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /*
@@ -3944,13 +3945,10 @@ details[open] > .disclosure-summary::after {
 
 @media (max-width: 520px) {
   .today-page .task-row-checkbox,
-  .today-page .task-row-kebab,
   .today-page .task-row-toggle[aria-hidden="true"],
   .waiting-page .task-row-checkbox,
-  .waiting-page .task-row-kebab,
   .waiting-page .task-row-toggle[aria-hidden="true"],
   .inbox-page .task-row-checkbox,
-  .inbox-page .task-row-kebab,
   .inbox-page .task-row-toggle[aria-hidden="true"] {
     display: none;
   }

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { calendarDateForInstant } from "@machbar/shared";
@@ -23,7 +23,6 @@ import {
   projectTransitionLabel,
   projectWorkflowIcons,
   projectWorkflowLabel,
-  secondaryWorkflowActions,
 } from "../lib/projectWorkflow";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -39,6 +38,7 @@ import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemR
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import { TaskCardTags } from "./TaskCardTags";
 import { WorkItemActionRail } from "./WorkItemActionRail";
+import { projectRailActions, type RailAction } from "../lib/workItemRail";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
@@ -77,24 +77,10 @@ export interface ProjectStoryRowProps {
  * One story row with the full mobile workflow gestures, shared by the
  * project lists and inventory views.
  *
- * Gestures mirror `TaskRow`'s semantics: a **right swipe** performs the
- * status-appropriate primary transition (backlog → aktivieren, aktiv →
- * abschließen, abgeschlossen → wieder öffnen, archiviert → aktivieren), a
- * **left swipe** reveals the action-chip strip, and the kebab button is the
- * always-available non-gesture alternative to that reveal. Unlike `TaskRow`,
- * the primary action also keeps its own dedicated button on touch devices
- * (`.story-row-primary`): a story workflow has no detail-sheet button that
- * doubles as its non-gesture path, so the row must provide one itself.
- *
- * Only transitions the backend advertises in `availableActions` are ever
- * offered; every remaining legal one appears as a chip (e.g. "In Backlog
- * zurücklegen", "Archivieren"). The row renders no workflow sheets of its
- * own: every command — lifecycle transition, driver, dates, acceptance
- * criteria, tags — is dispatched as a semantic `story.*` command and
- * rendered by `ProjectWorkflowHost`, including the prerequisites a
- * transition may need first (see `lifecyclePrerequisite()`). "Projekt
- * öffnen" navigates to the project page, and tapping the row itself still
- * opens the story detail as before.
+ * Right swipe opens lifecycle choices; the dedicated primary button performs
+ * the available forward transition. Left swipe and the always-available kebab
+ * reveal contextual interventions selected by the pure project rail policy.
+ * All workflow commands route through the canonical dispatcher and hosts.
  */
 export function ProjectStoryRow({ story: storyProp, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
@@ -138,7 +124,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const primaryLabel = primaryAction
     ? projectWorkflowLabel(primaryAction, strings, story.status)
     : strings.workflowStep;
-  const secondaryActions = secondaryWorkflowActions(story);
+  const kebabButtonRef = useRef<HTMLButtonElement>(null);
   const statusLabel = retainedEntry?.action
     ? projectTransitionLabel(retainedEntry.action, strings)
     : strings.projectStatusLabels[story.status];
@@ -246,45 +232,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     navigate(`/projects/${story.id}`);
   };
 
-  const runRailCommand = (
-    command:
-      | "story.defer"
-      | "story.structure"
-      | "story.editOutcome"
-      | "story.planWork"
-      | "story.deadline",
-  ) => {
+  const runRailCommand = (action: RailAction) => {
+    kebabButtonRef.current?.focus();
     scope?.setOpenRail(null);
-    dispatch({ type: command, story });
+    dispatch(action.command);
   };
-
-  const projectRailActions =
-    story.status === "backlog"
-      ? [
-          { label: strings.planning, command: "story.defer" as const },
-          { label: strings.railStructure, command: "story.structure" as const },
-          { label: strings.railGoal, command: "story.editOutcome" as const },
-        ]
-      : classification === "active-review" || classification === "active-stuck"
-        ? [
-            { label: strings.railNextStep, command: "story.planWork" as const },
-            { label: strings.railGoal, command: "story.editOutcome" as const },
-            { label: strings.railStructure, command: "story.structure" as const },
-          ]
-        : classification === "active-waiting"
-          ? [
-              { label: strings.planning, command: "story.defer" as const },
-              { label: strings.railStructure, command: "story.structure" as const },
-              { label: strings.railNextStep, command: "story.planWork" as const },
-            ]
-          : classification === "active-actionable" || classification === "active-deferred"
-            ? [
-                { label: strings.railNextStep, command: "story.planWork" as const },
-                { label: strings.railStructure, command: "story.structure" as const },
-                { label: strings.planning, command: "story.deadline" as const },
-              ]
-            : [];
-
 
   const runLifecycleAction = (action: ProjectWorkflowAction) => {
     scope?.setOpenLifecycle(null);
@@ -471,6 +423,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         ) : null}
         <RowKebabButton
           classPrefix="story-row"
+          buttonRef={kebabButtonRef}
           open={chipsOpen}
           disabled={busy}
           onToggle={() =>
@@ -487,17 +440,14 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           kind="project"
           disabled={busy}
           groupLabel={strings.moreActions}
-          actions={projectRailActions.map(({ label, command }) => ({
-            label,
-            onSelect: () => runRailCommand(command),
+          emptyLabel={strings.railEmpty}
+          actions={projectRailActions(story, now).map((action) => ({
+            id: action.intent,
+            label: strings.railLabels[action.intent],
+            accessibleLabel: strings.railAccessibleLabels[action.intent],
+            prominent: action.prominent ?? false,
+            onSelect: () => runRailCommand(action),
           }))}
-          secondaryActions={[{
-              label: story.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
-              onSelect: () => {
-                scope?.setOpenRail(null);
-                dispatch({ type: "story.setDiscussion", story, requested: !story.discussionRequested });
-              },
-          }]}
         />
       ) : null}
       {lifecycleOpen ? (
