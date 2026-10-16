@@ -411,4 +411,35 @@ describe("Goals coach AI passes (Phase 3)", () => {
     expect(updated).toMatchObject({ status: "concluded", revision: ended.revision, concludedAt: ended.concludedAt, derivedState: "reviewed" });
   });
 
+  it.each([
+    { title: "Früher ins Bett nach dem Zähneputzen", locale: "de", language: "German (de)" },
+    { title: "Piano Tuesdays and Thursdays at 19:00", locale: "en", language: "English (en)" },
+  ] as const)("renders private adaptive context and calendar/language for $title", async ({ title, locale, language }) => {
+    const member = await createMember(); const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const other = await createMember("Other"); const otherHeaders = { [ACTIVITY_ACTOR_HEADER]: String(other.id) };
+    const goal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title } })).json();
+    const second = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers, payload: { title: "Owner second goal" } })).json();
+    const privateGoal = (await ctx.app.inject({ method: "POST", url: "/api/goals", headers: otherHeaders, payload: { title: "SECRET OTHER GOAL" } })).json();
+    for (const [goalId, commitment, status] of [[goal.id, "Current routine", "active"], [second.id, "Second running routine", "active"], [privateGoal.id, "SECRET OTHER ROUTINE", "active"], [goal.id, "Unhelpful previous routine", "concluded"]] as const) {
+      const row = ctx.handle.db.insert(schema.interventions).values({ goalId, commitment, status, type: "frequency_habit", startDate: "2026-10-01", revisitDate: "2026-10-15", source: "manual" }).returning().get();
+      if (status === "concluded") ctx.handle.db.insert(schema.interventionAssessments).values({ interventionId: row.id, assessedAt: "2026-10-15T10:00:00Z", band: "achieved", benefit: "not_helped", obstacle: "Browsing continued after brushing", rationaleMd: "Adherence did not improve sleep", digestWindowStart: "2026-10-01", digestWindowEnd: "2026-10-15", countedItemIdsJson: "[]", source: "manual" }).run();
+    }
+    ctx.handle.db.insert(schema.householdSettings).values({ key: "timezone", value: "Europe/Berlin" }).onConflictDoUpdate({ target: schema.householdSettings.key, set: { value: "Europe/Berlin" } }).run();
+    const token = await pair();
+    const request = await ctx.app.inject({ method: "POST", url: `/api/goals/${goal.id}/suggest`, headers, payload: { locale } });
+    expect(request.statusCode, request.body).toBe(202);
+    const instructions = (await lease(token)).payload.instructions;
+    expect(instructions).toContain(title);
+    expect(instructions).toContain('"runningCount":2');
+    expect(instructions).toContain("Second running routine");
+    expect(instructions).toContain("Unhelpful previous routine");
+    expect(instructions).toContain("not_helped");
+    expect(instructions).toContain("Browsing continued after brushing");
+    expect(instructions).toContain("Adherence did not improve sleep");
+    expect(instructions).toContain(language);
+    expect(instructions).toContain("Household timezone: Europe/Berlin");
+    expect(instructions).not.toContain("SECRET OTHER");
+    if (locale === "en") expect(instructions).toContain("separate dated tasks/reminders");
+  });
+
 });

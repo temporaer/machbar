@@ -238,3 +238,31 @@ or support causal claims about an individual experiment.
 Out of scope: goal/project hierarchies, arbitrary manual goal tagging, general
 questionnaire/chat/workflow engines, sensors, arbitrary rule evaluation, automatic
 causal inference, public accountability defaults and gamified streak mechanics.
+
+## Coaching review scenarios
+
+Suggestion requests include at most eight owner-scoped running experiments, their
+total count, and five recent reviews of this goal. Text fields are bounded. They
+explicitly provide household timezone and UI response language (German by default
+for callers without a locale); field names and enum values remain unchanged.
+
+Manual review starts without an outcome selected and requires an authored rationale.
+Review facts use each historical plan's question, timing and notes. Dated task/report
+citations can be selected or excluded independently of deterministic totals and
+recorded observations. Accepted history retains and exposes the selected references.
+Proposal summaries show behavior, reporting method/timing and tasks; detailed
+editors are disclosed on demand. Failed clarification submissions retain the
+question, source request and answer for retry.
+
+| Scenario | Check |
+| --- | --- |
+| Underspecified German sleep goal | German questions/commitments; clarify the relevant obstacle selectively; next-morning reports use Berlin local time. |
+| Tuesday/Thursday piano at 19:00 | Preserve actual dates/local times with ordinary scheduled tasks; use task evidence without redundant daily practice reports. |
+| Unhelpful prior experiment | Include adherence, benefit and obstacle context; reconsider the mechanism instead of repeating the same advice. |
+| Two already running experiments | Show total running burden and avoid adding unnecessary parallel tracking; exclude other members' goals. |
+| Sparse reports | Preserve missing versus unknown, expose dated notes/citations and require an explicit outcome; no automatic positive grade. |
+
+Automated scenarios verify rendered request context, privacy and UI acceptance,
+including citation exclusion and clarification retry. These checks do not establish
+live-model coaching quality; the scenario expectations above also guide qualitative
+evaluation when changing the model or prompt.

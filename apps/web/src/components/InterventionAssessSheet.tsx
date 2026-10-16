@@ -29,15 +29,6 @@ export interface AssessmentDraft {
   coachRequestId?: string;
 }
 
-function parseCountedItemIds(raw: string): number[] {
-  return raw
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .map((part) => Number.parseInt(part, 10))
-    .filter((value) => Number.isInteger(value));
-}
-
 /**
  * The manual self-assessment path (feature spec §5, §9): with no AI configured
  * the user reviews the finished experiment, picks an outcome band, explains it,
@@ -73,11 +64,11 @@ export function InterventionAssessSheet({
   const [backingCleanup, setBackingCleanup] = useState<"keep" | "stop">("keep");
   const [observationPlan, setObservationPlan] = useState<ObservationPlan>(intervention.observationPlan ?? { method: "reflection" });
   const [commitment, setCommitment] = useState(intervention.commitment);
-  const [band, setBand] = useState<AssessmentBand>("mostly_achieved");
+  const [band, setBand] = useState<AssessmentBand | null>(null);
   const [rationale, setRationale] = useState("");
   const [windowStart, setWindowStart] = useState(intervention.reviewWindowStart ?? intervention.startDate);
   const [windowEnd, setWindowEnd] = useState(defaultEnd < today ? defaultEnd : today);
-  const [countedItems, setCountedItems] = useState("");
+  const [countedItems, setCountedItems] = useState<number[]>([]);
   const [startValid, setStartValid] = useState(true);
   const [endValid, setEndValid] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -113,7 +104,7 @@ export function InterventionAssessSheet({
       if (proposal.reminderEnabled !== undefined) setReminderEnabled(proposal.reminderEnabled);
       setBand(proposal.band);
       setRationale(proposal.rationaleMd);
-      setCountedItems(proposal.countedItemIds.join(", "));
+      setCountedItems(proposal.countedItemIds);
       setWindowStart(proposal.windowStart ?? intervention.startDate);
       setWindowEnd(proposal.windowEnd ?? intervention.revisitDate);
       setCoachRequestId(proposal.requestId);
@@ -132,7 +123,8 @@ export function InterventionAssessSheet({
 
   const submit = async () => {
     if (saving) return;
-    const trimmedRationale = rationale.trim() || strings.interventionReviewRecorded;
+    if (!band) { setError(strings.interventionChooseOutcome); return; }
+    const trimmedRationale = rationale.trim();
     if (!trimmedRationale) {
       setError(strings.assessmentRationaleLabel);
       return;
@@ -150,7 +142,7 @@ export function InterventionAssessSheet({
         ...(decision === "adjust" ? { observationPlan, commitment } : {}),
         band,
         rationaleMd: trimmedRationale,
-        countedItemIds: parseCountedItemIds(countedItems),
+        countedItemIds: countedItems,
         digestWindowStart: windowStart,
         digestWindowEnd: windowEnd,
         ...(coachRequestId ? { coachRequestId } : {}),
@@ -172,12 +164,9 @@ export function InterventionAssessSheet({
     >
       <div className="stack">
         <p className="text-muted">{intervention.commitment}</p>
-        {coachEvidence ? <InterventionEvidenceFacts evidence={coachEvidence} /> : <InterventionEvidencePanel interventionId={intervention.id} startDate={windowStart} endDate={windowEnd} />}
+        {coachEvidence ? <InterventionEvidenceFacts evidence={coachEvidence} selection={{ observationIds: countedObservationIds, itemIds: countedItems, onObservationChange: setCountedObservationIds, onItemChange: setCountedItems }} /> : <InterventionEvidencePanel interventionId={intervention.id} startDate={windowStart} endDate={windowEnd} selection={{ observationIds: countedObservationIds, itemIds: countedItems, onObservationChange: setCountedObservationIds, onItemChange: setCountedItems }} />}
         <label className="field">{strings.interventionBenefitQuestion}<select value={benefit} onChange={(e) => setBenefit(e.target.value as InterventionBenefit)}>{(["helped", "not_helped", "uncertain"] as const).map((v) => <option key={v} value={v}>{strings.interventionBenefitLabels[v]}</option>)}</select></label>
         <label className="field">{strings.interventionObstacleQuestion}<textarea value={obstacle} maxLength={2000} onChange={(e) => setObstacle(e.target.value)} /></label>
-        {!concluded ? <label className="field">{strings.interventionNextMove}<select value={decision} onChange={(e) => setDecision(e.target.value as InterventionReviewDecision)}>{(["continue", "adjust", "stop"] as const).map((v) => <option key={v} value={v}>{strings.interventionDecisionLabels[v]}</option>)}</select></label> : null}
-        {decision === "adjust" ? <><label><input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} /> {strings.interventionStandingReminder}</label><label className="field">{strings.interventionCommitmentLabel}<input value={commitment} onChange={(e) => setCommitment(e.target.value)} /></label><ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} /></> : null}
-        {concluded ? null : decision !== "stop" ? <label className="field">{strings.interventionNextCheckpoint}<input type="date" value={nextRevisitDate} onChange={(e) => setNextRevisitDate(e.target.value)} /></label> : <label className="field">{strings.interventionRemainingTasks}<select value={backingCleanup} onChange={(e) => setBackingCleanup(e.target.value as "keep" | "stop")}><option value="keep">{strings.interventionKeepTasks}</option><option value="stop">{strings.interventionStopTasks}</option></select></label>}
         <div className="stack">
           <button
             type="button"
@@ -195,6 +184,7 @@ export function InterventionAssessSheet({
         </div>
         <div className="field">
           <span className="field-label">{strings.assessmentBandLabel}</span>
+          {!band ? <p>{strings.interventionChooseOutcome}</p> : null}
           <div className="choice-group" role="group" aria-label={strings.assessmentBandLabel}>
             {assessmentBands.map((value) => (
               <button
@@ -219,6 +209,11 @@ export function InterventionAssessSheet({
             onChange={(event) => setRationale(event.target.value)}
           />
         </label>
+        {!concluded ? <label className="field">{strings.interventionNextMove}<select value={decision} onChange={(e) => setDecision(e.target.value as InterventionReviewDecision)}>{(["continue", "adjust", "stop"] as const).map((v) => <option key={v} value={v}>{strings.interventionDecisionLabels[v]}</option>)}</select></label> : null}
+        {decision === "adjust" ? <><label><input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} /> {strings.interventionStandingReminder}</label><label className="field">{strings.interventionCommitmentLabel}<input value={commitment} onChange={(e) => setCommitment(e.target.value)} /></label><ObservationPlanEditor value={observationPlan} onChange={setObservationPlan} disabled={saving} /></> : null}
+        {!concluded && decision === "stop" && ((intervention.generatedTasks?.length ?? 0) > 0 || intervention.backingTaskId !== null) ? <label className="field">{strings.interventionRemainingTasks}<select value={backingCleanup} onChange={(e) => setBackingCleanup(e.target.value as "keep" | "stop")}><option value="keep">{strings.interventionKeepTasks}</option><option value="stop">{strings.interventionStopTasks}</option></select></label> : null}
+        <details><summary>{strings.interventionAdvancedReview}</summary>
+        {!concluded && decision !== "stop" ? <label className="field">{strings.interventionNextCheckpoint}<input type="date" value={nextRevisitDate} onChange={(e) => setNextRevisitDate(e.target.value)} /></label> : null}
         <div className="field">
           <span className="field-label">{strings.assessmentWindowStartLabel}</span>
           <HumanDateInput
@@ -239,17 +234,7 @@ export function InterventionAssessSheet({
             onValidityChange={setEndValid}
           />
         </div>
-        <label className="field">
-          <span className="field-label">{strings.assessmentCountedItemsLabel}</span>
-          <input
-            type="text"
-            value={countedItems}
-            inputMode="numeric"
-            disabled={saving || coachLoading}
-            placeholder={strings.assessmentCountedItemsHint}
-            onChange={(event) => setCountedItems(event.target.value)}
-          />
-        </label>
+        </details>
         {error ? (
           <div className="task-row-error" role="alert">
             {error}
@@ -259,7 +244,7 @@ export function InterventionAssessSheet({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={saving || coachLoading || !startValid || !endValid}
+            disabled={saving || coachLoading || !startValid || !endValid || !band || !rationale.trim()}
             onClick={() => void submit()}
           >
             {coachRequestId

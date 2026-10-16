@@ -197,7 +197,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, `custom_components/machbar/goal_coach.py`, and `custom_components/machbar/calendar_bridge.py` |
 | Owner-only generated task privacy | `work_items.privacy_owner_member_id`, migration 0026 inheritance constraints, viewer-aware `Graph.load`, task/project HTTP pre-handler guards, activity snapshots and existing reflection/notification readers |
 | Intervention observation plans and records | `interventionObservation.ts` shared contracts, `domain/interventionObservations.ts` canonical history, plan and report mutations; existing goals routes and MCP tools |
-| Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` and `InterventionAssessSheet`; existing reflection evidence is reused |
+| Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` (method-aware facts and citation selection), `ObservationPlanSummary` in `ObservationPlanEditor.tsx`, and `InterventionAssessSheet`; existing reflection evidence is reused |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
@@ -420,7 +420,9 @@ reports with the canonical `buildReflectionBriefing`. Both manual and coach
 reviews consume it. `goals.ts::insertAssessment` snapshots evidence and applies
 explicit revision-aware continue/adjust/stop transitions transactionally; a
 stable review key prevents duplicate acceptance. `InterventionEvidenceFacts`
-renders shared inspectable facts in the existing assessment workflow.
+renders method-appropriate facts and human-readable dated citations in manual, coach and historical review. Its optional selection callbacks edit assessment references only; report records and deterministic totals remain independent.
+
+Read-only `ObservationPlanSummary` in `ObservationPlanEditor.tsx` presents the same plan wording in proposal summaries and historical evidence. Detailed proposal editors and review-window corrections use disclosure; manual review requires an explicit outcome and rationale.
 
 ### Bounded coach clarification
 
@@ -428,7 +430,7 @@ renders shared inspectable facts in the existing assessment workflow.
 validates complete version-2 proposals, and transactionally accepts through the
 canonical journal, observation and backing commands. The web reuses
 `ObservationPlanEditor` and `InterventionTasksEditor` for proposal review;
-`useGoalActions` still owns polling and acceptance. HA `goal_coach.py` preserves
+`useGoalActions` still owns polling and acceptance and supplies the UI locale. Coach instructions include household timezone, bounded owner-scoped running interventions and recent reviews for the current goal. Clarification state survives failed submissions for direct retry. HA `goal_coach.py` preserves
 the same envelope; no generic conversation or automatic task creation exists.
 
 ### Evidence-based coach review and lighter continuation

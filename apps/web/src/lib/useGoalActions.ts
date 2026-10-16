@@ -1,3 +1,4 @@
+import { useLocale } from "./locale";
 import { useCallback } from "react";
 import {
   api,
@@ -32,6 +33,7 @@ import { useRetainedMutations } from "./useRetainedMutations";
 const CREATE_GOAL_KEY = -1;
 
 export function useGoalActions() {
+  const { locale } = useLocale();
   const { run, isPending, errors, clearError } =
     useRetainedMutations<never>();
 
@@ -82,11 +84,11 @@ export function useGoalActions() {
   );
 
   const loadGoalSuggestion = useCallback(async (goalId: number, input?: Parameters<typeof api.requestGoalSuggestion>[1]) => {
-    const initial = input ? await api.requestGoalSuggestion(goalId, input) : await api.requestGoalSuggestion(goalId);
+    const initial = await api.requestGoalSuggestion(goalId, { ...input, locale });
     return pollCoachProposal(initial, () =>
       api.getGoalSuggestion(goalId, initial.requestId),
     );
-  }, []);
+  }, [locale]);
 
   const acceptGoalSuggestion = useCallback(
     (
@@ -156,11 +158,11 @@ export function useGoalActions() {
   );
 
   const loadAssessmentProposal = useCallback(async (interventionId: number, input?: Parameters<typeof api.requestAssessmentProposal>[1]) => {
-    const initial = input ? await api.requestAssessmentProposal(interventionId, input) : await api.requestAssessmentProposal(interventionId);
+    const initial = await api.requestAssessmentProposal(interventionId, { ...input, locale });
     return pollCoachProposal(initial, () =>
       api.getAssessmentProposal(interventionId, initial.requestId),
     );
-  }, []);
+  }, [locale]);
 
   const acceptAssessmentProposal = useCallback(
     (

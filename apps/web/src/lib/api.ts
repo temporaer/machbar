@@ -1147,7 +1147,7 @@ export const api = {
         expectedRevision === undefined ? {} : { expectedRevision },
       ),
     }),
-  requestGoalSuggestion: (id: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) =>
+  requestGoalSuggestion: (id: number, input?: { locale?: "de" | "en"; clarificationRequestId?: string; clarificationAnswer?: string }) =>
     request<GoalSuggestionProposal>(`/goals/${id}/suggest`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getGoalSuggestion: (id: number, requestId: string) =>
     request<GoalSuggestionProposal>(`/goals/${id}/suggest/${requestId}`),
@@ -1192,7 +1192,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  requestAssessmentProposal: (id: number, input?: { benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string }) =>
+  requestAssessmentProposal: (id: number, input?: { locale?: "de" | "en"; benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string }) =>
     request<AssessmentProposal>(`/interventions/${id}/assess`, { method: "POST", body: JSON.stringify(input ?? {}) }),
   getAssessmentProposal: (id: number, requestId: string) =>
     request<AssessmentProposal>(`/interventions/${id}/assess/${requestId}`),

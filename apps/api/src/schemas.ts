@@ -852,9 +852,11 @@ export const acceptSuggestionSchema = z.object({
 /** Accept an assessment proposal; all fields are optional user overrides. */
 export const acceptAssessmentSchema = manualAssessmentSchema.omit({ digestWindowStart: true, digestWindowEnd: true, reviewKey: true }).partial();
 export const requestAssessmentSchema = z.object({
+  locale: z.enum(["de", "en"]).optional(),
   benefit: z.enum(["helped", "not_helped", "uncertain"]).optional(), obstacle: z.string().max(2000).optional(),
 }).strict();
 
 export const requestGoalSuggestionSchema = z.object({
+  locale: z.enum(["de", "en"]).optional(),
   clarificationRequestId: z.string().min(1).optional(), clarificationAnswer: z.string().trim().min(1).max(2000).optional(),
 }).strict().refine((v) => Boolean(v.clarificationRequestId) === Boolean(v.clarificationAnswer), { message: "A clarification answer needs its source question request." });

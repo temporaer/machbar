@@ -1,10 +1,11 @@
-import { ObservationPlanEditor } from "../components/ObservationPlanEditor";
+import { ObservationPlanEditor, ObservationPlanSummary } from "../components/ObservationPlanEditor";
 import { InterventionTasksEditor } from "../components/InterventionTasksSheet";
 import type { ProposedIntervention } from "@machbar/shared";
 import type { AcceptGoalSuggestionInput } from "../lib/api";
 import { InterventionEvidenceFacts } from "../components/InterventionEvidencePanel";
 import { InterventionTasksSheet } from "../components/InterventionTasksSheet";
 import { InterventionObservationPanel } from "../components/InterventionObservationPanel";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type {
@@ -62,12 +63,12 @@ function AssessmentArc({ intervention }: { intervention: InterventionView }) {
           {assessment.decision ? <p>{strings.interventionDecisionLabels[assessment.decision]}</p> : null}
           {assessment.benefit ? <p>{strings.interventionBenefitLabels[assessment.benefit]}</p> : null}
           {assessment.obstacle ? <p>{assessment.obstacle}</p> : null}
-          {assessment.evidence ? <details><summary>{strings.interventionEvidenceTitle}</summary><InterventionEvidenceFacts evidence={assessment.evidence} /></details> : null}
-          <p className="text-muted">
+          {assessment.evidence ? <details><summary>{strings.interventionEvidenceTitle}</summary><InterventionEvidenceFacts evidence={assessment.evidence} selection={{ observationIds: assessment.countedObservationIds ?? [], itemIds: assessment.countedItemIds }} /></details> : null}
+          {!assessment.evidence ? <p className="text-muted">
             {assessment.countedItemIds.length > 0
               ? `${strings.assessmentCountedItemsLabel}: ${assessment.countedItemIds.join(", ")}`
               : strings.assessmentCountedItemsEmpty}
-          </p>
+          </p> : null}
         </li>
       ))}
     </ul>
@@ -86,6 +87,7 @@ function GoalCoachSuggestions({
   onAccept: (goalId: number, requestId: string, index: number, overrides: AcceptGoalSuggestionInput) => Promise<unknown>;
 }) {
   const strings = useStrings();
+  const { timezone } = useHouseholdTimezone();
   const [proposal, setProposal] = useState<GoalSuggestionProposal | null>(null);
   const [pendingTaskEditors, setPendingTaskEditors] = useState<Record<number, boolean>>({});
   const [answer, setAnswer] = useState("");
@@ -99,9 +101,12 @@ function GoalCoachSuggestions({
     if (loading) return;
     setLoading(true);
     setError(null);
-    setProposal(null);
     try {
       const next = await onRequest(goal.id, followup && proposal ? { clarificationRequestId: proposal.requestId, clarificationAnswer: answer } : undefined);
+      if (followup && next.status !== "ready") {
+        setError(next.error ?? strings.goalCoachStillWorking);
+        return;
+      }
       setEdits({});
       setPendingTaskEditors({});
       setProposal(next);
@@ -149,7 +154,7 @@ function GoalCoachSuggestions({
       </button>
       {proposal?.clarificationQuestion ? <div className="stack">
         <label className="field">{proposal.clarificationQuestion}<textarea value={answer} maxLength={2000} onChange={(e) => setAnswer(e.target.value)} /></label>
-        <button type="button" className="btn" disabled={!answer.trim() || loading} onClick={() => void request(true)}>{strings.goalCoachAnswer}</button>
+        <button type="button" className="btn" disabled={!answer.trim() || loading} onClick={() => void request(true)}>{error ? strings.goalCoachRetryAnswer : strings.goalCoachAnswer}</button>
       </div> : null}
       {proposal?.status === "ready" ? (
         <div className="stack">
@@ -159,19 +164,22 @@ function GoalCoachSuggestions({
               <span className="badge">
                 {strings.interventionTypeLabels[intervention.type]}
               </span>
-              <strong>{intervention.commitment}</strong>
-              {intervention.rationale ? <p>{intervention.rationale}</p> : null}
+              <strong>{edits[index]?.commitment ?? intervention.commitment}</strong>
+              {(edits[index]?.rationale ?? intervention.rationale) ? <p>{edits[index]?.rationale ?? intervention.rationale}</p> : null}
               <p className="text-muted">
-                {intervention.startDate} – {intervention.revisitDate}
+                {edits[index]?.startDate ?? intervention.startDate} – {edits[index]?.revisitDate ?? intervention.revisitDate}
               </p>
+              <ObservationPlanSummary plan={edits[index]?.observationPlan ?? intervention.observationPlan ?? { method: "reflection" }} />
+              <p className="text-muted">{timezone}</p>
+              {(edits[index]?.tasks ?? intervention.tasks ?? []).map((task) => <div key={task.key}><strong>{task.title}</strong><p>{task.notes}</p><p>{task.scheduledDate} {task.dueDate} {task.repeatAfterDays ? strings.repeatAfterDays + ": " + task.repeatAfterDays : ""}</p>{task.reminders?.map((r, n) => <p key={n}>{r.kind === "absolute" ? r.at : `${r.daysBefore} · ${r.time} · ${r.timezone}`}</p>)}</div>)}
               <details><summary>{strings.editIntervention}</summary>
                 <label className="field">{strings.interventionCommitmentLabel}<input value={edits[index]?.commitment ?? intervention.commitment} onChange={(e) => patch(index, { commitment: e.target.value })} /></label>
                 <label className="field">{strings.interventionRationaleLabel}<textarea value={edits[index]?.rationale ?? intervention.rationale} onChange={(e) => patch(index, { rationale: e.target.value })} /></label>
                 <label className="field">{strings.interventionStartDateLabel}<input type="date" value={edits[index]?.startDate ?? intervention.startDate} onChange={(e) => patch(index, { startDate: e.target.value })} /></label>
                 <label className="field">{strings.interventionRevisitDateLabel}<input type="date" value={edits[index]?.revisitDate ?? intervention.revisitDate} onChange={(e) => patch(index, { revisitDate: e.target.value })} /></label>
-              </details>
               <ObservationPlanEditor value={edits[index]?.observationPlan ?? intervention.observationPlan ?? { method: "reflection" }} onChange={(observationPlan) => patch(index, { observationPlan })} disabled={accepting !== null} />
               <InterventionTasksEditor tasks={edits[index]?.tasks ?? intervention.tasks ?? []} onChange={(tasks) => patch(index, { tasks })} onPendingChange={(pending) => setPendingTaskEditors((current) => current[index] === pending ? current : { ...current, [index]: pending })} disabled={accepting !== null} />
+              </details>
               <button
                 type="button"
                 className="btn btn-sm btn-primary"

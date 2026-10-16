@@ -20,7 +20,7 @@ import { parseOrThrow } from "../validation.js";
  * schema change beyond two new `kind` enum values. When no AI is configured the
  * two Klärungsrunde guards fire and the manual Phase 1-2 path is unaffected.
  */
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import type {
   ObservationPlan,
   InterventionTaskPlan,
@@ -38,7 +38,7 @@ import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { getHouseholdAiContext } from "../aiContext.js";
-import { householdToday } from "../domain/householdCalendar.js";
+import { householdToday, householdTimezone } from "../domain/householdCalendar.js";
 import { isIsoCalendarDate, addCalendarDays } from "../domain/calendarDate.js";
 import { backIntervention, getGoal, insertAssessment, startIntervention } from "../domain/goals.js";
 import { activeHomeAssistantIntegration } from "../integrations/homeAssistant.js";
@@ -270,7 +270,7 @@ export function requestGoalSuggestion(
   goalId: number,
   ownerMemberId: number | null,
   signal?: HomeAssistantRequestSignal,
-  rawOptions: { clarificationRequestId?: string; clarificationAnswer?: string } = {},
+  rawOptions: { locale?: "de" | "en"; clarificationRequestId?: string; clarificationAnswer?: string } = {},
 ): string {
   const options = parseOrThrow(requestGoalSuggestionSchema, rawOptions);
   const integration = readyIntegration(db);
@@ -285,6 +285,16 @@ export function requestGoalSuggestion(
     clarification = { question: previousProposal.clarificationQuestion, answer: options.clarificationAnswer! };
   }
   const today = householdToday(db);
+  // Owner boundary is applied in SQL before any model context is projected.
+  const ownerRunning = and(eq(schema.goals.ownerMemberId, ownerMemberId!), eq(schema.interventions.status, "active"));
+  const runningCount = db.select({ total: count() }).from(schema.interventions).innerJoin(schema.goals, eq(schema.goals.id, schema.interventions.goalId)).where(ownerRunning).get()!.total;
+  const running = db.select({ goal: schema.goals.title, commitment: schema.interventions.commitment, revisitDate: schema.interventions.revisitDate })
+    .from(schema.interventions).innerJoin(schema.goals, eq(schema.goals.id, schema.interventions.goalId)).where(ownerRunning).orderBy(desc(schema.interventions.id)).limit(8).all()
+    .map((r) => ({ ...r, goal: r.goal.slice(0, 200), commitment: r.commitment.slice(0, 500) }));
+  const recentReviews = db.select({ commitment: schema.interventions.commitment, band: schema.interventionAssessments.band, benefit: schema.interventionAssessments.benefit, obstacle: schema.interventionAssessments.obstacle, rationale: schema.interventionAssessments.rationaleMd })
+    .from(schema.interventionAssessments).innerJoin(schema.interventions, eq(schema.interventions.id, schema.interventionAssessments.interventionId))
+    .where(eq(schema.interventions.goalId, goalId)).orderBy(desc(schema.interventionAssessments.id)).limit(5).all()
+    .map((r) => ({ ...r, commitment: r.commitment.slice(0, 500), obstacle: r.obstacle.slice(0, 500), rationale: r.rationale.slice(0, 1000) }));
   const payload: StoredSuggestPayload = {
     contractVersion: 2,
     ...(clarification ? { clarification } : {}),
@@ -292,6 +302,8 @@ export function requestGoalSuggestion(
     taskName: TASK_NAME,
     instructions: buildGoalSuggestInstructions({
       goal: { title: goal.title, notes: goal.notes, area: goal.area },
+      timezone: householdTimezone(db), locale: options.locale ?? "de",
+      runningCount, running, recentReviews,
       today,
       defaultRevisitDate: addCalendarDays(today, DEFAULT_DURATION_DAYS),
       aiContext: getHouseholdAiContext(db),
@@ -420,7 +432,7 @@ export function requestInterventionAssessment(
   interventionId: number,
   ownerMemberId: number | null,
   signal?: HomeAssistantRequestSignal,
-  rawReflection: { benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string } = {},
+  rawReflection: { locale?: "de" | "en"; benefit?: "helped" | "not_helped" | "uncertain"; obstacle?: string } = {},
 ): string {
   const reflection = parseOrThrow(requestAssessmentSchema, rawReflection);
   const integration = readyIntegration(db);
@@ -443,6 +455,7 @@ export function requestInterventionAssessment(
     interventionId,
     taskName: TASK_NAME,
     instructions: buildInterventionAssessInstructions({
+      timezone: householdTimezone(db), locale: reflection.locale ?? "de",
       goal: { title: goal.title, notes: goal.notes },
       intervention: {
         type: intervention.type,

@@ -1877,7 +1877,9 @@ reports with the canonical `buildReflectionBriefing`. Both manual and coach
 reviews consume it. `goals.ts::insertAssessment` snapshots evidence and applies
 explicit revision-aware continue/adjust/stop transitions transactionally; a
 stable review key prevents duplicate acceptance. `InterventionEvidenceFacts`
-renders shared inspectable facts in the existing assessment workflow.
+renders method-appropriate facts and human-readable dated citations in manual, coach and historical review. Its optional selection callbacks edit assessment references only; report records and deterministic totals remain independent.
+
+Read-only `ObservationPlanSummary` in `ObservationPlanEditor.tsx` presents the same plan wording in proposal summaries and historical evidence. Detailed proposal editors and review-window corrections use disclosure; manual review requires an explicit outcome and rationale.
 
 ### Bounded coach clarification
 
@@ -1885,7 +1887,7 @@ renders shared inspectable facts in the existing assessment workflow.
 validates complete version-2 proposals, and transactionally accepts through the
 canonical journal, observation and backing commands. The web reuses
 `ObservationPlanEditor` and `InterventionTasksEditor` for proposal review;
-`useGoalActions` still owns polling and acceptance. HA `goal_coach.py` preserves
+`useGoalActions` still owns polling and acceptance and supplies the UI locale. Coach instructions include household timezone, bounded owner-scoped running interventions and recent reviews for the current goal. Clarification state survives failed submissions for direct retry. HA `goal_coach.py` preserves
 the same envelope; no generic conversation or automatic task creation exists.
 
 ### Evidence-based coach review and lighter continuation

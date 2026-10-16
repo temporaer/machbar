@@ -23,3 +23,10 @@ export function ObservationPlanEditor({ value, onChange, disabled = false }: { v
     <p className="text-muted">{s.observationPlanHint}</p>
   </fieldset>;
 }
+
+/** Read-only plan wording reused in proposal acceptance and historical evidence. */
+export function ObservationPlanSummary({ plan }: { plan: ObservationPlan }) {
+  const s = useStrings();
+  if (plan.method !== "daily_report") return <p>{plan.method === "task_evidence" ? s.observationTasks : s.observationReflection}</p>;
+  return <div><p>{plan.question}</p><p>{plan.reference === "night" ? s.observationNextMorning : plan.reportDayOffset === 1 ? s.observationNextDay : s.observationAfterWindow} · {plan.availableAfter}</p>{plan.target ? <p>{s.observationTarget}: {plan.target.successfulDays} · {plan.target.window === "calendar_week" ? s.observationCalendarWeek : s.observationSevenDays} {plan.target.anchorDate}</p> : null}</div>;
+}
