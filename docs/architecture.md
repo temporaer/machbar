@@ -1645,15 +1645,20 @@ An empty rail explains that no intervention is currently needed and directs
 people to row-tap details and right-swipe status; it creates no synthetic action.
 
 Task precedence is terminal/reference → no intervention; captured or needing
-clarification → existing AI clarification, clarification deferral, structure;
+clarification → explicit clarification acknowledgement, clarification deferral, structure;
 external wait → follow-up and planning; dependency-blocked → first unresolved
 prerequisite and planning (planning alone if no dependency target is available).
 Ready Today revisit prompts offer start today, availability and planning;
 Someday offers planning alone; otherwise ready actions offer planning, splitting
 and starting an external wait (recurring actions remain leaves and omit splitting). A follow-up opens `task.waitingLifecycle`, the
-existing waiting card inside `TaskPlanningSheet`; ending a wait stays within
-that workflow. No left-rail action completes, reopens, cancels or changes status.
-Clarification opens `task.refine` for reviewed AI assistance, while ordinary
+existing waiting card inside `TaskPlanningSheet`, focused on the follow-up outcome.
+Saving that outcome calls the canonical `followUpExternalWait` action to record
+feedback and continue or resolve the wait. Ending a wait stays within that workflow.
+The rail never offers generic lifecycle changes. Explicit `task.setClarification` (`requested: false`)
+acknowledgement delegates to `useTaskActions.clarify`: it clears the clarification
+flag and revisit date, classifies captured work as actionable, and preserves the
+status of already actionable or Someday work. AI assistance remains a separate
+`task.refine` command available through structure and details. Ordinary
 clarification flags and discussion nomination remain editable in details.
 
 Backlog projects offer activation timing through the existing `story.defer`

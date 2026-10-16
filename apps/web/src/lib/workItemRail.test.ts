@@ -17,7 +17,7 @@ describe("contextual task interventions", () => {
   });
   it.each(["captured", "actionable", "someday"] as const)("prioritizes clarification independently of %s status", (status) => {
     expect(intents(taskRailActions(makeTask({ status, needsClarification: true }), true))).toEqual(["clarify", "deferClarification", "structure"]);
-    expect(taskRailActions(makeTask({ status, needsClarification: true }))[0]).toMatchObject({ command: { type: "task.refine" }, prominent: true });
+    expect(taskRailActions(makeTask({ status, needsClarification: true }))[0]).toMatchObject({ command: { type: "task.setClarification", requested: false }, prominent: true });
   });
   it("uses the same follow-up command in Today and ordinary lists without offering end-wait lifecycle", () => {
     const task = makeTask({ externalWait: { waitingFor: "Amt", revisitDate: null }, blocked: true });

@@ -25,6 +25,7 @@ vi.mock("../lib/api", () => ({
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
     clarifyTask: vi.fn(),
+    followUpExternalWait: vi.fn(),
     updateTask: vi.fn(),
     createTaskSuccessor: vi.fn(),
   },
@@ -413,18 +414,24 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
   });
 
-  it("opens clarification through the canonical workflow and restores focus on close", async () => {
-    const task = makeTask({ id: 208, title: "Aktiv und erneut zu klären", status: "actionable", needsClarification: true });
-    mockedApi.getTask.mockResolvedValue(task);
-    renderWithProviders(<><TaskOutline tasks={[task]} emptyMessage="Nichts da" /><TaskWorkflowHost /></>);
+  it.each(["captured", "actionable", "someday"] as const)("acknowledges clarification from the %s rail without AI or completing the task", async (status) => {
+    const task = makeTask({ id: 208, status, needsClarification: true, clarificationRevisitDate: "2026-10-20", scheduledDate: "2026-10-21" });
+    const resolvedStatus = status === "captured" ? "actionable" : status;
+    mockedApi.clarifyTask.mockResolvedValue({ ...task, revision: 2, status: resolvedStatus, needsClarification: false, clarificationRevisitDate: null });
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
     await userEvent.click(kebab);
-    await userEvent.click(screen.getByRole("button", { name: "Mit KI klären" }));
-    expect(await screen.findByRole("dialog", { name: /klären.*Aktiv und erneut zu klären/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Jetzt klären" }));
+    await waitFor(() => expect(mockedApi.clarifyTask).toHaveBeenCalledWith(task.id, task.revision));
+    expect(container.querySelector(".task-row")).toHaveClass(`task-row-surface-${resolvedStatus}`);
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
     expect(kebab).toHaveFocus();
+    await userEvent.click(kebab);
+    expect(screen.queryByRole("button", { name: "Jetzt klären" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockedApi.getTask).not.toHaveBeenCalled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
   });
 
   it("keeps discussion marking out of the execution rail", async () => {
@@ -485,7 +492,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
-    for (const name of ["Mit KI klären", "Später klären", "Struktur bearbeiten"]) {
+    for (const name of ["Jetzt klären", "Später klären", "Struktur bearbeiten"]) {
       expect(within(rail).getByRole("button", { name })).toBeInTheDocument();
     }
     expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
@@ -896,6 +903,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
   it("opens external-wait follow-up from the rail with keyboard access and restores its opener", async () => {
     const task = makeTask({ id: 37, externalWait: { waitingFor: "Amt", revisitDate: null } });
+    mockedApi.followUpExternalWait.mockResolvedValue({ ...task, revision: 2 });
     renderOutlineWithDetail(task);
     const user = userEvent.setup();
     const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
@@ -906,8 +914,21 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await user.keyboard("{Enter}");
     expect(await screen.findByLabelText("Wartet auf")).toHaveValue("Amt");
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    const outcome = screen.getByLabelText("Was ist passiert?");
+    expect(outcome).toHaveFocus();
+    await user.type(outcome, "Beim Amt angerufen, Antwort steht noch aus.");
+    await user.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
+    await waitFor(() => expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(task.id, {
+      action: "continue",
+      content: "Beim Amt angerufen, Antwort steht noch aus.",
+      waitingFor: "Amt",
+      revisitAt: null,
+      expectedRevision: task.revision,
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(kebab).toHaveFocus();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
   });
 
   it("opens the unresolved prerequisite from a blocked task's rail", async () => {

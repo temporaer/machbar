@@ -387,6 +387,7 @@ export function useWorkItemCommands() {
             true,
           );
         case "task.setClarification":
+          if (!command.requested) return taskActions.clarify(command.task);
           return taskActions.update(
             command.task,
             { needsClarification: command.requested },

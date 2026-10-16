@@ -8,7 +8,7 @@ export type RailIntent = "plan" | "split" | "wait" | "followUp" | "clarify" |
   "deferClarification" | "structure" | "inspectBlocker" | "startToday" |
   "availability" | "planActivation" | "outcome" | "nextStep";
 type RailCommand = Extract<WorkItemCommand, { type:
-  | "task.plan" | "task.split" | "task.waitingLifecycle" | "task.refine"
+  | "task.plan" | "task.split" | "task.waitingLifecycle" | "task.setClarification"
   | "task.deferClarification" | "task.structure" | "task.open"
   | "task.startToday" | "task.availability" | "story.defer"
   | "story.editOutcome" | "story.structure" | "story.planWork"
@@ -24,7 +24,7 @@ export interface RailAction {
 export function taskRailActions(task: Task, revisit = false): readonly RailAction[] {
   if (task.kind === "reference" || task.status === "done" || task.status === "cancelled") return [];
   if (task.needsClarification || task.status === "captured") return [
-    { intent: "clarify", command: { type: "task.refine", taskId: task.id }, prominent: true },
+    { intent: "clarify", command: { type: "task.setClarification", task, requested: false }, prominent: true },
     { intent: "deferClarification", command: { type: "task.deferClarification", taskId: task.id } },
     { intent: "structure", command: { type: "task.structure", taskId: task.id } },
   ];

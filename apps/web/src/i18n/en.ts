@@ -879,7 +879,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     split: "Split into smaller steps",
     wait: "Wait for",
     followUp: "Follow up",
-    clarify: "Clarify with AI",
+    clarify: "Clarify now",
     deferClarification: "Clarify later",
     structure: "Edit structure",
     inspectBlocker: "Open prerequisite",

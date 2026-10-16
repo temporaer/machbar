@@ -845,7 +845,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     split: "In kleinere Schritte aufteilen",
     wait: "Warten auf",
     followUp: "Nachhaken",
-    clarify: "Mit KI klären",
+    clarify: "Jetzt klären",
     deferClarification: "Später klären",
     structure: "Struktur bearbeiten",
     inspectBlocker: "Voraussetzung öffnen",
