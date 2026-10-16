@@ -14,7 +14,6 @@ import { TaskPrioritySheet } from "./TaskPrioritySheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
 import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
-import { TaskShapeSheet } from "./TaskShapeSheet";
 import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { TaskClarificationSheet } from "./TaskClarificationSheet";
 import { useStrings } from "../lib/strings";
@@ -97,8 +96,6 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
       return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} initialTarget="availability" />;
     case "deferClarification":
       return <TaskClarificationSheet task={task} onClose={close} />;
-    case "shape":
-      return <TaskShapeSheet task={task} onClose={close} />;
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
     case "waitingLifecycle":

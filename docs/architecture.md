@@ -897,9 +897,9 @@ existing guarded role-conversion implementation inside the same transaction.
 Undated children do not activate Someday/backlog work. Existing outline
 reordering still uses `useOutlineOrganize` and the canonical task move API.
 
-The task row rail exposes **Schritt hinzufügen** and **Verschieben** directly;
-both dispatch existing `task.split` and `task.changeProject` commands. The row
-does not reproduce task creation or movement semantics.
+The task row rail offers **Aufteilen** (`task.split`) for ready actions.
+Movement remains in task details and the existing structure workflow.
+The row does not reproduce task creation or movement semantics.
 
 Outline position (likely work order) and dependencies (genuinely blocked
 work) remain distinct: a project's ordinary task list needs neither a
@@ -1067,8 +1067,8 @@ backlog, completed, and archived projects. Active stories stay primary, backlog
 stories render in their own visible but collapsed-by-default **Später / noch
 nicht aktiv** section, and completed/archived stories remain folded.
 
-- **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail/chip strip instead, never the one-tap default. Backlog activation is also offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
-- **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
+- **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail instead, never the one-tap default. Backlog activation is also offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
+- **Left swipe / ⋯** asks what should happen next with the item, revealing up to three contextual interventions in one horizontal row. Lifecycle transitions remain in the separate right-swipe rail.
 - The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step. `archived` only ever offers `return_to_backlog`; there is no direct `archived → active` shortcut anywhere in the UI.
 - Activation requires a driver plus an executable progress path or intentional
   healthy future wait. Focused preflight opens `MemberSelectionSheet` or the
@@ -1258,7 +1258,7 @@ only owner, planning and waiting keep a lightweight `+ …` affordance. Status
 shows as a clickable badge that toggles its own inline lifecycle chooser
 (`task.lifecycle`), not a `Weitere Aktionen` tile. Movement (`task.changeProject`),
 split (`task.split`), and convert-to-project (`task.convertToProject`) live in
-the row rail's `Struktur` sheet instead of here, and successor creation is the
+the existing `Struktur` workflow, also available in details, and successor creation is the
 contextual "+" in organizable outlines — none of them duplicate into
 `Weitere Aktionen`, which now holds only genuinely uncommon actions with no
 other affordance (priority/recurrence when unset, the additional-next-action
@@ -1364,8 +1364,8 @@ progress count is always computed against the full, unpruned `children` array.
 in one step — there is no separate `parent`-only mode, since a project-only
 move is not representable in the `work_items.parentId`-only hierarchy anyway,
 and the combined shape is a strict superset. It is opened from
-`task.changeProject`, dispatched from the row rail's `Struktur` sheet
-(`TaskStructureSheet`) via `TaskWorkflowHost`:
+`task.changeProject`, dispatched from the `Struktur` workflow
+(`TaskStructureSheet`), available in task details and clarification rails via `TaskWorkflowHost`:
 
 - **Search** is an always-visible filter over the candidate list, matched case-insensitively (`toLocaleLowerCase`, so German umlauts fold correctly) as a substring of `title + subtitle`. For parent-task candidates the subtitle is the owning project's title, so typing a project name finds its tasks.
 - **Recents** (`lib/recentDestinations.ts`) are shown first while the query is empty, in a `Zuletzt verwendet` group, with the remaining candidates under `Alle Ziele`. Once a query is typed the grouping collapses to plain results.
@@ -1633,27 +1633,50 @@ suppress themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
 
-**Command rails.** `WorkItemActionRail.tsx` renders fixed, non-configurable
-buttons per row; there is no per-household favorite/overflow configuration.
-The left rail contains contextual non-status actions only. Tasks use a
-status/kind-specific rail: `Planung`, `Art`, `Struktur`, `Notiz`, or the
-waiting-task pair `Wartet auf`/`Update`; `Planung` dispatches either
-`task.availability` or `task.plan` into the unified
-`TaskPlanningSheet`, which edits persistent external-wait state, `Task.notBeforeAt`
-plus its local calendar date `Task.notBeforeDate`, `scheduledDate`, and
-`dueDate` in one draft/commit. `task.waitingLifecycle` targets the waiting card;
-neutral planning remains at the top of the sheet, and `task.availability`
-targets only the revisit card. `Art` opens `TaskShapeSheet`; project conversion delegates to
-the existing guarded backlog handoff, while task-to-reference conversion is
-not offered because no canonical mutation exists. Task details remain
-available from the row tap or kebab fallback, not as a generic rail action.
-Project rails use `Planung`, `Struktur`, `Ziel`, and `Nächster Schritt`
-according to the project classification. Backlog and active-waiting project
-`Planung` use the existing revisit/defer workflow; active non-waiting project
-`Planung` edits the project's deadline until a broader project planning sheet
-exists.
-`Struktur` opens `ProjectStructureSheet` for project rows and remains
-available from task detail for task split/move/convert workflows.
+**Command rails.** Left swipe means “What should happen next with this item?”
+`workItemRail.ts` owns pure, deterministic task/project selection and typed
+semantic command descriptors; the shared vocabulary is localized once in
+`railLabels`/`railAccessibleLabels`. `WorkItemActionRail.tsx` renders one
+non-wrapping row of zero to three buttons, with one prominent action when
+attention warrants it. Full accessible names and titles accompany short visible
+labels; narrow buttons use ellipsis and retain 44px height. The kebab remains
+available on mobile and keyboard, including when no intervention is selected.
+An empty rail explains that no intervention is currently needed and directs
+people to row-tap details and right-swipe status; it creates no synthetic action.
+
+Task precedence is terminal/reference → no intervention; captured or needing
+clarification → explicit clarification acknowledgement, clarification deferral, structure;
+external wait → follow-up and planning; dependency-blocked → first unresolved
+prerequisite and planning (planning alone if no dependency target is available).
+Ready Today revisit prompts offer start today, availability and planning;
+Someday offers planning alone; otherwise ready actions offer planning, splitting
+and starting an external wait (recurring actions remain leaves and omit splitting). A follow-up opens `task.waitingLifecycle`, the
+existing waiting card inside `TaskPlanningSheet`, focused on the follow-up outcome.
+Saving that outcome calls the canonical `followUpExternalWait` action to record
+feedback and continue or resolve the wait. Ending a wait stays within that workflow.
+The rail never offers generic lifecycle changes. Explicit `task.setClarification` (`requested: false`)
+acknowledgement delegates to `useTaskActions.clarify`: it clears the clarification
+flag and revisit date, classifies captured work as actionable, and preserves the
+status of already actionable or Someday work. AI assistance remains a separate
+`task.refine` command available through structure and details. Ordinary
+clarification flags and discussion nomination remain editable in details.
+
+Backlog projects offer activation timing through the existing `story.defer`
+revisit workflow, outcome criteria and structure. Stuck projects offer next-step
+planning, outcome criteria and structure in stable order. Completion-review
+projects offer outcome/criteria review only (`story.editOutcome`), leaving
+completion on the right. Healthy and deferred projects do not repeat their
+embedded next action. Active-waiting projects deliberately have no intervention:
+waiting is an aggregate and no project-level follow-up/edit-wait command exists;
+the underlying tasks own it. Completed/archived projects have no interventions.
+Deadline, note and movement shortcuts are absent. The unused shape chooser and
+its command/workflow were removed; reference promotion remains in details and
+project conversion remains in the existing structure workflow. Discussion nomination is in
+task/project details, with existing indicators still visible on rows.
+
+Both rows focus the kebab before dispatch and close the rail so focused sheets
+restore focus to a connected opener. Busy disabling and the shared one-open-rail
+interaction scope remain authoritative.
 The separate status/lifecycle rail (swipe right, `*-row-lifecycle`) is
 unchanged and, for tasks, now also carries the waiting
 (`task.waitingLifecycle`) affordance into the shared planning sheet.

@@ -206,6 +206,20 @@ describe("ProjectDetailPage task explanations", () => {
     });
   });
 
+  it("edits discussion nomination in project details through the canonical command", async () => {
+    const project = makeProject({ id: 5, title: "Gemeinsam besprechen" });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    mockedApi.updateProject.mockResolvedValue({ ...project, revision: 2, discussionRequested: true });
+    renderProjectRoute("/projects/5");
+    const button = await screen.findByRole("button", { name: strings.addDiscussion });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(button);
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(5, {
+      discussionRequested: true, expectedRevision: 1,
+    }));
+    expect(await screen.findByRole("button", { name: strings.removeDiscussion })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("launches AI from the header action group and keeps controls together while editing", async () => {
     const project = { ...makeProject({ id: 42, title: "Plan a sample workshop with a long descriptive project title", revision: 6 }), tasks: [] };
     mockedApi.getProject.mockResolvedValue(project);

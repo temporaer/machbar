@@ -1856,6 +1856,20 @@ describe("TaskDetailSheet", () => {
   // row rail's Struktur sheet, not from the task detail's own commands — see
   // `TaskStructureSheet.test.tsx` for its conversion-flow coverage.
 
+  it.each(["action", "reference"] as const)("edits %s discussion nomination from details through the canonical task command", async (kind) => {
+    const task = makeTask({ id: 209, title: "Gemeinsam besprechen", kind });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, discussionRequested: true });
+    renderSheet(209);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    await userEvent.click(screen.getByRole("button", { name: "Für Besprechung vormerken" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(209, {
+      discussionRequested: true, expectedRevision: 1,
+    }));
+    expect(screen.getByRole("button", { name: strings.removeDiscussion })).toHaveAttribute("aria-pressed", "true");
+  });
+
   describe("reference variant", () => {
     it("hides task-only sections and shows a promotion action for a reference", async () => {
       mockedApi.getTask.mockResolvedValue(
@@ -1908,18 +1922,16 @@ describe("TaskDetailSheet", () => {
         scheduledDate: "2026-10-12",
       });
       mockedApi.getTask.mockResolvedValue(task);
-      mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, needsClarification: false });
+      mockedApi.clarifyTask.mockResolvedValue({ ...task, revision: 2, needsClarification: false });
       renderSheet(72);
       await userEvent.click(screen.getByText("open"));
       await waitForTaskTitle("Geplante Aufgabe erneut klären");
 
       expect(screen.getByRole("button", { name: "Später klären" })).toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Jetzt klären" }));
-      await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(72, {
-        needsClarification: false,
-        expectedRevision: 1,
-      }));
-      expect(mockedApi.updateTask.mock.calls.at(-1)?.[1]).not.toHaveProperty("status");
+      await waitFor(() => expect(mockedApi.clarifyTask).toHaveBeenCalledWith(72, 1));
+      expect(mockedApi.updateTask).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Jetzt klären" })).not.toBeInTheDocument();
     });
 
     it("defers only the clarification reminder from details and leaves cancellation untouched", async () => {

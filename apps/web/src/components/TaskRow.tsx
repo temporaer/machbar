@@ -36,8 +36,7 @@ import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
 import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
-import type { TaskDetailFocusField } from "../lib/taskDetailContext";
-import type { TaskPlanningTarget } from "../lib/commands";
+import { taskRailActions, type RailAction } from "../lib/workItemRail";
 
 const LONG_PRESS_MS = 480;
 
@@ -177,9 +176,6 @@ export function TaskRow({
     task.kind === "action" &&
     task.status !== "done" &&
     task.status !== "cancelled";
-  const unresolvedDependency = task.dependencies.find(
-    (dependency) => !dependency.resolved,
-  );
 
   const organizeEnabled = organize?.enabled ?? false;
   const isDragged = organize?.activeId === taskProp.id;
@@ -321,48 +317,11 @@ export function TaskRow({
     [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
 
-  const runRailCommand = (
-    command:
-      | "task.availability"
-      | "task.deferClarification"
-      | "task.plan"
-      | "task.shape"
-      | "task.split"
-      | "task.changeProject"
-      | "task.structure"
-      | "task.waitingLifecycle"
-      | "task.open",
-    focusField?: TaskDetailFocusField,
-    taskId = task.id,
-    planningTarget?: TaskPlanningTarget,
-  ) => {
-    // Move focus to the kebab before the rail unmounts, so a focused-
-    // workflow sheet's opener-restore targets a control that stays
-    // connected across the close/open transition instead of losing focus
-    // to <body>.
+  const runRailCommand = (action: RailAction) => {
+    // Restore to a connected opener before the rail unmounts.
     kebabButtonRef.current?.focus();
     scope.setOpenRail(null);
-    if (command === "task.open") {
-      dispatch({
-        type: command,
-        taskId,
-        ...(focusField ? { focusField } : {}),
-      });
-      return;
-    }
-    dispatch({
-      type: command,
-      taskId,
-      ...(command === "task.plan" && planningTarget
-        ? { target: planningTarget }
-        : {}),
-    });
-  };
-
-  const runRailMutation = (command: "task.startToday" | "task.endWaiting") => {
-    kebabButtonRef.current?.focus();
-    scope.setOpenRail(null);
-    dispatch({ type: command, task });
+    dispatch(action.command);
   };
 
   const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
@@ -662,97 +621,14 @@ export function TaskRow({
           kind="task"
           disabled={busy}
           groupLabel={strings.moreActions}
-          actions={showTodayRevisitActions && task.externalWait
-              ? [
-                  {
-                    label: strings.followUp,
-                    onSelect: () => runRailCommand("task.waitingLifecycle"),
-                  },
-                  {
-                    label: strings.endWaiting,
-                    onSelect: () => runRailMutation("task.endWaiting"),
-                  },
-                ]
-              : showTodayRevisitActions && task.blocked && unresolvedDependency
-                ? [
-                    {
-                      label: strings.revisitInspectBlocker,
-                      onSelect: () =>
-                        runRailCommand(
-                          "task.open",
-                          undefined,
-                          unresolvedDependency.dependsOnTaskId,
-                        ),
-                    },
-                    {
-                      label: strings.revisitLater,
-                      onSelect: () => runRailCommand("task.availability"),
-                    },
-                    {
-                      label: strings.revisitProceedAnyway,
-                      onSelect: () => runRailMutation("task.startToday"),
-                    },
-                  ]
-                : showTodayRevisitActions
-                  ? [
-                      {
-                        label: strings.revisitWorkNow,
-                        onSelect: () => runRailMutation("task.startToday"),
-                      },
-                      {
-                        label: strings.revisitLater,
-                        onSelect: () => runRailCommand("task.availability"),
-                      },
-                      {
-                        label: strings.revisitPlanForDay,
-                        onSelect: () =>
-                          runRailCommand("task.plan", undefined, task.id, "scheduled"),
-                      },
-                    ]
-                  : isReference
-              ? [
-                  { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
-                  { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
-                  { label: strings.railNote, onSelect: () => runRailCommand("task.open", "notes") },
-                ]
-              : task.status === "captured"
-                ? [
-                    { label: strings.railAddStep, onSelect: () => runRailCommand("task.split") },
-                    { label: strings.railMove, onSelect: () => runRailCommand("task.changeProject") },
-                    { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
-                  ]
-                : task.externalWait
-                  ? [
-                      { label: strings.railWaitingFor, onSelect: () => runRailCommand("task.waitingLifecycle") },
-                      { label: strings.railAddStep, onSelect: () => runRailCommand("task.split") },
-                      { label: strings.railMove, onSelect: () => runRailCommand("task.changeProject") },
-                    ]
-                  : [
-                      { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
-                      { label: strings.railAddStep, onSelect: () => runRailCommand("task.split") },
-                      { label: strings.railMove, onSelect: () => runRailCommand("task.changeProject") },
-                    ]}
-          secondaryActions={[
-            ...(!isReference ? [{
-              label: task.needsClarification ? strings.clarifyNow : strings.clarifyAgain,
-              onSelect: () => {
-                scope.setOpenRail(null);
-                if (task.needsClarification) void taskActions.clarify(task);
-                else dispatch({ type: "task.setClarification", task, requested: true });
-              },
-            }] : []),
-            ...(task.needsClarification && !isReference ? [{
-              label: strings.clarifyLater,
-              onSelect: () => runRailCommand("task.deferClarification"),
-            }] : []),
-            {
-              label: task.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
-              onSelect: () => {
-                scope.setOpenRail(null);
-                dispatch({ type: "task.setDiscussion", task, requested: !task.discussionRequested });
-              },
-            },
-          ]}
+          emptyLabel={strings.railEmpty}
+          actions={taskRailActions(task, showTodayRevisitActions).map((action) => ({
+            id: action.intent,
+            label: strings.railLabels[action.intent],
+            accessibleLabel: strings.railAccessibleLabels[action.intent],
+            prominent: action.prominent ?? false,
+            onSelect: () => runRailCommand(action),
+          }))}
         />
       ) : null}
       {lifecycleOpen ? (

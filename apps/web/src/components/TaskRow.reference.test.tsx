@@ -78,26 +78,6 @@ describe("TaskRow – reference presentation", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("offers 'Als Aufgabe behandeln' from the reference's action menu and calls the promotion endpoint", async () => {
-    const reference = makeTask({ id: 1, kind: "reference", title: "Unterkunft" });
-    mockedApi.makeTaskAction.mockResolvedValue(
-      makeTask({ id: 1, kind: "action", title: "Unterkunft" }),
-    );
-    mockedApi.getTask.mockResolvedValue(reference);
-    renderWithProviders(
-      <>
-        <TaskOutline tasks={[reference]} emptyMessage="Nichts da" />
-        <TaskWorkflowHost />
-      </>,
-    );
-
-    await screen.findByText("Unterkunft");
-    await userEvent.click(screen.getByRole("button", { name: /weitere aktionen/i }));
-    await userEvent.click(screen.getByRole("button", { name: "Art" }));
-    await userEvent.click(screen.getByRole("button", { name: /Als Aufgabe behandeln/ }));
-
-    expect(mockedApi.makeTaskAction).toHaveBeenCalledWith(1, 1);
-  });
 
   it("still renders drag-handle/expand affordances and children for a reference", async () => {
     const child = makeTask({ id: 2, kind: "action", title: "Hotel buchen" });

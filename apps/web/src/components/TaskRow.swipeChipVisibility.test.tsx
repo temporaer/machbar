@@ -134,7 +134,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     // Drag resets — no lingering translateX — yet the chips are still there.
     expect(content.style.transform).toBe("");
     expect(screen.getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Planung" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
   });
 
   it("keeps every default rail command enabled and directly clickable once revealed by a left-swipe", async () => {
@@ -152,9 +152,9 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     swipe(row, -100);
 
     const chipButtons = [
-      screen.getByRole("button", { name: "Planung" }),
-      screen.getByRole("button", { name: "Schritt hinzufügen" }),
-      screen.getByRole("button", { name: "Verschieben" }),
+      screen.getByRole("button", { name: "Planen" }),
+      screen.getByRole("button", { name: "In kleinere Schritte aufteilen" }),
+      screen.getByRole("button", { name: "Warten auf" }),
     ];
     for (const btn of chipButtons) {
       expect(btn).toBeEnabled();
@@ -163,7 +163,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
 
     // Actually interactable via a real pointer/click sequence, not just present in the DOM.
     // "Planung" opens the one canonical unified planning workflow.
-    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
+    await userEvent.click(screen.getByRole("button", { name: "Planen" }));
     expect(await screen.findByRole("dialog", { name: "Planung" })).toBeInTheDocument();
   });
 
@@ -174,11 +174,11 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     await screen.findByText("Rückruf einplanen");
 
     swipe(container, -100);
-    expect(screen.getByRole("button", { name: "Planung" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
     const cancelBg = container.querySelector(".task-row-swipe-bg.cancel") as HTMLElement;
     expect(getComputedStyle(cancelBg).opacity).toBe("1");
 
-    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
+    await userEvent.click(screen.getByRole("button", { name: "Planen" }));
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });

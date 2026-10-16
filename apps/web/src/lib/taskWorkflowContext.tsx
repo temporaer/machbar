@@ -25,7 +25,6 @@ export type TaskWorkflowKind =
   | "plan"
   | "availability"
   | "deferClarification"
-  | "shape"
   | "structure"
   | "waitingLifecycle"
   | "split"

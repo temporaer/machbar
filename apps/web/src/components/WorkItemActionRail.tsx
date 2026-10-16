@@ -2,61 +2,35 @@ interface WorkItemActionRailProps {
   kind: "task" | "project";
   disabled?: boolean;
   groupLabel: string;
+  emptyLabel: string;
   actions: readonly {
+    id: string;
     label: string;
-    onSelect: () => void;
-  }[];
-  secondaryActions?: readonly {
-    label: string;
+    accessibleLabel: string;
+    prominent?: boolean;
     onSelect: () => void;
   }[];
 }
 
-/**
- * Fixed row rail shared by tasks and projects — replaces the
- * former user-configurable favorites/overflow rail
- * (`railConfig.ts`/`railConfigContext.tsx`/`WorkItemCommandRail.tsx`):
- * receives the fixed actions for the current item in display order. Task rails
- * use planning, shape, waiting, note, and structure actions according to the
- * task's status/kind; projects use contextual planning, structure, goal, and
- * next-step actions.
- * Status/lifecycle transitions live in the separate status rail, not here —
- * see `TaskRow.tsx`'s/`ProjectStoryRow.tsx`'s `*-row-lifecycle` group.
- */
-export function WorkItemActionRail({
-  kind,
-  disabled = false,
-  groupLabel,
-  actions,
-  secondaryActions = [],
-}: WorkItemActionRailProps) {
+/** One non-wrapping row of contextual interventions, selected by workItemRail.ts. */
+export function WorkItemActionRail({ kind, disabled = false, groupLabel, emptyLabel, actions }: WorkItemActionRailProps) {
   return (
     <div className="work-item-command-rail" data-kind={kind} role="group" aria-label={groupLabel}>
-      {actions.length > 0 ? <div
-        className="rail-main-grid"
-        style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}
-      >
+      {actions.length ? <div className="rail-main-grid" style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}>
         {actions.map((action) => (
           <button
-            key={action.label}
+            key={action.id}
             type="button"
-            className="btn btn-sm"
+            className={`btn btn-sm${action.prominent ? " btn-primary" : ""}`}
+            aria-label={action.accessibleLabel}
+            title={action.accessibleLabel}
             disabled={disabled}
             onClick={action.onSelect}
           >
             {action.label}
           </button>
         ))}
-      </div> : null}
-      {secondaryActions.length > 0 ? (
-        <div className="rail-secondary-grid">
-          {secondaryActions.map((action) => (
-            <button key={action.label} type="button" className="btn btn-sm" disabled={disabled} onClick={action.onSelect}>
-              {action.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      </div> : <p className="rail-empty" role="status">{emptyLabel}</p>}
     </div>
   );
 }

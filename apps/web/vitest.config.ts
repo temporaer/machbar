@@ -36,6 +36,7 @@ const nodeTests = [
   "src/lib/tagGrouping.test.ts",
   "src/lib/taskHelpers.test.ts",
   "src/lib/taskTreeMove.test.ts",
+  "src/lib/workItemRail.test.ts",
 ];
 
 export default defineConfig({

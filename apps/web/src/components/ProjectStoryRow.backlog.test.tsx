@@ -234,9 +234,9 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     });
     // The rail is fixed and contextual: backlog projects expose
     // Planung/Struktur/Ziel, never a configurable/overflow set.
-    expect(within(chips).getByRole("button", { name: "Planung" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Ziel" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Aktivierung per Wiedervorlage planen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Struktur bearbeiten" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Ergebnis und Kriterien prüfen" })).toBeInTheDocument();
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
 
     // Closing and reopening via the kebab (no swipe gesture at all).
@@ -342,7 +342,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Speicherplatz aufräumen");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Struktur" }));
+    await userEvent.click(screen.getByRole("button", { name: "Struktur bearbeiten" }));
     const structureSheet = await screen.findByRole("dialog", {
       name: "Struktur: Speicherplatz aufräumen",
     });
@@ -368,7 +368,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Dachboden entrümpeln");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Struktur" }));
+    await userEvent.click(screen.getByRole("button", { name: "Struktur bearbeiten" }));
     const structureSheet = await screen.findByRole("dialog", {
       name: "Struktur: Dachboden entrümpeln",
     });

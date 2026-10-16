@@ -42,7 +42,6 @@ export type WorkItemCommand =
   | { type: "task.plan"; taskId: number; target?: TaskPlanningTarget }
   | { type: "task.availability"; taskId: number }
   | { type: "task.deferClarification"; taskId: number }
-  | { type: "task.shape"; taskId: number }
   | { type: "task.structure"; taskId: number }
   | { type: "task.reminders"; taskId: number }
   | { type: "task.waitingLifecycle"; taskId: number }
