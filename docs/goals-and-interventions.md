@@ -231,6 +231,9 @@ Old stored/in-flight suggestions remain readable. A suggestion missing an eviden
 plan needs explicit user selection before acceptance. Old assessments remain usable;
 new requests require typed decisions and observation citations. An outdated adapter's
 incomplete new result fails safely; manual authoring/review remains available.
+Rejected coach responses expose only bounded validation paths/codes, never the raw
+prompt or model output. Retrying a failed suggestion feeds those validation issues
+back to the AI Task so it can correct both contract and semantic mistakes.
 Install Home Assistant component **0.7.2** through HACS and restart Home Assistant
 to load the new Python adapter. Server and integration versions are independent.
 

@@ -1607,6 +1607,14 @@ export interface GoalSuggestionProposal {
   interventions: ProposedIntervention[];
   /** Present when `status === "failed"`. */
   error: string | null;
+  /** Safe structured validation feedback for a failed AI response. */
+  errorDetails?: {
+    issues: Array<{
+      path: Array<string | number>;
+      code: string;
+      message: string;
+    }>;
+  } | null;
 }
 
 /**

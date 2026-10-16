@@ -859,4 +859,5 @@ export const requestAssessmentSchema = z.object({
 export const requestGoalSuggestionSchema = z.object({
   locale: z.enum(["de", "en"]).optional(),
   clarificationRequestId: z.string().min(1).optional(), clarificationAnswer: z.string().trim().min(1).max(2000).optional(),
+  retryRequestId: z.string().min(1).optional(),
 }).strict().refine((v) => Boolean(v.clarificationRequestId) === Boolean(v.clarificationAnswer), { message: "A clarification answer needs its source question request." });

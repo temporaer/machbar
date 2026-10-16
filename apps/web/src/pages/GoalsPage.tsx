@@ -89,7 +89,7 @@ function GoalCoachSuggestions({
 }: {
   goal: GoalWithInterventions;
   pending: boolean;
-  onRequest: (goalId: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) => Promise<GoalSuggestionProposal>;
+  onRequest: (goalId: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string; retryRequestId?: string }) => Promise<GoalSuggestionProposal>;
   onCheck: (goalId: number, requestId: string) => Promise<GoalSuggestionProposal>;
   onAccept: (goalId: number, requestId: string, index: number, overrides: AcceptGoalSuggestionInput) => Promise<unknown>;
 }) {
@@ -110,7 +110,14 @@ function GoalCoachSuggestions({
     setLoading(true);
     setError(null);
     try {
-      const next = await onRequest(goal.id, followup && proposal ? { clarificationRequestId: proposal.requestId, clarificationAnswer: answer } : undefined);
+      const next = await onRequest(
+        goal.id,
+        followup && proposal
+          ? { clarificationRequestId: proposal.requestId, clarificationAnswer: answer }
+          : proposal?.status === "failed"
+            ? { retryRequestId: proposal.requestId }
+            : undefined,
+      );
       if (followup && next.status !== "ready") {
         setError(next.error ?? strings.goalCoachStillWorking);
         return;

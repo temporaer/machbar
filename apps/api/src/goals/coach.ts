@@ -63,6 +63,7 @@ type RequestRow = typeof schema.homeAssistantRequests.$inferSelect;
 interface StoredSuggestPayload {
   contractVersion?: 2;
   clarification?: { question: string; answer: string };
+  validationFeedback?: Array<{ path: Array<string | number>; code: string; message: string }>;
   goalId: number;
   taskName: typeof TASK_NAME;
   instructions: string;
@@ -88,6 +89,12 @@ interface StoredSuggestProposal {
   acceptedInterventionId?: number;
   interventions: ProposedIntervention[];
 }
+
+type SuggestValidationIssue = {
+  path: Array<string | number>;
+  code: string;
+  message: string;
+};
 interface StoredAssessProposal {
   reminderEnabled?: boolean;
   countedObservationIds?: number[];
@@ -193,15 +200,25 @@ function errorMessage(row: RequestRow): string | null {
   return error?.message ?? "The AI Task did not return a usable result.";
 }
 
+function errorDetails(row: RequestRow): { issues: SuggestValidationIssue[] } | null {
+  if (row.status !== "failed") return null;
+  const error = parseResult<{ details?: { issues?: SuggestValidationIssue[] } }>(row.error);
+  return error?.details?.issues ? { issues: error.details.issues } : null;
+}
+
 // --- Validation -------------------------------------------------------------
 
-function validateSuggestResponse(raw: unknown, today: string, strict = false, allowClarification = true): StoredSuggestProposal | null {
-  if (!raw || typeof raw !== "object") return null;
+function validateSuggestResponse(raw: unknown, today: string, strict = false, allowClarification = true): { proposal: StoredSuggestProposal | null; issues: SuggestValidationIssue[] } {
+  const invalid = (path: Array<string | number>, code: string, message: string) => ({ proposal: null, issues: [{ path, code, message }] });
+  if (!raw || typeof raw !== "object") return invalid([], "object_required", "Expected an object.");
   const response = raw as GoalSuggestAiResponse;
-  if (!Array.isArray(response.interventions) || response.interventions.length > 2) return null;
+  if (!Array.isArray(response.interventions)) return invalid(["interventions"], "array_required", "Expected an interventions array.");
+  if (response.interventions.length > 2) return invalid(["interventions"], "too_many_items", "At most two interventions are allowed.");
   if (response.clarificationQuestion != null) {
-    if (!allowClarification || response.interventions.length || typeof response.clarificationQuestion !== "string" || !response.clarificationQuestion.trim() || response.clarificationQuestion.length > 500) return null;
-    return { clarificationQuestion: response.clarificationQuestion.trim(), interventions: [] };
+    if (!allowClarification) return invalid(["clarificationQuestion"], "not_allowed", "A clarification question is not allowed for this request.");
+    if (response.interventions.length) return invalid(["interventions"], "clarification_with_interventions", "A clarification question must not include interventions.");
+    if (typeof response.clarificationQuestion !== "string" || !response.clarificationQuestion.trim() || response.clarificationQuestion.length > 500) return invalid(["clarificationQuestion"], "invalid_string", "Expected a non-empty question of at most 500 characters.");
+    return { proposal: { clarificationQuestion: response.clarificationQuestion.trim(), interventions: [] }, issues: [] };
   }
   const entrySchema = z.object({
     type: z.enum(interventionTypes), commitment: z.string().trim().min(1).max(1000), rationale: z.string().trim().max(4000),
@@ -209,19 +226,30 @@ function validateSuggestResponse(raw: unknown, today: string, strict = false, al
     observationPlan: observationPlanSchema.optional(), tasks: z.array(interventionTaskPlanSchema).max(8).optional(),
   }).strict();
   const interventions: ProposedIntervention[] = [];
-  for (const rawEntry of response.interventions) {
+  for (const [index, rawEntry] of response.interventions.entries()) {
     const entry = entrySchema.safeParse(rawEntry);
-    if (!entry.success) return null;
+    if (!entry.success) {
+      return {
+        proposal: null,
+        issues: entry.error.issues.slice(0, 10).map((issue) => ({
+          path: ["interventions", index, ...issue.path],
+          code: issue.code,
+          message: issue.message,
+        })),
+      };
+    }
     const value = entry.data;
-    if (strict && !value.observationPlan) return null;
-    if (value.revisitDate < value.startDate) return null;
-    if (value.tasks?.some((t) => t.repeatAfterDays && !t.scheduledDate)) return null;
-    if (value.tasks?.some((t) => t.reminders?.some((r) => r.kind === "deadline_relative") && !t.dueDate && !t.repeatAfterDays)) return null;
-    if (value.tasks?.some((t) => t.dueDate && t.scheduledDate && t.dueDate < t.scheduledDate)) return null;
-    if (new Set(value.tasks?.map((t) => t.key)).size !== (value.tasks?.length ?? 0)) return null;
+    if (strict && !value.observationPlan) return invalid(["interventions", index, "observationPlan"], "required", "Contract version 2 requires an observation plan.");
+    if (value.revisitDate < value.startDate) return invalid(["interventions", index, "revisitDate"], "date_order", "revisitDate must be on or after startDate.");
+    if (value.tasks?.some((t) => t.repeatAfterDays && !t.scheduledDate)) return invalid(["interventions", index, "tasks"], "recurrence_date_required", "Recurring tasks require scheduledDate.");
+    if (value.tasks?.some((t) => t.reminders?.some((r) => r.kind === "deadline_relative") && !t.dueDate && !t.repeatAfterDays)) return invalid(["interventions", index, "tasks"], "reminder_deadline_required", "Deadline-relative reminders require dueDate or recurrence.");
+    if (value.tasks?.some((t) => t.dueDate && t.scheduledDate && t.dueDate < t.scheduledDate)) return invalid(["interventions", index, "tasks"], "task_date_order", "A task dueDate cannot precede its scheduledDate.");
+    if (new Set(value.tasks?.map((t) => t.key)).size !== (value.tasks?.length ?? 0)) return invalid(["interventions", index, "tasks"], "duplicate_task_key", "Task keys must be unique within a proposal.");
     interventions.push(value);
   }
-  return interventions.length ? { interventions } : null;
+  return interventions.length
+    ? { proposal: { interventions }, issues: [] }
+    : invalid(["interventions"], "empty", "At least one intervention is required.");
 }
 
 function validateAssessResponse(
@@ -277,12 +305,20 @@ export function requestGoalSuggestion(
   const goal = goalRowOrThrow(db, goalId);
   assertGoalOwner(goal, ownerMemberId);
   let clarification: { question: string; answer: string } | undefined;
+  let validationFeedback: SuggestValidationIssue[] | undefined;
   if (options.clarificationRequestId) {
     const previous = suggestRowOrThrow(db, goalId, options.clarificationRequestId);
     const previousPayload = parseResult<StoredSuggestPayload>(previous.payloadJson);
     const previousProposal = parseResult<StoredSuggestProposal>(previous.resultJson);
     if (deriveStatus(previous) !== "ready" || !previousProposal?.clarificationQuestion || previousPayload?.clarification) throw AppError.conflict("coach_proposal_not_ready", "Only one clarification exchange is supported.");
     clarification = { question: previousProposal.clarificationQuestion, answer: options.clarificationAnswer! };
+  }
+  if (options.retryRequestId) {
+    const previous = suggestRowOrThrow(db, goalId, options.retryRequestId);
+    if (previous.status !== "failed") {
+      throw AppError.conflict("coach_proposal_not_ready", "Only a failed suggestion can be retried.");
+    }
+    validationFeedback = errorDetails(previous)?.issues;
   }
   const today = householdToday(db);
   // Owner boundary is applied in SQL before any model context is projected.
@@ -308,6 +344,7 @@ export function requestGoalSuggestion(
       defaultRevisitDate: addCalendarDays(today, DEFAULT_DURATION_DAYS),
       aiContext: getHouseholdAiContext(db),
       clarification,
+      validationFeedback,
     }),
   };
   return db.transaction((tx) =>
@@ -352,6 +389,7 @@ export function getGoalSuggestion(
     clarificationQuestion: proposal?.clarificationQuestion ?? null,
     interventions: proposal?.interventions ?? [],
     error: errorMessage(row),
+    errorDetails: errorDetails(row),
   };
 }
 
@@ -359,8 +397,8 @@ export function getGoalSuggestion(
 export function onGoalSuggestAnalyzed(db: Db, row: RequestRow, raw: unknown): void {
   const today = householdToday(db);
   const payload = parseResult<StoredSuggestPayload>(row.payloadJson);
-  const proposal = validateSuggestResponse(raw, today, payload?.contractVersion === 2, !payload?.clarification);
-  if (!proposal) {
+  const validated = validateSuggestResponse(raw, today, payload?.contractVersion === 2, !payload?.clarification);
+  if (!validated.proposal) {
     db.update(schema.homeAssistantRequests)
       .set({
         status: "failed",
@@ -368,6 +406,7 @@ export function onGoalSuggestAnalyzed(db: Db, row: RequestRow, raw: unknown): vo
         error: JSON.stringify({
           code: "ai_task_invalid_response",
           message: "The AI Task did not return a usable intervention proposal.",
+          details: { issues: validated.issues },
         }),
       })
       .where(eq(schema.homeAssistantRequests.id, row.id))
@@ -375,7 +414,7 @@ export function onGoalSuggestAnalyzed(db: Db, row: RequestRow, raw: unknown): vo
     return;
   }
   db.update(schema.homeAssistantRequests)
-    .set({ resultJson: JSON.stringify(proposal) })
+    .set({ resultJson: JSON.stringify(validated.proposal) })
     .where(eq(schema.homeAssistantRequests.id, row.id))
     .run();
 }
