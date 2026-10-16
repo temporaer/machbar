@@ -310,11 +310,14 @@ export async function applyIntake(
       const isRoot = item.parentKey === null;
       let created: { id: number; title: string; kind?: string; role?: string };
       if (item.kind === "project") {
+        const driverMemberId = item.ownerMemberId ?? (
+          isRoot ? input.projectDriverMemberId ?? null : null
+        );
         const project = createProject(tx as unknown as Db, {
           title: item.title,
           notes,
           parentId: parent?.kind === "project" ? parentId : null,
-          ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
+          ...(driverMemberId === null ? {} : { ownerMemberId: driverMemberId }),
           // The complete accepted tree is built below. Apply the project's
           // own deadline after its child actions exist so readiness is
           // evaluated against the final atomic graph.

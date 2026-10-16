@@ -556,6 +556,14 @@ export function IntakeReviewPage() {
       const activationResolution = activationPrompt
         ? projectActivationResolutionFromPrompt(activationPrompt)
         : null;
+      const selectedActivationDriver = activationPrompt
+        ? activationPrompt.projects.filter((project) => project.required.includes("driver"))
+        : [];
+      const projectDriver = projectDriverMemberId ?? (
+        selectedActivationDriver.length === 1
+          ? activationPrompt?.selectedDrivers[selectedActivationDriver[0]!.projectId] ?? null
+          : null
+      );
       if (record.breakdown && activationPrompt && !activationResolution) return;
       if (acceptIncomplete) {
         const latestPreview = prepareIncompleteIntakeDraft(latestDraft, validationOptions);
@@ -571,7 +579,7 @@ export function IntakeReviewPage() {
         expectedRevision,
         draft: latestDraft,
         timezone,
-        ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
+        ...(projectDriver !== null ? { projectDriverMemberId: projectDriver } : {}),
         ...(activationResolution ? { activationResolution } : {}),
         ...(acceptIncomplete ? { acceptIncomplete: true } : {}),
       });

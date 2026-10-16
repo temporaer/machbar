@@ -1809,6 +1809,7 @@ describe("IntakeReviewPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
     expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({
+      projectDriverMemberId: 1,
       activationResolution: {
         expectedProjects: [{ projectId: 27, revision: 2 }],
         drivers: [{ projectId: 27, ownerMemberId: 1 }],
