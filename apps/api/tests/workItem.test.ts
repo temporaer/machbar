@@ -8,12 +8,10 @@ import {
   workItemLabel,
 } from "../src/domain/workItem.js";
 import {
-  closeTestContext,
-  createTestContext,
+  createTestDatabase,
   insertTestProject,
   insertTestTask,
-  type TestContext,
-} from "./helpers.js";
+} from "./database.js";
 
 describe("WorkItem projection (Phase 1)", () => {
   it("maps every task status to the shared lifecycle vocabulary and role-specific label", () => {
@@ -42,17 +40,17 @@ describe("WorkItem projection (Phase 1)", () => {
     ).toBe("archived");
   });
 
-  it("projects a task tree (with nested subtasks) into a WorkItem tree, preserving id/revision/hierarchy", async () => {
-    let ctx: TestContext = createTestContext();
+  it("projects a task tree (with nested subtasks) into a WorkItem tree, preserving id/revision/hierarchy", () => {
+    const handle = createTestDatabase();
     try {
-      const parent = insertTestTask(ctx.handle.db, { title: "Parent task", status: "captured" });
-      const child = insertTestTask(ctx.handle.db, {
+      const parent = insertTestTask(handle.db, { title: "Parent task", status: "captured" });
+      const child = insertTestTask(handle.db, {
           title: "Child task",
           status: "actionable",
           parentTaskId: parent.id,
         });
 
-      const graph = Graph.load(ctx.handle.db, "2026-01-01");
+      const graph = Graph.load(handle.db, "2026-01-01");
       const parentRecord = graph.allTasks().find((t) => t.id === parent.id)!;
       const item = taskToWorkItem(parentRecord);
 
@@ -65,23 +63,23 @@ describe("WorkItem projection (Phase 1)", () => {
       expect(item.children[0]!.id).toBe(child.id);
       expect(item.children[0]!.label).toBe("actionable");
     } finally {
-      await closeTestContext(ctx);
+      handle.close();
     }
   });
 
-  it("projects a project and its root-level tasks into a story WorkItem, excluding non-root tasks from the direct children", async () => {
-    let ctx: TestContext = createTestContext();
+  it("projects a project and its root-level tasks into a story WorkItem, excluding non-root tasks from the direct children", () => {
+    const handle = createTestDatabase();
     try {
-      const project = insertTestProject(ctx.handle.db, { title: "Renovate", status: "active" });
-      const root = insertTestTask(ctx.handle.db, { title: "Measure walls", status: "actionable", projectId: project.id });
-      insertTestTask(ctx.handle.db, {
+      const project = insertTestProject(handle.db, { title: "Renovate", status: "active" });
+      const root = insertTestTask(handle.db, { title: "Measure walls", status: "actionable", projectId: project.id });
+      insertTestTask(handle.db, {
           title: "Buy paint",
           status: "captured",
           projectId: project.id,
           parentTaskId: root.id,
         });
 
-      const graph = Graph.load(ctx.handle.db, "2026-01-01");
+      const graph = Graph.load(handle.db, "2026-01-01");
       const projectRecord = graph.projectWithComputed(project.id)!;
       const rootTasks = graph
         .tasksForProject(project.id)
@@ -98,7 +96,7 @@ describe("WorkItem projection (Phase 1)", () => {
       expect(item.children[0]!.id).toBe(root.id);
       expect(item.children[0]!.children).toHaveLength(1);
     } finally {
-      await closeTestContext(ctx);
+      handle.close();
     }
   });
 });
