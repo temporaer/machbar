@@ -13,3 +13,8 @@ it("shows the reference night and records a negative answer without requiring no
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Rückmeldung gespeichert"));
   expect(record).toHaveBeenCalledWith(1, { referenceDate: "2026-10-24", answer: "not_met", notes: "", expectedRevision: 0 });
 });
+
+it("uses a wrapping answer group for opportunity-based observations", () => {
+  renderWithProviders(<InterventionReportCard report={{ goalId: 2, goalTitle: "Sleep", interventionId: 1, referenceDate: "2026-10-24", plan: { id: 1, interventionId: 1, effectiveFrom: "2026-10-24", commitment: "Bed", timezone: "Europe/Berlin", createdAt: "2026-10-24T00:00:00Z", plan: { method: "daily_report", question: "In bed after brushing?", reference: "night", reportDayOffset: 1, availableAfter: "07:00", opportunityBased: true } } }} />);
+  expect(screen.getByRole("button", { name: "Keine Gelegenheit" }).parentElement).toHaveClass("intervention-observation-answers");
+});

@@ -83,11 +83,13 @@ function GoalCoachSuggestions({
   goal,
   pending,
   onRequest,
+  onCheck,
   onAccept,
 }: {
   goal: GoalWithInterventions;
   pending: boolean;
   onRequest: (goalId: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) => Promise<GoalSuggestionProposal>;
+  onCheck: (goalId: number, requestId: string) => Promise<GoalSuggestionProposal>;
   onAccept: (goalId: number, requestId: string, index: number, overrides: AcceptGoalSuggestionInput) => Promise<unknown>;
 }) {
   const strings = useStrings();
@@ -133,6 +135,22 @@ function GoalCoachSuggestions({
     }
   };
 
+  const check = async () => {
+    if (!proposal || loading || proposal.status === "ready" || proposal.status === "failed") return;
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await onCheck(goal.id, proposal.requestId);
+      setProposal(next);
+      if (next.status === "failed") setError(next.error ?? strings.goalCoachFailed);
+      else if (next.status !== "ready") setError(strings.goalCoachStillWorking);
+    } catch (cause) {
+      setError(localizedErrorMessage(cause, strings));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const accept = async (index: number) => {
     if (!proposal || accepting !== null) return;
     setAccepting(index);
@@ -161,6 +179,11 @@ function GoalCoachSuggestions({
         <label className="field">{proposal.clarificationQuestion}<textarea value={answer} maxLength={2000} onChange={(e) => setAnswer(e.target.value)} /></label>
         <button type="button" className="btn" disabled={!answer.trim() || loading} onClick={() => void request(true)}>{error ? strings.goalCoachRetryAnswer : strings.goalCoachAnswer}</button>
       </div> : null}
+      {proposal && proposal.status !== "ready" && proposal.status !== "failed" ? (
+        <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void check()}>
+          {loading ? strings.goalCoachWorking : strings.goalCoachCheckAgain}
+        </button>
+      ) : null}
       {proposal?.status === "ready" ? (
         <div className="stack">
           <p className="text-muted">{strings.goalCoachReviewHint}</p>
@@ -214,6 +237,7 @@ function GoalCard({
   onConcludeIntervention,
   onAssess,
   onRequestSuggestion,
+  onCheckSuggestion,
   onAcceptSuggestion,
   pending,
 }: {
@@ -226,6 +250,7 @@ function GoalCard({
   onConcludeIntervention: (intervention: InterventionView) => void;
   onAssess: (intervention: InterventionView) => void;
   onRequestSuggestion: (goalId: number, input?: { clarificationRequestId?: string; clarificationAnswer?: string }) => Promise<GoalSuggestionProposal>;
+  onCheckSuggestion: (goalId: number, requestId: string) => Promise<GoalSuggestionProposal>;
   onAcceptSuggestion: (
     goalId: number,
     requestId: string,
@@ -340,6 +365,7 @@ function GoalCard({
             goal={goal}
             pending={pending}
             onRequest={onRequestSuggestion}
+            onCheck={onCheckSuggestion}
             onAccept={onAcceptSuggestion}
           />
           <div className="row goal-card-actions">
@@ -490,6 +516,7 @@ export function GoalsPage() {
                   onConcludeIntervention={concludeIntervention}
                   onAssess={setAssessing}
                   onRequestSuggestion={actions.loadGoalSuggestion}
+                  onCheckSuggestion={actions.checkGoalSuggestion}
                   onAcceptSuggestion={(goalId, requestId, index, overrides) =>
                     actions.acceptGoalSuggestion(goalId, requestId, { ...overrides, index })
                   }
@@ -517,6 +544,7 @@ export function GoalsPage() {
                     onConcludeIntervention={concludeIntervention}
                     onAssess={setAssessing}
                     onRequestSuggestion={actions.loadGoalSuggestion}
+                    onCheckSuggestion={actions.checkGoalSuggestion}
                     onAcceptSuggestion={(goalId, requestId, index, overrides) =>
                       actions.acceptGoalSuggestion(goalId, requestId, { ...overrides, index })
                     }
@@ -563,6 +591,7 @@ export function GoalsPage() {
           onClose={() => setAssessing(null)}
           onSave={(draft) => assess(assessing, draft)}
           onRequestCoach={(input) => requestAssessment(assessing.id, input)}
+          onCheckCoach={(requestId) => actions.checkAssessmentProposal(assessing.id, requestId)}
         />
       ) : null}
       {concludingBacked ? (

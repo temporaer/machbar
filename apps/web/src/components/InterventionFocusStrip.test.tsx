@@ -46,6 +46,7 @@ describe("InterventionFocusStrip", () => {
     );
     const strip = screen.getByTestId("intervention-focus");
     const running = within(strip).getByTestId("intervention-focus-running");
+    expect(running.parentElement).toHaveClass("intervention-focus-running");
     expect(within(running).getByText("Run a half marathon")).toBeInTheDocument();
     expect(within(running).getByText("Run three times a week")).toBeInTheDocument();
     expect(within(running).getByText("Tag 6 von 14")).toBeInTheDocument();

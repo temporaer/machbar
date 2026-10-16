@@ -174,6 +174,25 @@ describe("TodayPage", () => {
     ).toBeTruthy();
   });
 
+  it("does not show the empty state when Today contains intervention focus", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      interventions: {
+        running: [{
+          goalId: 1, goalTitle: "Sleep better", goalArea: "personal", interventionId: 2,
+          revision: 1, type: "frequency_habit", commitment: "Read before bed",
+          startDate: "2026-10-01", revisitDate: "2026-10-31", periodDay: 3,
+          periodLength: 30, derivedState: "running", withinReviewWindow: false, backing: null,
+        }],
+        review: [],
+      },
+    });
+    renderWithProviders(<TodayPage />);
+
+    expect(await screen.findByText("Sleep better")).toBeInTheDocument();
+    expect(screen.queryByText("Für heute ist nichts geplant.")).not.toBeInTheDocument();
+  });
+
   it("offers the Klärungsrunde shortcut only when the Home Assistant AI Task is ready", async () => {
     mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
     mockedApi.getHomeAssistantStatus.mockResolvedValueOnce({

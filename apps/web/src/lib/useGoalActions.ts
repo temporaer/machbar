@@ -90,6 +90,11 @@ export function useGoalActions() {
     );
   }, [locale]);
 
+  const checkGoalSuggestion = useCallback(async (goalId: number, requestId: string) => {
+    const current = await api.getGoalSuggestion(goalId, requestId);
+    return pollCoachProposal(current, () => api.getGoalSuggestion(goalId, requestId));
+  }, []);
+
   const acceptGoalSuggestion = useCallback(
     (
       goalId: number,
@@ -164,6 +169,11 @@ export function useGoalActions() {
     );
   }, [locale]);
 
+  const checkAssessmentProposal = useCallback(async (interventionId: number, requestId: string) => {
+    const current = await api.getAssessmentProposal(interventionId, requestId);
+    return pollCoachProposal(current, () => api.getAssessmentProposal(interventionId, requestId));
+  }, []);
+
   const acceptAssessmentProposal = useCallback(
     (
       interventionId: number,
@@ -189,6 +199,7 @@ export function useGoalActions() {
     updateGoal,
     concludeGoal,
     loadGoalSuggestion,
+    checkGoalSuggestion,
     acceptGoalSuggestion,
     startIntervention,
     adjustIntervention,
@@ -196,6 +207,7 @@ export function useGoalActions() {
     concludeIntervention,
     assessIntervention,
     loadAssessmentProposal,
+    checkAssessmentProposal,
     acceptAssessmentProposal,
   };
 }

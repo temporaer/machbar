@@ -22,7 +22,7 @@ export function InterventionReportCard({ report, observation }: { report: DueInt
     <p>{plan.question}</p>
     {saved ? <p role="status">{s.observationSaved}</p> : <>
       {observation ? <p>{s.observationAnswers[observation.answer]}</p> : null}
-      <div className="row">{(["met", "not_met", "unknown", ...(plan.opportunityBased ? ["no_opportunity"] : [])] as ObservationAnswer[]).map((answer) => <button type="button" className="btn btn-sm" key={answer} disabled={actions.isPending(report.interventionId)} onClick={() => void submit(answer)}>{s.observationAnswers[answer]}</button>)}</div>
+      <div className="intervention-observation-answers">{(["met", "not_met", "unknown", ...(plan.opportunityBased ? ["no_opportunity"] : [])] as ObservationAnswer[]).map((answer) => <button type="button" className="btn btn-sm" key={answer} disabled={actions.isPending(report.interventionId)} onClick={() => void submit(answer)}>{s.observationAnswers[answer]}</button>)}</div>
       <details><summary>{s.observationOptionalNotes}</summary><textarea value={notes} maxLength={2000} onChange={(e) => setNotes(e.target.value)} /></details>
     </>}
     {error ? <p role="alert">{error}</p> : null}

@@ -1861,6 +1861,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     "Für den Coach ist in Home Assistant noch kein AI Task eingerichtet. Du kannst das Experiment weiterhin manuell planen und auswerten.",
   goalCoachStillWorking:
     "Der Coach braucht länger als erwartet. Versuche es gleich noch einmal.",
+  goalCoachCheckAgain: "Noch einmal nachsehen",
   goalCoachPrepareAssessment: "Rückblick mit Coach vorbereiten",
   goalCoachAssessmentReviewHint:
     "Der Coach hat die Felder vorbefüllt. Prüfe und ändere sie, bevor du den Rückblick übernimmst.",
