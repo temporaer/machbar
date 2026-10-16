@@ -41,11 +41,13 @@ export function InterventionAssessSheet({
   onClose,
   onSave,
   onRequestCoach,
+  onCheckCoach,
 }: {
   intervention: InterventionView;
   onClose: () => void;
   onSave: (draft: AssessmentDraft) => Promise<void>;
   onRequestCoach: (input?: { benefit?: InterventionBenefit; obstacle?: string }) => Promise<AssessmentProposal>;
+  onCheckCoach: (requestId: string) => Promise<AssessmentProposal>;
 }) {
   const strings = useStrings();
   const { timezone } = useHouseholdTimezone();
@@ -75,6 +77,7 @@ export function InterventionAssessSheet({
   const [error, setError] = useState<string | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachRequestId, setCoachRequestId] = useState<string | null>(null);
+  const [coachProposal, setCoachProposal] = useState<AssessmentProposal | null>(null);
 
   const requestCoach = async () => {
     if (saving || coachLoading) return;
@@ -83,6 +86,7 @@ export function InterventionAssessSheet({
     setError(null);
     try {
       const proposal = await onRequestCoach({ benefit, obstacle });
+      setCoachProposal(proposal);
       if (
         proposal.status !== "ready" ||
         proposal.band === null ||
@@ -116,6 +120,37 @@ export function InterventionAssessSheet({
             ? strings.goalCoachAiTaskNotConfigured
             : localizedErrorMessage(cause, strings),
       );
+    } finally {
+      setCoachLoading(false);
+    }
+  };
+
+  const checkCoach = async () => {
+    if (!coachProposal || coachLoading || coachProposal.status === "ready" || coachProposal.status === "failed") return;
+    setCoachLoading(true);
+    setError(null);
+    try {
+      const proposal = await onCheckCoach(coachProposal.requestId);
+      setCoachProposal(proposal);
+      if (proposal.status === "failed" || proposal.band === null || proposal.rationaleMd === null) {
+        setError(proposal.status === "failed" ? proposal.error ?? strings.goalCoachAssessmentFailed : strings.goalCoachStillWorking);
+        return;
+      }
+      setCoachEvidence(proposal.evidence);
+      setCountedObservationIds(proposal.countedObservationIds ?? []);
+      if (proposal.recommendedDecision && !concluded) setDecision(proposal.recommendedDecision);
+      if (proposal.observationPlan) setObservationPlan(proposal.observationPlan);
+      if (proposal.commitment) setCommitment(proposal.commitment);
+      if (proposal.nextRevisitDate) setNextRevisitDate(proposal.nextRevisitDate);
+      if (proposal.reminderEnabled !== undefined) setReminderEnabled(proposal.reminderEnabled);
+      setBand(proposal.band);
+      setRationale(proposal.rationaleMd);
+      setCountedItems(proposal.countedItemIds);
+      setWindowStart(proposal.windowStart ?? intervention.startDate);
+      setWindowEnd(proposal.windowEnd ?? intervention.revisitDate);
+      setCoachRequestId(proposal.requestId);
+    } catch (cause) {
+      setError(localizedErrorMessage(cause, strings));
     } finally {
       setCoachLoading(false);
     }
@@ -180,6 +215,11 @@ export function InterventionAssessSheet({
           </button>
           {coachRequestId ? (
             <p className="text-muted">{strings.goalCoachAssessmentReviewHint}</p>
+          ) : null}
+          {coachProposal && coachProposal.status !== "ready" && coachProposal.status !== "failed" ? (
+            <button type="button" className="btn btn-sm" disabled={coachLoading} onClick={() => void checkCoach()}>
+              {coachLoading ? strings.goalCoachWorking : strings.goalCoachCheckAgain}
+            </button>
           ) : null}
         </div>
         <div className="field">

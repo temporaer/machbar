@@ -1870,6 +1870,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     "No AI Task is configured for the coach in Home Assistant yet. You can still plan and review the experiment manually.",
   goalCoachStillWorking:
     "The coach is taking longer than expected. Try again in a moment.",
+  goalCoachCheckAgain: "Check again",
   goalCoachPrepareAssessment: "Prepare review with coach",
   goalCoachAssessmentReviewHint:
     "The coach prefilled the fields. Review and edit them before accepting the review.",

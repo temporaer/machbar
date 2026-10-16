@@ -228,7 +228,11 @@ export function TodayPage() {
                 revisitTasks.length +
                 completedTodayTasks.length +
                 projectAgenda.length;
-              if (total === 0)
+              const interventionContent =
+                agenda.interventions.running.length +
+                agenda.interventions.review.length +
+                (agenda.interventions.reports?.length ?? 0);
+              if (total + interventionContent === 0)
                 return <EmptyState message={strings.todayEmpty} />;
               return (
                 <>

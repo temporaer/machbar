@@ -5165,6 +5165,24 @@ details[open] > .disclosure-summary::after {
   margin-top: 10px;
 }
 
+.intervention-focus-running,
+.intervention-focus-review {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.intervention-observation-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.intervention-observation-answers > .btn {
+  flex: 1 1 10rem;
+  min-width: min(100%, 10rem);
+}
+
 .goal-card .goal-intervention {
   margin-top: 12px;
   padding-top: 12px;

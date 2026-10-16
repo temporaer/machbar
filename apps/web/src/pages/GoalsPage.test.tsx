@@ -242,6 +242,7 @@ describe("GoalsPage", () => {
       interventions: [],
       error: null,
     });
+
     mockedApi.getGoalSuggestion.mockResolvedValue({
       requestId: "suggest-1",
       goalId: 1,
@@ -279,6 +280,43 @@ describe("GoalsPage", () => {
       "suggest-1",
       { index: 0, observationPlan: { method: "reflection" } },
     );
+  });
+
+  it("keeps a long-running coach request resumable without enqueueing another request", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [] })]);
+    mockedApi.requestGoalSuggestion.mockResolvedValue({
+      requestId: "slow-1", goalId: 1, status: "queued", interventions: [], error: null,
+    });
+    let reads = 0;
+    mockedApi.getGoalSuggestion.mockImplementation(async () => {
+      reads += 1;
+      return reads < 8
+        ? { requestId: "slow-1", goalId: 1, status: "analyzing", interventions: [], error: null }
+        : {
+            requestId: "slow-1", goalId: 1, status: "ready",
+            interventions: [{
+              type: "frequency_habit",
+              commitment: "Take a short walk after lunch.",
+              rationale: "A small, repeatable experiment.",
+              startDate: "2026-01-01", revisitDate: "2026-01-15",
+            }],
+            error: null,
+          };
+    });
+
+    renderWithProviders(<GoalsPage />);
+    await user.click(await screen.findByRole("button", { name: "Vorschläge vom Coach" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(13_500); });
+
+    expect(screen.getByText("Der Coach braucht länger als erwartet. Versuche es gleich noch einmal.")).toBeInTheDocument();
+    expect(mockedApi.requestGoalSuggestion).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Noch einmal nachsehen" }));
+
+    expect(await screen.findByText("Take a short walk after lunch.")).toBeInTheDocument();
+    expect(mockedApi.requestGoalSuggestion).toHaveBeenCalledOnce();
+    expect(mockedApi.getGoalSuggestion).toHaveBeenLastCalledWith(1, "slow-1");
   });
 
   it("shows a friendly inline message when Home Assistant is unavailable", async () => {
