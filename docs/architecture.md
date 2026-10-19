@@ -1926,3 +1926,27 @@ Public task/project routes also check private destination and dependency referen
 before writes using `assertPrivateWorkItemAccessible`. Canonical hierarchy moves
 keep private subtrees within the same owner's private hierarchy or at top level,
 so shared-container lifecycle commands cannot mutate another owner's private work.
+
+### Notes append and latest-context previews (#227)
+
+`useTaskActions.appendNotes` and `useProjectActions.appendNotes` own web append
+execution through the existing POST notes endpoints. `NotesAppend` is a shared
+draft-only Markdown composer. It is disabled during full-document editing so
+an unsaved correction cannot be overwritten by an append/refetch. Errors retain
+the append draft; ordinary completion and lifecycle state are unaffected.
+
+UI quick-appends use the existing external-wait `[ISO instant · author]` header.
+`noteEntries.ts` recognizes only that exact timezone-qualified convention and
+avoids double stamping; free-form prose and code fences remain portable Markdown.
+Existing API/MCP append callers retain plain-content behavior (no migration or
+server contract change). `MarkdownNotes` renders recognized metadata using the
+household display timezone. `NotesTail` derives a responsive suffix from parsed
+text, retaining safe inline links and removing Paperless/image references.
+Metadata is outside the two/three-line content budget. Normal action rows and
+project card/agenda rows show tails; compact task descendants and compact/quiet
+project inventory rows deliberately do not expand. Reference rows retain their
+existing link/material presentation.
+
+Post-completion “Add note” remains pending with #198, which is still open; it
+must reuse this composer through the shared completion affordance, not a second
+completion prompt. Full-document editing remains available.

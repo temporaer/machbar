@@ -1,3 +1,5 @@
+import { NotesTail } from "./NotesTail";
+import { useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import type { Member, ProjectAgendaEntry } from "@machbar/shared";
 import {
@@ -30,6 +32,7 @@ export function ProjectAgendaRow({
   owner?: Member | null;
   attentionTone?: AttentionTone;
 }) {
+  const navigate = useNavigate();
   const strings = useStrings();
   const { locale } = useLocale();
   const { project, attentionBucket, stuck } = entry;
@@ -72,6 +75,7 @@ export function ProjectAgendaRow({
           <MemberAvatar member={owner} size="sm" />
         </span>
       ) : null}
+      <NotesTail value={project.notes} onOpen={() => navigate(`/projects/${project.id}`)} />
       {stuck ? (
         <p className="project-agenda-row-stuck">
           <span className={`badge ${stuck.reason === "completion_review" ? "badge-review" : "badge-stuck"}`}>

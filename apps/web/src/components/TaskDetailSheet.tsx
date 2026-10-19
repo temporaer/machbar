@@ -1,3 +1,4 @@
+import { NotesAppend } from "./NotesAppend";
 import {
   useEffect,
   useRef,
@@ -890,10 +891,16 @@ export function TaskDetailSheet() {
                 <IconActionButton
                   kind="edit"
                   label={strings.edit}
+                  disabled={taskActions.isPending(task.id)}
                   onClick={() => setNotesEditing(true)}
                 />
               ) : null}
             </div>
+            <NotesAppend disabled={notesEditing || savingTextFields} onAppend={async content => {
+              const updated = await taskActions.appendNotes(task, content);
+              if (updated) { revisionRef.current = updated.revision; setTextFieldsBaseline(current => current ? { ...current, notes: updated.notes } : current); setNotesDraft(updated.notes); }
+              return updated;
+            }} />
             {notesEditing ? (
               <>
                 <label className="sr-only" htmlFor="task-notes">{strings.notes}</label>
@@ -933,7 +940,8 @@ export function TaskDetailSheet() {
             ) : (
               <p className="text-muted">{strings.noNotes}</p>
             )}
-          </section>
+
+</section>
 
           {!isReference && task.acceptanceCriteria.length > 0 ? (
             <WorkItemDetailDisclosure

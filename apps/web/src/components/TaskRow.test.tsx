@@ -731,7 +731,7 @@ describe("TaskRow – calm shared card presentation", () => {
     const wrap = container.querySelector(".task-row-main-wrap");
     expect(wrap?.querySelector(".task-row-header")).toBeInTheDocument();
     expect(wrap?.querySelector(".task-row-meta")).toBeInTheDocument();
-    expect(wrap?.querySelector(".task-row-notes")).toHaveTextContent(
+    expect(wrap?.querySelector(".notes-tail")).toHaveTextContent(
       "Ruhige Zusatzinformation",
     );
   });

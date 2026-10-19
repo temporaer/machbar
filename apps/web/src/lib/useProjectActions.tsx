@@ -163,6 +163,11 @@ function useProjectActionsState() {
     [run],
   );
 
+  const appendNotes = useCallback((story: ProjectWithActions, content: string) => run({
+    id: story.id, optimistic: { story }, mutate: () => api.appendProjectNotes(story.id, content),
+    confirmed: confirmed => ({ story: confirmed }), retainUntilRefresh: true, refreshImmediately: true, throwOnError: true,
+  }), [run]);
+
   const assignDriver = useCallback(
     (story: ProjectWithActions, ownerMemberId: number | null) =>
       update(story, { ownerMemberId }, { ownerMemberId }, true),
@@ -246,6 +251,7 @@ function useProjectActionsState() {
     activate,
     archive,
     update,
+    appendNotes,
     assignDriver,
     schedule,
     returnToBacklog,

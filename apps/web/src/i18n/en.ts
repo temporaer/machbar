@@ -607,6 +607,8 @@ const en = {
   deferProject: "Defer project …",
   activateProject: "Activate project",
   projectLifecycle: "Review project status",
+  appendNote: "Add note",
+  openNotes: "Open notes",
   saveNotes: "Save notes",
   clarifyNow: "Clarify now",
   classifyAsAction: "Ready action",
