@@ -278,6 +278,14 @@
   .projects-page .story-row-kebab {
     display: none;
   }
+
+  .projects-page .story-row:not(.story-row-compact) .story-row-content.has-driver {
+    padding-right: 64px;
+  }
+
+  .projects-page .story-row:not(.story-row-compact) .story-row-content.has-driver .story-row-body {
+    padding-right: 0;
+  }
 }
 
 /*
