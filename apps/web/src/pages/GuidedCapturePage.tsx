@@ -23,46 +23,6 @@ export function GuidedCapturePage() {
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusAfterNavigation = useRef(false);
-  const savingRef = useRef(false);
-  const onSavingChange = (pending: boolean) => {
-    savingRef.current = pending;
-    setSaving(pending);
-  };
-
-  useEffect(() => {
-    const guardLink = (event: MouseEvent) => {
-      if (savingRef.current && event.target instanceof Element && event.target.closest("a[href]")) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
-    };
-    const guardKeys = (event: KeyboardEvent) => {
-      if (!savingRef.current || event.key === "Tab") return;
-      event.stopImmediatePropagation();
-      if (event.altKey && ["ArrowLeft", "ArrowRight"].includes(event.key)) event.preventDefault();
-    };
-    const guardUnload = (event: BeforeUnloadEvent) => {
-      if (!savingRef.current) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    const guardNavigation = (event: Event) => {
-      if (savingRef.current && event.cancelable) event.preventDefault();
-    };
-    // The Navigation API also covers browser back/forward in supporting browsers.
-    const navigation = (window as Window & { navigation?: EventTarget }).navigation;
-    document.addEventListener("click", guardLink, true);
-    window.addEventListener("keydown", guardKeys, true);
-    window.addEventListener("beforeunload", guardUnload);
-    navigation?.addEventListener("navigate", guardNavigation);
-    return () => {
-      document.removeEventListener("click", guardLink, true);
-      window.removeEventListener("keydown", guardKeys, true);
-      window.removeEventListener("beforeunload", guardUnload);
-      navigation?.removeEventListener("navigate", guardNavigation);
-    };
-  }, []);
-
   useEffect(() => {
     if (!focusAfterNavigation.current) return;
     focusAfterNavigation.current = false;
@@ -70,7 +30,7 @@ export function GuidedCapturePage() {
   }, [area.id, done]);
 
   const goTo = (id: string) => {
-    if (savingRef.current) return;
+    if (saving) return;
     if ((!done && id === area.id) || (done && id === "done")) {
       headingRef.current?.focus();
       return;
@@ -89,7 +49,7 @@ export function GuidedCapturePage() {
         <h1>{strings.guidedCapture}</h1>
         <Link to="/inbox" className="btn btn-sm" aria-disabled={saving} tabIndex={saving ? -1 : undefined}
           onClick={(event) => {
-            if (savingRef.current) event.preventDefault();
+            if (saving) event.preventDefault();
             else showCapturedInbox();
           }}>{strings.guidedCaptureExit}</Link>
       </header>
@@ -116,7 +76,7 @@ export function GuidedCapturePage() {
           key={formKey}
           mode="thought"
           autoFocus={formKey > 0}
-          onSavingChange={onSavingChange}
+          onSavingChange={setSaving}
           onCaptured={({ task }) => {
             setThoughts((previous) => [...previous, { id: task.id, title: task.title, areaId: area.id }]);
             setAnnouncement(strings.guidedCaptureSaved(task.title));

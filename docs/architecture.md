@@ -151,9 +151,11 @@ The question-led reflection cards use catalog group tones and motion gated by
 Saved-thought notes are local presentation grouped by area, never another backlog.
 Thought mode skips metadata requests/syntax suggestions and omits destination and
 reset controls. Save failures keep the draft for retry; success refocuses an empty
-input. During saving, the page disables area navigation and Exit, guards other app
-links/global shortcuts, requests an unload confirmation, and cancels native
-navigation where the browser Navigation API supports it. Returning via the page's
+input. During saving, the page disables only its own area navigation and Exit.
+Other app navigation and browser history/unload are not intercepted: leaving can
+discard feedback, but a route change does not cancel the existing create request.
+Persistence is performed by the task-create endpoint before `onCaptured` supplies
+local feedback; no unload handler can guarantee completion. Returning via the page's
 Inbox links switches Work scope to Household so captured household thoughts remain
 visible.
 

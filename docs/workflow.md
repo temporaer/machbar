@@ -102,7 +102,9 @@ appearing after each save and a fresh focused input below. **Nächster Bereich**
 advances with or without a capture; Back and the grouped browser allow revisiting.
 The area number is a position, not a completion score. There are no completion
 requirements or rewards. Transitions respect reduced-motion preferences, and
-navigation is locked during an in-flight save.
+the card's own navigation is disabled during an in-flight save. Other app or
+browser navigation remains available; leaving loses local feedback, not a thought
+already saved in Eingang. A route change does not cancel the submitted save.
 
 Converting a task into a project keeps its direct parent (project or task),
 sibling position, numeric identity,

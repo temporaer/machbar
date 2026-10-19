@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { getCatalog, LocaleProvider, LOCALE_STORAGE_KEY } from "../lib/locale";
 import { guidedCaptureCatalog } from "../lib/guidedCapture";
@@ -44,7 +44,6 @@ function renderJourney(entry = "/capture/guided", locale: "de" | "en" = "de") {
 }
 
 describe("guided capture", () => {
-  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -132,8 +131,9 @@ describe("guided capture", () => {
   it("retains a failed draft for retry and locks capture/navigation during saving", async () => {
     let rejectSave!: (error: Error) => void;
     createTask.mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject; }));
-    renderJourney();
+    renderJourney("/capture/guided?area=learning");
     const input = screen.getByLabelText(de.guidedCaptureInput);
+    await userEvent.click(screen.getByText(de.guidedCaptureBrowse));
     await userEvent.type(input, "Etwas im Blick behalten");
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
     expect(input).toBeDisabled();
@@ -141,22 +141,20 @@ describe("guided capture", () => {
     for (const button of within(navigation).getAllByRole("button")) expect(button).toBeDisabled();
     const exit = screen.getByRole("link", { name: de.guidedCaptureExit });
     expect(exit).toHaveAttribute("aria-disabled", "true");
+    expect(exit).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("button", { name: de.guidedCaptureSave })).toBeDisabled();
+    for (const area of guidedCaptureCatalog(de).flatMap((group) => group.areas)) {
+      expect(screen.getByRole("button", { name: area.title })).toBeDisabled();
+    }
     await userEvent.click(exit);
-    await userEvent.click(screen.getByRole("link", { name: "Bottom navigation" }));
-    expect(screen.getByRole("heading", { name: de.guidedCapture })).toBeVisible();
-    const globalShortcut = vi.fn();
-    window.addEventListener("keydown", globalShortcut);
-    fireEvent.keyDown(window, { key: "g" });
-    expect(globalShortcut).not.toHaveBeenCalled();
-    window.removeEventListener("keydown", globalShortcut);
-    const unload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(unload);
-    expect(unload.defaultPrevented).toBe(true);
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
     await act(async () => rejectSave(new Error("Save failed")));
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(input).toHaveValue("Etwas im Blick behalten");
     expect(input).not.toBeDisabled();
     expect(exit).toHaveAttribute("aria-disabled", "false");
+    expect(screen.getByRole("button", { name: de.guidedCaptureBack })).toBeEnabled();
+    expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
     await waitFor(() => expect(input).not.toBeInTheDocument());
     expect(createTask).toHaveBeenCalledTimes(2);
@@ -222,24 +220,44 @@ describe("guided capture", () => {
     expect(screen.getByRole("button", { name: de.cancel })).toBeVisible();
   });
 
-  it("blocks native history navigation while saving and releases the guard afterwards", async () => {
-    const navigation = new EventTarget();
-    vi.stubGlobal("navigation", navigation);
+  it("allows unrelated navigation without cancelling an in-flight create", async () => {
+    const persisted: string[] = [];
     let finishSave!: () => void;
-    createTask.mockImplementationOnce(() => new Promise((resolve) => {
-      finishSave = () => resolve(makeTask({ title: "Ein Gedanke" }));
+    createTask.mockImplementationOnce((input) => new Promise((resolve) => {
+      finishSave = () => {
+        persisted.push(input.title);
+        resolve(makeTask({ title: input.title }));
+      };
     }));
     renderJourney();
     await userEvent.type(screen.getByRole("textbox"), "Ein Gedanke");
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
-    const blocked = new Event("navigate", { cancelable: true });
-    navigation.dispatchEvent(blocked);
-    expect(blocked.defaultPrevented).toBe(true);
-    await act(async () => finishSave());
-    const allowed = new Event("navigate", { cancelable: true });
-    navigation.dispatchEvent(allowed);
-    expect(allowed.defaultPrevented).toBe(false);
+    expect(screen.getByRole("textbox")).toBeDisabled();
     await userEvent.click(screen.getByRole("link", { name: "Bottom navigation" }));
     expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    await act(async () => finishSave());
+    expect(persisted).toEqual(["Ein Gedanke"]);
+    expect(createTask).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
+    expect(screen.queryByRole("list", { name: de.guidedCaptureSavedThoughts })).not.toBeInTheDocument();
+  });
+
+  it("re-enables local controls after save completion and stays in the same area", async () => {
+    let finishSave!: () => void;
+    createTask.mockImplementationOnce(() => new Promise((resolve) => {
+      finishSave = () => resolve(makeTask({ title: "Ein Gedanke" }));
+    }));
+    renderJourney("/capture/guided?area=learning");
+    await userEvent.type(screen.getByRole("textbox"), "Ein Gedanke");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
+    expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeDisabled();
+    await act(async () => finishSave());
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.getByRole("textbox")).toHaveFocus();
+    expect(screen.getByRole("button", { name: de.guidedCaptureBack })).toBeEnabled();
+    expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeEnabled();
+    expect(screen.getByRole("link", { name: de.guidedCaptureExit })).toHaveAttribute("aria-disabled", "false");
   });
 });
