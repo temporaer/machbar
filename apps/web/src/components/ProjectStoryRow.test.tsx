@@ -900,6 +900,40 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(mockedApi.completeProject).not.toHaveBeenCalled();
   });
 
+  it.each(["card", "compact", "quiet"] as const)("offers driver assignment on driverless backlog %s rows without activating", async variant => {
+    const story = makeProject({ id: 145, title: "Driverless backlog", status: "backlog", ownerMemberId: null });
+    mockedApi.updateProject.mockResolvedValue({ ...story, ownerMemberId: 1 });
+    renderWithProviders(<Harness story={story} variant={variant} />);
+    const button = await screen.findByRole("button", { name: "Noch nicht zugeordnet – Verantwortung wählen" });
+    expect(button.querySelector(".avatar-placeholder")).toBeInTheDocument();
+    expect(button.closest(".story-row-content")).toHaveClass("has-driver");
+    // A prior incomplete swipe must not swallow a fresh assignment click.
+    const row = button.closest(".story-row-content")!;
+    fireEvent.pointerDown(row, { pointerType: "touch", clientX: 0, clientY: 40 });
+    fireEvent.pointerMove(row, { pointerType: "touch", clientX: 30, clientY: 40 });
+    fireEvent.pointerUp(row, { pointerType: "touch", clientX: 30, clientY: 40 });
+    fireEvent.pointerDown(button, { pointerType: "touch", clientX: 200, clientY: 40 });
+    fireEvent.pointerMove(button, { pointerType: "touch", clientX: 330, clientY: 40 });
+    fireEvent.pointerUp(button, { pointerType: "touch" });
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    button.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
+    const group = await screen.findByRole("group", { name: "Verantwortlich" });
+    await userEvent.click(within(group).getByRole("button", { name: "Mira" }));
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(story.id, {
+      ownerMemberId: 1, expectedRevision: story.revision,
+    }));
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+  });
+
+  it("does not call an unresolved driver shared or unassigned", async () => {
+    const story = makeProject({ id: 146, title: "Unknown driver", ownerMemberId: 999 });
+    renderWithProviders(<Harness story={story} />);
+    expect(await screen.findByRole("button", { name: "Verantwortliche Person zuweisen: Unbekannte Person" })).toHaveTextContent("?");
+    expect(screen.queryByRole("button", { name: "Noch nicht zugeordnet – Verantwortung wählen" })).not.toBeInTheDocument();
+  });
+
   it("still allows clearing the driver of a backlog story", async () => {
     const story = makeProject({ id: 45, title: "Backlog-Driver", status: "backlog", ownerMemberId: 1 });
     renderWithProviders(<Harness story={story} variant="compact" />);

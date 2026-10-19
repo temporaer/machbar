@@ -183,9 +183,11 @@
   }
 }
 
-.story-row-content.has-driver {
-  min-height: 80px;
-}
+.story-row-content.has-driver { min-height: 94px; }
+.story-row-content.has-driver .story-row-body { padding-right: 18px; }
+.story-row-compact .story-row-content.has-driver { min-height: 0; }
+.story-row-compact .story-row-content.has-driver .story-row-body { padding-right: 0; }
+.story-row-compact .story-row-driver-avatar { position: static; align-self: center; flex-shrink: 0; }
 
 /* See `.task-row-content.retained` in `styles/index.css` for the rationale. */
 .story-row-content.retained {
