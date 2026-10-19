@@ -221,3 +221,13 @@
 .paperless-search-result small {
   color: var(--color-text-muted);
 }
+
+.note-entry + .note-entry { margin-top: .9rem; }
+.note-entry-time { display: block; color: var(--color-text-muted); font-size: .75rem; margin-bottom: .2rem; }
+.notes-append { margin-top: .75rem; }
+.notes-tail { min-width: 0; color: var(--color-text-muted); font-size: .82rem; line-height: 1.45; margin-top: .35rem; }
+.notes-tail-text { overflow-wrap: anywhere; cursor: pointer; }
+.notes-tail-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.notes-tail-footer button { border: 0; background: none; color: var(--color-text-muted); font: inherit; font-size: .72rem; padding: .15rem 0; cursor: pointer; }
+.story-row-body { flex: 1; min-width: 0; }
+.project-agenda-row > .notes-tail { flex-basis: 100%; margin-left: 1.75rem; }

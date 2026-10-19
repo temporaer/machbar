@@ -1,3 +1,4 @@
+import { NotesAppend } from "../components/NotesAppend";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useParams,
@@ -700,7 +701,12 @@ export function ProjectDetailPage() {
                   />
                 ) : null}
               </div>
-              {notesEditing ? (
+              <NotesAppend disabled={notesEditing || projectMutationPending} onAppend={async content => {
+                const updated = await projectActions.appendNotes(project, content);
+                if (updated) { setConfirmedProject(updated); setNotesDraft(updated.notes); }
+                return updated;
+              }} />
+            {notesEditing ? (
                 <>
                   <MarkdownEditor
                     id="project-notes"
@@ -741,7 +747,8 @@ export function ProjectDetailPage() {
               ) : (
                 <p className="text-muted">{strings.noNotes}</p>
               )}
-            </section>
+
+</section>
             <section className="section project-outcome-section">
               <div className="row-between">
                 <h2 className="section-title" id="project-outcome-label">

@@ -1,3 +1,4 @@
+import { NotesTail } from "./NotesTail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { calendarDateForInstant, type Task } from "@machbar/shared";
@@ -587,7 +588,7 @@ export function TaskRow({
             : isCompact
               ? null
               : notesWithoutAttachments
-                ? <MarkdownNotes value={notesWithoutAttachments} className="task-row-notes" />
+                ? <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id })} />
                 : null}
         </div>
         {!isReference && ownerMember ? (

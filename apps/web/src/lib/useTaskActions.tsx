@@ -327,6 +327,9 @@ function useTaskActionsState() {
     [runTransition],
   );
 
+  const appendNotes = useCallback((task: Task, content: string) =>
+    runTransition(task, task, () => api.appendTaskNotes(task.id, content), true), [runTransition]);
+
   const assignOwner = useCallback(
     (
       task: Task,
@@ -537,6 +540,7 @@ function useTaskActionsState() {
     deferClarification,
     makeAction,
     update,
+    appendNotes,
     assignOwner,
     setContexts,
     acknowledgeReview,

@@ -56,6 +56,18 @@ describe("append-only task and project notes", () => {
     expect(response.json().notes).toBe("Erste Notiz\n\nZweite Notiz");
   });
 
+  it.each(["tasks", "projects"])("preserves simultaneous additions to %s", async (kind) => {
+    const item = kind === "tasks" ? await createTask("Background") : await createProject("Background");
+    const responses = await Promise.all(["First", "Second"].map(content => ctx.app.inject({
+      method: "POST", url: `/api/${kind}/${item.id}/notes`, payload: { content },
+    })));
+    expect(responses.every(response => response.statusCode === 200)).toBe(true);
+    const current = await ctx.app.inject({ method: "GET", url: `/api/${kind}/${item.id}` });
+    expect(current.json().notes).toContain("Background");
+    expect(current.json().notes).toContain("First");
+    expect(current.json().notes).toContain("Second");
+  });
+
   it("does not rewrite existing note whitespace while appending", async () => {
     const task = await createTask("Erste Notiz  ");
 

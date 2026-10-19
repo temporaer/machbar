@@ -1,3 +1,4 @@
+import { NotesTail } from "./NotesTail";
 import { useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
@@ -283,6 +284,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         >
           {primaryAction ? projectWorkflowIcons[primaryAction] : "·"}
         </button>
+        <div className="story-row-body">
         <button
           type="button"
           className="story-row-main"
@@ -392,6 +394,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
             </>
           ) : null}
         </button>
+        {variant === "card" ? <NotesTail value={story.notes} onOpen={handleMainClick} /> : null}
+        </div>
         {projectRevisitLabel ? (
           <button
             type="button"

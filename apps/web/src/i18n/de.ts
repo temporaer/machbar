@@ -579,6 +579,8 @@ const extra = {
   deferProject: "Zurückstellen …",
   activateProject: "Projekt aktivieren",
   projectLifecycle: "Projektstatus prüfen",
+  appendNote: "Notiz hinzufügen",
+  openNotes: "Notizen öffnen",
   saveNotes: "Notizen speichern",
   clarifyNow: "Jetzt klären",
   classifyAsAction: "Machbar",

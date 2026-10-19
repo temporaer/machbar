@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyMarkdownToolbarAction,
+  continueMarkdownList,
   insertMarkdownAtSelection,
   MarkdownEditor,
   type MarkdownToolbarAction,
@@ -236,5 +237,44 @@ describe("MarkdownEditor", () => {
     expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue(
       "[manual.pdf](paperless:71)note",
     );
+  });
+});
+
+describe('list entry', () => {
+  it.each([
+    ['- first', 7, '- first\n- '],
+    ['  * nested', 10, '  * nested\n  * '],
+    ['9. item', 7, '9. item\n10. '],
+    ['- [x] done', 10, '- [x] done\n- [ ] '],
+    ['- ', 2, ''],
+    ['  - ', 4, '- '],
+    ['- hello world', 7, '- hello\n-  world'],
+  ])('continues %s while retaining the suffix', (value, cursor, expected) => {
+    expect(continueMarkdownList(value as string, cursor as number, cursor as number)?.value).toBe(expected);
+  });
+  it('toggles and changes existing list markers across selected lines', () => {
+    expect(applyMarkdownToolbarAction('bullet', "one\ntwo", 0, 4).value).toBe("- one\ntwo");
+    expect(applyMarkdownToolbarAction('checkbox', '- one\n* two', 0, 11).value).toBe('- [ ] one\n- [ ] two');
+    expect(applyMarkdownToolbarAction('bullet', '- one\n- two', 0, 11).value).toBe('one\ntwo');
+    expect(applyMarkdownToolbarAction('bullet', '1. one\n2. two', 0, 13).value).toBe('- one\n- two');
+  });
+  it('handles software-keyboard beforeinput and ignores composing input', () => {
+    render(<ControlledEditor initialValue="- [x] done" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    textarea.setSelectionRange(10, 10);
+    fireEvent(textarea, new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true, isComposing: true }));
+    expect(textarea).toHaveValue('- [x] done');
+    fireEvent(textarea, new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true }));
+    expect(textarea).toHaveValue('- [x] done\n- [ ] ');
+  });
+  it('respects caller key handling and Shift+Enter', () => {
+    const handler = vi.fn((e: React.KeyboardEvent) => e.preventDefault());
+    const { rerender } = render(<MarkdownEditor aria-label="Notes" value="- first" onChange={vi.fn()} onKeyDown={handler} />);
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' }); expect(handler).toHaveBeenCalled();
+    rerender(<ControlledEditor initialValue="- first" />);
+    const textarea = screen.getByRole('textbox');
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+    const event = new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true });
+    fireEvent(textarea, event); expect(event.defaultPrevented).toBe(false);
   });
 });

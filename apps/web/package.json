@@ -1,6 +1,6 @@
 {
   "name": "@machbar/web",
-  "version": "0.27.9",
+  "version": "0.28.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@machbar/shared": "*",
-    "mdast-util-from-markdown": "^2.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-image-crop": "^11.1.2",
@@ -21,8 +20,11 @@
     "react-router-dom": "^7.18.2",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
     "sugar-date": "2.0.6",
-    "timepicker-ui-react": "^1.4.0"
+    "timepicker-ui-react": "^1.4.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
