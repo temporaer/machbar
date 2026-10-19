@@ -44,7 +44,7 @@ import type { ProjectWithActions } from "../lib/api";
 import { useProjectActions } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
-import { MarkdownEditor, insertMarkdownAtSelection } from "../components/MarkdownEditor";
+import { MarkdownEditor, type MarkdownEditorHandle } from "../components/MarkdownEditor";
 import { AcceptanceCriteriaChecklist } from "../components/AcceptanceCriteriaChecklist";
 import { WorkItemDetailDisclosure } from "../components/WorkItemDetailSection";
 import { appendTextBlock } from "../lib/shareTarget";
@@ -88,7 +88,7 @@ export function ProjectDetailPage() {
     title: string;
     notes: string;
   } | null>(null);
-  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const notesRef = useRef<MarkdownEditorHandle>(null);
   const [confirmedProject, setConfirmedProject] =
     useState<ProjectWithActions | null>(null);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
@@ -709,7 +709,9 @@ export function ProjectDetailPage() {
             {notesEditing ? (
                 <>
                   <MarkdownEditor
+                    disabled={projectMutationPending}
                     id="project-notes"
+                    aria-label={strings.notes}
                     ref={notesRef}
                     value={notesDraft}
                     onChange={setNotesDraft}
@@ -870,21 +872,7 @@ export function ProjectDetailPage() {
             onClose={() => setAttachmentOpen(false)}
             onInsert={async (markdown) => {
               if (notesEditing) {
-                const current = notesRef.current;
-                const transform = insertMarkdownAtSelection(
-                  current?.value ?? notesDraft,
-                  current?.selectionStart ?? notesDraft.length,
-                  current?.selectionEnd ?? notesDraft.length,
-                  markdown,
-                );
-                setNotesDraft(transform.value);
-                queueMicrotask(() => {
-                  notesRef.current?.focus();
-                  notesRef.current?.setSelectionRange(
-                    transform.selectionStart,
-                    transform.selectionEnd,
-                  );
-                });
+                notesRef.current?.insertMarkdown(markdown);
                 return;
               }
               if (containsPaperlessReference(project.notes, markdown)) return;

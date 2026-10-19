@@ -1,3 +1,4 @@
+import { setMarkdownValue } from "../test/markdownEditor";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -590,9 +591,7 @@ describe("IntakeReviewPage", () => {
     });
     fireEvent.click(authoredField(editor, "Titel").getByRole("button", { name: "Abbrechen" }));
     fireEvent.click(authoredField(editor, "Notizen").getByRole("button", { name: "Bearbeiten" }));
-    fireEvent.change(editor.getByRole("textbox", { name: "Notizen" }), {
-      target: { value: "Uncommitted note" },
-    });
+    setMarkdownValue(editor.getByRole("textbox", { name: "Notizen" }), "Uncommitted note");
     fireEvent.click(authoredField(editor, "Notizen").getByRole("button", { name: "Abbrechen" }));
     closeEditor(editor);
 

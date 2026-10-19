@@ -1,3 +1,4 @@
+import { markdownValue, setMarkdownValue } from "../test/markdownEditor";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("../lib/identity", () => ({
@@ -19,12 +20,10 @@ it("keeps an append draft after failure and retries without replacing existing n
     </>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
-  fireEvent.change(screen.getByRole("textbox"), {
-    target: { value: "Outcome" },
-  });
+  setMarkdownValue(screen.getByRole("textbox"), "Outcome");
   fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
   await screen.findByRole("alert");
-  expect(screen.getByRole("textbox")).toHaveValue("Outcome");
+  expect(markdownValue(screen.getByRole("textbox"))).toBe("Outcome");
   expect(screen.getByText("Background")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
   await waitFor(() =>
@@ -38,10 +37,10 @@ it("does not discard an append draft when full-document editing disables it", ()
   const append = vi.fn();
   const { rerender } = render(<NotesAppend onAppend={append} />);
   fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
-  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Draft" } });
+  setMarkdownValue(screen.getByRole("textbox"), "Draft");
   rerender(<NotesAppend onAppend={append} disabled />);
-  expect(screen.getByRole("textbox")).toHaveValue("Draft");
-  expect(screen.getByRole("textbox")).toBeDisabled();
+  expect(markdownValue(screen.getByRole("textbox"))).toBe("Draft");
+  expect(screen.getByRole("textbox")).toHaveAttribute("aria-disabled", "true");
 });
 
 it("shows the end of long notes and keeps links independent from detail navigation", () => {

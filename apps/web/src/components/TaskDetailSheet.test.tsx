@@ -1,3 +1,4 @@
+import { markdownValue, selectMarkdown, setMarkdownValue } from "../test/markdownEditor";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -132,7 +133,7 @@ function renderQueueSheet(taskIds: number[]) {
   );
 }
 
-async function openNotesEditor(): Promise<HTMLTextAreaElement> {
+async function openNotesEditor(): Promise<HTMLElement> {
   const notesField = screen
     .getByRole("heading", { name: "Notizen", level: 2 })
     .closest<HTMLElement>(".task-notes-section")!;
@@ -143,7 +144,7 @@ async function openNotesEditor(): Promise<HTMLTextAreaElement> {
   expect(editButton).toHaveAttribute("title", "Bearbeiten");
   expect(editButton).not.toHaveTextContent("Bearbeiten");
   await userEvent.click(editButton);
-  return within(notesField).getByLabelText("Notizen") as HTMLTextAreaElement;
+  return within(notesField).getByLabelText("Notizen") as HTMLElement;
 }
 
 async function openTitleEditor(): Promise<HTMLInputElement> {
@@ -285,7 +286,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open task detail" }));
     expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
     const notes = await openNotesEditor();
-    fireEvent.change(notes, { target: { value: "Lokale Notiz bleibt erhalten" } });
+    setMarkdownValue(notes, "Lokale Notiz bleibt erhalten");
     await userEvent.click(screen.getByRole("button", { name: strings.workRefinement }));
     await userEvent.click(screen.getByRole("button", { name: "Vorschlag vorbereiten" }));
 
@@ -301,7 +302,7 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Return from intake" }));
     expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Lokale Notiz bleibt erhalten")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Notizen" })).toBeInTheDocument();
   });
 
   it("shows Calendar export beside Share only for a dated Task", async () => {
@@ -430,7 +431,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Beleg prüfen");
     const notes = await openNotesEditor();
-    notes.setSelectionRange(7, 7);
+    selectMarkdown(notes, 7);
 
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
@@ -439,7 +440,7 @@ describe("TaskDetailSheet", () => {
     );
 
     await waitFor(() =>
-      expect(notes).toHaveValue("Vorher [receipt.pdf](paperless:91)Nachher"),
+      expect(markdownValue(notes)).toBe("Vorher [receipt.pdf](paperless:91)Nachher"),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
@@ -1503,7 +1504,7 @@ describe("TaskDetailSheet", () => {
       name: "Notizen speichern",
     });
     expect(saveButton).toBeDisabled();
-    await userEvent.type(notesField, "Feinwäsche zuerst");
+    setMarkdownValue(notesField, markdownValue(notesField) + "Feinwäsche zuerst");
 
     expect(saveButton).toBeEnabled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
@@ -1516,6 +1517,41 @@ describe("TaskDetailSheet", () => {
     );
   });
 
+  it.each(["success", "failure"] as const)("locks note input during a deferred save and handles %s", async outcome => {
+    const task = makeTask({ id: 145, title: "Notizen sichern", notes: "original" });
+    mockedApi.getTask.mockResolvedValue(task);
+    let resolve!: (saved: typeof task) => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise<typeof task>((done, fail) => { resolve = done; reject = fail; });
+    mockedApi.updateTask.mockImplementationOnce(() => pending);
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    const editor = await openNotesEditor();
+    setMarkdownValue(editor, "submitted");
+    await userEvent.click(screen.getByRole("button", { name: "Notizen speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      notes: "submitted", expectedRevision: task.revision,
+    }));
+    expect(editor.closest("fieldset")).toBeDisabled();
+    expect(editor).toHaveAttribute("contenteditable", "false");
+    expect(editor).toHaveAttribute("aria-disabled", "true");
+    selectMarkdown(editor, "submitted".length);
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+    expect(markdownValue(editor)).toBe("submitted");
+    expect(screen.getByRole("button", { name: "Fett" })).toBeDisabled();
+    if (outcome === "success") {
+      await act(async () => resolve({ ...task, notes: "submitted", revision: task.revision + 1 }));
+      await waitFor(() => expect(editor).not.toBeInTheDocument());
+    } else {
+      await act(async () => reject(new Error("Save failed")));
+      await waitFor(() => expect(editor).toHaveAttribute("contenteditable", "true"));
+      expect(markdownValue(editor)).toBe("submitted");
+      fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+      expect(markdownValue(editor)).toBe("submitted\n");
+    }
+  });
+
   it("cancels a notes draft without touching the server", async () => {
     const task = makeTask({ id: 58, title: "Ausflug planen", notes: "Alt" });
     mockedApi.getTask.mockResolvedValue(task);
@@ -1526,8 +1562,8 @@ describe("TaskDetailSheet", () => {
 
     const notesField = await openNotesEditor();
     const notesContainer = notesField.closest<HTMLElement>(".task-notes-section")!;
-    await userEvent.clear(notesField);
-    await userEvent.type(notesField, "Neue Notiz");
+    setMarkdownValue(notesField, "");
+    setMarkdownValue(notesField, markdownValue(notesField) + "Neue Notiz");
     await userEvent.click(
       within(notesContainer).getByRole("button", { name: "Abbrechen" }),
     );
@@ -1601,8 +1637,8 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Gemeinsame Aufgabe");
     const notesField = await openNotesEditor();
     const notesContainer = notesField.closest<HTMLElement>(".task-notes-section")!;
-    await userEvent.clear(notesField);
-    await userEvent.type(notesField, "Mein lokaler Entwurf");
+    setMarkdownValue(notesField, "");
+    setMarkdownValue(notesField, markdownValue(notesField) + "Mein lokaler Entwurf");
     await userEvent.click(
       within(notesContainer).getByRole("button", {
         name: "Notizen speichern",
@@ -1616,7 +1652,7 @@ describe("TaskDetailSheet", () => {
     expect(
       screen.getByText("Remote umbenannt", { selector: "h1" }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Notizen")).toHaveValue("Mein lokaler Entwurf");
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("Mein lokaler Entwurf");
 
     await userEvent.click(
       within(notesContainer).getByRole("button", {
@@ -1644,10 +1680,10 @@ describe("TaskDetailSheet", () => {
       notesField.closest<HTMLElement>(".task-notes-section")!,
     ).getByRole("button", { name: "Notizen speichern" });
 
-    await userEvent.type(notesField, "Beleg suchen");
+    setMarkdownValue(notesField, markdownValue(notesField) + "Beleg suchen");
     expect(saveButton).toBeEnabled();
 
-    await userEvent.clear(notesField);
+    setMarkdownValue(notesField, "");
     expect(saveButton).toBeDisabled();
   });
 
@@ -1678,7 +1714,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Garten pflegen");
 
     const notesField = await openNotesEditor();
-    await userEvent.type(notesField, " neu");
+    setMarkdownValue(notesField, markdownValue(notesField) + " neu");
 
     // Trigger an unrelated patch (priority change) which reloads this same task.
     await userEvent.click(
@@ -1693,7 +1729,7 @@ describe("TaskDetailSheet", () => {
     }));
 
     // The in-progress notes edit must survive the reload triggered above.
-    expect(screen.getByLabelText("Notizen")).toHaveValue("alt neu");
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("alt neu");
   });
 
   it("klassifiziert eine Erfassung explizit als machbar und öffnet erst nach Erfolg die nächste", async () => {
@@ -1743,7 +1779,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Roh erfasst");
 
     const notesField = await openNotesEditor();
-    await userEvent.type(notesField, "Ergänzung");
+    setMarkdownValue(notesField, markdownValue(notesField) + "Ergänzung");
     await userEvent.click(
       screen.getByRole("button", { name: "Notizen speichern" }),
     );

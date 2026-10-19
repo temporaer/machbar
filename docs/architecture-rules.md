@@ -236,6 +236,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
 | Horizontal row swipe | `apps/web/src/lib/useHorizontalSwipe.ts` |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
+| Markdown note editing and input | `MarkdownEditor` (CodeMirror 6), `MarkdownEditorHandle`; existing toolbar/attachment flow and caller-owned explicit save/cancel |
 | Quick note append / current-note tail | `NotesAppend`, `NotesTail`, `noteMarkdown.ts` / `noteEntries.ts`, and task/project `appendNotes` actions; existing atomic notes endpoints |
 | Markdown attachment references and projections | `packages/shared/src/paperlessMarkdown.ts`, `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |
 | Memory-bounded photo cropping | `apps/web/src/components/ImageCropSheet.tsx` |
@@ -473,3 +474,29 @@ existing link/material presentation.
 Post-completion “Add note” remains pending with #198, which is still open; it
 must reuse this composer through the shared completion affordance, not a second
 completion prompt. Full-document editing remains available.
+
+### Shared Markdown editor (CodeMirror)
+
+`MarkdownEditor` is the single short-note editor for capture, full task/project
+notes, intake editing and quick append. CodeMirror 6 owns input, composition,
+selection and history; `@codemirror/lang-markdown` uses CommonMark plus GFM.
+The supported Markdown commands continue lists/quotes, reset new task items to
+unchecked and handle markup-aware Backspace. `nonTightLists: false` makes an
+empty list item exit its level immediately. Shift+Enter inserts a plain line
+break, and Tab remains available for ordinary focus navigation.
+
+The existing toolbar and attachment flow dispatch editor transactions into the
+same history. `MarkdownEditorHandle` exposes only focus, scrolling, value,
+selection and transaction-backed Markdown insertion for the two detail callers; no caller imports CodeMirror. External
+controlled values update the document without echoing `onChange`, preserving
+bounded selection and establishing a fresh undo baseline. Hardware Shift+Enter
+is forwarded through the configured CodeMirror keymap before Chrome Android
+defers the event and discards its modifier; software input and IME remain
+CodeMirror-owned. Save/cancel and persistence remain owned by callers. The
+previous textarea keydown/beforeinput/execCommand continuation path is removed.
+
+Callers must pass asynchronous save/mutation state explicitly through
+`MarkdownEditor.disabled`; contenteditable does not inherit a disabled fieldset.
+Task/project notes and Capture lock input during submission; quick append
+combines its own pending state with the caller lock. Intake content edits are
+synchronous draft edits inside a modal, with no asynchronous field save.

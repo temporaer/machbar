@@ -1,12 +1,18 @@
+import {
+  markdownValue,
+  markdownView,
+  selectMarkdown,
+  setMarkdownValue,
+} from "../test/markdownEditor";
 import { createRef, useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyMarkdownToolbarAction,
-  continueMarkdownList,
   insertMarkdownAtSelection,
   MarkdownEditor,
+  type MarkdownEditorHandle,
   type MarkdownToolbarAction,
 } from "./MarkdownEditor";
 import { api } from "../lib/api";
@@ -24,23 +30,77 @@ const mockedApi = vi.mocked(api);
 
 describe("applyMarkdownToolbarAction", () => {
   it.each<
-    [MarkdownToolbarAction, string, number, number, { value: string; selectionStart: number; selectionEnd: number }]
+    [
+      MarkdownToolbarAction,
+      string,
+      number,
+      number,
+      { value: string; selectionStart: number; selectionEnd: number },
+    ]
   >([
-    ["bullet", "one\ntwo", 0, 7, { value: "- one\n- two", selectionStart: 2, selectionEnd: 11 }],
-    ["checkbox", "item", 0, 4, { value: "- [ ] item", selectionStart: 6, selectionEnd: 10 }],
-    ["bold", "note", 1, 3, { value: "n**ot**e", selectionStart: 3, selectionEnd: 5 }],
+    [
+      "bullet",
+      "one\ntwo",
+      0,
+      7,
+      { value: "- one\n- two", selectionStart: 2, selectionEnd: 11 },
+    ],
+    [
+      "checkbox",
+      "item",
+      0,
+      4,
+      { value: "- [ ] item", selectionStart: 6, selectionEnd: 10 },
+    ],
+    [
+      "bold",
+      "note",
+      1,
+      3,
+      { value: "n**ot**e", selectionStart: 3, selectionEnd: 5 },
+    ],
     ["bold", "", 0, 0, { value: "****", selectionStart: 2, selectionEnd: 2 }],
-    ["link", "note", 0, 4, { value: "[note]()", selectionStart: 7, selectionEnd: 7 }],
+    [
+      "link",
+      "note",
+      0,
+      4,
+      { value: "[note]()", selectionStart: 7, selectionEnd: 7 },
+    ],
     ["link", "", 0, 0, { value: "[]()", selectionStart: 3, selectionEnd: 3 }],
-    ["bullet", "\nabc", 0, 0, { value: "- \nabc", selectionStart: 2, selectionEnd: 2 }],
-    ["checkbox", "\nabc", 0, 0, { value: "- [ ] \nabc", selectionStart: 6, selectionEnd: 6 }],
-  ])("formats %s and retains its expected selection", (action, value, start, end, expected) => {
-    expect(applyMarkdownToolbarAction(action, value, start, end)).toEqual(expected);
-  });
+    [
+      "bullet",
+      "\nabc",
+      0,
+      0,
+      { value: "- \nabc", selectionStart: 2, selectionEnd: 2 },
+    ],
+    [
+      "checkbox",
+      "\nabc",
+      0,
+      0,
+      { value: "- [ ] \nabc", selectionStart: 6, selectionEnd: 6 },
+    ],
+  ])(
+    "formats %s and retains its expected selection",
+    (action, value, start, end, expected) => {
+      expect(applyMarkdownToolbarAction(action, value, start, end)).toEqual(
+        expected,
+      );
+    },
+  );
 
   describe("insertMarkdownAtSelection", () => {
     it("replaces the selected text and leaves the caret after the attachment", () => {
-      expect(insertMarkdownAtSelection("before OLD after", 7, 10, "[file](paperless:3)")).toEqual({
+      expect(
+        insertMarkdownAtSelection(
+          "before OLD after",
+          7,
+          10,
+          "[file](paperless:3)",
+        ),
+      ).toEqual({
         value: "before [file](paperless:3) after",
         selectionStart: 26,
         selectionEnd: 26,
@@ -54,10 +114,17 @@ function ControlledEditor({
   editorRef,
 }: {
   initialValue: string;
-  editorRef?: React.RefObject<HTMLTextAreaElement>;
+  editorRef?: React.RefObject<MarkdownEditorHandle>;
 }) {
   const [value, setValue] = useState(initialValue);
-  return <MarkdownEditor ref={editorRef} aria-label="Notes" value={value} onChange={setValue} />;
+  return (
+    <MarkdownEditor
+      ref={editorRef}
+      aria-label="Notes"
+      value={value}
+      onChange={setValue}
+    />
+  );
 }
 
 describe("MarkdownEditor", () => {
@@ -66,37 +133,67 @@ describe("MarkdownEditor", () => {
   });
 
   it("applies every toolbar action and restores focus and caret", async () => {
-    const cases: Array<[string, MarkdownToolbarAction, string, number, number, string, number, number]> = [
+    const cases: Array<
+      [
+        string,
+        MarkdownToolbarAction,
+        string,
+        number,
+        number,
+        string,
+        number,
+        number,
+      ]
+    > = [
       ["Aufzählung", "bullet", "note", 0, 4, "- note", 2, 6],
       ["Checkbox", "checkbox", "note", 0, 4, "- [ ] note", 6, 10],
       ["Fett", "bold", "note", 1, 3, "n**ot**e", 3, 5],
       ["Link einfügen", "link", "note", 0, 4, "[note]()", 7, 7],
     ];
 
-    for (const [label, _action, initialValue, start, end, expectedValue, expectedStart, expectedEnd] of cases) {
-      const { unmount } = render(<ControlledEditor initialValue={initialValue} />);
-      const textarea = screen.getByRole("textbox", { name: "Notes" }) as HTMLTextAreaElement;
+    for (const [
+      label,
+      _action,
+      initialValue,
+      start,
+      end,
+      expectedValue,
+      expectedStart,
+      expectedEnd,
+    ] of cases) {
+      const { unmount } = render(
+        <ControlledEditor initialValue={initialValue} />,
+      );
+      const textarea = screen.getByRole("textbox", {
+        name: "Notes",
+      }) as HTMLElement;
       textarea.focus();
-      textarea.setSelectionRange(start, end);
+      selectMarkdown(textarea, start, end);
       fireEvent.click(screen.getByRole("button", { name: label }));
 
       await waitFor(() => {
-        expect(textarea).toHaveValue(expectedValue);
+        expect(markdownValue(textarea)).toBe(expectedValue);
         expect(document.activeElement).toBe(textarea);
-        expect(textarea.selectionStart).toBe(expectedStart);
-        expect(textarea.selectionEnd).toBe(expectedEnd);
+        expect(markdownView(textarea).state.selection.main.from).toBe(
+          expectedStart,
+        );
+        expect(markdownView(textarea).state.selection.main.to).toBe(
+          expectedEnd,
+        );
       });
       unmount();
     }
   });
 
   it("forwards its textarea ref for caller focus control", () => {
-    const ref = createRef<HTMLTextAreaElement>();
+    const ref = createRef<MarkdownEditorHandle>();
     render(<ControlledEditor initialValue="" editorRef={ref} />);
 
-    expect(ref.current).toBe(screen.getByRole("textbox", { name: "Notes" }));
+    expect(ref.current?.value).toBe("");
     ref.current?.focus();
-    expect(document.activeElement).toBe(ref.current);
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Notes" }),
+    );
   });
 
   it("uses native file inputs and requests the rear camera only for capture", () => {
@@ -117,8 +214,18 @@ describe("MarkdownEditor", () => {
 
   it.each([
     ["Foto aufnehmen", "photo.jpg", "image/jpeg", "![photo.jpg](paperless:21)"],
-    ["Bild auswählen", "gallery.png", "image/png", "![gallery.png](paperless:21)"],
-    ["Datei auswählen", "manual.pdf", "application/pdf", "[manual.pdf](paperless:21)"],
+    [
+      "Bild auswählen",
+      "gallery.png",
+      "image/png",
+      "![gallery.png](paperless:21)",
+    ],
+    [
+      "Datei auswählen",
+      "manual.pdf",
+      "application/pdf",
+      "[manual.pdf](paperless:21)",
+    ],
   ])(
     "uploads %s through the shared attachment flow and restores the caret",
     async (inputLabel, fileName, mimeType, markdown) => {
@@ -129,9 +236,11 @@ describe("MarkdownEditor", () => {
         mimeType,
       });
       render(<ControlledEditor initialValue="before after" />);
-      const textarea = screen.getByRole("textbox", { name: "Notes" }) as HTMLTextAreaElement;
+      const textarea = screen.getByRole("textbox", {
+        name: "Notes",
+      }) as HTMLElement;
       textarea.focus();
-      textarea.setSelectionRange(7, 7);
+      selectMarkdown(textarea, 7);
 
       fireEvent.click(screen.getByRole("button", { name: "Anhang einfügen" }));
       const file = new File(["content"], fileName, { type: mimeType });
@@ -145,9 +254,13 @@ describe("MarkdownEditor", () => {
       }
 
       await waitFor(() => {
-        expect(textarea).toHaveValue(`before ${markdown}after`);
-        expect(textarea.selectionStart).toBe(7 + markdown.length);
-        expect(textarea.selectionEnd).toBe(7 + markdown.length);
+        expect(markdownValue(textarea)).toBe(`before ${markdown}after`);
+        expect(markdownView(textarea).state.selection.main.from).toBe(
+          7 + markdown.length,
+        );
+        expect(markdownView(textarea).state.selection.main.to).toBe(
+          7 + markdown.length,
+        );
         expect(document.activeElement).toBe(textarea);
       });
       expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledWith(file);
@@ -173,7 +286,7 @@ describe("MarkdownEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Suchen" }));
     fireEvent.click(await screen.findByRole("button", { name: /Lease/ }));
 
-    expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue(
+    expect(markdownValue(screen.getByRole("textbox", { name: "Notes" }))).toBe(
       "[lease.pdf](paperless:33)",
     );
     expect(mockedApi.uploadPaperlessDocument).not.toHaveBeenCalled();
@@ -187,14 +300,16 @@ describe("MarkdownEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Anhang einfügen" }));
     fireEvent.change(screen.getByLabelText("Datei auswählen"), {
       target: {
-        files: [new File(["content"], "manual.pdf", { type: "application/pdf" })],
+        files: [
+          new File(["content"], "manual.pdf", { type: "application/pdf" }),
+        ],
       },
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Paperless unavailable",
     );
-    expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue(
+    expect(markdownValue(screen.getByRole("textbox", { name: "Notes" }))).toBe(
       "unchanged",
     );
   });
@@ -216,14 +331,14 @@ describe("MarkdownEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Anhang einfügen" }));
     fireEvent.change(screen.getByLabelText("Datei auswählen"), {
       target: {
-        files: [new File(["content"], "manual.pdf", { type: "application/pdf" })],
+        files: [
+          new File(["content"], "manual.pdf", { type: "application/pdf" }),
+        ],
       },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Schließen" }));
-    expect(
-      screen.getByRole("dialog", { name: "Anhang" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Anhang" })).toBeInTheDocument();
 
     finishUpload({
       id: 71,
@@ -232,49 +347,111 @@ describe("MarkdownEditor", () => {
       mimeType: "application/pdf",
     });
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Anhang" })).not.toBeInTheDocument(),
+      expect(
+        screen.queryByRole("dialog", { name: "Anhang" }),
+      ).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue(
+    expect(markdownValue(screen.getByRole("textbox", { name: "Notes" }))).toBe(
       "[manual.pdf](paperless:71)note",
     );
   });
 });
 
-describe('list entry', () => {
+describe("CodeMirror Markdown input", () => {
   it.each([
-    ['- first', 7, '- first\n- '],
-    ['  * nested', 10, '  * nested\n  * '],
-    ['9. item', 7, '9. item\n10. '],
-    ['- [x] done', 10, '- [x] done\n- [ ] '],
-    ['- ', 2, ''],
-    ['  - ', 4, '- '],
-    ['- hello world', 7, '- hello\n-  world'],
-  ])('continues %s while retaining the suffix', (value, cursor, expected) => {
-    expect(continueMarkdownList(value as string, cursor as number, cursor as number)?.value).toBe(expected);
+    ["- first", "- first\n- "],
+    ["9. item", "9. item\n10. "],
+    ["- [x] done", "- [x] done\n- [ ] "],
+    ["- first\n- ", "- first\n"],
+    ["- parent\n  - child\n  - ", "- parent\n  - child\n- "],
+    ["```\n- code", "```\n- code\n"],
+    ["    - code", "    - code\n    "],
+  ])("continues Markdown context for %s", (value, expected) => {
+    render(<ControlledEditor initialValue={value} />);
+    const editor = screen.getByRole("textbox");
+    selectMarkdown(editor, value.length);
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+    expect(markdownValue(editor)).toBe(expected);
   });
-  it('toggles and changes existing list markers across selected lines', () => {
-    expect(applyMarkdownToolbarAction('bullet', "one\ntwo", 0, 4).value).toBe("- one\ntwo");
-    expect(applyMarkdownToolbarAction('checkbox', '- one\n* two', 0, 11).value).toBe('- [ ] one\n- [ ] two');
-    expect(applyMarkdownToolbarAction('bullet', '- one\n- two', 0, 11).value).toBe('one\ntwo');
-    expect(applyMarkdownToolbarAction('bullet', '1. one\n2. two', 0, 13).value).toBe('- one\n- two');
+  it("retains the suffix for mid-line edits and keeps Shift+Enter plain", () => {
+    render(<ControlledEditor initialValue="- hello world" />);
+    const editor = screen.getByRole("textbox");
+    selectMarkdown(editor, 7);
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+    expect(markdownValue(editor)).toBe("- hello\n-  world");
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter", shiftKey: true });
+    expect(markdownValue(editor)).toBe("- hello\n- \n world");
   });
-  it('handles software-keyboard beforeinput and ignores composing input', () => {
-    render(<ControlledEditor initialValue="- [x] done" />);
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-    textarea.setSelectionRange(10, 10);
-    fireEvent(textarea, new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true, isComposing: true }));
-    expect(textarea).toHaveValue('- [x] done');
-    fireEvent(textarea, new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true }));
-    expect(textarea).toHaveValue('- [x] done\n- [ ] ');
+  it("applies external values without echoing changes and updates readonly state", () => {
+    const change = vi.fn();
+    const { rerender } = render(
+      <MarkdownEditor aria-label="Notes" value="old" onChange={change} />,
+    );
+    const editor = screen.getByRole("textbox");
+    selectMarkdown(editor, 2);
+    rerender(
+      <MarkdownEditor
+        aria-label="Notes"
+        value="updated"
+        onChange={change}
+        readOnly
+      />,
+    );
+    expect(markdownValue(editor)).toBe("updated");
+    expect(markdownView(editor).state.selection.main.from).toBe(2);
+    expect(editor).toHaveAttribute("contenteditable", "false");
+    expect(change).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Fett" })).toBeDisabled();
   });
-  it('respects caller key handling and Shift+Enter', () => {
-    const handler = vi.fn((e: React.KeyboardEvent) => e.preventDefault());
-    const { rerender } = render(<MarkdownEditor aria-label="Notes" value="- first" onChange={vi.fn()} onKeyDown={handler} />);
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' }); expect(handler).toHaveBeenCalled();
-    rerender(<ControlledEditor initialValue="- first" />);
-    const textarea = screen.getByRole('textbox');
-    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
-    const event = new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true });
-    fireEvent(textarea, event); expect(event.defaultPrevented).toBe(false);
+  it("does not carry undo or redo across an external document replacement", () => {
+    const change = vi.fn();
+    const { rerender } = render(
+      <MarkdownEditor aria-label="Notes" value="old" onChange={change} />,
+    );
+    const editor = screen.getByRole("textbox");
+    setMarkdownValue(editor, "old edited");
+    rerender(
+      <MarkdownEditor
+        aria-label="Notes"
+        value="replacement"
+        onChange={change}
+      />,
+    );
+    fireEvent.keyDown(editor, { key: "z", code: "KeyZ", ctrlKey: true });
+    expect(markdownValue(editor)).toBe("replacement");
+    fireEvent.keyDown(editor, {
+      key: "z",
+      code: "KeyZ",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(markdownValue(editor)).toBe("replacement");
+  });
+  it("keeps Tab available for normal focus navigation", async () => {
+    render(
+      <>
+        <ControlledEditor initialValue="text" />
+        <button>After editor</button>
+      </>,
+    );
+    screen.getByRole("textbox").focus();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "After editor" })).toHaveFocus();
+  });
+  it("lets caller key handling cancel Enter and leaves Tab unbound", () => {
+    const handler = vi.fn((event: React.KeyboardEvent) =>
+      event.preventDefault(),
+    );
+    render(
+      <MarkdownEditor
+        aria-label="Notes"
+        value="- first"
+        onChange={vi.fn()}
+        onKeyDown={handler}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    expect(handler).toHaveBeenCalled();
+    expect(markdownValue(screen.getByRole("textbox"))).toBe("- first");
   });
 });
