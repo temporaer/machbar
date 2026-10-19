@@ -22,6 +22,7 @@ export function GuidedCapturePage() {
   const [thoughts, setThoughts] = useState<{ id: number; title: string; areaId: string }[]>([]);
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusAfterNavigation = useRef(false);
   const savingRef = useRef(false);
   const onSavingChange = (pending: boolean) => {
     savingRef.current = pending;
@@ -62,10 +63,20 @@ export function GuidedCapturePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!focusAfterNavigation.current) return;
+    focusAfterNavigation.current = false;
+    headingRef.current?.focus();
+  }, [area.id, done]);
+
   const goTo = (id: string) => {
     if (savingRef.current) return;
+    if ((!done && id === area.id) || (done && id === "done")) {
+      headingRef.current?.focus();
+      return;
+    }
+    focusAfterNavigation.current = true;
     setParams({ area: id }, { replace: true });
-    requestAnimationFrame(() => headingRef.current?.focus());
   };
   const next = () => goTo(areas[index + 1]?.id ?? "done");
   const showCapturedInbox = () => {

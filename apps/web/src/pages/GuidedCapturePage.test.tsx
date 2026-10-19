@@ -66,7 +66,7 @@ describe("guided capture", () => {
       for (const area of group.areas) {
         expect(area.icon).toBeTruthy();
         await userEvent.click(screen.getByRole("button", { name: area.title }));
-        expect(screen.getByRole("heading", { level: 2, name: area.title })).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: area.title })).toHaveFocus());
         expect(screen.getByText(area.prompt)).toBeVisible();
       }
     }
