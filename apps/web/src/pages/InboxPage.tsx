@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Task } from "@machbar/shared";
 import { api, type AgendaScope } from "../lib/api";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import {
@@ -85,6 +85,14 @@ export function InboxPage() {
           }
           hints={[{ text: strings.inboxHint }]}
         />
+        <Link to="/capture/guided" className="guided-capture-invitation">
+          <span className="guided-capture-invitation-icon" aria-hidden="true">🌿</span>
+          <span>
+            <strong>{strings.guidedCapture}</strong>
+            <small>{strings.guidedCaptureDescription}</small>
+          </span>
+          <span aria-hidden="true">›</span>
+        </Link>
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
         {tasks ? (

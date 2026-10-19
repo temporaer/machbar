@@ -88,6 +88,16 @@ the same transaction as its first child; **Als Projekt behandeln** is an
 optional branch through the existing guarded conversion. Unsupported
 conversions leave the original task and the whole step batch intact.
 
+**Gedankenreise**, available from Eingang and Mehr, offers sixteen optional life
+areas in five groups. Each area invites open reflection, including the invisible
+work of remembering and coordinating. Capture as many rough thoughts or wishes as
+you like, skip freely, or jump to any area. Every saved thought immediately enters
+Eingang for ordinary clarification; leaving the journey does not remove it.
+Life areas are prompts, not tags or task attributes. Text stays literal (including
+date words), and remembering something does not automatically assign its execution
+to you. Ownership, planning, and structure can be decided later. Navigation keeps
+the current unsaved text while the journey is open; only saved entries survive exit.
+
 Converting a task into a project keeps its direct parent (project or task),
 sibling position, numeric identity,
 content, material, owner, deadline, descendants and history. Task-level work

@@ -155,6 +155,170 @@ a {
   color: inherit;
 }
 
+.guided-capture-page {
+  gap: 20px;
+}
+
+.guided-capture-header,
+.guided-capture-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.guided-capture-eyebrow {
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.guided-capture-intro h1 {
+  font-size: clamp(1.7rem, 6vw, 2.4rem);
+  line-height: 1.15;
+  max-width: 20ch;
+  margin: 8px 0 12px;
+}
+
+.guided-capture-intro p,
+.guided-capture-prompt,
+.guided-capture-finish p {
+  line-height: 1.65;
+  margin: 0;
+}
+
+.guided-capture-card {
+  padding: clamp(16px, 4vw, 28px);
+  border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background: radial-gradient(ellipse at top right, var(--color-success-surface), transparent 65%), var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.guided-capture-card[hidden] {
+  display: none;
+}
+
+.guided-capture-progress {
+  display: grid;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.guided-capture-progress progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--color-primary);
+}
+
+.guided-capture-reflection {
+  padding: 8px 0;
+}
+
+.guided-capture-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  background: var(--color-surface);
+  border-radius: 22px;
+  font-size: 2rem;
+  box-shadow: var(--shadow-card);
+}
+
+.guided-capture-reflection h2 {
+  font-size: clamp(1.35rem, 5vw, 1.8rem);
+  margin: 8px 0 12px;
+}
+
+.guided-capture-reassurance,
+.guided-capture-mental-load {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.guided-capture-navigation {
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.guided-capture-saved {
+  color: var(--color-success);
+  background: var(--color-success-surface);
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.guided-capture-catalog summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.guided-capture-catalog h3 {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin: 24px 0 10px;
+}
+
+.guided-capture-area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 8px;
+}
+
+.guided-capture-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 12px;
+  text-align: left;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.guided-capture-area[aria-current="step"] {
+  border-color: var(--color-primary);
+  background: var(--color-success-surface);
+}
+
+.guided-capture-invitation {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(110deg, var(--color-success-surface), var(--color-surface));
+  text-decoration: none;
+}
+
+.guided-capture-invitation > span:nth-child(2) {
+  flex: 1;
+}
+
+.guided-capture-invitation-icon {
+  font-size: 1.8rem;
+}
+
+.guided-capture-invitation small {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
 .app-shell {
   min-height: 100%;
   display: flex;

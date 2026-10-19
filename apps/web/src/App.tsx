@@ -16,6 +16,7 @@ import { TaskWorkflowHost } from "./components/TaskWorkflowHost";
 import { ProjectWorkflowHost } from "./components/ProjectWorkflowHost";
 import { TodayPage } from "./pages/TodayPage";
 import { InboxPage } from "./pages/InboxPage";
+import { GuidedCapturePage } from "./pages/GuidedCapturePage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { WaitingPage } from "./pages/WaitingPage";
@@ -80,6 +81,7 @@ function Shell() {
             <Route path="/" element={<Navigate to="/today" replace />} />
             <Route path="/today" element={<TodayPage />} />
             <Route path="/inbox" element={<InboxPage />} />
+            <Route path="/capture/guided" element={<GuidedCapturePage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/waiting" element={<WaitingPage />} />

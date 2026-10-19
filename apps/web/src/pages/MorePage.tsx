@@ -44,6 +44,13 @@ export function MorePage() {
       <section className="more-section" aria-labelledby="more-review-heading">
         <h2 id="more-review-heading">{strings.moreFindAndReview}</h2>
         <div className="more-link-group">
+          <Link to="/capture/guided" className="list-link more-list-link">
+            <span>
+              <strong>{strings.guidedCapture}</strong>
+              <small className="list-link-description">{strings.guidedCaptureDescription}</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
           <Link to="/more/review" className="list-link more-list-link">
             <span>{strings.reviewTitle}</span>
             <span className="more-link-trailing">

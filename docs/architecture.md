@@ -133,6 +133,20 @@ The API serves the compiled frontend from `apps/web/dist/` as static files, so *
 
 ---
 
+## Guided capture (no AI required)
+
+`/capture/guided`, linked from Inbox and More, presents the ordered five-group,
+sixteen-area catalog in `apps/web/src/lib/guidedCapture.ts`. Titles and broad prompts
+live in both web translation catalogs. `GuidedCapturePage` owns only navigation
+(the current area is linkable through `?area=`) and ephemeral capture feedback.
+It composes the canonical `CaptureForm` in `thought` mode: literal text, captured
+status, creator recorded but no owner assigned, and no date/project/category
+inference. The existing task-create endpoint persists each entry immediately and
+the ordinary Inbox handles subsequent clarification. There is no new persistence,
+classification, AI dependency, or backlog. Array ordering defines the suggested
+journey; grouped navigation lets users revisit or skip any prompt. Unsaved text
+survives area navigation within the mounted page, but is not stored on exit.
+
 ## 2. AI intake (“Verarbeiten”)
 
 AI intake is a clarification adapter, not a second task system, calendar
