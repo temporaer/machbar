@@ -709,6 +709,7 @@ export function ProjectDetailPage() {
             {notesEditing ? (
                 <>
                   <MarkdownEditor
+                    disabled={projectMutationPending}
                     id="project-notes"
                     aria-label={strings.notes}
                     ref={notesRef}

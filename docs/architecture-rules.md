@@ -494,3 +494,9 @@ is forwarded through the configured CodeMirror keymap before Chrome Android
 defers the event and discards its modifier; software input and IME remain
 CodeMirror-owned. Save/cancel and persistence remain owned by callers. The
 previous textarea keydown/beforeinput/execCommand continuation path is removed.
+
+Callers must pass asynchronous save/mutation state explicitly through
+`MarkdownEditor.disabled`; contenteditable does not inherit a disabled fieldset.
+Task/project notes and Capture lock input during submission; quick append
+combines its own pending state with the caller lock. Intake content edits are
+synchronous draft edits inside a modal, with no asynchronous field save.

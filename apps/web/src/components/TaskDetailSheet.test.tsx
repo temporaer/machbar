@@ -1517,6 +1517,41 @@ describe("TaskDetailSheet", () => {
     );
   });
 
+  it.each(["success", "failure"] as const)("locks note input during a deferred save and handles %s", async outcome => {
+    const task = makeTask({ id: 145, title: "Notizen sichern", notes: "original" });
+    mockedApi.getTask.mockResolvedValue(task);
+    let resolve!: (saved: typeof task) => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise<typeof task>((done, fail) => { resolve = done; reject = fail; });
+    mockedApi.updateTask.mockImplementationOnce(() => pending);
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    const editor = await openNotesEditor();
+    setMarkdownValue(editor, "submitted");
+    await userEvent.click(screen.getByRole("button", { name: "Notizen speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      notes: "submitted", expectedRevision: task.revision,
+    }));
+    expect(editor.closest("fieldset")).toBeDisabled();
+    expect(editor).toHaveAttribute("contenteditable", "false");
+    expect(editor).toHaveAttribute("aria-disabled", "true");
+    selectMarkdown(editor, "submitted".length);
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+    expect(markdownValue(editor)).toBe("submitted");
+    expect(screen.getByRole("button", { name: "Fett" })).toBeDisabled();
+    if (outcome === "success") {
+      await act(async () => resolve({ ...task, notes: "submitted", revision: task.revision + 1 }));
+      await waitFor(() => expect(editor).not.toBeInTheDocument());
+    } else {
+      await act(async () => reject(new Error("Save failed")));
+      await waitFor(() => expect(editor).toHaveAttribute("contenteditable", "true"));
+      expect(markdownValue(editor)).toBe("submitted");
+      fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+      expect(markdownValue(editor)).toBe("submitted\n");
+    }
+  });
+
   it("cancels a notes draft without touching the server", async () => {
     const task = makeTask({ id: 58, title: "Ausflug planen", notes: "Alt" });
     mockedApi.getTask.mockResolvedValue(task);

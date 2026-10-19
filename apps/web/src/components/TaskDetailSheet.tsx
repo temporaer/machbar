@@ -893,7 +893,7 @@ export function TaskDetailSheet() {
                 />
               ) : null}
             </div>
-            <NotesAppend disabled={notesEditing || savingTextFields} onAppend={async content => {
+            <NotesAppend disabled={notesEditing || savingTextFields || taskMutationPending} onAppend={async content => {
               const updated = await taskActions.appendNotes(task, content);
               if (updated) { revisionRef.current = updated.revision; setTextFieldsBaseline(current => current ? { ...current, notes: updated.notes } : current); setNotesDraft(updated.notes); }
               return updated;
@@ -902,6 +902,7 @@ export function TaskDetailSheet() {
               <>
                 <label className="sr-only" id="task-notes-label">{strings.notes}</label>
                 <MarkdownEditor
+                  disabled={savingTextFields || taskMutationPending}
                   id="task-notes"
                   aria-label={strings.notes}
                   ref={notesRef}

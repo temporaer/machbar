@@ -468,6 +468,7 @@ export function CaptureForm({
         <div className="field">
           <label id="capture-notes-label">{strings.notes}</label>
           <MarkdownEditor
+            disabled={saving}
             id="capture-notes"
             aria-label={strings.notes}
             rows={5}
