@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { getCatalog, LocaleProvider, LOCALE_STORAGE_KEY } from "../lib/locale";
 import { guidedCaptureCatalog } from "../lib/guidedCapture";
+import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { makeTask } from "../test/fixtures";
 import { GuidedCapturePage } from "./GuidedCapturePage";
 
@@ -42,6 +43,7 @@ describe("guided capture", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
     createTask.mockImplementation(async (input) => makeTask({ title: input.title, status: "captured" }));
   });
 
@@ -136,5 +138,21 @@ describe("guided capture", () => {
     renderJourney("/capture/guided?area=unknown");
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toBeVisible();
     expect(screen.getByRole("button", { name: de.guidedCaptureBack })).toBeDisabled();
+  });
+
+  it.each(["mine", "all", "work"] as const)("returns to a visible household inbox from %s scope", async (scope) => {
+    writeTodayScope(scope);
+    renderJourney();
+    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureExit }));
+    expect(readTodayScope()).toBe(scope === "work" ? "all" : scope);
+    expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
+  });
+
+  it("also reveals household captures when returning from the finish screen", async () => {
+    writeTodayScope("work");
+    renderJourney("/capture/guided?area=done");
+    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureInbox }));
+    expect(readTodayScope()).toBe("all");
+    expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
   });
 });

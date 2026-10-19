@@ -4,6 +4,7 @@ import { CaptureForm } from "../components/CaptureForm";
 import { guidedCaptureCatalog } from "../lib/guidedCapture";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
+import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 
 export function GuidedCapturePage() {
   const strings = useStrings();
@@ -25,12 +26,15 @@ export function GuidedCapturePage() {
     requestAnimationFrame(() => headingRef.current?.focus());
   };
   const next = () => goTo(areas[index + 1]?.id ?? "done");
+  const showCapturedInbox = () => {
+    if (readTodayScope() === "work") writeTodayScope("all");
+  };
 
   return (
     <div className="guided-capture-page stack">
       <header className="guided-capture-header">
         <span className="guided-capture-eyebrow">{strings.guidedCapture}</span>
-        <Link to="/inbox" className="btn btn-sm">{strings.guidedCaptureExit}</Link>
+        <Link to="/inbox" className="btn btn-sm" onClick={showCapturedInbox}>{strings.guidedCaptureExit}</Link>
       </header>
       <div className="guided-capture-intro">
         <h1>{strings.guidedCaptureTitle}</h1>
@@ -91,7 +95,7 @@ export function GuidedCapturePage() {
           <span className="guided-capture-icon" aria-hidden="true">🌤️</span>
           <h2 ref={headingRef} tabIndex={-1}>{strings.guidedCaptureDoneTitle}</h2>
           <p>{strings.guidedCaptureDoneHint}</p>
-          <Link to="/inbox" className="btn btn-primary">{strings.guidedCaptureInbox}</Link>
+          <Link to="/inbox" className="btn btn-primary" onClick={showCapturedInbox}>{strings.guidedCaptureInbox}</Link>
           <button type="button" className="btn" onClick={() => goTo(areas[0]!.id)}>
             {strings.guidedCaptureRestart}
           </button>

@@ -159,6 +159,11 @@ a {
   gap: 20px;
 }
 
+.guided-capture-page .btn,
+.guided-capture-page input {
+  min-height: 44px;
+}
+
 .guided-capture-header,
 .guided-capture-navigation {
   display: flex;
