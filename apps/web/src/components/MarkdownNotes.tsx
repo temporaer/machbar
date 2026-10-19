@@ -1,10 +1,8 @@
-import { actionableTokenPattern, splitActionableText } from "../lib/markdownActionableLinks";
+import { noteMarkdownPlugins, transformMarkdownUrl } from "../lib/noteMarkdown";
+export { transformMarkdownUrl, markdownUrlSchemes } from "../lib/noteMarkdown";
 import type { Components } from "react-markdown";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
-import type { Parent, Root } from "mdast";
 import {
   paperlessDocumentDownloadUrl,
   paperlessDocumentPreviewUrl,
@@ -13,46 +11,7 @@ import {
 import { paperlessDocumentId } from "../lib/paperlessAttachments";
 import { useStrings } from "../lib/strings";
 import "./MarkdownNotes.css";
-import { noteEntries } from "../lib/noteEntries";
 import { NoteEntryTime } from "./NoteEntryTime";
-
-/**
- * Schemes intentionally supported in Markdown links. Add a future attachment
- * scheme here only after its destination and access controls are defined.
- */
-export const markdownUrlSchemes = [
-  "http",
-  "https",
-  "mailto",
-  "tel",
-  "sms",
-  "paperless",
-] as const;
-
-const allowedMarkdownUrlSchemes = new Set<string>(markdownUrlSchemes);
-const schemePattern = /^([a-z][a-z\d+.-]*):/i;
-const unsafeCharacterPattern = /[\u0000-\u001f\u007f\s]/;
-
-/**
- * Restricts rendered Markdown URLs to local navigation and explicitly allowed
- * protocols. Returning an empty URL makes react-markdown omit unsafe targets.
- */
-export function transformMarkdownUrl(url: string): string {
-  if (!url || unsafeCharacterPattern.test(url)) return "";
-
-  // Protocol-relative and backslash paths can be interpreted as cross-origin
-  // navigation by browsers, so they are not relative URLs for this policy.
-  if (/^(?:[/\\]{2}|\\)/.test(url)) return "";
-
-  const match = url.match(schemePattern);
-  if (!match) return url;
-
-  const scheme = match[1]?.toLowerCase();
-  if (scheme === "paperless") {
-    return paperlessDocumentId(url) !== null ? url : "";
-  }
-  return scheme && allowedMarkdownUrlSchemes.has(scheme.toLowerCase()) ? url : "";
-}
 
 function isExternalWebLink(href: string | undefined): boolean {
   return href !== undefined && /^https?:/i.test(href);
@@ -93,29 +52,18 @@ function PaperlessImage({ id, alt }: { id: number; alt: string }) {
   );
 }
 
-
-/** Adds mobile URI/phone actions only to plain text nodes, never code or existing links. */
-function remarkActionableLinks() {
-  return (tree: Root) => {
-    const visit = (parent: Parent) => {
-      for (let index = 0; index < parent.children.length; index += 1) {
-        const child = parent.children[index];
-        if (!child) continue;
-        if (child.type === "text" && actionableTokenPattern.test(child.value)) {
-          actionableTokenPattern.lastIndex = 0;
-          const replacement = splitActionableText(child);
-          parent.children.splice(index, 1, ...replacement);
-          index += replacement.length - 1;
-        } else if ("children" in child && child.type !== "link") {
-          visit(child as Parent);
-        }
-      }
-    };
-    visit(tree);
-  };
-}
-
 const markdownComponents: Components = {
+  div({ node, children, ...props }) {
+    const instant = node?.properties.dataNoteInstant;
+    return typeof instant === "string" ? (
+      <NoteEntryTime
+        instant={instant}
+        author={String(node?.properties.dataNoteAuthor ?? "")}
+      />
+    ) : (
+      <div {...props}>{children}</div>
+    );
+  },
   a({ href, children, node: _node, ...props }) {
     const paperlessId = paperlessDocumentId(href);
     if (paperlessId !== null) {
@@ -162,16 +110,13 @@ export interface MarkdownNotesProps {
 export function MarkdownNotes({ value, className }: MarkdownNotesProps) {
   return (
     <div className={["markdown-notes", className].filter(Boolean).join(" ")}>
-      {noteEntries(value).map((entry, index) => <section className="note-entry" key={index}>
-        {entry.instant ? <NoteEntryTime instant={entry.instant} author={entry.author} /> : null}
       <ReactMarkdown
         components={markdownComponents}
-        remarkPlugins={[remarkGfm, remarkBreaks, remarkActionableLinks]}
+        remarkPlugins={noteMarkdownPlugins}
         urlTransform={transformMarkdownUrl}
       >
-        {entry.content}
+        {value}
       </ReactMarkdown>
-      </section>)}
     </div>
   );
 }

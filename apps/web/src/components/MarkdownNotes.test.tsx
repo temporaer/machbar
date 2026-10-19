@@ -22,29 +22,37 @@ www.example.com
     const [done, pending] = screen.getAllByRole("checkbox");
     expect(done).toBeChecked();
     expect(pending).not.toBeChecked();
-    expect(screen.getByRole("link", { name: "www.example.com" })).toHaveAttribute(
-      "href",
-      "http://www.example.com",
-    );
+    expect(
+      screen.getByRole("link", { name: "www.example.com" }),
+    ).toHaveAttribute("href", "http://www.example.com");
     expect(container.querySelector("img")).toBeNull();
     expect(container).toHaveTextContent('<img src=x onerror="alert(1)">');
   });
 
   it("opens external web links safely but leaves non-web safe protocols local", () => {
     render(
-      <MarkdownNotes
-        value="[web](https://example.com) [mail](mailto:notes@example.com) [call](tel:+49123) [local](/notes) [bad](javascript:alert(1))"
-      />,
+      <MarkdownNotes value="[web](https://example.com) [mail](mailto:notes@example.com) [call](tel:+49123) [local](/notes) [bad](javascript:alert(1))" />,
     );
 
-    expect(screen.getByRole("link", { name: "web" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: "web" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
     expect(screen.getByRole("link", { name: "web" })).toHaveAttribute(
       "rel",
       "noopener noreferrer",
     );
-    expect(screen.getByRole("link", { name: "mail" })).not.toHaveAttribute("target");
-    expect(screen.getByRole("link", { name: "call" })).toHaveAttribute("href", "tel:+49123");
-    expect(screen.getByRole("link", { name: "local" })).toHaveAttribute("href", "/notes");
+    expect(screen.getByRole("link", { name: "mail" })).not.toHaveAttribute(
+      "target",
+    );
+    expect(screen.getByRole("link", { name: "call" })).toHaveAttribute(
+      "href",
+      "tel:+49123",
+    );
+    expect(screen.getByRole("link", { name: "local" })).toHaveAttribute(
+      "href",
+      "/notes",
+    );
     expect(screen.getByText("bad").closest("a")).toHaveAttribute("href", "");
   });
 
@@ -57,10 +65,9 @@ www.example.com
       "href",
       "tel:072194390-387",
     );
-    expect(screen.getByRole("link", { name: "foo@example.com" })).toHaveAttribute(
-      "href",
-      "mailto:foo@example.com",
-    );
+    expect(
+      screen.getByRole("link", { name: "foo@example.com" }),
+    ).toHaveAttribute("href", "mailto:foo@example.com");
     const phoneLinks = screen.getAllByRole("link", { name: "01604844887" });
     expect(phoneLinks[0]).toHaveAttribute("href", "tel:01604844887");
     expect(phoneLinks[1]).toHaveAttribute("href", "sms:01604844887");
@@ -68,9 +75,7 @@ www.example.com
 
   it("renders valid Paperless images and document links through Machbar", () => {
     render(
-      <MarkdownNotes
-        value="![receipt](paperless:4711) [manual.pdf](paperless:4712)"
-      />,
+      <MarkdownNotes value="![receipt](paperless:4711) [manual.pdf](paperless:4712)" />,
     );
 
     const image = screen.getByRole("img", { name: "receipt" });
@@ -125,5 +130,37 @@ describe("transformMarkdownUrl", () => {
     ["java\nscript:alert(1)", ""],
   ])("transforms %s safely", (url, expected) => {
     expect(transformMarkdownUrl(url)).toBe(expected);
+  });
+});
+
+describe("document-wide entry Markdown", () => {
+  it("resolves reference definitions across timestamped entries in both directions", () => {
+    const { container } = render(
+      <MarkdownNotes
+        value={
+          "[earlier][later]\n\n[2026-10-19T15:21:00Z · Hannes]\n\n[earlier]: https://before.example\n\n[later]: https://after.example\n\n[2026-10-19T16:21:00Z · Sarah]\n[later use][earlier]"
+        }
+      />,
+    );
+    expect(screen.getByRole("link", { name: "earlier" })).toHaveAttribute(
+      "href",
+      "https://after.example",
+    );
+    expect(screen.getByRole("link", { name: "later use" })).toHaveAttribute(
+      "href",
+      "https://before.example",
+    );
+    expect(container.querySelectorAll("time")).toHaveLength(2);
+  });
+  it("keeps fenced and indented header examples as code", () => {
+    const { container } = render(
+      <MarkdownNotes
+        value={
+          "```\n[2026-10-19T15:21:00Z · Example]\n```\n\n    [2026-10-19T15:21:00Z · Example]"
+        }
+      />,
+    );
+    expect(container.querySelectorAll("time")).toHaveLength(0);
+    expect(container.querySelectorAll("code")).toHaveLength(2);
   });
 });

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { notePreview, sliceNoteTokens } from "../lib/noteEntries";
-import { transformMarkdownUrl } from "./MarkdownNotes";
+import { transformMarkdownUrl } from "../lib/noteMarkdown";
 import { useStrings } from "../lib/strings";
 import { NoteEntryTime } from "./NoteEntryTime";
 

@@ -236,7 +236,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
 | Horizontal row swipe | `apps/web/src/lib/useHorizontalSwipe.ts` |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
-| Quick note append / current-note tail | `NotesAppend`, `NotesTail`, `noteEntries.ts`, and task/project `appendNotes` actions; existing atomic notes endpoints |
+| Quick note append / current-note tail | `NotesAppend`, `NotesTail`, `noteMarkdown.ts` / `noteEntries.ts`, and task/project `appendNotes` actions; existing atomic notes endpoints |
 | Markdown attachment references and projections | `packages/shared/src/paperlessMarkdown.ts`, `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |
 | Memory-bounded photo cropping | `apps/web/src/components/ImageCropSheet.tsx` |
 | Memory-bounded camera capture | `apps/web/src/components/CameraCaptureSheet.tsx` |
@@ -456,12 +456,15 @@ an unsaved correction cannot be overwritten by an append/refetch. Errors retain
 the append draft; ordinary completion and lifecycle state are unaffected.
 
 UI quick-appends use the existing external-wait `[ISO instant · author]` header.
-`noteEntries.ts` recognizes only that exact timezone-qualified convention and
-avoids double stamping; free-form prose and code fences remain portable Markdown.
+The shared `noteMarkdown.ts` remark transform recognizes only that exact timezone-qualified convention and
+`noteEntries.ts` avoids double stamping; free-form prose and code fences remain portable Markdown.
 Existing API/MCP append callers retain plain-content behavior (no migration or
 server contract change). `MarkdownNotes` renders recognized metadata using the
-household display timezone. `NotesTail` derives a responsive suffix from parsed
-text, retaining safe inline links and removing Paperless/image references.
+household display timezone. Full notes and tails parse the entire document with
+the same GFM, hard-break and actionable-link plugins. Timestamp presentation is
+a small remark transform, leaving reference definitions document-wide.
+`NotesTail` derives a responsive suffix from the resolved remark-rehype tree,
+retaining safe inline links and removing Paperless/image references.
 Metadata is outside the two/three-line content budget. Normal action rows and
 project card/agenda rows show tails; compact task descendants and compact/quiet
 project inventory rows deliberately do not expand. Reference rows retain their

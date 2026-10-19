@@ -1936,12 +1936,15 @@ an unsaved correction cannot be overwritten by an append/refetch. Errors retain
 the append draft; ordinary completion and lifecycle state are unaffected.
 
 UI quick-appends use the existing external-wait `[ISO instant · author]` header.
-`noteEntries.ts` recognizes only that exact timezone-qualified convention and
-avoids double stamping; free-form prose and code fences remain portable Markdown.
+The shared `noteMarkdown.ts` remark transform recognizes only that exact timezone-qualified convention and
+`noteEntries.ts` avoids double stamping; free-form prose and code fences remain portable Markdown.
 Existing API/MCP append callers retain plain-content behavior (no migration or
 server contract change). `MarkdownNotes` renders recognized metadata using the
-household display timezone. `NotesTail` derives a responsive suffix from parsed
-text, retaining safe inline links and removing Paperless/image references.
+household display timezone. Full notes and tails parse the entire document with
+the same GFM, hard-break and actionable-link plugins. Timestamp presentation is
+a small remark transform, leaving reference definitions document-wide.
+`NotesTail` derives a responsive suffix from the resolved remark-rehype tree,
+retaining safe inline links and removing Paperless/image references.
 Metadata is outside the two/three-line content budget. Normal action rows and
 project card/agenda rows show tails; compact task descendants and compact/quiet
 project inventory rows deliberately do not expand. Reference rows retain their
