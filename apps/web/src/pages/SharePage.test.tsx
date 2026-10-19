@@ -1,3 +1,4 @@
+import { markdownValue } from "../test/markdownEditor";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -128,7 +129,7 @@ describe("SharePage", () => {
     await userEvent.click(screen.getByRole("button", { name: "+ Neue Aufgabe" }));
 
     expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Farmladen");
-    expect(screen.getByLabelText("Notizen")).toHaveValue("https://maps.example/farm");
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("https://maps.example/farm");
     expect(window.location.search).toBe("");
   });
 

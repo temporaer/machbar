@@ -28,3 +28,9 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   // @ts-expect-error jsdom does not implement PointerEvent
   window.PointerEvent = PointerEventPolyfill;
 }
+
+// CodeMirror measures DOM ranges; jsdom has no layout implementation.
+if (typeof Range !== "undefined" && !Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
+}

@@ -1,3 +1,4 @@
+import { markdownValue, selectMarkdown, setMarkdownValue } from "../test/markdownEditor";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -995,8 +996,8 @@ describe("ProjectDetailPage task explanations", () => {
     await userEvent.click(
       within(notesSection).getByRole("button", { name: "Bearbeiten" }),
     );
-    const notes = within(notesSection).getByRole("textbox") as HTMLTextAreaElement;
-    notes.setSelectionRange(7, 7);
+    const notes = within(notesSection).getByRole("textbox") as HTMLElement;
+    selectMarkdown(notes, 7);
 
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
@@ -1005,7 +1006,7 @@ describe("ProjectDetailPage task explanations", () => {
     );
 
     await waitFor(() =>
-      expect(notes).toHaveValue("Vorher [receipt.pdf](paperless:73)Nachher"),
+      expect(markdownValue(notes)).toBe("Vorher [receipt.pdf](paperless:73)Nachher"),
     );
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });

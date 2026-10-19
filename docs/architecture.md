@@ -1966,3 +1966,29 @@ Both controls use the existing workflow hosts/pickers/actions and stop pointer
 down/click propagation so assignment cannot start row swipe/long-press actions.
 Compact rows keep a reserved inline 44px target; normal cards reserve space for
 the existing lower-right assignment position.
+
+### Shared Markdown editor (CodeMirror)
+
+`MarkdownEditor` is the single short-note editor for capture, full task/project
+notes, intake editing and quick append. CodeMirror 6 owns input, composition,
+selection and history; `@codemirror/lang-markdown` uses CommonMark plus GFM.
+The supported Markdown commands continue lists/quotes, reset new task items to
+unchecked and handle markup-aware Backspace. `nonTightLists: false` makes an
+empty list item exit its level immediately. Shift+Enter inserts a plain line
+break, and Tab remains available for ordinary focus navigation.
+
+The existing toolbar and attachment flow dispatch editor transactions into the
+same history. `MarkdownEditorHandle` exposes only focus, scrolling, value,
+selection and transaction-backed Markdown insertion for the two detail callers; no caller imports CodeMirror. External
+controlled values update the document without echoing `onChange`, preserving
+bounded selection and establishing a fresh undo baseline. Hardware Shift+Enter
+is forwarded through the configured CodeMirror keymap before Chrome Android
+defers the event and discards its modifier; software input and IME remain
+CodeMirror-owned. Save/cancel and persistence remain owned by callers. The
+previous textarea keydown/beforeinput/execCommand continuation path is removed.
+
+Callers must pass asynchronous save/mutation state explicitly through
+`MarkdownEditor.disabled`; contenteditable does not inherit a disabled fieldset.
+Task/project notes and Capture lock input during submission; quick append
+combines its own pending state with the caller lock. Intake content edits are
+synchronous draft edits inside a modal, with no asynchronous field save.
