@@ -36,7 +36,8 @@ export type CaptureResult =
       needsClarification: boolean;
     };
 
-export interface CaptureFormProps {
+export type CaptureFormProps = {
+  onSavingChange?: (saving: boolean) => void;
   initialTitle?: string;
   initialNotes?: string;
   initialDueDate?: string | null;
@@ -48,7 +49,6 @@ export interface CaptureFormProps {
   prepareNotes?: (notes: string) => Promise<string>;
   pendingFiles?: readonly File[];
   onCropPendingFile?: ((file: File, index: number) => void) | undefined;
-  onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
   secondaryAction?: { label: string; onClick: () => void };
   captureActions?: {
@@ -60,10 +60,15 @@ export interface CaptureFormProps {
   /** Set on capture only when the currently active view is the Work
    * scope; omitted (server default `"household"` applies) otherwise. */
   defaultScope?: "work";
-}
+} & (
+  | { mode: "thought"; onCancel?: never }
+  | { mode?: "standard"; onCancel: () => void }
+);
 
-/** Shared Capture editor used by both the global FAB and incoming shares. */
+/** Shared Capture editor for Quick Add, incoming shares, and guided thoughts. */
 export function CaptureForm({
+  mode = "standard",
+  onSavingChange,
   initialTitle = "",
   initialNotes = "",
   initialDueDate = null,
@@ -82,6 +87,7 @@ export function CaptureForm({
   defaultScope,
 }: CaptureFormProps) {
   const strings = useStrings();
+  const isThought = mode === "thought";
   const { locale } = useLocale();
   const [title, setTitle] = useState(initialTitle);
   const [titleCursor, setTitleCursor] = useState(initialTitle.length);
@@ -100,12 +106,12 @@ export function CaptureForm({
   >(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { currentMemberId, members } = useIdentity();
-  const { data: tags } = useAsync(() => api.getTags(), []);
-  const { data: projects } = useAsync(() => api.getProjects(), []);
-  const { data: homeAssistant } = useAsync(() => api.getHomeAssistantStatus(), []);
+  const { data: tags } = useAsync(() => isThought ? Promise.resolve([]) : api.getTags(), [isThought]);
+  const { data: projects } = useAsync(() => isThought ? Promise.resolve([]) : api.getProjects(), [isThought]);
+  const { data: homeAssistant } = useAsync(() => isThought ? Promise.resolve(null) : api.getHomeAssistantStatus(), [isThought]);
   const automaticTokens = useMemo(
-    () => autoResolvedCaptureTokens(title, locale),
-    [locale, title],
+    () => isThought ? [] : autoResolvedCaptureTokens(title, locale),
+    [isThought, locale, title],
   );
   const resolvedTokens = useMemo(
     () =>
@@ -119,7 +125,7 @@ export function CaptureForm({
     () => resolvedCaptureMetadata(resolvedTokens),
     [resolvedTokens],
   );
-  const capturedTitle = stripResolvedTokens(title, resolvedTokens);
+  const capturedTitle = isThought ? title.trim() : stripResolvedTokens(title, resolvedTokens);
   const effectiveProjectId =
     syntaxMetadata.projectId ??
     (projectDestinationOverride !== undefined
@@ -130,7 +136,7 @@ export function CaptureForm({
   );
   const suggestions = useMemo(
     () =>
-      captureSyntaxSuggestions({
+      isThought ? [] : captureSyntaxSuggestions({
         input: title,
         cursor: titleCursor,
         locale,
@@ -139,13 +145,18 @@ export function CaptureForm({
         contexts: homeAssistant?.contexts ?? [],
         stories: projects ?? [],
       }),
-    [homeAssistant?.contexts, locale, members, projects, tags, title, titleCursor],
+    [isThought, homeAssistant?.contexts, locale, members, projects, tags, title, titleCursor],
   );
   const taskInput = (
     needsClarification: boolean,
     preparedNotes: string,
     activationResolution?: ProjectActivationResolution,
-  ): CreateTaskInput => ({
+  ): CreateTaskInput => isThought ? ({
+    title: title.trim(),
+    createdByMemberId: currentMemberId,
+    status: "captured",
+    ...ownerAssignmentPatch(null),
+  }) : ({
     title: capturedTitle,
     ...(preparedNotes ? { notes: preparedNotes } : {}),
     projectId: effectiveProjectId,
@@ -169,7 +180,7 @@ export function CaptureForm({
   });
 
   const needsClarification =
-    effectiveProjectId === null && (parentTaskId ?? null) === null;
+    isThought || (effectiveProjectId === null && (parentTaskId ?? null) === null);
   const requestFingerprint = JSON.stringify(taskInput(needsClarification, notes));
   const currentActivationPrompt =
     activationPrompt?.requestFingerprint === requestFingerprint ? activationPrompt : null;
@@ -183,6 +194,7 @@ export function CaptureForm({
   const createTask = async () => {
     if (!capturedTitle || saving) return;
     setSaving(true);
+    onSavingChange?.(true);
     setError(null);
     try {
       const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
@@ -204,6 +216,7 @@ export function CaptureForm({
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
+      onSavingChange?.(false);
     }
   };
 
@@ -257,7 +270,8 @@ export function CaptureForm({
 
   return (
     <form
-      className="stack"
+      className={isThought ? "capture-thought-form" : "stack"}
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         void createTask();
@@ -265,13 +279,14 @@ export function CaptureForm({
     >
       <PendingMaterialPreview files={pendingFiles} onCrop={onCropPendingFile} />
       <div className="field">
-        <label htmlFor="capture-title">{strings.titleEnough}</label>
+        <label htmlFor="capture-title" className={isThought ? "visually-hidden" : undefined}>{isThought ? strings.guidedCaptureInput : strings.titleEnough}</label>
         <input
           id="capture-title"
           ref={titleInputRef}
           autoFocus={autoFocus}
+          disabled={saving}
           value={title}
-          placeholder={strings.quickAddPlaceholder}
+          placeholder={isThought ? strings.guidedCapturePlaceholder : strings.quickAddPlaceholder}
           onChange={(event) => {
             setTitle(event.target.value);
             setTitleCursor(event.target.selectionStart ?? event.target.value.length);
@@ -324,7 +339,7 @@ export function CaptureForm({
             ))}
           </div>
         ) : null}
-        {suggestions.length > 0 ? (
+        {!isThought && suggestions.length > 0 ? (
           <div className="capture-suggestions" role="listbox" aria-label={strings.captureSuggestions}>
             {suggestions.map((suggestion) => (
               <button
@@ -344,7 +359,7 @@ export function CaptureForm({
             ))}
           </div>
         ) : null}
-        <div className="capture-modifiers" role="group" aria-label={strings.captureModifiers}>
+        {!isThought ? <div className="capture-modifiers" role="group" aria-label={strings.captureModifiers}>
           <button
             type="button"
             className="btn btn-sm"
@@ -373,10 +388,10 @@ export function CaptureForm({
           >
             + {strings.project}
           </button>
-        </div>
-        <p className="capture-destination" aria-live="polite">
+        </div> : null}
+        {!isThought ? <p className="capture-destination" aria-live="polite">
           {strings.captureDestination}: {effectiveProject?.title ?? strings.inbox}
-        </p>
+        </p> : null}
         {openModifier === "member" ? (
           <MemberChoiceGroup
             label={strings.member}
@@ -498,9 +513,9 @@ export function CaptureForm({
       ) : null}
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
       <div className="capture-actions">
-        <button type="button" className="btn" onClick={onCancel}>
+        {!isThought ? <button type="button" className="btn" onClick={onCancel} disabled={saving}>
           {strings.cancel}
-        </button>
+        </button> : null}
         {secondaryAction ? (
           <button type="button" className="btn" onClick={secondaryAction.onClick}>
             {secondaryAction.label}
@@ -519,11 +534,11 @@ export function CaptureForm({
         <button
           type="submit"
           className="btn btn-primary"
-          aria-label={strings.create}
+          aria-label={isThought ? strings.guidedCaptureSave : strings.create}
           disabled={saving || !capturedTitle || !dueDateValid ||
             (currentActivationPrompt !== null && projectActivationResolutionFromPrompt(currentActivationPrompt) === null)}
         >
-          {strings.create}
+          {isThought ? strings.guidedCaptureSave : strings.create}
         </button>
       </div>
     </form>

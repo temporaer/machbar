@@ -133,6 +133,32 @@ The API serves the compiled frontend from `apps/web/dist/` as static files, so *
 
 ---
 
+## Guided capture (no AI required)
+
+`/capture/guided`, linked from Inbox and More, presents the ordered five-group,
+sixteen-area catalog in `apps/web/src/lib/guidedCapture.ts`. Titles and broad prompts
+live in both web translation catalogs. `GuidedCapturePage` owns only navigation
+(the current area is linkable through `?area=`) and ephemeral capture feedback.
+It composes the canonical `CaptureForm` in `thought` mode: literal text, captured
+status, creator recorded but no owner assigned, and no date/project/category
+inference. The existing task-create endpoint persists each entry immediately and
+the ordinary Inbox handles subsequent clarification. There is no new persistence,
+classification, AI dependency, or backlog. Array ordering defines the suggested
+journey; grouped navigation lets users revisit or skip any prompt. Unsaved text
+survives area navigation within the mounted page, but is not stored on exit.
+The question-led reflection cards use catalog group tones and motion gated by
+`prefers-reduced-motion`. Their area number represents position, not completion.
+Saved-thought notes are local presentation grouped by area, never another backlog.
+Thought mode skips metadata requests/syntax suggestions and omits destination and
+reset controls. Save failures keep the draft for retry; success refocuses an empty
+input. During saving, the page disables only its own area navigation and Exit.
+Other app navigation and browser history/unload are not intercepted: leaving can
+discard feedback, but a route change does not cancel the existing create request.
+Persistence is performed by the task-create endpoint before `onCaptured` supplies
+local feedback; no unload handler can guarantee completion. Returning via the page's
+Inbox links switches Work scope to Household so captured household thoughts remain
+visible.
+
 ## 2. AI intake (“Verarbeiten”)
 
 AI intake is a clarification adapter, not a second task system, calendar
