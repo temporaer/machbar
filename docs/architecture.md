@@ -146,6 +146,16 @@ the ordinary Inbox handles subsequent clarification. There is no new persistence
 classification, AI dependency, or backlog. Array ordering defines the suggested
 journey; grouped navigation lets users revisit or skip any prompt. Unsaved text
 survives area navigation within the mounted page, but is not stored on exit.
+The question-led reflection cards use catalog group tones and motion gated by
+`prefers-reduced-motion`. Their area number represents position, not completion.
+Saved-thought notes are local presentation grouped by area, never another backlog.
+Thought mode skips metadata requests/syntax suggestions and omits destination and
+reset controls. Save failures keep the draft for retry; success refocuses an empty
+input. During saving, the page disables area navigation and Exit, guards other app
+links/global shortcuts, requests an unload confirmation, and cancels native
+navigation where the browser Navigation API supports it. Returning via the page's
+Inbox links switches Work scope to Household so captured household thoughts remain
+visible.
 
 ## 2. AI intake (“Verarbeiten”)
 

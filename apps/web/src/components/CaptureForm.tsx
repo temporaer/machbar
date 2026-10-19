@@ -36,8 +36,7 @@ export type CaptureResult =
       needsClarification: boolean;
     };
 
-export interface CaptureFormProps {
-  mode?: "standard" | "thought";
+export type CaptureFormProps = {
   onSavingChange?: (saving: boolean) => void;
   initialTitle?: string;
   initialNotes?: string;
@@ -50,7 +49,6 @@ export interface CaptureFormProps {
   prepareNotes?: (notes: string) => Promise<string>;
   pendingFiles?: readonly File[];
   onCropPendingFile?: ((file: File, index: number) => void) | undefined;
-  onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
   secondaryAction?: { label: string; onClick: () => void };
   captureActions?: {
@@ -62,7 +60,10 @@ export interface CaptureFormProps {
   /** Set on capture only when the currently active view is the Work
    * scope; omitted (server default `"household"` applies) otherwise. */
   defaultScope?: "work";
-}
+} & (
+  | { mode: "thought"; onCancel?: never }
+  | { mode?: "standard"; onCancel: () => void }
+);
 
 /** Shared Capture editor for Quick Add, incoming shares, and guided thoughts. */
 export function CaptureForm({
@@ -105,9 +106,9 @@ export function CaptureForm({
   >(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { currentMemberId, members } = useIdentity();
-  const { data: tags } = useAsync(() => api.getTags(), []);
-  const { data: projects } = useAsync(() => api.getProjects(), []);
-  const { data: homeAssistant } = useAsync(() => api.getHomeAssistantStatus(), []);
+  const { data: tags } = useAsync(() => isThought ? Promise.resolve([]) : api.getTags(), [isThought]);
+  const { data: projects } = useAsync(() => isThought ? Promise.resolve([]) : api.getProjects(), [isThought]);
+  const { data: homeAssistant } = useAsync(() => isThought ? Promise.resolve(null) : api.getHomeAssistantStatus(), [isThought]);
   const automaticTokens = useMemo(
     () => isThought ? [] : autoResolvedCaptureTokens(title, locale),
     [isThought, locale, title],
@@ -124,7 +125,7 @@ export function CaptureForm({
     () => resolvedCaptureMetadata(resolvedTokens),
     [resolvedTokens],
   );
-  const capturedTitle = stripResolvedTokens(title, resolvedTokens);
+  const capturedTitle = isThought ? title.trim() : stripResolvedTokens(title, resolvedTokens);
   const effectiveProjectId =
     syntaxMetadata.projectId ??
     (projectDestinationOverride !== undefined
@@ -135,7 +136,7 @@ export function CaptureForm({
   );
   const suggestions = useMemo(
     () =>
-      captureSyntaxSuggestions({
+      isThought ? [] : captureSyntaxSuggestions({
         input: title,
         cursor: titleCursor,
         locale,
@@ -144,7 +145,7 @@ export function CaptureForm({
         contexts: homeAssistant?.contexts ?? [],
         stories: projects ?? [],
       }),
-    [homeAssistant?.contexts, locale, members, projects, tags, title, titleCursor],
+    [isThought, homeAssistant?.contexts, locale, members, projects, tags, title, titleCursor],
   );
   const taskInput = (
     needsClarification: boolean,
@@ -269,7 +270,8 @@ export function CaptureForm({
 
   return (
     <form
-      className="stack"
+      className={isThought ? "capture-thought-form" : "stack"}
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         void createTask();
@@ -277,7 +279,7 @@ export function CaptureForm({
     >
       <PendingMaterialPreview files={pendingFiles} onCrop={onCropPendingFile} />
       <div className="field">
-        <label htmlFor="capture-title">{isThought ? strings.guidedCaptureInput : strings.titleEnough}</label>
+        <label htmlFor="capture-title" className={isThought ? "visually-hidden" : undefined}>{isThought ? strings.guidedCaptureInput : strings.titleEnough}</label>
         <input
           id="capture-title"
           ref={titleInputRef}
@@ -387,9 +389,9 @@ export function CaptureForm({
             + {strings.project}
           </button>
         </div> : null}
-        <p className="capture-destination" aria-live="polite">
+        {!isThought ? <p className="capture-destination" aria-live="polite">
           {strings.captureDestination}: {effectiveProject?.title ?? strings.inbox}
-        </p>
+        </p> : null}
         {openModifier === "member" ? (
           <MemberChoiceGroup
             label={strings.member}
@@ -511,9 +513,9 @@ export function CaptureForm({
       ) : null}
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
       <div className="capture-actions">
-        <button type="button" className="btn" onClick={onCancel} disabled={saving}>
+        {!isThought ? <button type="button" className="btn" onClick={onCancel} disabled={saving}>
           {strings.cancel}
-        </button>
+        </button> : null}
         {secondaryAction ? (
           <button type="button" className="btn" onClick={secondaryAction.onClick}>
             {secondaryAction.label}

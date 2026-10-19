@@ -36,6 +36,7 @@ export function guidedCaptureCatalog(strings: Strings) {
     title: strings.guidedCaptureGroups[group.id],
     areas: group.areas.map((area) => ({
       ...area,
+      tone: group.id,
       ...strings.guidedCaptureAreas[area.id],
     })),
   }));

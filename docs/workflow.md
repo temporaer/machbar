@@ -97,6 +97,12 @@ Life areas are prompts, not tags or task attributes. Text stays literal (includi
 date words), and remembering something does not automatically assign its execution
 to you. Ownership, planning, and structure can be decided later. Navigation keeps
 the current unsaved text while the journey is open; only saved entries survive exit.
+Each reflection card foregrounds one question, with locally retained thought notes
+appearing after each save and a fresh focused input below. **Nächster Bereich**
+advances with or without a capture; Back and the grouped browser allow revisiting.
+The area number is a position, not a completion score. There are no completion
+requirements or rewards. Transitions respect reduced-motion preferences, and
+navigation is locked during an in-flight save.
 
 Converting a task into a project keeps its direct parent (project or task),
 sibling position, numeric identity,

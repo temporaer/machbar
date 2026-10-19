@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CaptureForm } from "../components/CaptureForm";
 import { guidedCaptureCatalog } from "../lib/guidedCapture";
@@ -19,9 +19,51 @@ export function GuidedCapturePage() {
   const done = params.get("area") === "done";
   const [formKey, setFormKey] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState<{ title: string; count: number } | null>(null);
+  const [thoughts, setThoughts] = useState<{ id: number; title: string; areaId: string }[]>([]);
+  const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const savingRef = useRef(false);
+  const onSavingChange = (pending: boolean) => {
+    savingRef.current = pending;
+    setSaving(pending);
+  };
+
+  useEffect(() => {
+    const guardLink = (event: MouseEvent) => {
+      if (savingRef.current && event.target instanceof Element && event.target.closest("a[href]")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const guardKeys = (event: KeyboardEvent) => {
+      if (!savingRef.current || event.key === "Tab") return;
+      event.stopImmediatePropagation();
+      if (event.altKey && ["ArrowLeft", "ArrowRight"].includes(event.key)) event.preventDefault();
+    };
+    const guardUnload = (event: BeforeUnloadEvent) => {
+      if (!savingRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const guardNavigation = (event: Event) => {
+      if (savingRef.current && event.cancelable) event.preventDefault();
+    };
+    // The Navigation API also covers browser back/forward in supporting browsers.
+    const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+    document.addEventListener("click", guardLink, true);
+    window.addEventListener("keydown", guardKeys, true);
+    window.addEventListener("beforeunload", guardUnload);
+    navigation?.addEventListener("navigate", guardNavigation);
+    return () => {
+      document.removeEventListener("click", guardLink, true);
+      window.removeEventListener("keydown", guardKeys, true);
+      window.removeEventListener("beforeunload", guardUnload);
+      navigation?.removeEventListener("navigate", guardNavigation);
+    };
+  }, []);
+
   const goTo = (id: string) => {
+    if (savingRef.current) return;
     setParams({ area: id }, { replace: true });
     requestAnimationFrame(() => headingRef.current?.focus());
   };
@@ -33,74 +75,69 @@ export function GuidedCapturePage() {
   return (
     <div className="guided-capture-page stack">
       <header className="guided-capture-header">
-        <span className="guided-capture-eyebrow">{strings.guidedCapture}</span>
-        <Link to="/inbox" className="btn btn-sm" onClick={showCapturedInbox}>{strings.guidedCaptureExit}</Link>
+        <h1>{strings.guidedCapture}</h1>
+        <Link to="/inbox" className="btn btn-sm" aria-disabled={saving} tabIndex={saving ? -1 : undefined}
+          onClick={(event) => {
+            if (savingRef.current) event.preventDefault();
+            else showCapturedInbox();
+          }}>{strings.guidedCaptureExit}</Link>
       </header>
-      <div className="guided-capture-intro">
-        <h1>{strings.guidedCaptureTitle}</h1>
-        <p>{strings.guidedCaptureIntro}</p>
-      </div>
 
-      <section className="guided-capture-card stack" hidden={done} aria-labelledby="life-area-title">
-        <div className="guided-capture-progress">
-          <span>{strings.guidedCaptureProgress(index + 1, areas.length)}</span>
-          <progress
-            value={index + 1}
-            max={areas.length}
-            aria-label={strings.guidedCaptureProgress(index + 1, areas.length)}
-          />
-        </div>
-        <div className="guided-capture-reflection" aria-live="polite">
+      <section className="guided-capture-card" data-tone={area.tone} hidden={done} aria-labelledby="life-area-title">
+        <div key={area.id} className="guided-capture-reflection">
+          <div className="guided-capture-card-top">
+            <span className="guided-capture-eyebrow">{area.group}</span>
+            <span className="guided-capture-position">{strings.guidedCapturePosition(index + 1, areas.length)}</span>
+          </div>
           <span className="guided-capture-icon" aria-hidden="true">{area.icon}</span>
-          <p className="guided-capture-eyebrow">{area.group}</p>
-          <h2 id="life-area-title" ref={done ? undefined : headingRef} tabIndex={-1}>{area.title}</h2>
-          <p className="guided-capture-prompt">{area.prompt}</p>
+          <h2 id="life-area-title" ref={done ? undefined : headingRef} tabIndex={-1}
+            aria-describedby="life-area-prompt">{area.title}</h2>
+          <p id="life-area-prompt" className="guided-capture-prompt">{area.prompt}</p>
         </div>
+        {thoughts.some((thought) => thought.areaId === area.id) ? (
+          <ul className="guided-capture-thoughts" aria-label={strings.guidedCaptureSavedThoughts}>
+            {thoughts.filter((thought) => thought.areaId === area.id).map((thought) => (
+              <li key={thought.id}><span aria-hidden="true">✓</span>{thought.title}</li>
+            ))}
+          </ul>
+        ) : null}
         <CaptureForm
           key={formKey}
           mode="thought"
           autoFocus={formKey > 0}
-          onSavingChange={setSaving}
-          onCancel={() => setFormKey((key) => key + 1)}
+          onSavingChange={onSavingChange}
           onCaptured={({ task }) => {
-            setSaved((previous) => ({ title: task.title, count: (previous?.count ?? 0) + 1 }));
+            setThoughts((previous) => [...previous, { id: task.id, title: task.title, areaId: area.id }]);
+            setAnnouncement(strings.guidedCaptureSaved(task.title));
             setFormKey((key) => key + 1);
             bump();
           }}
         />
-        <p className="guided-capture-reassurance">{strings.guidedCaptureDestination}</p>
         <nav className="guided-capture-navigation" aria-label={strings.guidedCapture}>
           <button type="button" className="btn" disabled={saving || index === 0}
             onClick={() => goTo(areas[index - 1]!.id)}>
             {strings.guidedCaptureBack}
           </button>
-          <button type="button" className="btn" disabled={saving} onClick={next}>
-            {strings.guidedCaptureSkip}
-          </button>
-          <button type="button" className="btn btn-primary" disabled={saving} onClick={next}>
+          <button type="button" className="btn guided-capture-next" disabled={saving} onClick={next}>
             {index === areas.length - 1 ? strings.guidedCaptureFinish : strings.guidedCaptureNext}
+            <span aria-hidden="true"> →</span>
           </button>
         </nav>
       </section>
 
-      {saved ? (
-        <p className="guided-capture-saved" role="status">
-          <span aria-hidden="true">✓ </span>
-          {strings.guidedCaptureSaved(saved.title, saved.count)}
-        </p>
-      ) : null}
+      <p className="visually-hidden" role="status">{announcement}</p>
 
       {done ? (
         <section className="guided-capture-card guided-capture-finish stack">
           <span className="guided-capture-icon" aria-hidden="true">🌤️</span>
           <h2 ref={headingRef} tabIndex={-1}>{strings.guidedCaptureDoneTitle}</h2>
-          <p>{strings.guidedCaptureDoneHint}</p>
           <Link to="/inbox" className="btn btn-primary" onClick={showCapturedInbox}>{strings.guidedCaptureInbox}</Link>
           <button type="button" className="btn" onClick={() => goTo(areas[0]!.id)}>
             {strings.guidedCaptureRestart}
           </button>
         </section>
-      ) : <p className="guided-capture-mental-load">{strings.guidedCaptureMentalLoad}</p>}
+      ) : null}
+      <p className="guided-capture-inbox-note">{strings.guidedCaptureDestination}</p>
 
       <details className="guided-capture-catalog">
         <summary>{strings.guidedCaptureBrowse}</summary>
