@@ -32,10 +32,7 @@ import { WorkItemInlineError } from "./WorkItemInlineError";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MemberLabel } from "./MemberAvatar";
 import { TaskCardTags } from "./TaskCardTags";
-import {
-  insertMarkdownAtSelection,
-  MarkdownEditor,
-} from "./MarkdownEditor";
+import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { NativeShareButton } from "./NativeShareButton";
 import { CalendarExportButton } from "./CalendarExportButton";
@@ -132,7 +129,7 @@ export function TaskDetailSheet() {
     useState<ProjectWithActions | null>(null);
   const titleFieldRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const notesRef = useRef<MarkdownEditorHandle>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -903,9 +900,10 @@ export function TaskDetailSheet() {
             }} />
             {notesEditing ? (
               <>
-                <label className="sr-only" htmlFor="task-notes">{strings.notes}</label>
+                <label className="sr-only" id="task-notes-label">{strings.notes}</label>
                 <MarkdownEditor
                   id="task-notes"
+                  aria-label={strings.notes}
                   ref={notesRef}
                   value={notesDraft}
                   onChange={setNotesDraft}
@@ -1265,21 +1263,7 @@ export function TaskDetailSheet() {
         onClose={() => setAttachmentOpen(false)}
         onInsert={async (markdown) => {
           if (notesEditing) {
-            const current = notesRef.current;
-            const transform = insertMarkdownAtSelection(
-              current?.value ?? notesDraft,
-              current?.selectionStart ?? notesDraft.length,
-              current?.selectionEnd ?? notesDraft.length,
-              markdown,
-            );
-            setNotesDraft(transform.value);
-            queueMicrotask(() => {
-              notesRef.current?.focus();
-              notesRef.current?.setSelectionRange(
-                transform.selectionStart,
-                transform.selectionEnd,
-              );
-            });
+            notesRef.current?.insertMarkdown(markdown);
             return;
           }
           if (containsPaperlessReference(task.notes, markdown)) return;

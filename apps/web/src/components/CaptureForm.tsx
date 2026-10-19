@@ -466,9 +466,10 @@ export function CaptureForm({
       </div>
       {showNotes || notes ? (
         <div className="field">
-          <label htmlFor="capture-notes">{strings.notes}</label>
+          <label id="capture-notes-label">{strings.notes}</label>
           <MarkdownEditor
             id="capture-notes"
+            aria-label={strings.notes}
             rows={5}
             value={notes}
             onChange={setNotes}
