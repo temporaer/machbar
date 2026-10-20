@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { getCatalog, LocaleProvider, LOCALE_STORAGE_KEY } from "../lib/locale";
 import { guidedCaptureCatalog } from "../lib/guidedCapture";
@@ -213,6 +213,113 @@ describe("guided capture", () => {
     fireEvent.pointerUp(card, { pointerId: 1 });
     expect(card).toHaveStyle({ transform: "translateX(0px)" });
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+  });
+
+  describe("card paging", () => {
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "animate");
+    const animations: {
+      target: HTMLElement;
+      frames: Keyframe[];
+      cancel: ReturnType<typeof vi.fn>;
+      finish: () => void;
+    }[] = [];
+    const animate = vi.fn(function (this: HTMLElement, frames: Keyframe[]) {
+      let finish!: () => void;
+      const finished = new Promise<void>((resolve) => { finish = resolve; });
+      const cancel = vi.fn();
+      animations.push({ target: this, frames, cancel, finish });
+      return { finished, cancel };
+    });
+
+    beforeEach(() => {
+      animations.length = 0;
+      Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, value: animate });
+      vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    });
+
+    afterEach(() => {
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, "animate", originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, "animate");
+      vi.unstubAllGlobals();
+    });
+
+    it.each(["buttons", "gestures"] as const)("pages outgoing and incoming cards together in both directions with %s", async (navigation) => {
+      const { container } = renderJourney("/capture/guided?area=learning");
+      const input = screen.getByRole("textbox");
+      await userEvent.type(input, "Ein bleibender Gedanke");
+      const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+      if (navigation === "buttons") await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+      else swipeCard(card, -80);
+      expect(animations).toHaveLength(2);
+      const [outgoing, incoming] = animations;
+      expect(outgoing!.target).toHaveTextContent(de.guidedCaptureAreas.learning.title);
+      expect(outgoing!.target).toHaveAttribute("inert");
+      expect(outgoing!.target).toHaveAttribute("aria-hidden", "true");
+      expect(outgoing!.target.querySelector("[id]")).toBeNull();
+      expect(outgoing!.frames[0]!.transform).toBe(navigation === "gestures" ? "translateX(-80px)" : "translateX(0px)");
+      expect(outgoing!.frames[1]!.transform).toBe("translateX(calc(-100% - 24px))");
+      expect(incoming!.target).toBe(card);
+      expect(incoming!.frames).toEqual([
+        { transform: "translateX(calc(100% + 24px))" },
+        { transform: "translateX(0px)" },
+      ]);
+      expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.finances.title })).toHaveFocus();
+      expect(screen.getAllByRole("textbox")).toEqual([input]);
+      expect(input).toHaveValue("Ein bleibender Gedanke");
+      await act(async () => animations.forEach((animation) => animation.finish()));
+      expect(container.querySelector(".guided-capture-outgoing")).toBeEmptyDOMElement();
+
+      if (navigation === "buttons") await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+      else swipeCard(card, 80);
+      expect(animations[2]!.frames[1]!.transform).toBe("translateX(calc(100% + 24px))");
+      expect(animations[3]!.frames[0]!.transform).toBe("translateX(calc(-100% - 24px))");
+      expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toHaveFocus();
+      expect(input).toHaveValue("Ein bleibender Gedanke");
+      expect(createTask).not.toHaveBeenCalled();
+    });
+
+    it("uses the same paging for picker jumps, Finish, and Restart", async () => {
+      renderJourney();
+      await userEvent.click(screen.getByText(de.guidedCaptureBrowse));
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureAreas.celebrations.title }));
+      expect(animations[0]!.frames[1]!.transform).toBe("translateX(calc(-100% - 24px))");
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureFinish }));
+      expect(animations[2]!.target).toHaveTextContent(de.guidedCaptureAreas.celebrations.title);
+      expect(animations[3]!.target).toHaveTextContent(de.guidedCaptureDoneTitle);
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureRestart }));
+      expect(animations[4]!.target).toHaveTextContent(de.guidedCaptureDoneTitle);
+      expect(animations[5]!.frames[0]!.transform).toBe("translateX(calc(-100% - 24px))");
+      expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toHaveFocus();
+    });
+
+    it("keeps spring-back for insufficient gestures and switches instantly with reduced motion", async () => {
+      const { container } = renderJourney("/capture/guided?area=learning");
+      const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+      swipeCard(card, -63);
+      expect(animate).not.toHaveBeenCalled();
+      expect(card).toHaveStyle({ transform: "translateX(0px)" });
+      vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList);
+      swipeCard(card, -80);
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+      expect(animate).not.toHaveBeenCalled();
+      expect(container.querySelector(".guided-capture-outgoing")).toBeEmptyDOMElement();
+      expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toHaveFocus();
+    });
+
+    it("cancels superseded animations without letting their completion remove the new snapshot", async () => {
+      const { container, unmount } = renderJourney("/capture/guided?area=learning");
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+      expect(animations[0]!.cancel).toHaveBeenCalledOnce();
+      expect(animations[1]!.cancel).toHaveBeenCalledOnce();
+      expect(animations[0]!.target).not.toBeInTheDocument();
+      await act(async () => animations.slice(0, 2).forEach((animation) => animation.finish()));
+      expect(container.querySelector(".guided-capture-outgoing")!.children).toHaveLength(1);
+      unmount();
+      expect(animations[2]!.cancel).toHaveBeenCalledOnce();
+      expect(animations[3]!.cancel).toHaveBeenCalledOnce();
+      expect(animations[2]!.target).not.toBeInTheDocument();
+    });
   });
 
   it("retains a failed draft for retry and locks capture/navigation during saving", async () => {
