@@ -135,36 +135,67 @@ The API serves the compiled frontend from `apps/web/dist/` as static files, so *
 
 ## Guided capture (no AI required)
 
-`/capture/guided`, linked from Inbox and More, presents the ordered five-group,
-sixteen-area catalog in `apps/web/src/lib/guidedCapture.ts`. Titles and broad prompts
-live in both web translation catalogs. `GuidedCapturePage` owns only navigation
-(the current area is linkable through `?area=`) and ephemeral capture feedback.
+`/capture/guided`, linked from Inbox and More, presents an open-ended reflection
+deck over five thematic groups and sixteen life areas. `guidedCapture.ts` owns
+the catalog and pure selection/rotation helpers; German and English catalogs
+provide three distinct, optional questions per area, keyed by stable prompt IDs.
+The editorial perspectives draw on personal-project elicitation, retrieval cues,
+and cognitive household labor; these are not validated survey items.
+`GuidedCapturePage` owns navigation (`?area=` remains linkable), in-memory drafts
+keyed by card identity, and ephemeral saved-thought feedback.
 It composes the canonical `CaptureForm` in `thought` mode: literal text, captured
 status, creator recorded but no owner assigned, and no date/project/category
 inference. The existing task-create endpoint persists each entry immediately and
-the ordinary Inbox handles subsequent clarification. There is no new persistence,
-classification, AI dependency, or backlog. Array ordering defines the suggested
-journey; grouped navigation lets users revisit or skip any prompt. Unsaved text
-survives area navigation within the mounted page, but is not stored on exit.
-Left/right card swipes call the same Next/Back navigation (including Finish at
-the last area), using `useHorizontalSwipe` and leaving the form mounted. Cards
+the ordinary Inbox handles subsequent clarification. There is no new backend
+persistence, classification, AI dependency, or backlog.
+
+Selection draws one card lazily at the history frontier (a one-card batch).
+Each cycle covers every area once, choosing randomly among unseen areas and
+preferring a different thematic group from the previous card whenever possible.
+Cycles continue seamlessly, with no finish screen, count, progress, or batch UI.
+Each area exhausts its unused prompt IDs before rotating again; pool boundaries
+avoid an immediate question repeat when alternatives exist. Back/Next traverses
+existing card/question identities before generating anything. Picker/direct-link
+jumps reuse a retained card for a visited area; unseen choices append at the
+frontier without discarding forward history. Back then follows deck order (the
+preceding generated card), not a separate picker/browser history. Invalid area
+links, including the former `area=done`, are ignored.
+
+Version-1 local storage is keyed per member and holds at most 48 card identities,
+the current index, area coverage, and per-area prompt rotation. Reload/return
+restores that card/history; a direct link may select another retained area.
+Anonymous visits work without persistence. Malformed/unsupported state or removed
+card area/prompt IDs safely start a fresh deck; stale rotation IDs are filtered.
+Wording/locale changes resolve existing prompt IDs against the current catalog.
+Drafts and captured text are never written to local storage. Ordinary in-memory
+history is bounded to 48 recent cards; draft-bearing older cards remain reachable
+until saved/cleared, without expanding permanent storage. If such an older card
+is outside the stored window, reload resumes at the oldest stored card. Only
+saved thoughts survive leaving; Exit asks before discarding unsaved drafts,
+including a submitted thought whose save has not yet succeeded.
+
+Left/right card swipes call the same Next/Back navigation using
+`useHorizontalSwipe` and leaving the controlled thought form mounted. Cards
 follow horizontal drags; successful navigation slides an inert, aria-hidden
 snapshot of the outgoing card offscreen while the live incoming card enters
-from the opposite edge. Buttons, picker jumps, Finish, and Restart use the same
+from the opposite edge. Buttons and picker jumps use the same
 directional paging. The snapshot has no IDs or React lifecycle; only one capture
 form remains live. Superseded/unmounted transitions cancel their animations and
 remove the snapshot. Insufficient gestures spring back without paging. Reduced
 motion (or missing Web Animations support) switches areas immediately.
-`touch-action: pan-y` preserves scrolling, vertical starts
-cancel navigation, interactive controls do not start swipes, and saving disables
-swipes along with the existing navigation controls.
+`touch-action: pan-y` preserves scrolling, vertical starts cancel navigation,
+and interactive controls do not start swipes. Saving locks the capture input and
+submit button, not browsing, swipes, the picker, or Exit. The shared swipe
+primitive suppresses only trailing pointer clicks, never keyboard activation.
 The question-led reflection cards use catalog group tones and motion gated by
-`prefers-reduced-motion`. Their area number represents position, not completion.
+`prefers-reduced-motion`.
 Saved-thought notes are local presentation grouped by area, never another backlog.
 Thought mode skips metadata requests/syntax suggestions and omits destination and
 reset controls. Save failures keep the draft for retry; success refocuses an empty
-input. During saving, the page disables only its own area navigation and Exit.
-Other app navigation and browser history/unload are not intercepted: leaving can
+input only if the submitted card is still current. A save resolves against its
+original card, even after navigation; failure retains that card's draft/error for
+retry, never attaching it to another area. Other app navigation and browser
+history/unload are not intercepted: leaving can
 discard feedback, but a route change does not cancel the existing create request.
 Persistence is performed by the task-create endpoint before `onCaptured` supplies
 local feedback; no unload handler can guarantee completion. Returning via the page's

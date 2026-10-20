@@ -164,7 +164,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     const main = container.querySelector(".task-row-main") as HTMLElement;
 
     swipe(container, -100);
-    fireEvent.click(main);
+    fireEvent.click(main, { detail: 1 });
     expect(screen.getByTestId("open-task")).toHaveTextContent("none");
 
     fireEvent.pointerDown(content, { clientX: 20, pointerId: 2 });

@@ -1219,7 +1219,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
 
     // Swiping the row must not open the detail page.
     swipe(container, 100);
-    fireEvent.click(mainButton);
+    fireEvent.click(mainButton, { detail: 1 });
     await act(async () => {
       await flushMicrotasks();
     });

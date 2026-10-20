@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CaptureForm } from "../components/CaptureForm";
-import { guidedCaptureCatalog } from "../lib/guidedCapture";
+import {
+  guidedCaptureCatalog, nextReflectionCard, readReflectionDeck,
+  visitReflectionArea, writeReflectionDeck,
+  type ReflectionDeck,
+} from "../lib/guidedCapture";
+import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 
 export function GuidedCapturePage() {
+  const { currentMemberId } = useIdentity();
+  return <GuidedCaptureDeck key={currentMemberId ?? "anonymous"} memberId={currentMemberId} />;
+}
+
+function GuidedCaptureDeck({ memberId }: { memberId: number | null }) {
   const strings = useStrings();
   const { bump } = useRefresh();
   const [params, setParams] = useSearchParams();
@@ -15,11 +25,16 @@ export function GuidedCapturePage() {
   const areas = groups.flatMap((group) =>
     group.areas.map((area) => ({ ...area, group: group.title })),
   );
-  const index = Math.max(0, areas.findIndex((area) => area.id === params.get("area")));
-  const area = areas[index]!;
-  const done = params.get("area") === "done";
-  const [formKey, setFormKey] = useState(0);
-  const [saving, setSaving] = useState(false);
+  const [deck, setDeck] = useState(() => {
+    let restored = readReflectionDeck(memberId, areas);
+    const requested = params.get("area");
+    if (requested) restored = visitReflectionArea(restored, areas, requested);
+    return restored.cards.length ? restored : nextReflectionCard(restored, areas);
+  });
+  const card = deck.cards[deck.index]!;
+  const area = areas.find((item) => item.id === card.areaId)!;
+  const prompt = area.prompts[card.promptId as keyof typeof area.prompts];
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [thoughts, setThoughts] = useState<{ id: number; title: string; areaId: string }[]>([]);
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -57,28 +72,34 @@ export function GuidedCapturePage() {
     void Promise.all(current.animations.map((animation) => animation.finished)).then(() => {
       if (paging.current === current) clearPaging();
     }, () => {});
-  }, [area.id, done, clearPaging]);
+  }, [card.id, clearPaging]);
   const focusAfterNavigation = useRef(false);
   useEffect(() => {
     if (!focusAfterNavigation.current) return;
     focusAfterNavigation.current = false;
     headingRef.current?.focus();
-  }, [area.id, done]);
+  }, [card.id]);
 
-  const goTo = (id: string) => {
-    if (saving) return;
-    if ((!done && id === area.id) || (done && id === "done")) {
+  useEffect(() => {
+    writeReflectionDeck(memberId, deck);
+  }, [memberId, deck]);
+
+  // Handle external area links, but not the URL updates made by our own paging.
+  const requestedArea = params.get("area");
+  const handledArea = useRef(requestedArea);
+  const goTo = (target: ReflectionDeck) => {
+    if (target.cards[target.index]?.id === card.id) {
       headingRef.current?.focus();
       return;
     }
-    const card = cardRef.current;
-    const transform = card ? getComputedStyle(card).transform : "none";
+    const element = cardRef.current;
+    const transform = element ? getComputedStyle(element).transform : "none";
     clearPaging();
-    if (card && outgoingRef.current && typeof card.animate === "function" &&
+    if (element && outgoingRef.current && typeof element.animate === "function" &&
       !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
       // A visual-only snapshot keeps the outgoing card intact without mounting
       // a second capture form or duplicating its mutation/focus lifecycle.
-      const snapshot = card.cloneNode(true) as HTMLElement;
+      const snapshot = element.cloneNode(true) as HTMLElement;
       snapshot.setAttribute("inert", "");
       snapshot.setAttribute("aria-hidden", "true");
       snapshot.removeAttribute("id");
@@ -86,25 +107,33 @@ export function GuidedCapturePage() {
       snapshot.classList.remove("guided-capture-swipe");
       snapshot.style.transform = transform;
       outgoingRef.current.append(snapshot);
-      const targetIndex = id === "done" ? areas.length : areas.findIndex((item) => item.id === id);
-      paging.current = { snapshot, direction: targetIndex > (done ? areas.length : index) ? 1 : -1, animations: [] };
+      paging.current = { snapshot, direction: target.cards[target.index]!.id > card.id ? 1 : -1, animations: [] };
     }
     focusAfterNavigation.current = true;
+    setDeck(target);
+    const id = target.cards[target.index]!.areaId;
+    handledArea.current = id;
     setParams({ area: id }, { replace: true });
   };
-  const next = () => goTo(areas[index + 1]?.id ?? "done");
+  const protectedIds = Object.keys(drafts).map(Number).filter((id) => drafts[id]);
+  useEffect(() => {
+    if (requestedArea === handledArea.current) return;
+    handledArea.current = requestedArea;
+    if (requestedArea) goTo(visitReflectionArea(deck, areas, requestedArea, Math.random, protectedIds));
+  }, [requestedArea]);
+  const next = () => goTo(nextReflectionCard(deck, areas, Math.random, protectedIds));
+  const back = () => {
+    if (deck.index > 0) goTo({ ...deck, index: deck.index - 1 });
+  };
   const swipe = useHorizontalSwipe<HTMLElement>({
-    disabled: saving || done,
     ignoreInteractive: true,
-    onPrimary: () => {
-      if (index > 0) goTo(areas[index - 1]!.id);
-    },
+    onPrimary: back,
     onSecondary: next,
     onRealDrag: clearPaging,
   });
   useEffect(() => {
     swipe.cancel();
-  }, [area.id, done, swipe.cancel]);
+  }, [card.id, swipe.cancel]);
   const showCapturedInbox = () => {
     if (readTodayScope() === "work") writeTodayScope("all");
   };
@@ -113,26 +142,26 @@ export function GuidedCapturePage() {
     <div className="guided-capture-page stack">
       <header className="guided-capture-header">
         <h1>{strings.guidedCapture}</h1>
-        <Link to="/inbox" className="btn btn-sm" aria-disabled={saving} tabIndex={saving ? -1 : undefined}
+        <Link to="/inbox" className="btn btn-sm"
           onClick={(event) => {
-            if (saving) event.preventDefault();
+            if (Object.values(drafts).some((draft) => draft.trim()) &&
+              !window.confirm(strings.guidedCaptureDiscardDrafts)) event.preventDefault();
             else showCapturedInbox();
           }}>{strings.guidedCaptureExit}</Link>
       </header>
 
       <div className="guided-capture-deck">
-        <section ref={done ? undefined : cardRef} className="guided-capture-card guided-capture-swipe" data-tone={area.tone}
+        <section ref={cardRef} className="guided-capture-card guided-capture-swipe" data-tone={area.tone}
           data-dragging={swipe.dragX !== 0} style={{ transform: `translateX(${swipe.dragX}px)` }}
-          {...swipe.handlers} hidden={done} aria-labelledby="life-area-title">
-          <div key={area.id} className="guided-capture-reflection">
+          {...swipe.handlers} aria-labelledby="life-area-title">
+          <div key={card.id} className="guided-capture-reflection">
             <div className="guided-capture-card-top">
               <span className="guided-capture-eyebrow">{area.group}</span>
-              <span className="guided-capture-position">{strings.guidedCapturePosition(index + 1, areas.length)}</span>
             </div>
             <span className="guided-capture-icon" aria-hidden="true">{area.icon}</span>
-            <h2 id="life-area-title" ref={done ? undefined : headingRef} tabIndex={-1}
+            <h2 id="life-area-title" ref={headingRef} tabIndex={-1}
               aria-describedby="life-area-prompt">{area.title}</h2>
-            <p id="life-area-prompt" className="guided-capture-prompt">{area.prompt}</p>
+            <p id="life-area-prompt" className="guided-capture-prompt">{prompt}</p>
           </div>
           {thoughts.some((thought) => thought.areaId === area.id) ? (
             <ul className="guided-capture-thoughts" aria-label={strings.guidedCaptureSavedThoughts}>
@@ -142,39 +171,40 @@ export function GuidedCapturePage() {
             </ul>
           ) : null}
           <CaptureForm
-            key={formKey}
             mode="thought"
-            autoFocus={formKey > 0}
-            onSavingChange={setSaving}
+            autoFocus={false}
+            thoughtDraft={{
+              key: card.id,
+              title: drafts[card.id] ?? "",
+              onChange: (title) => setDrafts((previous) => {
+                const next = { ...previous };
+                if (title) next[card.id] = title;
+                else delete next[card.id];
+                return next;
+              }),
+            }}
             onCaptured={({ task }) => {
               setThoughts((previous) => [...previous, { id: task.id, title: task.title, areaId: area.id }]);
               setAnnouncement(strings.guidedCaptureSaved(task.title));
-              setFormKey((key) => key + 1);
+              setDrafts((previous) => {
+                const next = { ...previous };
+                delete next[card.id];
+                return next;
+              });
               bump();
             }}
           />
           <nav className="guided-capture-navigation" aria-label={strings.guidedCapture}>
-            <button type="button" className="btn" disabled={saving || index === 0}
-              onClick={() => goTo(areas[index - 1]!.id)}>
+            <button type="button" className="btn" disabled={deck.index === 0} onClick={back}>
               {strings.guidedCaptureBack}
             </button>
-            <button type="button" className="btn guided-capture-next" disabled={saving} onClick={next}>
-              {index === areas.length - 1 ? strings.guidedCaptureFinish : strings.guidedCaptureNext}
+            <button type="button" className="btn guided-capture-next" onClick={next}>
+              {strings.guidedCaptureNext}
               <span aria-hidden="true"> →</span>
             </button>
           </nav>
         </section>
 
-        {done ? (
-          <section ref={cardRef} className="guided-capture-card guided-capture-finish stack">
-            <span className="guided-capture-icon" aria-hidden="true">🌤️</span>
-            <h2 ref={headingRef} tabIndex={-1}>{strings.guidedCaptureDoneTitle}</h2>
-            <Link to="/inbox" className="btn btn-primary" onClick={showCapturedInbox}>{strings.guidedCaptureInbox}</Link>
-            <button type="button" className="btn" onClick={() => goTo(areas[0]!.id)}>
-              {strings.guidedCaptureRestart}
-            </button>
-          </section>
-        ) : null}
         <div ref={outgoingRef} className="guided-capture-outgoing" aria-hidden="true" />
       </div>
       <p className="visually-hidden" role="status">{announcement}</p>
@@ -188,8 +218,8 @@ export function GuidedCapturePage() {
             <div className="guided-capture-area-grid">
               {group.areas.map((item) => (
                 <button key={item.id} type="button" className="guided-capture-area"
-                  aria-current={!done && item.id === area.id ? "step" : undefined}
-                  disabled={saving} onClick={() => goTo(item.id)}>
+                  aria-current={item.id === area.id ? "step" : undefined}
+                  onClick={() => goTo(visitReflectionArea(deck, areas, item.id, Math.random, protectedIds))}>
                   <span aria-hidden="true">{item.icon}</span>
                   <span>{item.title}</span>
                 </button>

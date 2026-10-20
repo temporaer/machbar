@@ -139,7 +139,7 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
   }, [reset]);
 
   const onClickCapture = useCallback<MouseEventHandler<T>>((event) => {
-    if (!suppressNextClick.current) return;
+    if (!suppressNextClick.current || event.detail === 0) return;
     suppressNextClick.current = false;
     event.preventDefault();
     event.stopPropagation();

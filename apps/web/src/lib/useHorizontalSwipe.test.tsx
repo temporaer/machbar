@@ -83,8 +83,22 @@ describe("useHorizontalSwipe", () => {
     expect(deepPrimary).not.toHaveBeenCalled();
     expect(surface).toHaveAttribute("data-drag-x", "0");
 
-    fireEvent.click(button);
-    fireEvent.click(button);
+    fireEvent.click(button, { detail: 1 });
+    fireEvent.click(button, { detail: 1 });
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("never suppresses keyboard activation after a swipe without a trailing pointer click", () => {
+    const click = vi.fn();
+    const { getByTestId, getByRole } = render(<Harness onClick={click} />);
+    const surface = getByTestId("surface");
+    const button = getByRole("button");
+    fireEvent.pointerDown(surface, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(surface, { clientX: 20, pointerId: 1 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+    fireEvent.click(button, { detail: 0 });
+    expect(click).toHaveBeenCalledOnce();
+    fireEvent.click(button, { detail: 1 });
     expect(click).toHaveBeenCalledOnce();
   });
 
