@@ -478,6 +478,19 @@ Post-completion “Add note” remains pending with #198, which is still open; i
 must reuse this composer through the shared completion affordance, not a second
 completion prompt. Full-document editing remains available.
 
+### Visible ownership entry on cards (#228)
+
+TaskRow keeps the existing `task.assignOwner` entry visible on every action row,
+using effective ownership for personal/inherited avatars. MemberAvatar also
+renders neutral shared/unassigned placeholders; unresolved non-null member IDs
+retain an unknown-person label and question mark. Reference/material rows have
+no assignment control. ProjectStoryRow offers `story.assignDriver` for driverless
+backlog cards in every variant, without changing activation or inheritance.
+Both controls use the existing workflow hosts/pickers/actions and stop pointer
+down/click propagation so assignment cannot start row swipe/long-press actions.
+Compact rows keep a reserved inline 44px target; normal cards reserve space for
+the existing lower-right assignment position.
+
 ### Shared Markdown editor (CodeMirror)
 
 `MarkdownEditor` is the single short-note editor for capture, full task/project

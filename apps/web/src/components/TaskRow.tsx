@@ -335,7 +335,7 @@ export function TaskRow({
       />
       <div
         ref={contentRef}
-        className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}${isCompact ? " compact" : ""}`}
+        className={`task-row-content${!isReference ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}${isCompact ? " compact" : ""}`}
         style={
           dragX || dragDepthShift
             ? { transform: `translateX(${dragX + dragDepthShift}px)` }
@@ -358,6 +358,7 @@ export function TaskRow({
           cancelSwipe();
         }}
         onClickCapture={(e) => {
+          if ((e.target as Element).closest(".task-row-owner-avatar")) return;
           swipeHandlers.onClickCapture(e);
           if (!swallowLongPressClick.current) return;
           swallowLongPressClick.current = false;
@@ -579,16 +580,17 @@ export function TaskRow({
                 ? <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id })} />
                 : null}
         </div>
-        {!isReference && ownerMember ? (
+        {!isReference ? (
           <button
             type="button"
             className="task-row-owner-avatar"
-            aria-label={`${strings.assign}: ${ownerLabel}`}
+            aria-label={task.effectiveOwnerId === null ? strings.chooseSharedTaskOwner : `${strings.assign}: ${ownerLabel}`}
             title={ownerLabel}
             disabled={busy}
-            onClick={() => dispatch({ type: "task.assignOwner", taskId: task.id })}
+            onPointerDown={event => event.stopPropagation()}
+            onClick={event => { event.stopPropagation(); dispatch({ type: "task.assignOwner", taskId: task.id }); }}
           >
-            <MemberAvatar member={ownerMember} size={isCompact ? "xs" : "sm"} />
+            <MemberAvatar member={ownerMember} placeholder={task.effectiveOwnerId === null ? "shared" : undefined} size={isCompact ? "xs" : "sm"} />
           </button>
         ) : null}
         <RowKebabButton
