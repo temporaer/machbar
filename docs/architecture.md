@@ -185,7 +185,8 @@ remove the snapshot. Insufficient gestures spring back without paging. Reduced
 motion (or missing Web Animations support) switches areas immediately.
 `touch-action: pan-y` preserves scrolling, vertical starts cancel navigation,
 and interactive controls do not start swipes. Saving locks the capture input and
-submit button, not browsing, swipes, the picker, or Exit.
+submit button, not browsing, swipes, the picker, or Exit. The shared swipe
+primitive suppresses only trailing pointer clicks, never keyboard activation.
 The question-led reflection cards use catalog group tones and motion gated by
 `prefers-reduced-motion`.
 Saved-thought notes are local presentation grouped by area, never another backlog.

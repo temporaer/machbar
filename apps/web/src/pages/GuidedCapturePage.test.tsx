@@ -275,6 +275,15 @@ describe("guided capture", () => {
     expect(createTask).not.toHaveBeenCalled();
   });
 
+  it("supports keyboard Back immediately after swiping to the next card", async () => {
+    renderJourney("/capture/guided?area=learning");
+    swipeCard(screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title }), -80);
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toHaveFocus();
+    screen.getByRole("button", { name: de.guidedCaptureBack }).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toHaveFocus();
+  });
+
   it.each([-63, 63, 8, 0])("springs back without navigating for a %ipx gesture", (distance) => {
     renderJourney("/capture/guided?area=learning");
     const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });

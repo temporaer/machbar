@@ -224,7 +224,7 @@ describe("RefinementTaskRow", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
 
     swipe(container, -100);
-    fireEvent.click(main);
+    fireEvent.click(main, { detail: 1 });
     expect(onOpen).not.toHaveBeenCalled();
 
     fireEvent.pointerDown(content, { clientX: 20, pointerId: 2 });
