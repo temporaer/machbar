@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,6 +41,12 @@ function renderJourney(entry = "/capture/guided", locale: "de" | "en" = "de") {
       </MemoryRouter>
     </LocaleProvider>,
   );
+}
+
+function swipeCard(target: HTMLElement, deltaX: number, deltaY = 0) {
+  fireEvent.pointerDown(target, { clientX: 200, clientY: 100, pointerId: 1 });
+  fireEvent.pointerMove(target, { clientX: 200 + deltaX, clientY: 100 + deltaY, pointerId: 1 });
+  fireEvent.pointerUp(target, { clientX: 200 + deltaX, clientY: 100 + deltaY, pointerId: 1 });
 }
 
 describe("guided capture", () => {
@@ -128,6 +134,87 @@ describe("guided capture", () => {
     expect(createTask).not.toHaveBeenCalled();
   });
 
+  it("follows the finger, swipes left/next and right/back, and preserves the draft", async () => {
+    renderJourney("/capture/guided?area=learning");
+    const input = screen.getByLabelText(de.guidedCaptureInput);
+    await userEvent.type(input, "Noch ein Gedanke");
+    const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(card, { clientX: 120, clientY: 102, pointerId: 1 });
+    expect(card).toHaveStyle({ transform: "translateX(-80px)" });
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+    fireEvent.pointerUp(card, { pointerId: 1 });
+    expect(card).toHaveStyle({ transform: "translateX(0px)" });
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.finances.title })).toHaveFocus();
+    expect(input).toHaveValue("Noch ein Gedanke");
+    swipeCard(card, 64);
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toHaveFocus();
+    expect(input).toHaveValue("Noch ein Gedanke");
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it.each([-63, 63, 8, 0])("springs back without navigating for a %ipx gesture", (distance) => {
+    renderJourney("/capture/guided?area=learning");
+    const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+    swipeCard(card, distance);
+    expect(card).toHaveStyle({ transform: "translateX(0px)" });
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+  });
+
+  it("does not wrap before the first area and follows Next to the finish after the last", () => {
+    renderJourney();
+    const card = screen.getByRole("region", { name: de.guidedCaptureAreas.home.title });
+    swipeCard(card, 100);
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toBeVisible();
+    const areas = guidedCaptureCatalog(de).flatMap((group) => group.areas);
+    for (const area of areas) {
+      expect(screen.getByRole("heading", { name: area.title })).toBeVisible();
+      swipeCard(card, -64);
+    }
+    expect(screen.getByRole("heading", { name: de.guidedCaptureDoneTitle })).toHaveFocus();
+    expect(card).not.toBeVisible();
+  });
+
+  it("leaves vertical scrolling alone, even if it later drifts horizontally", () => {
+    renderJourney("/capture/guided?area=learning");
+    const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+    const capture = vi.fn();
+    Object.defineProperty(card, "setPointerCapture", { value: capture });
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(card, { clientX: 190, clientY: 140, pointerId: 1 });
+    fireEvent.pointerMove(card, { clientX: 100, clientY: 160, pointerId: 1 });
+    fireEvent.pointerUp(card, { pointerId: 1 });
+    expect(capture).not.toHaveBeenCalled();
+    expect(card).toHaveStyle({ transform: "translateX(0px)" });
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+  });
+
+  it("ignores gestures starting on the input or buttons, including nested button content", () => {
+    renderJourney("/capture/guided?area=learning");
+    const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+    const nextButton = screen.getByRole("button", { name: de.guidedCaptureNext });
+    for (const target of [
+      screen.getByLabelText(de.guidedCaptureInput),
+      nextButton,
+      nextButton.querySelector("span")!,
+    ]) {
+      swipeCard(target, -100);
+      expect(card).toHaveStyle({ transform: "translateX(0px)" });
+      expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+    }
+  });
+
+  it("cancels a dragged card without navigating", () => {
+    renderJourney("/capture/guided?area=learning");
+    const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+    fireEvent.pointerDown(card, { clientX: 200, pointerId: 1 });
+    fireEvent.pointerMove(card, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerCancel(card, { pointerId: 1 });
+    fireEvent.pointerUp(card, { pointerId: 1 });
+    expect(card).toHaveStyle({ transform: "translateX(0px)" });
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+  });
+
   it("retains a failed draft for retry and locks capture/navigation during saving", async () => {
     let rejectSave!: (error: Error) => void;
     createTask.mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject; }));
@@ -143,6 +230,11 @@ describe("guided capture", () => {
     expect(exit).toHaveAttribute("aria-disabled", "true");
     expect(exit).toHaveAttribute("tabindex", "-1");
     expect(screen.getByRole("button", { name: de.guidedCaptureSave })).toBeDisabled();
+    const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
+    swipeCard(card, -100);
+    swipeCard(card, 100);
+    expect(card).toHaveStyle({ transform: "translateX(0px)" });
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
     for (const area of guidedCaptureCatalog(de).flatMap((group) => group.areas)) {
       expect(screen.getByRole("button", { name: area.title })).toBeDisabled();
     }

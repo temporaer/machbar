@@ -146,6 +146,12 @@ the ordinary Inbox handles subsequent clarification. There is no new persistence
 classification, AI dependency, or backlog. Array ordering defines the suggested
 journey; grouped navigation lets users revisit or skip any prompt. Unsaved text
 survives area navigation within the mounted page, but is not stored on exit.
+Left/right card swipes call the same Next/Back navigation (including Finish at
+the last area), using `useHorizontalSwipe` and leaving the form mounted. Cards
+follow horizontal drags and settle back to center; animated settling is disabled
+with reduced motion. `touch-action: pan-y` preserves scrolling, vertical starts
+cancel navigation, interactive controls do not start swipes, and saving disables
+swipes along with the existing navigation controls.
 The question-led reflection cards use catalog group tones and motion gated by
 `prefers-reduced-motion`. Their area number represents position, not completion.
 Saved-thought notes are local presentation grouped by area, never another backlog.
@@ -1151,8 +1157,10 @@ No surface offers the project status as a `<select>`. `ProjectStoryRow` and `Pro
 ### One headless horizontal-swipe primitive
 
 `useHorizontalSwipe` owns drag distance, the 8 px slop, delayed pointer
-capture, clamping, thresholds, cancellation, and one-shot click suppression
-for `TaskRow`, `ProjectStoryRow`, and `RefinementTaskRow`. It captures from
+capture, horizontal/vertical intent, clamping, thresholds, cancellation, and
+one-shot click suppression for `TaskRow`, `ProjectStoryRow`, `RefinementTaskRow`,
+and guided capture cards. Callers can opt out of interactive-control starts.
+Disabling the hook cancels an in-flight gesture. It captures from
 `pointermove` only after a real drag, never from `pointerdown`, so ordinary taps
 and mouse clicks inside rows remain reliable. Labels, backgrounds, actions,
 and swipe-coach policy stay local to each row.

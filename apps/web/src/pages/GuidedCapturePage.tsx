@@ -5,6 +5,7 @@ import { guidedCaptureCatalog } from "../lib/guidedCapture";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
+import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 
 export function GuidedCapturePage() {
   const strings = useStrings();
@@ -39,6 +40,17 @@ export function GuidedCapturePage() {
     setParams({ area: id }, { replace: true });
   };
   const next = () => goTo(areas[index + 1]?.id ?? "done");
+  const swipe = useHorizontalSwipe<HTMLElement>({
+    disabled: saving || done,
+    ignoreInteractive: true,
+    onPrimary: () => {
+      if (index > 0) goTo(areas[index - 1]!.id);
+    },
+    onSecondary: next,
+  });
+  useEffect(() => {
+    swipe.cancel();
+  }, [area.id, done, swipe.cancel]);
   const showCapturedInbox = () => {
     if (readTodayScope() === "work") writeTodayScope("all");
   };
@@ -54,7 +66,9 @@ export function GuidedCapturePage() {
           }}>{strings.guidedCaptureExit}</Link>
       </header>
 
-      <section className="guided-capture-card" data-tone={area.tone} hidden={done} aria-labelledby="life-area-title">
+      <section className="guided-capture-card guided-capture-swipe" data-tone={area.tone}
+        data-dragging={swipe.dragX !== 0} style={{ transform: `translateX(${swipe.dragX}px)` }}
+        {...swipe.handlers} hidden={done} aria-labelledby="life-area-title">
         <div key={area.id} className="guided-capture-reflection">
           <div className="guided-capture-card-top">
             <span className="guided-capture-eyebrow">{area.group}</span>
