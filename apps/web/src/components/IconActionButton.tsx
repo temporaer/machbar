@@ -1,6 +1,7 @@
 import type { MouseEventHandler } from "react";
 
 export type IconActionKind =
+  | "search"
   | "owner"
   | "household"
   | "criteria"
@@ -42,7 +43,12 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
 
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      {kind === "owner" ? (
+      {kind === "search" ? (
+        <>
+          <circle cx="10.5" cy="10.5" r="6.5" {...common} />
+          <path d="m15.5 15.5 5 5" {...common} />
+        </>
+      ) : kind === "owner" ? (
         <>
           <circle cx="12" cy="8" r="3.6" {...common} />
           <path d="M4.5 19.5c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5" {...common} />

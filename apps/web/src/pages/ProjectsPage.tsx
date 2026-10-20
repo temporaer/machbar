@@ -266,7 +266,6 @@ function ProjectsPageContent() {
             </button>
           </>
         }
-        hints={[{ text: strings.projectsHint }]}
       />
       <div className="stack projects-controls">
         <input

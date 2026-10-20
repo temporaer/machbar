@@ -83,7 +83,6 @@ export function InboxPage() {
               ) : null}
             </>
           }
-          hints={[{ text: strings.inboxHint }]}
         />
         <Link to="/capture/guided" className="guided-capture-invitation">
           <span className="guided-capture-invitation-icon" aria-hidden="true">🌿</span>

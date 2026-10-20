@@ -5,7 +5,6 @@ import { RefreshProvider } from "./lib/refresh";
 import { TaskDetailProvider } from "./lib/taskDetailContext";
 import { TaskWorkflowProvider } from "./lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "./lib/projectWorkflowContext";
-import { SwipeSettingsProvider } from "./lib/swipeSettings";
 import { TaskActionsProvider } from "./lib/useTaskActions";
 import { ProjectActionsProvider } from "./lib/useProjectActions";
 import { useGlobalNavigationKeys } from "./lib/useGlobalNavigationKeys";
@@ -143,23 +142,21 @@ export function App() {
         <DeveloperModeProvider>
           <IdentityProvider>
             <IdentityAwareRefreshProvider>
-              <SwipeSettingsProvider>
-                <SwipeCoachProvider>
-                  <TaskActionsProvider>
-                    <ProjectActionsProvider>
-                      <TaskDetailProvider>
-                        <TaskWorkflowProvider>
-                          <ProjectWorkflowProvider>
-                            <HashRouter>
-                              <Shell />
-                            </HashRouter>
-                          </ProjectWorkflowProvider>
-                        </TaskWorkflowProvider>
-                      </TaskDetailProvider>
-                    </ProjectActionsProvider>
-                  </TaskActionsProvider>
-                </SwipeCoachProvider>
-              </SwipeSettingsProvider>
+              <SwipeCoachProvider>
+                <TaskActionsProvider>
+                  <ProjectActionsProvider>
+                    <TaskDetailProvider>
+                      <TaskWorkflowProvider>
+                        <ProjectWorkflowProvider>
+                          <HashRouter>
+                            <Shell />
+                          </HashRouter>
+                        </ProjectWorkflowProvider>
+                      </TaskWorkflowProvider>
+                    </TaskDetailProvider>
+                  </ProjectActionsProvider>
+                </TaskActionsProvider>
+              </SwipeCoachProvider>
             </IdentityAwareRefreshProvider>
           </IdentityProvider>
         </DeveloperModeProvider>

@@ -3,7 +3,6 @@ import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
-import { useSwipeSettings } from "../lib/swipeSettings";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
 import { TaskRow } from "./TaskRow";
@@ -63,8 +62,6 @@ export function TaskOutline({
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
-  const { primarySwipeAction } = useSwipeSettings();
-  const rightSwipeAction = strings.primarySwipeActionLabels[primarySwipeAction];
   // Structural editing (the drag gesture) keeps its own optimistic view of
   // the tree, so render what it hands back rather than the raw prop.
   const organize = useOutlineOrganize(tasks, organizable);
@@ -117,7 +114,7 @@ export function TaskOutline({
       {showSwipeHint ? (
         <div className="row-between" style={{ marginBottom: 8 }}>
           <span className="text-muted">
-            {strings.taskGestureHint(rightSwipeAction)}
+            {strings.taskGestureHint}
           </span>
           {organize.enabled ? <span className="text-muted">{strings.dragHint}</span> : null}
         </div>

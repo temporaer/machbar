@@ -616,29 +616,10 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("opens and closes the project task purpose with the shared info control", async () => {
+  it("preserves project tasks without generic page help", async () => {
     renderWithProviders(<ProjectDetailPage />);
-
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
-    const purpose =
-      "Diese Liste zeigt den Weg zum Projektergebnis: vom nächsten machbaren Schritt über Abhängigkeiten bis zu späterer Arbeit.";
-    const button = screen.getByRole("button", {
-      name: "Hinweise zu dieser Seite anzeigen",
-    });
-
-    expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText(purpose)).not.toBeInTheDocument();
-
-    await userEvent.click(button);
-
-    expect(button).toHaveAttribute("aria-expanded", "true");
-    expect(button).toHaveAccessibleName("Hinweise zu dieser Seite ausblenden");
-    expect(screen.getByText(purpose)).toBeInTheDocument();
-
-    await userEvent.click(button);
-
-    expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText(purpose)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hinweise zu dieser Seite/ })).not.toBeInTheDocument();
   });
 
   it("edits title and notes inline as separate explicit transactions", async () => {

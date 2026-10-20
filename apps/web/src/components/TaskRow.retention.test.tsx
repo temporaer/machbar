@@ -161,15 +161,11 @@ describe("TaskRow – retention of recently mutated rows", () => {
     vi.useFakeTimers();
     const task = makeTask({ id: 101, title: "Altes Angebot", status: "actionable" });
     mockedApi.cancelTask.mockResolvedValue({ ...task, status: "cancelled" });
-    window.localStorage.setItem("machbar:primary-swipe-action", "cancel");
 
     const { rerender, container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
-    // Drive it through the configured primary-swipe path rather than the checkbox,
-    // since 'cancel' is only reachable that way (no direct cancel toggle button).
-    const content = container.querySelector(".task-row-content") as HTMLElement;
-    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
-    fireEvent.pointerMove(content, { clientX: 100, pointerId: 1 });
-    fireEvent.pointerUp(content, { clientX: 100, pointerId: 1 });
+    // Cancellation is an explicit lifecycle choice; right-swipe completes.
+    swipe(container, 140);
+    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Verworfen" }));
 
     await act(async () => {
       await flushMicrotasks();

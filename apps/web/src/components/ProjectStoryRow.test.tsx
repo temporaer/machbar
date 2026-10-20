@@ -14,7 +14,6 @@ import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
-import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
@@ -128,24 +127,22 @@ function renderWithProjectRoute(ui: ReactElement) {
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
-          <SwipeSettingsProvider>
-              <TaskActionsProvider>
-                <ProjectActionsProvider>
-                  <InteractionScopeProvider>
-                    <TaskDetailProvider>
-                      <TaskWorkflowProvider>
-                        <ProjectWorkflowProvider>
-                          <Routes>
-                            <Route path="/" element={ui} />
-                            <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-                          </Routes>
-                        </ProjectWorkflowProvider>
-                      </TaskWorkflowProvider>
-                    </TaskDetailProvider>
-                  </InteractionScopeProvider>
-                </ProjectActionsProvider>
-              </TaskActionsProvider>
-          </SwipeSettingsProvider>
+            <TaskActionsProvider>
+              <ProjectActionsProvider>
+                <InteractionScopeProvider>
+                  <TaskDetailProvider>
+                    <TaskWorkflowProvider>
+                      <ProjectWorkflowProvider>
+                        <Routes>
+                          <Route path="/" element={ui} />
+                          <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                        </Routes>
+                      </ProjectWorkflowProvider>
+                    </TaskWorkflowProvider>
+                  </TaskDetailProvider>
+                </InteractionScopeProvider>
+              </ProjectActionsProvider>
+            </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,

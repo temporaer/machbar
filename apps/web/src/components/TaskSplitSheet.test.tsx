@@ -10,7 +10,6 @@ import { LocaleProvider } from "../lib/locale";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { RefreshProvider } from "../lib/refresh";
 import { SwipeCoachProvider } from "../lib/swipeCoach";
-import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
@@ -306,21 +305,19 @@ describe("TaskSplitSheet", () => {
           <MemoryRouter>
             <IdentityProvider>
               <RefreshProvider>
-                <SwipeSettingsProvider>
-                    <SwipeCoachProvider>
-                      <TaskActionsProvider>
-                        <ProjectActionsProvider>
-                          <TaskDetailProvider>
-                            <TaskWorkflowProvider>
-                              <ProjectWorkflowProvider>
-                                <TaskSplitSheet parentId={7} parentRevision={1} existingChildren={[first, second]} onClose={vi.fn()} />
-                              </ProjectWorkflowProvider>
-                            </TaskWorkflowProvider>
-                          </TaskDetailProvider>
-                        </ProjectActionsProvider>
-                      </TaskActionsProvider>
-                    </SwipeCoachProvider>
-                </SwipeSettingsProvider>
+                  <SwipeCoachProvider>
+                    <TaskActionsProvider>
+                      <ProjectActionsProvider>
+                        <TaskDetailProvider>
+                          <TaskWorkflowProvider>
+                            <ProjectWorkflowProvider>
+                              <TaskSplitSheet parentId={7} parentRevision={1} existingChildren={[first, second]} onClose={vi.fn()} />
+                            </ProjectWorkflowProvider>
+                          </TaskWorkflowProvider>
+                        </TaskDetailProvider>
+                      </ProjectActionsProvider>
+                    </TaskActionsProvider>
+                  </SwipeCoachProvider>
               </RefreshProvider>
             </IdentityProvider>
           </MemoryRouter>

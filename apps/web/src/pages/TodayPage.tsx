@@ -14,7 +14,7 @@ import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaRow } from "../components/ProjectAgendaRow";
 import { InterventionFocusStrip } from "../components/InterventionFocusStrip";
-import { PageHeader, type PageHint } from "../components/PageHeader";
+import { PageHeader } from "../components/PageHeader";
 import { ContributionPulse } from "../components/ContributionPulse";
 import { ActivityDigest } from "../components/ActivityDigest";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
@@ -100,13 +100,6 @@ export function TodayPage() {
     scope === "all" && ownerMemberId !== null
       ? (members.find((member) => member.id === ownerMemberId) ?? null)
       : null;
-  const pageHints: PageHint[] = [
-    { text: strings.todayExplanation },
-    { text: strings.todayScopeHint },
-    ...(revisitTasks.length > 0
-      ? [{ label: strings.revisit, text: strings.revisitHint }]
-      : []),
-  ];
   const toneBySection: Record<
     "planned" | "overdue" | "dueToday" | "dueSoon",
     AttentionTone
@@ -209,9 +202,16 @@ export function TodayPage() {
                   }
                 />
               </button>
+              <Link
+                to="/more/all"
+                className="page-header-button"
+                aria-label={strings.search}
+                title={strings.search}
+              >
+                <IconActionGlyph kind="search" />
+              </Link>
             </>
           }
-          hints={pageHints}
         />
         <ActivityDigest />
         <ContributionPulse />

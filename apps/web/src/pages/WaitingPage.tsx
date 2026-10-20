@@ -60,7 +60,6 @@ export function WaitingPage() {
               />
             </button>
           }
-          hints={[{ text: strings.waitingPageHint }]}
         />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}

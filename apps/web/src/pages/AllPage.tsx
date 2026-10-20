@@ -72,7 +72,6 @@ export function AllPage() {
       <div>
         <PageHeader
           title={strings.allTitle}
-          hints={[{ text: strings.allHint }]}
         />
         <SearchFilterBar
           filters={filters}

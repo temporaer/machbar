@@ -133,7 +133,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask());
   });
 
-  it("swipes right into the default configured action (erledigen) for an open task", async () => {
+  it("swipes right to complete an open task", async () => {
     const task = makeTask({ id: 1, title: "Rechnung bezahlen", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Rechnung bezahlen");
@@ -150,6 +150,35 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
+
+  it("keeps a short mobile drag below the completion threshold inert", async () => {
+    mockPointer(true);
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[makeTask({ title: "Kurze Geste" })]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Kurze Geste");
+    swipe(container, 40);
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(mockedApi.reopenTask).not.toHaveBeenCalled();
+    expect(container.querySelector(".task-row-lifecycle")).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["actionable", "done", "cancelled"] as const)(
+    "supports the explicit completion button by keyboard for %s tasks",
+    async (status) => {
+      const task = makeTask({ id: 55, title: "Per Tastatur", status });
+      const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      await screen.findByText("Per Tastatur");
+      const button = container.querySelector<HTMLButtonElement>("button.task-row-checkbox")!;
+      button.focus();
+      await userEvent.keyboard("{Enter}");
+      await waitFor(() => {
+        if (status === "actionable") expect(mockedApi.completeTask).toHaveBeenCalledWith(55, "leave_open", undefined, 1);
+        else expect(mockedApi.reopenTask).toHaveBeenCalledWith(55, 1);
+      });
+    },
+  );
 
   it("suppresses the click after a real swipe, then lets the next tap open details", async () => {
     const task = makeTask({ id: 16, title: "Wischen statt öffnen", status: "actionable" });
@@ -256,34 +285,6 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(container.querySelector(".task-row-lifecycle")).toBeInTheDocument();
   });
 
-  it("clarifies a captured task before a configured defer action outside Eingang", async () => {
-    window.localStorage.setItem(STORAGE_KEY, "someday");
-    const task = makeTask({
-      id: 15,
-      title: "Später einordnen",
-      status: "captured",
-      needsClarification: true,
-    });
-    mockedApi.clarifyTask.mockResolvedValue({
-      ...task,
-      revision: 2,
-      needsClarification: false,
-    });
-    const { container } = renderWithProviders(
-      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
-    );
-    await screen.findByText("Später einordnen");
-
-    swipe(container, 100);
-
-    await waitFor(() =>
-      expect(mockedApi.clarifyTask).toHaveBeenCalledWith(15, 1),
-    );
-    expect(mockedApi.updateTask).not.toHaveBeenCalledWith(
-      15,
-      expect.objectContaining({ status: "someday" }),
-    );
-  });
 
   it("can swipe the retained crossed-out row again to reopen it", async () => {
     const task = makeTask({ id: 9, title: "Status direkt wechseln", status: "actionable" });
@@ -312,19 +313,20 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
   });
 
-  it("respects a configured 'Irgendwann' primary swipe action on an open task", async () => {
-    window.localStorage.setItem(STORAGE_KEY, "someday");
-    const task = makeTask({ id: 3, title: "Bücher sortieren", status: "actionable" });
-    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
-    await screen.findByText("Bücher sortieren");
-
-    swipe(container, 100);
-
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(3, {
-      status: "someday",
-      expectedRevision: 1,
-    }));
-  });
+  it.each(["someday", "cancel", "complete", "invalid"])(
+    "ignores the retired '%s' preference and completes an open task",
+    async (stored) => {
+      window.localStorage.setItem(STORAGE_KEY, stored);
+      const task = makeTask({ id: 3, title: "Bücher sortieren", status: "actionable" });
+      const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      await screen.findByText("Bücher sortieren");
+      swipe(container, 100);
+      await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(3, "leave_open", undefined, 1));
+      expect(mockedApi.updateTask).not.toHaveBeenCalled();
+      expect(mockedApi.cancelTask).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBe(stored);
+    },
+  );
 
   it("renders phone numbers and email addresses in notes as actionable links", async () => {
     const task = makeTask({
@@ -344,18 +346,6 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
   });
 
-  it("respects a configured 'Verwerfen' primary swipe action on an open task", async () => {
-    window.localStorage.setItem(STORAGE_KEY, "cancel");
-    const task = makeTask({ id: 4, title: "Altes Angebot", status: "actionable" });
-    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
-    await screen.findByText("Altes Angebot");
-
-    swipe(container, 100);
-
-    await waitFor(() =>
-      expect(mockedApi.cancelTask).toHaveBeenCalledWith(4, "leave_open", 1),
-    );
-  });
 
   it.each(["someday", "cancel", "complete"] as const)(
     "always reopens an already done task via the primary swipe, regardless of the '%s' setting",

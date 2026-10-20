@@ -9,7 +9,6 @@ import { useProjectActions } from "./useProjectActions";
 import { useTaskDetail } from "./taskDetailContext";
 import { useTaskWorkflow } from "./taskWorkflowContext";
 import { useProjectWorkflow } from "./projectWorkflowContext";
-import { useSwipeSettings } from "./swipeSettings";
 import { useOptionalInteractionScope } from "./interactionScope";
 import { taskAvailabilityForLocalDate } from "./taskAvailability";
 import { calendarDateForInstant } from "@machbar/shared";
@@ -175,7 +174,6 @@ export function useWorkItemCommands() {
   const taskWorkflow = useTaskWorkflow();
   const projectWorkflow = useProjectWorkflow();
   const navigate = useNavigate();
-  const { primarySwipeAction } = useSwipeSettings();
   const scope = useOptionalInteractionScope();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
@@ -366,15 +364,8 @@ export function useWorkItemCommands() {
           return;
         }
         case "task.primaryAction":
-          // The configured primary swipe action (someday/cancel/complete);
-          // `requestPrimarySwipe` already resolves reopen/clarify first.
-          if (
-            primarySwipeAction === "complete" &&
-            command.task.status !== "captured" &&
-            command.task.status !== "done" &&
-            command.task.status !== "cancelled"
-          ) requestTaskCompletion(command.task);
-          else taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
+          if (command.task.status === "captured") void taskActions.clarify(command.task);
+          else requestTaskCompletion(command.task);
           return;
         case "task.makeAction":
           void taskActions.makeAction(command.task);
@@ -558,7 +549,6 @@ export function useWorkItemCommands() {
       taskWorkflow,
       projectWorkflow,
       navigate,
-      primarySwipeAction,
       scope,
       resolveStoryPrerequisite,
       continueStoryLifecycle,

@@ -784,7 +784,6 @@ export function ProjectDetailPage() {
               <PageHeader
                 title={strings.taskSummary}
                 headingLevel={2}
-                hints={[{ text: strings.projectTasksHint }]}
                 actions={
                   project.status !== "completed" &&
                   project.status !== "archived" &&

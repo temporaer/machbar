@@ -14,7 +14,7 @@ export function DiscussionPage() {
 
   return (
     <div className="discussion-page">
-      <PageHeader title={strings.discussionTitle} hints={[{ text: strings.discussionDescription }]} />
+      <PageHeader title={strings.discussionTitle} />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {empty ? <EmptyState message={strings.discussionEmpty} /> : null}

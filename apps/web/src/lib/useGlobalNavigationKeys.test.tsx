@@ -10,7 +10,6 @@ import { TaskWorkflowProvider } from "./taskWorkflowContext";
 import { ProjectWorkflowProvider } from "./projectWorkflowContext";
 import { IdentityProvider } from "./identity";
 import { RefreshProvider } from "./refresh";
-import { SwipeSettingsProvider } from "./swipeSettings";
 import { api } from "./api";
 import { makeMember } from "../test/fixtures";
 import { useStrings } from "./strings";
@@ -58,19 +57,17 @@ function renderNavHost() {
     <MemoryRouter initialEntries={["/today"]}>
       <IdentityProvider>
         <RefreshProvider>
-          <SwipeSettingsProvider>
-            <TaskActionsProvider>
-              <ProjectActionsProvider>
-                <TaskDetailProvider>
-                  <TaskWorkflowProvider>
-                    <ProjectWorkflowProvider>
-                      <GlobalNavHost />
-                    </ProjectWorkflowProvider>
-                  </TaskWorkflowProvider>
-                </TaskDetailProvider>
-              </ProjectActionsProvider>
-            </TaskActionsProvider>
-          </SwipeSettingsProvider>
+          <TaskActionsProvider>
+            <ProjectActionsProvider>
+              <TaskDetailProvider>
+                <TaskWorkflowProvider>
+                  <ProjectWorkflowProvider>
+                    <GlobalNavHost />
+                  </ProjectWorkflowProvider>
+                </TaskWorkflowProvider>
+              </TaskDetailProvider>
+            </ProjectActionsProvider>
+          </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,
@@ -108,20 +105,18 @@ describe("useGlobalNavigationKeys (g-prefix)", () => {
       <MemoryRouter initialEntries={["/today"]}>
         <IdentityProvider>
           <RefreshProvider>
-            <SwipeSettingsProvider>
-              <TaskActionsProvider>
-                <ProjectActionsProvider>
-                  <TaskDetailProvider>
-                    <TaskWorkflowProvider>
-                      <ProjectWorkflowProvider>
-                        <input aria-label="Freitext" />
-                        <GlobalNavHost />
-                      </ProjectWorkflowProvider>
-                    </TaskWorkflowProvider>
-                  </TaskDetailProvider>
-                </ProjectActionsProvider>
-              </TaskActionsProvider>
-            </SwipeSettingsProvider>
+            <TaskActionsProvider>
+              <ProjectActionsProvider>
+                <TaskDetailProvider>
+                  <TaskWorkflowProvider>
+                    <ProjectWorkflowProvider>
+                      <input aria-label="Freitext" />
+                      <GlobalNavHost />
+                    </ProjectWorkflowProvider>
+                  </TaskWorkflowProvider>
+                </TaskDetailProvider>
+              </ProjectActionsProvider>
+            </TaskActionsProvider>
           </RefreshProvider>
         </IdentityProvider>
       </MemoryRouter>,

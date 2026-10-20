@@ -66,6 +66,16 @@ describe("AllPage", () => {
     });
   });
 
+  it("keeps text search first in the inventory and waits for intentional focus", async () => {
+    renderWithProviders(<AllPage />);
+    const search = screen.getByRole("textbox", { name: "Suchen" });
+    expect(search).not.toHaveFocus();
+    await userEvent.tab();
+    expect(search).toHaveFocus();
+    await userEvent.type(search, "Projektfarbe");
+    expect(await screen.findByText("Projektfarbe auswählen")).toBeInTheDocument();
+  });
+
   it("shows every project status and standalone trees without project descendants by default", async () => {
     renderWithProviders(<AllPage />);
 

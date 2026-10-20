@@ -275,7 +275,6 @@ const en = {
   waitingFollowUpNotePlaceholder: "Called, received a reply …",
   continueWaiting: "Continue waiting",
   revisit: "Follow-up",
-  revisitHint: "Decide again today: work on it, schedule it, or defer it.",
   invalidRevisitTime: "This local time is invalid or ambiguous in the household timezone.",
   completedToday: "Completed today",
   completedTodayHint: "Reactivate a completed task if it still needs attention.",
@@ -562,9 +561,6 @@ const en = {
   errorRecoveryHint: "Try again. Your existing work has not been changed.",
   networkError: "Machbar could not reach the server. Check your connection and try again.",
   retry: "Try again",
-  pageHints: "Tips",
-  showPageHints: "Show tips for this page",
-  hidePageHints: "Hide tips for this page",
   searchPlaceholder: "Title, notes, place…",
   filters: "Filters",
   resetFilters: "Reset filters",
@@ -635,8 +631,6 @@ const en = {
   priorityDown: "Lower",
   manageTags: "Manage tags",
   manageTagsHint: "Edit the tag catalog, types, and grouping.",
-  manageTagsPageHint:
-    "Tags add useful perspectives such as area, person, or context without replacing the project structure.",
   deleteTag: "Delete tag",
   deleteTagTitle: (name: string) => `Delete the tag “${name}”?`,
   deleteTagWarning:
@@ -746,10 +740,6 @@ const en = {
   todayHouseholdScope: "Show everyone's tasks",
   todayWorkScope: "Show only your work tasks",
   todayMineScope: "Show only your tasks",
-  todayScopeHint:
-    "“Everyone” shows the whole household's tasks without changing your identity for edits.",
-  inboxHint:
-    "Unclarified work lands here. Decide what is actionable, belongs to a project, or should deliberately wait until later.",
   inboxHouseholdScope: "Show everyone's unclarified items",
   inboxWorkScope: "Show only your unclarified work items",
   inboxMineScope: "Show only your unclarified items",
@@ -793,7 +783,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   moreMomentum: "Household momentum",
   moreFindAndReview: "Find and review",
   discussionTitle: "Discuss",
-  discussionDescription: "Tasks and projects nominated for a shared conversation.",
   discussionEmpty: "Nothing has been marked for discussion yet.",
   addDiscussion: "Mark for discussion",
   removeDiscussion: "Remove discussion mark",
@@ -951,8 +940,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   resultComplete: "Result complete",
   noTags: "No tags.",
   searchDependency: "Search tasks…",
-  todayExplanation:
-    "See what truly needs attention now: planned and due work, reached follow-ups, and each project's next actionable step.",
   manageMembers: "Manage people",
   manageMembersHint: "Add, rename, or remove people.",
   memberName: "Name",
@@ -962,9 +949,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   renameMember: "Rename",
   memberDeleteConfirm: "Permanently delete this person?",
   noMembers: "No people added yet.",
-  swipeSettingTitle: "Swipe action",
-  swipeSettingHint:
-    "Choose what swiping right does in task lists. Swiping left shows contextual non-status actions. Swiping a completed or discarded task always reopens it.",
   railLabels: {
     plan: "Plan",
     split: "Split",
@@ -1110,8 +1094,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   swipeCoachHint: (rightAction: string) =>
     `Swipe: right for “${rightAction}”, left for more. Or tap ⋯.`,
   swipeCoachDismiss: "Dismiss swipe hint",
-  taskGestureHint: (rightAction: string) =>
-    `Swipe right: “${rightAction}”. Swipe left for contextual non-status actions. On desktop, use ⋯.`,
+  taskGestureHint:
+    `Swipe right: complete or reopen. Swipe left for contextual non-status actions. On desktop, use ⋯.`,
   assign: "Assign",
   schedule: "Schedule",
   scheduleShortcuts: "Quick schedule",
@@ -1166,11 +1150,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   unmarkAdditionalNextAction: "Unmark as additional next action",
   toProject: "Project",
   noProjectChipHint: "No project assigned",
-  primarySwipeActionLabels: {
-    complete: "Complete / reopen",
-    someday: "Someday",
-    cancel: "Discard",
-  },
   refinementMatrixTitle: "Owner × effort",
   refinementListTitle: "Inspect work",
   unestimated: "No effort set",
@@ -1189,8 +1168,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   effortGuide: "Review effort",
 
   reviewTitle: "Review",
-  reviewHint:
-    "Work that needs a deliberate decision lands here: clarify it, continue it, park it, or finish it.",
   reviewEmpty: "Everything is intentional. There is nothing to review right now.",
   reviewPrimaryQueue: "Decisions",
   reviewPlanningTools: "Optional planning tools",
@@ -1233,8 +1210,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   reviewAcknowledged: "Confirmed for now",
 
   allTitle: "All",
-  allHint:
-    "Find the complete inventory here, including work that focused views deliberately leave out.",
   allProjectsHeading: "Projects",
   allStandaloneTasksHeading: "Standalone tasks",
   allMatchingTasksHeading: "Matching tasks",
@@ -1285,10 +1260,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   storyReopened: "Reopened",
   storyReturnedToBacklog: "Moved to later",
 
-  projectsHint:
-    "Projects connect a desired outcome with the path toward it. Active projects always show a next step or intentional waiting.",
-  waitingPageHint:
-    "Work that cannot move yet lives here. See what it is waiting on and when it needs another look.",
   waitingHouseholdScope: "Show everyone's waiting tasks",
   waitingWorkScope: "Show only your waiting work tasks",
   waitingMineScope: "Show only your waiting tasks",
@@ -1350,8 +1321,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   homeAssistantNoKnownLocation: "Not at a known place",
   homeAssistantObservedAt: (time: string) => `Updated ${time}`,
   homeAssistantUnmapped: "Not mapped",
-  projectTasksHint:
-    "This list shows the path to the project outcome, from the next actionable step through dependencies and later work.",
   projectStatus: "Status",
   projectOverview: "Project overview",
   projectRevisitDate: "Revisit",

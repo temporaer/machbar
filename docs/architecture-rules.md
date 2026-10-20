@@ -234,6 +234,8 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project list classification/sort presentation | `apps/web/src/lib/projectListFilter.ts` (`ProjectListClassification`, including the non-stuck `active-review` bucket for `completion_review`) |
 | Detail action projection | `apps/web/src/components/ActionTileGrid.tsx` |
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
+| Page navigation chrome | `PageHeader` renders headings and actions only. Today links to the existing `/more/all` inventory through `IconActionGlyph`; `SearchFilterBar` keeps text search first without automatic focus/mobile keyboard activation. |
+| Task primary action | `task.primaryAction` in `useWorkItemCommands` clarifies captured tasks and otherwise uses the canonical guarded completion/reopen command. No swipe preferences or persistence; gesture thresholds and the separate lifecycle rail remain in `useHorizontalSwipe`/`TaskRow`. |
 | Horizontal row/card swipe | `apps/web/src/lib/useHorizontalSwipe.ts`; guided capture opts out of interactive-control starts and reuses its existing area navigation |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
 | Markdown note editing and input | `MarkdownEditor` (CodeMirror 6), `MarkdownEditorHandle`; existing toolbar/attachment flow and caller-owned explicit save/cancel |
