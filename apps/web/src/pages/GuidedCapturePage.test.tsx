@@ -66,6 +66,15 @@ describe("guided capture", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it.each([["de", "Kopf freimachen"], ["en", "Clear your mind"]] as const)(
+    "uses the renamed heading and accessible card navigation in %s",
+    (locale, label) => {
+      renderJourney("/capture/guided", locale);
+      expect(screen.getByRole("heading", { level: 1, name: label })).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: label })).toBeInTheDocument();
+    },
+  );
+
   it.each(["de", "en"] as const)("provides sixteen localized prompt pools in five groups (%s)", async (locale) => {
     const strings = getCatalog(locale);
     const groups = guidedCaptureCatalog(strings);

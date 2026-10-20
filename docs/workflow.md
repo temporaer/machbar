@@ -88,7 +88,7 @@ the same transaction as its first child; **Als Projekt behandeln** is an
 optional branch through the existing guarded conversion. Unsupported
 conversions leave the original task and the whole step batch intact.
 
-**Gedankenreise**, available from Eingang and Mehr, is an open-ended deck of
+**Kopf freimachen**, available from Eingang and Mehr, is an open-ended deck of
 optional reflection questions over sixteen life areas in five thematic worlds.
 Each area offers different perspectives, including unfinished matters, future
 needs, personal wishes, and the invisible work of remembering and coordinating.
@@ -367,7 +367,7 @@ revisit date rather than generic inactivity.
 Optional owner/effort planning tools remain available inside Review without
 becoming another required workflow.
 
-The optional **Klärungsrunde** (More, when the Home Assistant AI Task is
+The optional **Aufräumrunde** (More, when the Home Assistant AI Task is
 configured) is a planning-clarity pass over semantic work-item quality. Machbar
 Review/Stuck Detection handles mechanical workflow hygiene such as owner, dates,
 waiting/blocking state, stale age, status, and graph next-action gaps. The AI
@@ -613,7 +613,7 @@ Machbar participates in both directions:
 Deep-link recipients still need network and authentication access to the same
 Machbar deployment.
 
-**Reflexion starten** (under Mehr) assembles the existing deterministic
+**Rückblick & Coaching** (under Mehr) assembles the existing deterministic
 historical briefing for 30, 90, or 180 days. Household work is the default;
 including the selected member's private work requires an explicit scope choice
 and a separate confirmation. The page previews the complete package before
@@ -635,3 +635,19 @@ The material remains on the device until the user commits the Capture form.
 Existing tasks and projects expose a paperclip action that appends material
 without first opening notes editing. Detail views show all referenced material
 compactly; task lists show at most the first thumbnail plus an overflow count.
+
+### Mehr: tools and settings (#239)
+
+Mehr separates **Gestalten & Planen** (Kopf freimachen, Woche planen,
+Aufräumrunde when Home Assistant is ready, Ziele) from **Überblick & Rückblick**
+(Review, Besprechen, Rückblick & Coaching, Aktivitäten). The existing Review
+label stays consistent between menu and page. Preferences, household management
+and system/admin controls follow in a visually separate settings group; momentum
+remains available above the tools. Inventory remains at Today’s search entry.
+
+**Kopf freimachen** / **Clear your mind** discovers thoughts through changing
+questions; the playful deck and ordinary Inbox capture workflow are unchanged.
+**Rückblick & Coaching** / **Review & coaching** looks back at activities and
+development using a local factual briefing, explicit preview and optional handoff
+to an external app/coach. Neither rename changes privacy consent or sends data
+automatically. Existing `/capture/guided` and `/more/reflection` links remain valid.

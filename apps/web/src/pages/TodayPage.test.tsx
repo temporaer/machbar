@@ -159,7 +159,7 @@ describe("TodayPage", () => {
     });
     expect(screen.getByText(/Settled task/)).toBeInTheDocument();
     expect(rendered.container.querySelectorAll(".contribution-pulse-high")).toHaveLength(7);
-    expect(screen.getByRole("link", { name: /Klärungsrunde/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Aufräumrunde/ })).toBeInTheDocument();
     expect(screen.queryByText("Lädt …")).not.toBeInTheDocument();
     expect(mockedApi.getAgenda).toHaveBeenCalledTimes(agendaCalls + 1);
     for (const query of [mockedApi.getActivityDigest, mockedApi.getContributionSummary, mockedApi.getHomeAssistantStatus]) {
@@ -214,7 +214,7 @@ describe("TodayPage", () => {
     expect(screen.queryByText("Für heute ist nichts geplant.")).not.toBeInTheDocument();
   });
 
-  it("offers the Klärungsrunde shortcut only when the Home Assistant AI Task is ready", async () => {
+  it("offers the Aufräumrunde shortcut only when the Home Assistant AI Task is ready", async () => {
     mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
     mockedApi.getHomeAssistantStatus.mockResolvedValueOnce({
       connected: true,
@@ -234,7 +234,7 @@ describe("TodayPage", () => {
     });
     const { container } = renderWithProviders(<TodayPage />);
     const shortcut = await screen.findByRole("link", {
-      name: "Klärungsrunde starten",
+      name: "Aufräumrunde starten",
     });
     expect(shortcut).toHaveAttribute("href", "/more/cleanup-round");
     expect(shortcut).toHaveClass("cleanup-round-shortcut");
@@ -244,14 +244,14 @@ describe("TodayPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("hides the Klärungsrunde shortcut when the Home Assistant AI Task is unavailable", async () => {
+  it("hides the Aufräumrunde shortcut when the Home Assistant AI Task is unavailable", async () => {
     mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
     renderWithProviders(<TodayPage />);
     await screen.findByRole("link", {
       name: /Gemeinsame Beiträge der letzten sieben Tage/,
     });
     expect(
-      screen.queryByRole("link", { name: "Klärungsrunde starten" }),
+      screen.queryByRole("link", { name: "Aufräumrunde starten" }),
     ).not.toBeInTheDocument();
   });
 

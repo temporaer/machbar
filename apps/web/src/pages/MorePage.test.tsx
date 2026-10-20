@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
+import { getCatalog } from "../lib/locale";
 import { MorePage } from "./MorePage";
 import { api } from "../lib/api";
 
@@ -92,6 +93,45 @@ describe("MorePage", () => {
     window.localStorage.clear();
   });
 
+  it.each([
+    ["de", "Gestalten & Planen", "Überblick & Rückblick", "Kopf freimachen", "Rückblick & Coaching"],
+    ["en", "Shape & plan", "Overview & review", "Clear your mind", "Review & coaching"],
+  ] as const)("groups tools in reading order with distinct reflection labels (%s)", async (locale, forwardLabel, backwardLabel, captureLabel, reflectionLabel) => {
+    const status = await api.getHomeAssistantStatus();
+    vi.mocked(api.getHomeAssistantStatus).mockResolvedValueOnce({ ...status, intakeReady: true });
+    const strings = getCatalog(locale);
+    const { container } = renderWithProviders(<MorePage />, { locale });
+    await screen.findByRole("link", { name: new RegExp(strings.cleanupRound) });
+    const forward = screen.getByRole("region", { name: forwardLabel });
+    const backward = screen.getByRole("region", { name: backwardLabel });
+    const routes = (region: HTMLElement) => within(region).getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(routes(forward)).toEqual(["/capture/guided", "/more/week", "/more/cleanup-round", "/more/goals"]);
+    expect(routes(backward)).toEqual(["/more/review", "/more/discussion", "/more/reflection", "/more/activity"]);
+    expect(within(forward).getByRole("link", { name: `${captureLabel} ${strings.guidedCaptureDescription}` })).toHaveAttribute("href", "/capture/guided");
+    expect(within(backward).getByRole("link", { name: `${reflectionLabel} ${strings.reflectionStartDescription}` })).toHaveAttribute("href", "/more/reflection");
+    expect(within(backward).getByRole("link", { name: /Review.*7/ })).toHaveAttribute("href", "/more/review");
+    const settings = container.querySelector<HTMLElement>(".more-settings")!;
+    expect(within(settings).getByRole("heading", { name: strings.morePreferences })).toBeInTheDocument();
+    expect(within(settings).getByRole("heading", { name: strings.moreHousehold })).toBeInTheDocument();
+    expect(within(settings).getByRole("heading", { name: strings.moreSystem })).toBeInTheDocument();
+    expect(within(settings).getByRole("link", { name: new RegExp(strings.manageTags) })).toHaveAttribute("href", "/more/tags");
+    expect(within(settings).getByRole("link", { name: new RegExp(strings.aiContextTitle) })).toHaveAttribute("href", "/more/ai-context");
+    const toolLinks = [...within(forward).getAllByRole("link"), ...within(backward).getAllByRole("link")];
+    const user = userEvent.setup();
+    toolLinks[0]!.focus();
+    for (const next of toolLinks.slice(1)) {
+      await user.tab();
+      expect(next).toHaveFocus();
+    }
+    await user.tab();
+    expect(within(settings).getByRole("button", { name: strings.themeLabels.system })).toHaveFocus();
+    const allDestinations = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(new Set(allDestinations).size).toBe(allDestinations.length);
+    expect(allDestinations).not.toContain("/more/all");
+    expect(screen.queryByRole("button", { name: /Hinweise zu dieser Seite|Show tips for this page/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /Wischgeste|Swipe/ })).not.toBeInTheDocument();
+  });
+
   it("links to the dedicated tag catalogue instead of expanding it inline", async () => {
     const { container } = renderWithProviders(<MorePage />);
 
@@ -100,16 +140,16 @@ describe("MorePage", () => {
     expect(container.querySelector(".tag-manager")).toBeNull();
   });
 
-  it("offers the Klärungsrunde only when the Home Assistant AI Task is ready", async () => {
+  it("offers the Aufräumrunde only when the Home Assistant AI Task is ready", async () => {
     const { unmount } = renderWithProviders(<MorePage />);
-    await screen.findByRole("link", { name: /Aktivitäten/ });
-    expect(screen.queryByRole("link", { name: /Klärungsrunde/ })).not.toBeInTheDocument();
+    await screen.findByRole("link", { name: /^Aktivitäten/ });
+    expect(screen.queryByRole("link", { name: /Aufräumrunde/ })).not.toBeInTheDocument();
     unmount();
 
     const status = await api.getHomeAssistantStatus();
     vi.mocked(api.getHomeAssistantStatus).mockResolvedValueOnce({ ...status, intakeReady: true });
     renderWithProviders(<MorePage />);
-    expect(await screen.findByRole("link", { name: /Klärungsrunde/ })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: /Aufräumrunde/ })).toHaveAttribute(
       "href",
       "/more/cleanup-round",
     );
@@ -118,7 +158,7 @@ describe("MorePage", () => {
   it("links to the global activity feed", async () => {
     renderWithProviders(<MorePage />);
 
-    expect(await screen.findByRole("link", { name: /Aktivitäten/ })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: /^Aktivitäten/ })).toHaveAttribute(
       "href",
       "/more/activity",
     );
@@ -135,7 +175,7 @@ describe("MorePage", () => {
   it("links to the standalone historical reflection export", async () => {
     renderWithProviders(<MorePage />);
 
-    expect(await screen.findByRole("link", { name: /Reflexion starten/ })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: /Rückblick & Coaching/ })).toHaveAttribute(
       "href",
       "/more/reflection",
     );
@@ -213,7 +253,8 @@ describe("MorePage", () => {
 
     expect(await screen.findByRole("heading", { name: "Household momentum" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Find and review" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Shape & plan" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Overview & review" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Household" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "System" })).toBeInTheDocument();

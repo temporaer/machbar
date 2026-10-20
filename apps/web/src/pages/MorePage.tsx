@@ -39,8 +39,8 @@ export function MorePage() {
         <ContributionCard />
       </section>
 
-      <section className="more-section" aria-labelledby="more-review-heading">
-        <h2 id="more-review-heading">{strings.moreFindAndReview}</h2>
+      <section className="more-section" aria-labelledby="more-plan-heading">
+        <h2 id="more-plan-heading">{strings.moreShapeAndPlan}</h2>
         <div className="more-link-group">
           <Link to="/capture/guided" className="list-link more-list-link">
             <span>
@@ -49,6 +49,39 @@ export function MorePage() {
             </span>
             <span aria-hidden="true">›</span>
           </Link>
+          <Link to="/more/week" className="list-link more-list-link">
+            <span>
+              <strong>{strings.weekPlanning}</strong>
+              <small className="list-link-description">
+                {strings.weekPlanningDescription}
+              </small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
+          {homeAssistant?.intakeReady ? (
+            <Link to="/more/cleanup-round" className="list-link more-list-link">
+              <span>
+                <strong>{strings.cleanupRound}</strong>
+                <small className="list-link-description">
+                  {strings.cleanupRoundDescription}
+                </small>
+              </span>
+              <span aria-hidden="true">›</span>
+            </Link>
+          ) : null}
+          <Link to="/more/goals" className="list-link more-list-link">
+            <span>
+              <strong>{strings.goalsTitle}</strong>
+              <small className="list-link-description">{strings.goalsLinkHint}</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        </div>
+      </section>
+
+      <section className="more-section" aria-labelledby="more-review-heading">
+        <h2 id="more-review-heading">{strings.moreOverviewAndReview}</h2>
+        <div className="more-link-group">
           <Link to="/more/review" className="list-link more-list-link">
             <span>{strings.reviewTitle}</span>
             <span className="more-link-trailing">
@@ -69,33 +102,6 @@ export function MorePage() {
             </span>
             <span aria-hidden="true">›</span>
           </Link>
-          <Link to="/more/goals" className="list-link more-list-link">
-            <span>
-              <strong>{strings.goalsTitle}</strong>
-              <small className="list-link-description">{strings.goalsLinkHint}</small>
-            </span>
-            <span aria-hidden="true">›</span>
-          </Link>
-          {homeAssistant?.intakeReady ? (
-            <Link to="/more/cleanup-round" className="list-link more-list-link">
-              <span>
-                <strong>{strings.cleanupRound}</strong>
-                <small className="list-link-description">
-                  {strings.cleanupRoundDescription}
-                </small>
-              </span>
-              <span aria-hidden="true">›</span>
-            </Link>
-          ) : null}
-          <Link to="/more/week" className="list-link more-list-link">
-            <span>
-              <strong>{strings.weekPlanning}</strong>
-              <small className="list-link-description">
-                {strings.weekPlanningDescription}
-              </small>
-            </span>
-            <span aria-hidden="true">›</span>
-          </Link>
           <Link to="/more/activity" className="list-link more-list-link">
             <span>
               <strong>{strings.activities}</strong>
@@ -108,214 +114,216 @@ export function MorePage() {
         </div>
       </section>
 
-      <section className="more-section" aria-labelledby="more-preferences-heading">
-        <h2 id="more-preferences-heading">{strings.morePreferences}</h2>
-        <div className="stack">
-          <div className="card more-setting-card">
-            <h3>{strings.appearance}</h3>
-            <p className="text-muted">{strings.appearanceHint}</p>
-            <div className="choice-group" role="group" aria-label={strings.theme}>
-              {themePreferences.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="choice-chip"
-                  aria-pressed={theme === value}
-                  onClick={() => setTheme(value)}
-                >
-                  {strings.themeLabels[value]}
-                </button>
-              ))}
+      <div className="more-settings">
+        <section className="more-section" aria-labelledby="more-preferences-heading">
+          <h2 id="more-preferences-heading">{strings.morePreferences}</h2>
+          <div className="stack">
+            <div className="card more-setting-card">
+              <h3>{strings.appearance}</h3>
+              <p className="text-muted">{strings.appearanceHint}</p>
+              <div className="choice-group" role="group" aria-label={strings.theme}>
+                {themePreferences.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="choice-chip"
+                    aria-pressed={theme === value}
+                    onClick={() => setTheme(value)}
+                  >
+                    {strings.themeLabels[value]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <PushNotificationSettings />
+            <HouseholdTimezoneSetting />
+
+            <div className="card more-setting-card">
+              <h3>{strings.language}</h3>
+              <p className="text-muted">{strings.languageHint}</p>
+              <div className="choice-group" role="group" aria-label={strings.language}>
+                {supportedLocales.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="choice-chip"
+                    aria-pressed={locale === value}
+                    onClick={() => setLocale(value)}
+                  >
+                    {strings.localeLabels[value]}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
+        </section>
 
-          <PushNotificationSettings />
-          <HouseholdTimezoneSetting />
-
-          <div className="card more-setting-card">
-            <h3>{strings.language}</h3>
-            <p className="text-muted">{strings.languageHint}</p>
-            <div className="choice-group" role="group" aria-label={strings.language}>
-              {supportedLocales.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="choice-chip"
-                  aria-pressed={locale === value}
-                  onClick={() => setLocale(value)}
-                >
-                  {strings.localeLabels[value]}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="more-section" aria-labelledby="more-household-heading">
-        <h2 id="more-household-heading">{strings.moreHousehold}</h2>
-        <div className="stack">
-          <div className="card more-setting-card">
-            <div className="row-between">
-              <h3>{strings.identity}</h3>
-              {currentMember ? (
-                <span className="row">
-                  <MemberAvatar member={currentMember} size="sm" />
-                  <span>{currentMember.name}</span>
-                </span>
-              ) : null}
-            </div>
-            {authEnabled ? (
-              <>
-                <p className="text-muted">{strings.identityManagedByPocketId}</p>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={loggingOut}
-                  onClick={() => {
-                    setLoggingOut(true);
-                    setLogoutError(null);
-                    void logout()
-                      .catch((cause: unknown) =>
-                        setLogoutError(localizedErrorMessage(cause, strings)),
-                      )
-                      .finally(() => setLoggingOut(false));
-                  }}
-                >
-                  {strings.logout}
-                </button>
-                {logoutError ? (
-                  <p className="text-muted" role="alert">{logoutError}</p>
+        <section className="more-section" aria-labelledby="more-household-heading">
+          <h2 id="more-household-heading">{strings.moreHousehold}</h2>
+          <div className="stack">
+            <div className="card more-setting-card">
+              <div className="row-between">
+                <h3>{strings.identity}</h3>
+                {currentMember ? (
+                  <span className="row">
+                    <MemberAvatar member={currentMember} size="sm" />
+                    <span>{currentMember.name}</span>
+                  </span>
                 ) : null}
-              </>
-            ) : (
-              <>
-                <p className="text-muted">{strings.switchIdentity}</p>
-                <IdentitySelector />
-              </>
-            )}
-          </div>
-
-          <div className="more-link-group">
-            <Link to="/more/ai-context" className="list-link more-list-link">
-              <span>
-                <strong>{strings.aiContextTitle}</strong>
-                <small className="list-link-description">{strings.aiContextHint}</small>
-              </span>
-              <span aria-hidden="true">›</span>
-            </Link>
-            <Link to="/more/tags" className="list-link more-list-link">
-              <span>
-                <strong>{strings.manageTags}</strong>
-                <small className="list-link-description">{strings.manageTagsHint}</small>
-              </span>
-              <span aria-hidden="true">›</span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="more-section" aria-labelledby="more-system-heading">
-        <h2 id="more-system-heading">{strings.moreSystem}</h2>
-        <div className="stack">
-          <div className="card more-setting-card">
-            <h3>{strings.about}</h3>
-            <p className="text-muted">{strings.tagline}</p>
-            <p className="text-muted">
-              {strings.version} 0.1.0
-            </p>
-          </div>
-
-          <details className="card more-admin-settings">
-            <summary className="disclosure-summary more-admin-summary">
-              <span>
-                <strong>{strings.moreAdministration}</strong>
-                <small>{strings.moreAdministrationHint}</small>
-              </span>
-            </summary>
-            <div className="more-admin-body">
-              <div className="more-admin-group">
-                <h3>{strings.manageMembers}</h3>
-                <p className="text-muted">{strings.manageMembersHint}</p>
-                <MemberManager />
               </div>
-              {homeAssistant?.connected && homeAssistant.people.length > 0 ? (
-                <div className="more-admin-group more-admin-locations">
-                  <h3>{strings.homeAssistantPeopleLocations}</h3>
-                  <div className="home-assistant-location-list">
-                    {homeAssistant.people.map((person) => (
-                      <div
-                        className="home-assistant-location-row"
-                        key={person.externalId}
-                      >
-                        <strong>{person.name}</strong>
-                        <HomeAssistantPersonLocation
-                          person={person}
-                          stale={homeAssistant.stale}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              <div className="more-link-group">
-                <Link
-                  to="/more/integrations/mcp"
-                  className="list-link more-list-link"
-                >
-                  <span>
-                    <strong>{strings.mcp}</strong>
-                    <small className="list-link-description">
-                      {strings.mcpLinkHint}
-                    </small>
-                  </span>
-                  <span aria-hidden="true">›</span>
-                </Link>
-                <Link
-                  to="/more/integrations/home-assistant"
-                  className="list-link more-list-link"
-                >
-                  <span>
-                    <strong>{strings.homeAssistant}</strong>
-                    <small className="list-link-description">
-                      {strings.homeAssistantLinkHint}
-                    </small>
-                  </span>
-                  <span aria-hidden="true">›</span>
-                </Link>
-              </div>
-              <label className="setting-switch">
+              {authEnabled ? (
+                <>
+                  <p className="text-muted">{strings.identityManagedByPocketId}</p>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={loggingOut}
+                    onClick={() => {
+                      setLoggingOut(true);
+                      setLogoutError(null);
+                      void logout()
+                        .catch((cause: unknown) =>
+                          setLogoutError(localizedErrorMessage(cause, strings)),
+                        )
+                        .finally(() => setLoggingOut(false));
+                    }}
+                  >
+                    {strings.logout}
+                  </button>
+                  {logoutError ? (
+                    <p className="text-muted" role="alert">{logoutError}</p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <p className="text-muted">{strings.switchIdentity}</p>
+                  <IdentitySelector />
+                </>
+              )}
+            </div>
+
+            <div className="more-link-group">
+              <Link to="/more/ai-context" className="list-link more-list-link">
                 <span>
-                  <strong>{strings.developerMode}</strong>
-                  <small>{strings.developerModeHint}</small>
+                  <strong>{strings.aiContextTitle}</strong>
+                  <small className="list-link-description">{strings.aiContextHint}</small>
                 </span>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={developerMode}
-                  onChange={(event) => setDeveloperMode(event.target.checked)}
-                />
-              </label>
-              {developerMode ? (
+                <span aria-hidden="true">›</span>
+              </Link>
+              <Link to="/more/tags" className="list-link more-list-link">
+                <span>
+                  <strong>{strings.manageTags}</strong>
+                  <small className="list-link-description">{strings.manageTagsHint}</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="more-section" aria-labelledby="more-system-heading">
+          <h2 id="more-system-heading">{strings.moreSystem}</h2>
+          <div className="stack">
+            <div className="card more-setting-card">
+              <h3>{strings.about}</h3>
+              <p className="text-muted">{strings.tagline}</p>
+              <p className="text-muted">
+                {strings.version} 0.1.0
+              </p>
+            </div>
+
+            <details className="card more-admin-settings">
+              <summary className="disclosure-summary more-admin-summary">
+                <span>
+                  <strong>{strings.moreAdministration}</strong>
+                  <small>{strings.moreAdministrationHint}</small>
+                </span>
+              </summary>
+              <div className="more-admin-body">
+                <div className="more-admin-group">
+                  <h3>{strings.manageMembers}</h3>
+                  <p className="text-muted">{strings.manageMembersHint}</p>
+                  <MemberManager />
+                </div>
+                {homeAssistant?.connected && homeAssistant.people.length > 0 ? (
+                  <div className="more-admin-group more-admin-locations">
+                    <h3>{strings.homeAssistantPeopleLocations}</h3>
+                    <div className="home-assistant-location-list">
+                      {homeAssistant.people.map((person) => (
+                        <div
+                          className="home-assistant-location-row"
+                          key={person.externalId}
+                        >
+                          <strong>{person.name}</strong>
+                          <HomeAssistantPersonLocation
+                            person={person}
+                            stale={homeAssistant.stale}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="more-link-group">
                   <Link
-                    to="/more/debug"
-                    className="list-link more-list-link debug-settings-link"
+                    to="/more/integrations/mcp"
+                    className="list-link more-list-link"
                   >
                     <span>
-                      <strong>{strings.debugTitle}</strong>
+                      <strong>{strings.mcp}</strong>
                       <small className="list-link-description">
-                        {strings.debugLinkHint}
+                        {strings.mcpLinkHint}
+                      </small>
+                    </span>
+                    <span aria-hidden="true">›</span>
+                  </Link>
+                  <Link
+                    to="/more/integrations/home-assistant"
+                    className="list-link more-list-link"
+                  >
+                    <span>
+                      <strong>{strings.homeAssistant}</strong>
+                      <small className="list-link-description">
+                        {strings.homeAssistantLinkHint}
                       </small>
                     </span>
                     <span aria-hidden="true">›</span>
                   </Link>
                 </div>
-              ) : null}
-            </div>
-          </details>
-        </div>
-      </section>
+                <label className="setting-switch">
+                  <span>
+                    <strong>{strings.developerMode}</strong>
+                    <small>{strings.developerModeHint}</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={developerMode}
+                    onChange={(event) => setDeveloperMode(event.target.checked)}
+                  />
+                </label>
+                {developerMode ? (
+                  <div className="more-link-group">
+                    <Link
+                      to="/more/debug"
+                      className="list-link more-list-link debug-settings-link"
+                    >
+                      <span>
+                        <strong>{strings.debugTitle}</strong>
+                        <small className="list-link-description">
+                          {strings.debugLinkHint}
+                        </small>
+                      </span>
+                      <span aria-hidden="true">›</span>
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+            </details>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
