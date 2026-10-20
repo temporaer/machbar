@@ -670,7 +670,7 @@ describe("CleanupRoundPage", () => {
     mocked.dismissCleanupRound.mockResolvedValue(round({ status: "dismissed" }));
     renderAt("/more/cleanup-round/r1");
 
-    expect(await screen.findByText("Machbar konnte keine sichere Klärungsrunde erstellen.")).toBeInTheDocument();
+    expect(await screen.findByText("Machbar konnte keine sichere Aufräumrunde erstellen.")).toBeInTheDocument();
     const card = screen.getByRole("article", { name: "Keller" });
     await userEvent.click(within(card).getByRole("button", { name: "Erneut versuchen" }));
     expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");

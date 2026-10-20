@@ -168,6 +168,14 @@ describe("InboxPage scope toggle", () => {
     mockedApi.getInbox.mockResolvedValue([]);
   });
 
+  it.each([
+    ["de", "Kopf freimachen", "Mit wechselnden Fragen entdecken, was dich beschäftigt."],
+    ["en", "Clear your mind", "Discover what’s on your mind with changing questions."],
+  ] as const)("offers the same renamed capture entry from Inbox (%s)", async (locale, label, description) => {
+    renderWithProviders(<InboxPage />, { locale });
+    expect(await screen.findByRole("link", { name: `${label} ${description}` })).toHaveAttribute("href", "/capture/guided");
+  });
+
   it("cycles mine -> household -> work and requests the matching inbox scope", async () => {
     const { container } = renderWithProviders(<InboxPage />);
 

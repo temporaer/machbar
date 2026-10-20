@@ -42,6 +42,20 @@ describe("ReflectionStartPage", () => {
     vi.mocked(api.getReflectionBriefing).mockImplementation(async (_memberId, days, scope) => makeBriefing(scope, days));
   });
 
+  it.each([["de", "Rückblick & Coaching"], ["en", "Review & coaching"]] as const)(
+    "uses the retrospective title while retaining the local preview and optional handoff (%s)",
+    async (locale, label) => {
+      renderWithProviders(<ReflectionStartPage />, { locale });
+      expect(screen.getByRole("heading", { level: 1, name: label })).toBeInTheDocument();
+      expect(screen.getByText(locale === "de"
+        ? "Machbar erstellt einen sachlichen Rückblick. Erst nach deiner Vorschau entscheidest du, ob du ihn mit einer anderen App teilst."
+        : "Machbar prepares a factual review. After previewing it, you decide whether to share it with another app."
+      )).toBeInTheDocument();
+      await screen.findByRole("textbox", { name: locale === "de" ? "Vollständiger Inhalt zum Teilen" : "Complete content to share" });
+      expect(api.getReflectionBriefing).toHaveBeenLastCalledWith(7, 90, "household");
+    },
+  );
+
   it("previews the complete package and explicitly gates private work before sharing", async () => {
     const user = userEvent.setup();
     const share = vi.fn().mockResolvedValue(undefined);
@@ -66,7 +80,7 @@ describe("ReflectionStartPage", () => {
     expect(shareButton).toBeEnabled();
     const exactPreview = (screen.getByRole("textbox", { name: "Vollständiger Inhalt zum Teilen" }) as HTMLTextAreaElement).value;
     await user.click(shareButton);
-    await waitFor(() => expect(share).toHaveBeenCalledWith({ title: "Machbar-Reflexion", text: exactPreview }));
+    await waitFor(() => expect(share).toHaveBeenCalledWith({ title: "Machbar – Rückblick & Coaching", text: exactPreview }));
 
     await user.click(screen.getByRole("button", { name: "Meine Arbeit" }));
     const privateConsent = await screen.findByRole("checkbox", { name: /privaten Arbeitsdaten enthalten/ });

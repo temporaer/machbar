@@ -2036,6 +2036,15 @@ details[open] > .disclosure-summary::after {
   margin-bottom: -12px;
 }
 
+/* Separate tools from the existing preferences, household and system groups. */
+.more-settings {
+  display: grid;
+  gap: 26px;
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 26px;
+}
+
 .more-section {
   min-width: 0;
   display: grid;
@@ -2077,6 +2086,15 @@ details[open] > .disclosure-summary::after {
 
 .more-link-group .more-list-link {
   display: flex;
+}
+
+.more-list-link > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.more-list-link > span:last-child {
+  flex-shrink: 0;
 }
 
 .more-list-link + .more-list-link {

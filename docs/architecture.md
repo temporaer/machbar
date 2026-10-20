@@ -267,13 +267,13 @@ plain text, converts blank fields to `null`, and keeps Machbar's schemas,
 validation, safety rules, and deterministic workflow rules authoritative.
 
 `apps/api/src/aiContext.ts` renders the context section once for both Intake
-and Klärungsrunde prompts. Empty fields produce no heading; populated fields
+and Aufräumrunde prompts. Empty fields produce no heading; populated fields
 are inserted as background context before source/item data. The web editor is
 available from **Mehr → KI-Kontext** and uses explicit Save/Clear editing
 without exposing the feature as a prompt editor.
 
 The reverse bridge is deliberately narrow. It has exactly three request kinds:
-`intake_analyze`, `cleanup_round_analyze` (the Klärungsrunde, see §8), and
+`intake_analyze`, `cleanup_round_analyze` (the Aufräumrunde, see §8), and
 `calendar_create`. Requests use long-polling, leases, and
 bounded retries; the bridge is not arbitrary Home Assistant RPC. The AI phase
 never mutates Machbar or the calendar. Only the human Apply command creates
@@ -1019,12 +1019,12 @@ inside those canonical hooks. Focused repair reuses project/task detail,
 available as optional secondary planning tools rather than a separate
 Refinement workflow.
 
-### Klärungsrunde — `/more/cleanup-round`
+### Aufräumrunde — `/more/cleanup-round`
 
-The Klärungsrunde is an on-demand, advisory planning-clarity pass over semantic
+The Aufräumrunde is an on-demand, advisory planning-clarity pass over semantic
 work-item quality. It does not replace Review/Stuck Detection's mechanical
 workflow hygiene: Review knows owners, dates, waits, blockers, next actions,
-stuck reasons, status, and review age; the Klärungsrunde asks a Home Assistant
+stuck reasons, status, and review age; the Aufräumrunde asks a Home Assistant
 AI Task whether a few sampled items preserve enough intent, outcome, and
 decision structure for a tired human to resume them without reconstructing the
 plan from memory.
@@ -2087,3 +2087,15 @@ completion guards. The swipe settings context, options, and storage reader/write
 are removed; previously stored preferences are ignored without migration.
 Left-swipe contextual rails, deep-swipe lifecycle rails, project/refinement
 semantics, and mobile drag thresholds are unchanged.
+
+### More tool grouping and reflection labels (#239)
+
+`MorePage` composes the existing links in two ordered tool groups: Shape & plan
+(capture, week, readiness-gated cleanup, goals) and Overview & review (Review,
+discussion, historical reflection export, activity). Existing preferences,
+household and system sections share a visual divider, with the same controls,
+capability guards and tab order. No settings or route abstraction is added.
+`guidedCapture` and `reflectionStart` remain the canonical localized labels for
+all entry points and headings: Kopf freimachen / Clear your mind and Rückblick &
+Coaching / Review & coaching. The capture deck, local factual briefing, external
+handoff, preview and privacy-consent semantics are unchanged.

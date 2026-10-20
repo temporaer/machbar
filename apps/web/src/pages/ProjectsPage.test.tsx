@@ -142,7 +142,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
   });
 
-  it("offers the Klärungsrunde shortcut only when the Home Assistant AI Task is ready", async () => {
+  it("offers the Aufräumrunde shortcut only when the Home Assistant AI Task is ready", async () => {
     mockedApi.getHomeAssistantStatus.mockResolvedValueOnce({
       connected: true,
       instanceId: "ha-1",
@@ -161,17 +161,17 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     });
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
-    const shortcut = screen.getByRole("link", { name: "Klärungsrunde starten" });
+    const shortcut = screen.getByRole("link", { name: "Aufräumrunde starten" });
     expect(shortcut).toHaveAttribute("href", "/more/cleanup-round");
     expect(shortcut).toHaveClass("cleanup-round-shortcut");
     expect(screen.queryByRole("button", { name: "Runde starten" })).not.toBeInTheDocument();
   });
 
-  it("hides the Klärungsrunde shortcut when the Home Assistant AI Task is unavailable", async () => {
+  it("hides the Aufräumrunde shortcut when the Home Assistant AI Task is unavailable", async () => {
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
     expect(
-      screen.queryByRole("link", { name: "Klärungsrunde starten" }),
+      screen.queryByRole("link", { name: "Aufräumrunde starten" }),
     ).not.toBeInTheDocument();
   });
 

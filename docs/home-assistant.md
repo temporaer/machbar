@@ -54,8 +54,8 @@ Home Assistant and the selected provider remain authoritative for AI execution
 and calendar objects. Machbar stores no AI-provider credentials, OpenAI key,
 Google credentials, or Home Assistant access token.
 
-The same AI Task entity also powers the **Klärungsrunde** (More →
-Klärungsrunde): Machbar sends a few sampled work items with coaching
+The same AI Task entity also powers the **Aufräumrunde** (More →
+Aufräumrunde): Machbar sends a few sampled work items with coaching
 instructions, and the worker returns structured, advisory results through the
 `CLEANUP_ROUND_STRUCTURE` schema. That schema enforces only the response
 envelope: vocabularies are described rather than closed enums, every result
