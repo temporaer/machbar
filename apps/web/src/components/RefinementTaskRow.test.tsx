@@ -129,6 +129,58 @@ describe("RefinementTaskRow", () => {
     ]);
   });
 
+  it.each([-64, -63, 63, 64])("preserves size/rail thresholds for a %ipx swipe starting on the title button", async (distance) => {
+    const task = makeItem();
+    mockedApi.updateTask.mockResolvedValue({ ...task, size: "S" } as never);
+    const { container } = renderRow(task);
+    const main = container.querySelector(".refinement-row-main") as HTMLElement;
+    fireEvent.pointerDown(main, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(main, { clientX: distance, pointerId: 1 });
+    fireEvent.pointerUp(main, { pointerId: 1 });
+    await act(async () => { await flushMicrotasks(); });
+    expect(mockedApi.updateTask).toHaveBeenCalledTimes(distance >= 64 ? 1 : 0);
+    expect(Boolean(screen.queryByRole("group", { name: "Weitere Aktionen" }))).toBe(distance <= -64);
+  });
+
+  it("leaves vertical scrolling uncaptured and the subsequent title click usable", async () => {
+    const { container, onOpen } = renderRow(makeItem({ id: 41 }));
+    const content = container.querySelector(".refinement-row-content") as HTMLElement;
+    const main = container.querySelector(".refinement-row-main") as HTMLElement;
+    const capture = vi.fn();
+    Object.defineProperty(content, "setPointerCapture", { value: capture });
+    fireEvent.pointerDown(main, { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(main, { clientX: 5, clientY: 30, pointerId: 1 });
+    fireEvent.pointerMove(main, { clientX: 100, clientY: 40, pointerId: 1 });
+    fireEvent.pointerUp(main, { pointerId: 1 });
+    expect(capture).not.toHaveBeenCalled();
+    expect(content.style.transform).toBe("");
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    fireEvent.click(main);
+    expect(onOpen).toHaveBeenCalledWith(41, undefined);
+  });
+
+  it("cancels an active drag on retention and cannot fire more actions while disabled", async () => {
+    const task = makeItem();
+    let finish!: () => void;
+    mockedApi.updateTask.mockImplementationOnce(() => new Promise((resolve) => {
+      finish = () => resolve({ ...task, size: "S" } as never);
+    }));
+    const { container } = renderRow(task);
+    const content = container.querySelector(".refinement-row-content") as HTMLElement;
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: -100, pointerId: 1 });
+    fireEvent.click(container.querySelector(".refinement-row-size")!);
+    expect(content.style.transform).toBe("");
+    fireEvent.pointerUp(content, { pointerId: 1 });
+    swipe(container, -64);
+    swipe(container, 64);
+    expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+    expect(mockedApi.updateTask).toHaveBeenCalledOnce();
+    await act(async () => finish());
+    swipe(container, 64);
+    expect(mockedApi.updateTask).toHaveBeenCalledOnce();
+  });
+
   it("shows story/owner/status meta and the current size on the badge", async () => {
     const task = makeItem({ title: "Kunde anrufen", projectTitle: "Hausumbau", size: "M" });
     renderRow(task);

@@ -157,6 +157,7 @@ a {
 
 .guided-capture-page {
   gap: 20px;
+  overflow-x: clip;
 }
 
 .guided-capture-page .btn,
@@ -218,6 +219,30 @@ a {
 
 .guided-capture-card[hidden] {
   display: none;
+}
+
+.guided-capture-swipe {
+  touch-action: pan-y;
+}
+
+.guided-capture-deck {
+  position: relative;
+}
+
+.guided-capture-outgoing {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.guided-capture-outgoing * {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .guided-capture-swipe[data-dragging="false"] {
+    transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
 }
 
 .guided-capture-card-top {

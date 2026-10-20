@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
@@ -45,6 +45,65 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 20 })]);
+  });
+
+  it.each([-64, -63, 63, 64, 127, 128])("keeps row actions at their exact thresholds (%ipx), including starts on the title button", async (distance) => {
+    const task = makeTask({ status: "actionable" });
+    mockedApi.completeTask.mockResolvedValue(makeTask({ ...task, status: "done" }));
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    const main = await screen.findByRole("button", { name: task.title });
+    fireEvent.pointerDown(main, { clientX: 0, pointerId: 7 });
+    fireEvent.pointerMove(main, { clientX: distance, pointerId: 7 });
+    fireEvent.pointerUp(main, { clientX: distance, pointerId: 7 });
+    await act(async () => {});
+    expect(mockedApi.completeTask).toHaveBeenCalledTimes(distance >= 64 && distance < 128 ? 1 : 0);
+    expect(Boolean(container.querySelector(".task-row-lifecycle"))).toBe(distance >= 128);
+    expect(Boolean(container.querySelector(".work-item-command-rail"))).toBe(distance <= -64);
+  });
+
+  it.each(["vertical", "cancelled", "wrong pointer"] as const)("does not act on a %s drag and leaves the next click usable", async (gesture) => {
+    const task = makeTask({ status: "actionable" });
+    mockedApi.getTask.mockResolvedValue(task);
+    const { container } = renderWithProviders(<><TaskOutline tasks={[task]} emptyMessage="Nichts da" /><TaskDetailSheet /></>);
+    const main = await screen.findByRole("button", { name: task.title });
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+    const capture = vi.fn();
+    Object.defineProperty(content, "setPointerCapture", { value: capture });
+    fireEvent.pointerDown(main, { clientX: 0, clientY: 0, pointerId: 1 });
+    if (gesture === "vertical") {
+      fireEvent.pointerMove(main, { clientX: 5, clientY: 30, pointerId: 1 });
+      fireEvent.pointerMove(main, { clientX: 140, clientY: 40, pointerId: 1 });
+    } else {
+      fireEvent.pointerMove(main, { clientX: 140, pointerId: gesture === "wrong pointer" ? 2 : 1 });
+      fireEvent.pointerCancel(main, { pointerId: 1 });
+    }
+    fireEvent.pointerUp(main, { pointerId: 1 });
+    expect(content.style.transform).toBe("");
+    if (gesture !== "cancelled") expect(capture).not.toHaveBeenCalled();
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(container.querySelector(".task-row-lifecycle, .work-item-command-rail")).toBeNull();
+    fireEvent.click(main);
+    expect(await screen.findByRole("dialog")).toBeVisible();
+  });
+
+  it("cancels a drag when a task becomes busy and ignores further swipes until the write resolves", async () => {
+    const task = makeTask({ status: "actionable" });
+    let finish!: () => void;
+    mockedApi.completeTask.mockImplementationOnce(() => new Promise((resolve) => {
+      finish = () => resolve(makeTask({ ...task, status: "done" }));
+    }));
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText(task.title);
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+    dragTo(content, 140);
+    fireEvent.click(container.querySelector(".task-row-checkbox")!);
+    expect(content.style.transform).toBe("");
+    fireEvent.pointerUp(content, { pointerId: 1 });
+    swipe(container, -64);
+    swipe(container, 128);
+    expect(container.querySelector(".task-row-lifecycle, .work-item-command-rail")).toBeNull();
+    expect(mockedApi.completeTask).toHaveBeenCalledOnce();
+    await act(async () => finish());
   });
 
   it("keeps the chip strip structurally outside the swipe background/content cell, so `.task-row` overflow can never clip it", async () => {
