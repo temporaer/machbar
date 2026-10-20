@@ -61,8 +61,12 @@ export type CaptureFormProps = {
    * scope; omitted (server default `"household"` applies) otherwise. */
   defaultScope?: "work";
 } & (
-  | { mode: "thought"; onCancel?: never }
-  | { mode?: "standard"; onCancel: () => void }
+  | {
+      mode: "thought";
+      onCancel?: never;
+      thoughtDraft?: { key: number; title: string; onChange: (title: string) => void };
+    }
+  | { mode?: "standard"; onCancel: () => void; thoughtDraft?: never }
 );
 
 /** Shared Capture editor for Quick Add, incoming shares, and guided thoughts. */
@@ -85,18 +89,23 @@ export function CaptureForm({
   secondaryAction,
   captureActions,
   defaultScope,
+  thoughtDraft,
 }: CaptureFormProps) {
   const strings = useStrings();
   const isThought = mode === "thought";
   const { locale } = useLocale();
-  const [title, setTitle] = useState(initialTitle);
+  const [localTitle, setTitle] = useState(initialTitle);
+  const title = thoughtDraft?.title ?? localTitle;
+  const activeDraftKey = useRef(thoughtDraft?.key);
+  activeDraftKey.current = thoughtDraft?.key;
   const [titleCursor, setTitleCursor] = useState(initialTitle.length);
   const [selectedTokens, setSelectedTokens] = useState<ResolvedCaptureToken[]>([]);
   const [notes, setNotes] = useState(initialNotes);
   const [dueDate, setDueDate] = useState<string | null>(initialDueDate);
   const [dueDateValid, setDueDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const focusAfterSave = useRef<number | undefined | null>(null);
+  const [error, setError] = useState<{ message: string; draftKey: number | undefined } | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [projectDestinationOverride, setProjectDestinationOverride] = useState<
     number | null | undefined
@@ -105,6 +114,11 @@ export function CaptureForm({
     "member" | "context" | "schedule" | "project" | null
   >(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (saving || focusAfterSave.current === null) return;
+    if (focusAfterSave.current === activeDraftKey.current) titleInputRef.current?.focus();
+    focusAfterSave.current = null;
+  }, [saving]);
   const { currentMemberId, members } = useIdentity();
   const { data: tags } = useAsync(() => isThought ? Promise.resolve([]) : api.getTags(), [isThought]);
   const { data: projects } = useAsync(() => isThought ? Promise.resolve([]) : api.getProjects(), [isThought]);
@@ -208,12 +222,15 @@ export function CaptureForm({
         ),
       );
       onCaptured({ kind: "task", task, needsClarification });
+      if (isThought && activeDraftKey.current === thoughtDraft?.key) {
+        focusAfterSave.current = thoughtDraft?.key;
+      }
     } catch (cause) {
       const refreshedPrompt = projectActivationPromptFromError(cause, currentActivationPrompt);
       if (refreshedPrompt) {
         setActivationPrompt({ ...refreshedPrompt, requestFingerprint });
       }
-      setError(localizedErrorMessage(cause, strings));
+      setError({ message: localizedErrorMessage(cause, strings), draftKey: thoughtDraft?.key });
     } finally {
       setSaving(false);
       onSavingChange?.(false);
@@ -288,7 +305,8 @@ export function CaptureForm({
           value={title}
           placeholder={isThought ? strings.guidedCapturePlaceholder : strings.quickAddPlaceholder}
           onChange={(event) => {
-            setTitle(event.target.value);
+            if (thoughtDraft) thoughtDraft.onChange(event.target.value);
+            else setTitle(event.target.value);
             setTitleCursor(event.target.selectionStart ?? event.target.value.length);
           }}
           onKeyUp={(event) =>
@@ -511,7 +529,7 @@ export function CaptureForm({
           onChange={setActivationPrompt}
         />
       ) : null}
-      {error ? <p className="capture-error" role="alert">{error}</p> : null}
+      {error && error.draftKey === thoughtDraft?.key ? <p className="capture-error" role="alert">{error.message}</p> : null}
       <div className="capture-actions">
         {!isThought ? <button type="button" className="btn" onClick={onCancel} disabled={saving}>
           {strings.cancel}

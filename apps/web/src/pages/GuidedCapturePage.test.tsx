@@ -4,7 +4,7 @@ import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { getCatalog, LocaleProvider, LOCALE_STORAGE_KEY } from "../lib/locale";
-import { guidedCaptureCatalog } from "../lib/guidedCapture";
+import { guidedCaptureCatalog, reflectionDeckStorageKey } from "../lib/guidedCapture";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { makeTask } from "../test/fixtures";
 import { GuidedCapturePage } from "./GuidedCapturePage";
@@ -52,13 +52,16 @@ function swipeCard(target: HTMLElement, deltaX: number, deltaY = 0) {
 describe("guided capture", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(Math, "random").mockReturnValue(0);
     localStorage.clear();
     sessionStorage.clear();
     let id = 1;
     createTask.mockImplementation(async (input) => makeTask({ id: id++, title: input.title, status: "captured" }));
   });
 
-  it.each(["de", "en"] as const)("provides sixteen localized, ordered prompts in five groups (%s)", async (locale) => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(["de", "en"] as const)("provides sixteen localized prompt pools in five groups (%s)", async (locale) => {
     const strings = getCatalog(locale);
     const groups = guidedCaptureCatalog(strings);
     const areas = groups.flatMap((group) => group.areas);
@@ -72,7 +75,10 @@ describe("guided capture", () => {
         expect(area.icon).toBeTruthy();
         await userEvent.click(screen.getByRole("button", { name: area.title }));
         await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: area.title })).toHaveFocus());
-        expect(screen.getByText(area.prompt)).toBeVisible();
+        const prompts = Object.values(area.prompts);
+        expect(prompts.length).toBeGreaterThanOrEqual(3);
+        expect(new Set(prompts).size).toBe(prompts.length);
+        expect(prompts).toContain(screen.getByRole("heading", { level: 2 }).parentElement?.querySelector(".guided-capture-prompt")?.textContent);
       }
     }
     expect(createTask).not.toHaveBeenCalled();
@@ -105,22 +111,21 @@ describe("guided capture", () => {
     expect(createTask).toHaveBeenCalledTimes(2);
   });
 
-  it("skips every area without creating entries and offers a gentle finish", async () => {
+  it("continues across multiple complete cycles without creating entries or showing an ending", async () => {
     renderJourney();
     const areas = guidedCaptureCatalog(de).flatMap((group) => group.areas);
-    for (const [index, area] of areas.entries()) {
-      expect(screen.getByRole("heading", { level: 2, name: area.title })).toBeVisible();
-      expect(screen.getByText(de.guidedCapturePosition(index + 1, areas.length))).toBeVisible();
-      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-      await userEvent.click(screen.getByRole("button", {
-        name: index === areas.length - 1 ? de.guidedCaptureFinish : de.guidedCaptureNext,
-      }));
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const titles = [];
+      for (let index = 0; index < areas.length; index++) {
+        titles.push(screen.getByRole("heading", { level: 2 }).textContent);
+        expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+      }
+      expect(new Set(titles).size).toBe(16);
     }
-    expect(screen.getByRole("heading", { name: de.guidedCaptureDoneTitle })).toBeVisible();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeVisible();
+    expect(screen.queryByText(/\d+ \/ 16/)).not.toBeInTheDocument();
     expect(createTask).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureRestart }));
-    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toBeVisible();
   });
 
   it("keeps unsaved text while moving between areas, and supports direct revisits", async () => {
@@ -128,9 +133,13 @@ describe("guided capture", () => {
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
     await userEvent.type(screen.getByLabelText(de.guidedCaptureInput), "Noch ein offener Gedanke");
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
-    await waitFor(() => expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.finances.title })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toHaveFocus());
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    await userEvent.type(screen.getByRole("textbox"), "Ein anderer Gedanke");
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
     expect(screen.getByLabelText(de.guidedCaptureInput)).toHaveValue("Noch ein offener Gedanke");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    expect(screen.getByRole("textbox")).toHaveValue("Ein anderer Gedanke");
     expect(createTask).not.toHaveBeenCalled();
   });
 
@@ -145,8 +154,8 @@ describe("guided capture", () => {
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
     fireEvent.pointerUp(card, { pointerId: 1 });
     expect(card).toHaveStyle({ transform: "translateX(0px)" });
-    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.finances.title })).toHaveFocus();
-    expect(input).toHaveValue("Noch ein Gedanke");
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toHaveFocus();
+    expect(input).toHaveValue("");
     swipeCard(card, 64);
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toHaveFocus();
     expect(input).toHaveValue("Noch ein Gedanke");
@@ -161,18 +170,17 @@ describe("guided capture", () => {
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
   });
 
-  it("does not wrap before the first area and follows Next to the finish after the last", () => {
+  it("does not wrap before the first card and swipes seamlessly into another cycle", () => {
     renderJourney();
     const card = screen.getByRole("region", { name: de.guidedCaptureAreas.home.title });
     swipeCard(card, 100);
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toBeVisible();
-    const areas = guidedCaptureCatalog(de).flatMap((group) => group.areas);
-    for (const area of areas) {
-      expect(screen.getByRole("heading", { name: area.title })).toBeVisible();
+    for (let index = 0; index < 16; index++) {
       swipeCard(card, -64);
     }
-    expect(screen.getByRole("heading", { name: de.guidedCaptureDoneTitle })).toHaveFocus();
-    expect(card).not.toBeVisible();
+    expect(screen.getByRole("heading", { level: 2 })).toHaveFocus();
+    expect(card).toBeVisible();
+    expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeEnabled();
   });
 
   it("leaves vertical scrolling alone, even if it later drifts horizontally", () => {
@@ -263,9 +271,9 @@ describe("guided capture", () => {
         { transform: "translateX(calc(100% + 24px))" },
         { transform: "translateX(0px)" },
       ]);
-      expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.finances.title })).toHaveFocus();
+      expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toHaveFocus();
       expect(screen.getAllByRole("textbox")).toEqual([input]);
-      expect(input).toHaveValue("Ein bleibender Gedanke");
+      expect(input).toHaveValue("");
       await act(async () => animations.forEach((animation) => animation.finish()));
       expect(container.querySelector(".guided-capture-outgoing")).toBeEmptyDOMElement();
 
@@ -278,16 +286,14 @@ describe("guided capture", () => {
       expect(createTask).not.toHaveBeenCalled();
     });
 
-    it("uses the same paging for picker jumps, Finish, and Restart", async () => {
+    it("uses the same paging for picker jumps and stable revisits", async () => {
       renderJourney();
       await userEvent.click(screen.getByText(de.guidedCaptureBrowse));
       await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureAreas.celebrations.title }));
       expect(animations[0]!.frames[1]!.transform).toBe("translateX(calc(-100% - 24px))");
-      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureFinish }));
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
       expect(animations[2]!.target).toHaveTextContent(de.guidedCaptureAreas.celebrations.title);
-      expect(animations[3]!.target).toHaveTextContent(de.guidedCaptureDoneTitle);
-      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureRestart }));
-      expect(animations[4]!.target).toHaveTextContent(de.guidedCaptureDoneTitle);
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureAreas.home.title }));
       expect(animations[5]!.frames[0]!.transform).toBe("translateX(calc(-100% - 24px))");
       expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toHaveFocus();
     });
@@ -322,7 +328,7 @@ describe("guided capture", () => {
     });
   });
 
-  it("retains a failed draft for retry and locks capture/navigation during saving", async () => {
+  it("retains a failed draft for retry while navigation stays available during saving", async () => {
     let rejectSave!: (error: Error) => void;
     createTask.mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject; }));
     renderJourney("/capture/guided?area=learning");
@@ -332,30 +338,27 @@ describe("guided capture", () => {
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
     expect(input).toBeDisabled();
     const navigation = screen.getByRole("navigation", { name: de.guidedCapture });
-    for (const button of within(navigation).getAllByRole("button")) expect(button).toBeDisabled();
+    expect(within(navigation).getByRole("button", { name: de.guidedCaptureNext })).toBeEnabled();
     const exit = screen.getByRole("link", { name: de.guidedCaptureExit });
-    expect(exit).toHaveAttribute("aria-disabled", "true");
-    expect(exit).toHaveAttribute("tabindex", "-1");
+    expect(exit).not.toHaveAttribute("aria-disabled");
     expect(screen.getByRole("button", { name: de.guidedCaptureSave })).toBeDisabled();
     const card = screen.getByRole("region", { name: de.guidedCaptureAreas.learning.title });
     swipeCard(card, -100);
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toBeVisible();
     swipeCard(card, 100);
     expect(card).toHaveStyle({ transform: "translateX(0px)" });
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
     for (const area of guidedCaptureCatalog(de).flatMap((group) => group.areas)) {
-      expect(screen.getByRole("button", { name: area.title })).toBeDisabled();
+      expect(screen.getByRole("button", { name: area.title })).toBeEnabled();
     }
-    await userEvent.click(exit);
-    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
     await act(async () => rejectSave(new Error("Save failed")));
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(input).toHaveValue("Etwas im Blick behalten");
     expect(input).not.toBeDisabled();
-    expect(exit).toHaveAttribute("aria-disabled", "false");
-    expect(screen.getByRole("button", { name: de.guidedCaptureBack })).toBeEnabled();
+    expect(exit).not.toHaveAttribute("aria-disabled");
     expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
-    await waitFor(() => expect(input).not.toBeInTheDocument());
+    await waitFor(() => expect(input).toHaveValue(""));
     expect(createTask).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("status")).toHaveTextContent(de.guidedCaptureSaved("Etwas im Blick behalten"));
   });
@@ -374,17 +377,18 @@ describe("guided capture", () => {
     expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
   });
 
-  it("also reveals household captures when returning from the finish screen", async () => {
+  it("treats the obsolete finish link as an ordinary deck entry", async () => {
     writeTodayScope("work");
     renderJourney("/capture/guided?area=done");
-    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureInbox }));
+    expect(screen.getByRole("textbox")).toBeVisible();
+    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureExit }));
     expect(readTodayScope()).toBe("all");
     expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
   });
 
-  it("shows position, not completion, when jumping straight to the last area", () => {
+  it("does not show a position or completion limit when linking to an area", () => {
     renderJourney("/capture/guided?area=celebrations");
-    expect(screen.getByText(de.guidedCapturePosition(16, 16))).toBeVisible();
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.celebrations.title })).toBeVisible();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: de.guidedCapture }).querySelectorAll("button")).toHaveLength(2);
   });
@@ -450,13 +454,13 @@ describe("guided capture", () => {
     renderJourney("/capture/guided?area=learning");
     await userEvent.type(screen.getByRole("textbox"), "Ein Gedanke");
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
-    expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeDisabled();
+    expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeEnabled();
     await act(async () => finishSave());
     expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
     expect(screen.getByRole("textbox")).toHaveValue("");
     expect(screen.getByRole("textbox")).toHaveFocus();
-    expect(screen.getByRole("button", { name: de.guidedCaptureBack })).toBeEnabled();
+    expect(screen.getByRole("button", { name: de.guidedCaptureBack })).toBeDisabled();
     expect(screen.getByRole("button", { name: de.guidedCaptureNext })).toBeEnabled();
-    expect(screen.getByRole("link", { name: de.guidedCaptureExit })).toHaveAttribute("aria-disabled", "false");
+    expect(screen.getByRole("link", { name: de.guidedCaptureExit })).not.toHaveAttribute("aria-disabled");
   });
 });

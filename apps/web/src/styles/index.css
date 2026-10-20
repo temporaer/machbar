@@ -252,12 +252,6 @@ a {
   gap: 8px;
 }
 
-.guided-capture-position {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-}
-
 .guided-capture-reflection {
   padding-bottom: 24px;
 }
