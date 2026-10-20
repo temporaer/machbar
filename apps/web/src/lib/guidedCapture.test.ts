@@ -149,7 +149,7 @@ describe("member-local reflection rotation", () => {
     const deck = nextReflectionCard(emptyReflectionDeck(), areas, () => 0);
     for (const patch of [
       { index: -1 }, { index: 999 }, { nextId: 0 },
-      { seen: ["unknown"] }, { seen: ["home", "home"] },
+      { seen: [] }, { seen: ["unknown"] }, { seen: ["family"] }, { seen: ["home", "home"] },
       { cards: [null] }, { cards: [{ ...deck.cards[0], areaId: "unknown" }] },
       { cards: [{ ...deck.cards[0], promptId: "removed" }] },
       { cards: [deck.cards[0], deck.cards[0]] },

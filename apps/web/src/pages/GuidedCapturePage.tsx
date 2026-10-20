@@ -35,7 +35,6 @@ function GuidedCaptureDeck({ memberId }: { memberId: number | null }) {
   const area = areas.find((item) => item.id === card.areaId)!;
   const prompt = area.prompts[card.promptId as keyof typeof area.prompts];
   const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const [savingCardId, setSavingCardId] = useState<number | null>(null);
   const [thoughts, setThoughts] = useState<{ id: number; title: string; areaId: string }[]>([]);
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -88,12 +87,6 @@ function GuidedCaptureDeck({ memberId }: { memberId: number | null }) {
   // Handle external area links, but not the URL updates made by our own paging.
   const requestedArea = params.get("area");
   const handledArea = useRef(requestedArea);
-  useEffect(() => {
-    if (requestedArea === handledArea.current) return;
-    handledArea.current = requestedArea;
-    if (requestedArea) setDeck((current) => visitReflectionArea(current, areas, requestedArea));
-  }, [requestedArea]);
-
   const goTo = (target: ReflectionDeck) => {
     if (target.cards[target.index]?.id === card.id) {
       headingRef.current?.focus();
@@ -123,6 +116,11 @@ function GuidedCaptureDeck({ memberId }: { memberId: number | null }) {
     setParams({ area: id }, { replace: true });
   };
   const protectedIds = Object.keys(drafts).map(Number).filter((id) => drafts[id]);
+  useEffect(() => {
+    if (requestedArea === handledArea.current) return;
+    handledArea.current = requestedArea;
+    if (requestedArea) goTo(visitReflectionArea(deck, areas, requestedArea, Math.random, protectedIds));
+  }, [requestedArea]);
   const next = () => goTo(nextReflectionCard(deck, areas, Math.random, protectedIds));
   const back = () => {
     if (deck.index > 0) goTo({ ...deck, index: deck.index - 1 });
@@ -146,7 +144,7 @@ function GuidedCaptureDeck({ memberId }: { memberId: number | null }) {
         <h1>{strings.guidedCapture}</h1>
         <Link to="/inbox" className="btn btn-sm"
           onClick={(event) => {
-            if (Object.entries(drafts).some(([id, draft]) => Number(id) !== savingCardId && draft.trim()) &&
+            if (Object.values(drafts).some((draft) => draft.trim()) &&
               !window.confirm(strings.guidedCaptureDiscardDrafts)) event.preventDefault();
             else showCapturedInbox();
           }}>{strings.guidedCaptureExit}</Link>
@@ -175,11 +173,15 @@ function GuidedCaptureDeck({ memberId }: { memberId: number | null }) {
           <CaptureForm
             mode="thought"
             autoFocus={false}
-            onSavingChange={(saving) => setSavingCardId(saving ? card.id : null)}
             thoughtDraft={{
               key: card.id,
               title: drafts[card.id] ?? "",
-              onChange: (title) => setDrafts((previous) => ({ ...previous, [card.id]: title })),
+              onChange: (title) => setDrafts((previous) => {
+                const next = { ...previous };
+                if (title) next[card.id] = title;
+                else delete next[card.id];
+                return next;
+              }),
             }}
             onCaptured={({ task }) => {
               setThoughts((previous) => [...previous, { id: task.id, title: task.title, areaId: area.id }]);

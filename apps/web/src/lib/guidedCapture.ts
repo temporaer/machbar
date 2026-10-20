@@ -148,6 +148,10 @@ export function readReflectionDeck(memberId: number | null, areas: readonly Deck
     if (!value.cards.every((card) => Number.isSafeInteger(card.id) && card.id > 0 && card.id < value.nextId &&
       areas.some((area) => area.id === card.areaId && Object.hasOwn(area.prompts, card.promptId))) ||
       new Set(value.cards.map((card) => card.id)).size !== value.cards.length) return emptyReflectionDeck();
+    const cycle = value.cards.slice(-value.seen.length);
+    if (!value.seen.length || !value.seen.every((id, index) => cycle[index]?.areaId === id)) {
+      return emptyReflectionDeck();
+    }
     const usedPrompts: Record<string, string[]> = {};
     for (const area of areas) {
       const used = value.usedPrompts[area.id];

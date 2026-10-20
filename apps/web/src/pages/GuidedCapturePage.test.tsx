@@ -19,7 +19,7 @@ vi.mock("../lib/api", () => ({
   },
 }));
 vi.mock("../lib/identity", () => ({
-  useIdentity: () => ({ currentMemberId: 1, members: [{ id: 1, name: "Mira" }] }),
+  useIdentity: () => ({ currentMemberId: member.id, members: [{ id: member.id, name: "Mira" }] }),
 }));
 vi.mock("../lib/refresh", () => ({
   useRefresh: () => ({ bump: vi.fn() }),
@@ -27,20 +27,24 @@ vi.mock("../lib/refresh", () => ({
 
 const createTask = vi.mocked(api.createTask);
 const de = getCatalog("de");
+const member = vi.hoisted(() => ({ id: 1 }));
 
 function renderJourney(entry = "/capture/guided", locale: "de" | "en" = "de") {
   localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  return render(
+  const tree = () => (
     <LocaleProvider>
       <MemoryRouter initialEntries={[entry]}>
         <Link to="/inbox">Bottom navigation</Link>
+        <Link to="/capture/guided?area=travel">Travel area link</Link>
         <Routes>
           <Route path="/capture/guided" element={<GuidedCapturePage />} />
           <Route path="/inbox" element={<h1>Inbox destination</h1>} />
         </Routes>
       </MemoryRouter>
-    </LocaleProvider>,
+    </LocaleProvider>
   );
+  const result = render(tree());
+  return { ...result, refresh: () => result.rerender(tree()) };
 }
 
 function swipeCard(target: HTMLElement, deltaX: number, deltaY = 0) {
@@ -52,6 +56,7 @@ function swipeCard(target: HTMLElement, deltaX: number, deltaY = 0) {
 describe("guided capture", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    member.id = 1;
     vi.spyOn(Math, "random").mockReturnValue(0);
     localStorage.clear();
     sessionStorage.clear();
@@ -141,6 +146,114 @@ describe("guided capture", () => {
     await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
     expect(screen.getByRole("textbox")).toHaveValue("Ein anderer Gedanke");
     expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it("keeps question/history stable on rerenders, Back/Next, picker revisits and repeated direct links", async () => {
+    renderJourney("/capture/guided?area=learning");
+    const firstQuestion = screen.getByText(de.guidedCaptureAreas.learning.prompts.recall);
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    const forwardQuestion = screen.getByText(de.guidedCaptureAreas.home.prompts.recall).textContent;
+    await userEvent.type(screen.getByRole("textbox"), "Ein Entwurf");
+    expect(JSON.parse(localStorage.getItem(reflectionDeckStorageKey(1))!).cards).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+    expect(screen.getByText(firstQuestion.textContent!)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    expect(screen.getByText(forwardQuestion!)).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("Ein Entwurf");
+    await userEvent.click(screen.getByText(de.guidedCaptureBrowse));
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureAreas.learning.title }));
+    expect(screen.getByText(firstQuestion.textContent!)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    expect(screen.getByRole("textbox")).toHaveValue("Ein Entwurf");
+    await userEvent.click(screen.getByRole("link", { name: "Travel area link" }));
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.travel.title })).toBeVisible();
+    await userEvent.click(screen.getByRole("link", { name: "Travel area link" }));
+    expect(JSON.parse(localStorage.getItem(reflectionDeckStorageKey(1))!).cards).toHaveLength(3);
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+    expect(screen.getByText(forwardQuestion!)).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("Ein Entwurf");
+  });
+
+  it("restores current and forward cards on reload, but never persists draft or captured text", async () => {
+    const journey = renderJourney("/capture/guided?area=learning");
+    await userEvent.type(screen.getByRole("textbox"), "Privater gespeicherter Gedanke");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
+    await waitFor(() => expect(screen.getByRole("textbox")).toHaveValue(""));
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    const question = screen.getByText(de.guidedCaptureAreas.home.prompts.recall).textContent!;
+    await userEvent.type(screen.getByRole("textbox"), "Privater ungespeicherter Gedanke");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+    const stored = localStorage.getItem(reflectionDeckStorageKey(1))!;
+    expect(stored).not.toContain("Privater");
+    journey.unmount();
+    renderJourney();
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.learning.title })).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.queryByRole("list", { name: de.guidedCaptureSavedThoughts })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    expect(screen.getByText(question)).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(JSON.parse(localStorage.getItem(reflectionDeckStorageKey(1))!).cards).toHaveLength(2);
+    expect(createTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears ephemeral drafts when the selected member changes without overwriting another member's deck", async () => {
+    const journey = renderJourney("/capture/guided?area=learning");
+    await userEvent.type(screen.getByRole("textbox"), "Nur für diesen Besuch");
+    const firstMemberDeck = localStorage.getItem(reflectionDeckStorageKey(1));
+    member.id = 2;
+    journey.refresh();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(localStorage.getItem(reflectionDeckStorageKey(1))).toBe(firstMemberDeck);
+    expect(localStorage.getItem(reflectionDeckStorageKey(2))).toBeTruthy();
+  });
+
+  it("does not move a draft to a new perspective when its area returns in another cycle", async () => {
+    renderJourney();
+    await userEvent.type(screen.getByRole("textbox"), "Gedanke zur ersten Frage");
+    for (let index = 0; index < 16; index++) {
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    }
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toBeVisible();
+    expect(screen.getByText(de.guidedCaptureAreas.home.prompts.ahead)).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    for (let index = 0; index < 16; index++) {
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+    }
+    expect(screen.getByText(de.guidedCaptureAreas.home.prompts.recall)).toBeVisible();
+    expect(screen.getByRole("textbox")).toHaveValue("Gedanke zur ersten Frage");
+  });
+
+  it("only asks before Exit when unsaved drafts would be lost", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderJourney();
+    await userEvent.type(screen.getByRole("textbox"), "Noch nicht festgehalten");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureExit }));
+    expect(confirm).toHaveBeenCalledWith(de.guidedCaptureDiscardDrafts);
+    expect(screen.getByRole("textbox")).toBeVisible();
+    confirm.mockReturnValue(true);
+    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureExit }));
+    expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
+  });
+
+  it("protects a pending capture on Exit until its save has succeeded", async () => {
+    let finishSave!: () => void;
+    createTask.mockImplementationOnce(() => new Promise((resolve) => {
+      finishSave = () => resolve(makeTask({ title: "Noch unterwegs" }));
+    }));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderJourney();
+    await userEvent.type(screen.getByRole("textbox"), "Noch unterwegs");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
+    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureExit }));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(screen.getByRole("textbox")).toHaveValue("Noch unterwegs");
+    await act(async () => finishSave());
+    await userEvent.click(screen.getByRole("link", { name: de.guidedCaptureExit }));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(screen.getByRole("heading", { name: "Inbox destination" })).toBeVisible();
+    expect(createTask).toHaveBeenCalledTimes(1);
   });
 
   it("follows the finger, swipes left/next and right/back, and preserves the draft", async () => {
@@ -361,6 +474,38 @@ describe("guided capture", () => {
     await waitFor(() => expect(input).toHaveValue(""));
     expect(createTask).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("status")).toHaveTextContent(de.guidedCaptureSaved("Etwas im Blick behalten"));
+  });
+
+  it.each(["resolve", "reject"] as const)("a save that %ss after navigation belongs only to its original card", async (outcome) => {
+    let settle!: () => void;
+    createTask.mockImplementationOnce((input) => new Promise((resolve, reject) => {
+      settle = () => outcome === "resolve"
+        ? resolve(makeTask({ title: input.title, status: "captured" }))
+        : reject(new Error("Save failed"));
+    }));
+    renderJourney("/capture/guided?area=learning");
+    await userEvent.type(screen.getByRole("textbox"), "Zur ursprünglichen Frage");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    await act(async () => settle());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: de.guidedCaptureSavedThoughts })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: de.guidedCaptureAreas.home.title })).toHaveFocus();
+    await userEvent.type(screen.getByRole("textbox"), "Ein neuer Entwurf");
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureBack }));
+    if (outcome === "resolve") {
+      expect(screen.getByRole("textbox")).toHaveValue("");
+      expect(screen.getByRole("list", { name: de.guidedCaptureSavedThoughts })).toHaveTextContent("Zur ursprünglichen Frage");
+    } else {
+      expect(screen.getByRole("textbox")).toHaveValue("Zur ursprünglichen Frage");
+      expect(screen.getByRole("alert")).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureSave }));
+      await waitFor(() => expect(screen.getByRole("textbox")).toHaveValue(""));
+      expect(createTask).toHaveBeenCalledTimes(2);
+    }
+    await userEvent.click(screen.getByRole("button", { name: de.guidedCaptureNext }));
+    expect(screen.getByRole("textbox")).toHaveValue("Ein neuer Entwurf");
   });
 
   it("falls back to the first area for an unknown link", () => {

@@ -88,22 +88,34 @@ the same transaction as its first child; **Als Projekt behandeln** is an
 optional branch through the existing guarded conversion. Unsupported
 conversions leave the original task and the whole step batch intact.
 
-**Gedankenreise**, available from Eingang and Mehr, offers sixteen optional life
-areas in five groups. Each area invites open reflection, including the invisible
-work of remembering and coordinating. Capture as many rough thoughts or wishes as
-you like, skip freely, or jump to any area. Every saved thought immediately enters
+**Gedankenreise**, available from Eingang and Mehr, is an open-ended deck of
+optional reflection questions over sixteen life areas in five thematic worlds.
+Each area offers different perspectives, including unfinished matters, future
+needs, personal wishes, and the invisible work of remembering and coordinating.
+These are curated prompts, not validated survey questions. Capture as many rough
+thoughts or wishes as you like, browse without writing, or jump to any area.
+Every saved thought immediately enters
 Eingang for ordinary clarification; leaving the journey does not remove it.
 Life areas are prompts, not tags or task attributes. Text stays literal (including
 date words), and remembering something does not automatically assign its execution
 to you. Ownership, planning, and structure can be decided later. Navigation keeps
-the current unsaved text while the journey is open; only saved entries survive exit.
+unsaved text with its original card, never moving it to another area. Drafts stay
+only in memory; Exit asks before discarding them. Only saved entries survive exit.
 Each reflection card foregrounds one question, with locally retained thought notes
-appearing after each save and a fresh focused input below. **Nächster Bereich**
-advances with or without a capture; Back and the grouped browser allow revisiting.
-The area number is a position, not a completion score. There are no completion
-requirements or rewards. Transitions respect reduced-motion preferences, and
-the card's own navigation is disabled during an in-flight save. Other app or
-browser navigation remains available; leaving loses local feedback, not a thought
+appearing after each save and a fresh focused input below. **Weiterstöbern**
+continues naturally with or without a capture, without a finish, session limit,
+progress indicator, or daily obligation. Areas are shuffled with balanced coverage
+and thematic mixing; repeated areas usually offer another question. Back/Next
+keeps previously visited questions stable. The grouped browser reuses visited
+cards or appends unseen areas at the deck frontier; Back follows deck order.
+The member's recent cards, current position, and question rotation are remembered
+on this device, but no thought text is stored locally. Reload restores the recent
+deck, not unsaved drafts or local saved-thought notes.
+There are no completion requirements, streaks, points, or rewards. Transitions
+respect reduced-motion preferences. Browsing and Exit remain available during
+an in-flight save; the submitted input is locked until it resolves. Failed saves
+retain the original card's draft for retry. Other app or browser navigation also
+remains available; leaving loses local feedback, not a thought
 already saved in Eingang. A route change does not cancel the submitted save.
 
 Converting a task into a project keeps its direct parent (project or task),
