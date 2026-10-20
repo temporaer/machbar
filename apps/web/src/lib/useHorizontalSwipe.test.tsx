@@ -171,6 +171,18 @@ describe("useHorizontalSwipe", () => {
     expect(primary).toHaveBeenCalledOnce();
   });
 
+  it("accepts a fresh pointer sequence after an uncaptured press ends outside the surface", () => {
+    const primary = vi.fn();
+    const { getByTestId } = render(<Harness onPrimary={primary} />);
+    const surface = getByTestId("surface");
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerUp(document.body, { pointerId: 1 });
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 2 });
+    fireEvent.pointerMove(surface, { clientX: 80, pointerId: 2 });
+    fireEvent.pointerUp(surface, { pointerId: 2 });
+    expect(primary).toHaveBeenCalledOnce();
+  });
+
   it("resets without acting on pointer cancellation and ignores disabled gestures", () => {
     const primary = vi.fn();
     const secondary = vi.fn();

@@ -75,7 +75,7 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
     // A fresh pointer sequence is an unrelated interaction, so it must never
     // inherit click suppression from an earlier drag.
     suppressNextClick.current = false;
-    if (optionsRef.current.disabled || gesture.current.active || !event.isPrimary || event.button !== 0) return;
+    if (optionsRef.current.disabled || !event.isPrimary || event.button !== 0) return;
     if (optionsRef.current.ignoreInteractive && event.target instanceof Element &&
       event.target.closest("input, textarea, select, button, a, label, summary, [contenteditable]:not([contenteditable='false']), [role='button'], [role='link'], [role='textbox'], [tabindex]:not([tabindex='-1'])")) return;
     gesture.current = {
