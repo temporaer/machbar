@@ -83,8 +83,22 @@ describe("useHorizontalSwipe", () => {
     expect(deepPrimary).not.toHaveBeenCalled();
     expect(surface).toHaveAttribute("data-drag-x", "0");
 
-    fireEvent.click(button);
-    fireEvent.click(button);
+    fireEvent.click(button, { detail: 1 });
+    fireEvent.click(button, { detail: 1 });
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("never suppresses keyboard activation after a swipe without a trailing pointer click", () => {
+    const click = vi.fn();
+    const { getByTestId, getByRole } = render(<Harness onClick={click} />);
+    const surface = getByTestId("surface");
+    const button = getByRole("button");
+    fireEvent.pointerDown(surface, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(surface, { clientX: 20, pointerId: 1 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+    fireEvent.click(button, { detail: 0 });
+    expect(click).toHaveBeenCalledOnce();
+    fireEvent.click(button, { detail: 1 });
     expect(click).toHaveBeenCalledOnce();
   });
 
@@ -115,6 +129,72 @@ describe("useHorizontalSwipe", () => {
     fireEvent.pointerUp(surface, { clientX: 20, pointerId: 1 });
 
     expect(secondary).toHaveBeenCalledOnce();
+  });
+
+  it("locks out vertical gestures without capturing or suppressing clicks", () => {
+    const primary = vi.fn();
+    const click = vi.fn();
+    const capture = vi.fn();
+    const { getByTestId, getByRole } = render(<Harness onPrimary={primary} onClick={click} />);
+    const surface = getByTestId("surface");
+    Object.defineProperty(surface, "setPointerCapture", { value: capture });
+    fireEvent.pointerDown(surface, { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(surface, { clientX: 5, clientY: 20, pointerId: 1 });
+    fireEvent.pointerMove(surface, { clientX: 100, clientY: 40, pointerId: 1 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+    fireEvent.click(getByRole("button"));
+    expect(surface).toHaveAttribute("data-drag-x", "0");
+    expect(capture).not.toHaveBeenCalled();
+    expect(primary).not.toHaveBeenCalled();
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("cancels an in-flight drag when disabled and does not resume it when re-enabled", () => {
+    const primary = vi.fn();
+    const { getByTestId, rerender } = render(<Harness onPrimary={primary} />);
+    const surface = getByTestId("surface");
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(surface, { clientX: 80, pointerId: 1 });
+    expect(surface).toHaveAttribute("data-drag-x", "80");
+    rerender(<Harness disabled onPrimary={primary} />);
+    expect(surface).toHaveAttribute("data-drag-x", "0");
+    rerender(<Harness onPrimary={primary} />);
+    fireEvent.pointerMove(surface, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+    expect(primary).not.toHaveBeenCalled();
+  });
+
+  it("ignores secondary pointers and non-left mouse buttons", () => {
+    const primary = vi.fn();
+    const { getByTestId } = render(<Harness onPrimary={primary} />);
+    const surface = getByTestId("surface");
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 2, isPrimary: false });
+    fireEvent.pointerMove(surface, { clientX: 100, pointerId: 2 });
+    fireEvent.pointerUp(surface, { pointerId: 2 });
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 3, button: 2 });
+    fireEvent.pointerMove(surface, { clientX: 100, pointerId: 3 });
+    fireEvent.pointerUp(surface, { pointerId: 3 });
+    expect(primary).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(surface, { clientX: 100, pointerId: 2 });
+    fireEvent.pointerUp(surface, { pointerId: 2 });
+    expect(surface).toHaveAttribute("data-drag-x", "0");
+    fireEvent.pointerMove(surface, { clientX: 80, pointerId: 1 });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+    expect(primary).toHaveBeenCalledOnce();
+  });
+
+  it("accepts a fresh pointer sequence after an uncaptured press ends outside the surface", () => {
+    const primary = vi.fn();
+    const { getByTestId } = render(<Harness onPrimary={primary} />);
+    const surface = getByTestId("surface");
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerUp(document.body, { pointerId: 1 });
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 2 });
+    fireEvent.pointerMove(surface, { clientX: 80, pointerId: 2 });
+    fireEvent.pointerUp(surface, { pointerId: 2 });
+    expect(primary).toHaveBeenCalledOnce();
   });
 
   it("resets without acting on pointer cancellation and ignores disabled gestures", () => {

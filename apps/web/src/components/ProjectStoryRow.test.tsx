@@ -1096,6 +1096,59 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
+  it.each([-64, -63, 63, 64])("preserves lifecycle/command rail thresholds for a %ipx swipe starting on the title button", async (distance) => {
+    const story = makeProject({ status: "active", ownerMemberId: 1 });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText(story.title);
+    const main = container.querySelector(".story-row-main") as HTMLElement;
+    fireEvent.pointerDown(main, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(main, { clientX: distance, pointerId: 1 });
+    fireEvent.pointerUp(main, { pointerId: 1 });
+    expect(Boolean(container.querySelector(".story-row-lifecycle"))).toBe(distance >= 64);
+    expect(Boolean(container.querySelector(".work-item-command-rail"))).toBe(distance <= -64);
+    expect(mockedApi.completeProject).not.toHaveBeenCalled();
+  });
+
+  it("does not capture vertical scrolling or swallow the following title click", async () => {
+    const story = makeProject({ id: 71, status: "active", ownerMemberId: 1 });
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    await screen.findByText(story.title);
+    const content = container.querySelector(".story-row-content") as HTMLElement;
+    const main = container.querySelector(".story-row-main") as HTMLElement;
+    const capture = vi.fn();
+    Object.defineProperty(content, "setPointerCapture", { value: capture });
+    fireEvent.pointerDown(main, { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(main, { clientX: 5, clientY: 30, pointerId: 1 });
+    fireEvent.pointerMove(main, { clientX: -100, clientY: 40, pointerId: 1 });
+    fireEvent.pointerUp(main, { pointerId: 1 });
+    expect(capture).not.toHaveBeenCalled();
+    expect(content.style.transform).toBe("");
+    expect(container.querySelector(".story-row-lifecycle, .work-item-command-rail")).toBeNull();
+    fireEvent.click(main);
+    expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 71");
+  });
+
+  it("cancels an active drag on pending writes and cannot open either rail while disabled", async () => {
+    const story = makeProject({ status: "active", ownerMemberId: 1 });
+    let finish!: () => void;
+    mockedApi.completeProject.mockImplementationOnce(() => new Promise((resolve) => {
+      finish = () => resolve({ ...story, status: "completed" });
+    }));
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText(story.title);
+    const content = container.querySelector(".story-row-content") as HTMLElement;
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: -100, pointerId: 1 });
+    fireEvent.click(container.querySelector(".story-row-primary")!);
+    expect(content.style.transform).toBe("");
+    fireEvent.pointerUp(content, { pointerId: 1 });
+    swipe(container, -64);
+    swipe(container, 64);
+    expect(container.querySelector(".story-row-lifecycle, .work-item-command-rail")).toBeNull();
+    expect(mockedApi.completeProject).toHaveBeenCalledOnce();
+    await act(async () => finish());
+  });
+
   it.each<[ProjectStatus, string, string]>([
     ["backlog", "Später / noch nicht aktiv", "Aktiv machen"],
     ["active", "Aktiv", "Abschließen"],
@@ -1200,7 +1253,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
 
     // Swiping the row must not open the detail page.
     swipe(container, 100);
-    fireEvent.click(mainButton);
+    fireEvent.click(mainButton, { detail: 1 });
     await act(async () => {
       await flushMicrotasks();
     });

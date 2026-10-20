@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   MouseEventHandler,
   PointerEventHandler,
@@ -17,6 +17,7 @@ export const DEEP_ACTION_THRESHOLD = 128;
 
 export interface HorizontalSwipeOptions {
   disabled?: boolean;
+  ignoreInteractive?: boolean;
   onPrimary: () => void;
   onSecondary: () => void;
   onDeepPrimary?: () => void;
@@ -32,7 +33,7 @@ export interface HorizontalSwipeHandlers<T extends HTMLElement> {
 }
 
 /**
- * Headless horizontal gesture state shared by swipeable rows.
+ * Headless horizontal gesture state shared by swipeable rows and cards.
  *
  * Row-specific actions, presentation and labels deliberately remain with the
  * caller.
@@ -46,6 +47,8 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
   const gesture = useRef({
     active: false,
     startX: 0,
+    startY: 0,
+    pointerId: 0,
     realDrag: false,
     captured: false,
     dragX: 0,
@@ -64,14 +67,22 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
     reset();
   }, [reset]);
 
+  useEffect(() => {
+    if (options.disabled) reset();
+  }, [options.disabled, reset]);
+
   const onPointerDown = useCallback<PointerEventHandler<T>>((event) => {
     // A fresh pointer sequence is an unrelated interaction, so it must never
     // inherit click suppression from an earlier drag.
     suppressNextClick.current = false;
-    if (optionsRef.current.disabled) return;
+    if (optionsRef.current.disabled || !event.isPrimary || event.button !== 0) return;
+    if (optionsRef.current.ignoreInteractive && event.target instanceof Element &&
+      event.target.closest("input, textarea, select, button, a, label, summary, [contenteditable]:not([contenteditable='false']), [role='button'], [role='link'], [role='textbox'], [tabindex]:not([tabindex='-1'])")) return;
     gesture.current = {
       active: true,
       startX: event.clientX,
+      startY: event.clientY,
+      pointerId: event.pointerId,
       realDrag: false,
       captured: false,
       dragX: 0,
@@ -80,10 +91,20 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
 
   const onPointerMove = useCallback<PointerEventHandler<T>>((event) => {
     const current = gesture.current;
-    if (!current.active) return;
+    if (!current.active || current.pointerId !== event.pointerId) return;
+    if (optionsRef.current.disabled) {
+      reset();
+      return;
+    }
 
     const delta = event.clientX - current.startX;
-    if (!current.realDrag && Math.abs(delta) > DRAG_SLOP) {
+    if (!current.realDrag) {
+      const deltaY = event.clientY - current.startY;
+      if (Math.max(Math.abs(delta), Math.abs(deltaY)) <= DRAG_SLOP) return;
+      if (Math.abs(deltaY) >= Math.abs(delta)) {
+        reset();
+        return;
+      }
       current.realDrag = true;
       optionsRef.current.onRealDrag?.();
     }
@@ -96,15 +117,16 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
 
     current.dragX = Math.max(-MAX_DRAG_X, Math.min(MAX_DRAG_X, delta));
     setDragX(current.dragX);
-  }, []);
+  }, [reset]);
 
-  const onPointerUp = useCallback<PointerEventHandler<T>>(() => {
+  const onPointerUp = useCallback<PointerEventHandler<T>>((event) => {
     const current = gesture.current;
-    if (!current.active) return;
+    if (!current.active || current.pointerId !== event.pointerId) return;
 
     const completedDragX = current.dragX;
     suppressNextClick.current = current.realDrag;
     reset();
+    if (optionsRef.current.disabled) return;
     if (completedDragX >= ACTION_THRESHOLD) {
       if (completedDragX >= DEEP_ACTION_THRESHOLD && optionsRef.current.onDeepPrimary) {
         optionsRef.current.onDeepPrimary();
@@ -117,7 +139,7 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
   }, [reset]);
 
   const onClickCapture = useCallback<MouseEventHandler<T>>((event) => {
-    if (!suppressNextClick.current) return;
+    if (!suppressNextClick.current || event.detail === 0) return;
     suppressNextClick.current = false;
     event.preventDefault();
     event.stopPropagation();
