@@ -120,7 +120,13 @@ export function visitReflectionArea(
 ): ReflectionDeck {
   if (!areas.some((area) => area.id === areaId)) return deck;
   if (deck.cards[deck.index]?.areaId === areaId) return deck;
-  const visited = deck.cards.findIndex((card) => card.areaId === areaId);
+  let visited = -1;
+  for (let index = deck.cards.length - 1; index >= 0; index--) {
+    if (deck.cards[index]?.areaId === areaId) {
+      visited = index;
+      break;
+    }
+  }
   if (visited >= 0) return { ...deck, index: visited };
   const target = areas.find((area) => area.id === areaId)!;
   // An area from an older, evicted cycle is not yet visited in this cycle.

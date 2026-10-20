@@ -97,6 +97,30 @@ describe("balanced reflection deck", () => {
     expect(new Set(deck.cards.map((card) => card.areaId)).size).toBe(16);
   });
 
+  it("revisits the latest retained card for an area and continues from there", () => {
+    let deck = emptyReflectionDeck();
+    const random = seededRandom(2026);
+    for (let index = 0; index < 3 * areas.length; index++) {
+      deck = nextReflectionCard(deck, areas, random);
+    }
+
+    const areaId = "family";
+    const occurrences = deck.cards.flatMap((card, index) =>
+      card.areaId === areaId ? [index] : [],
+    );
+    const latestIndex = occurrences.at(-1)!;
+    expect(occurrences).toHaveLength(3);
+    expect(latestIndex).toBeLessThan(deck.cards.length - 1);
+
+    const revisited = visitReflectionArea(deck, areas, areaId);
+    expect(revisited.index).toBe(latestIndex);
+    expect(revisited.cards[revisited.index]).toEqual(deck.cards[latestIndex]);
+
+    const next = nextReflectionCard(revisited, areas);
+    expect(next.index).toBe(latestIndex + 1);
+    expect(next.cards[next.index]).toEqual(deck.cards[latestIndex + 1]);
+  });
+
   it("keeps draft-bearing cards reachable while bounding ordinary history", () => {
     let deck = nextReflectionCard(emptyReflectionDeck(), areas, () => 0);
     const first = deck.cards[0]!;
