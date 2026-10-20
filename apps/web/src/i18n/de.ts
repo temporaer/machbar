@@ -889,6 +889,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   stepParentRevisionMissing: "Die Aufgabe muss vor dem Speichern erneut geladen werden.",
   removeStep: "Schritt entfernen",
   confirmDone: "Fertig",
+  chooseSharedTaskOwner: "Gemeinsam – Zuständigkeit wählen",
+  chooseUnassignedProjectDriver: "Noch nicht zugeordnet – Verantwortung wählen",
   unknownMember: "Unbekannte Person",
   ownerInheritFromProject: (owner: string) => `Vom Projekt übernehmen: ${owner}`,
   ownerInheritFromParent: (owner: string) => `Von Aufgabe übernehmen: ${owner}`,

@@ -110,6 +110,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const busy = isPending(story.id);
 
   const driver = story.ownerMemberId ? members.find((m) => m.id === story.ownerMemberId) : null;
+  const showDriverAssignment = story.ownerMemberId !== null || story.status === "backlog";
+  const driverLabel = story.ownerMemberId === null ? strings.chooseUnassignedProjectDriver : `${strings.assignDriver}: ${driver?.name ?? strings.unknownMember}`;
   const criteria = story.acceptanceCriteria ?? [];
   const criteriaChecked = criteria.filter((c) => c.checked).length;
   const dueLabel = formatDate(story.dueDate, locale);
@@ -246,7 +248,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
 
   return (
     <li
-      className={`story-row story-row-accent-${accent}${variant === "quiet" ? " story-row-quiet" : ""}`}
+      className={`story-row story-row-accent-${accent}${variant === "quiet" ? " story-row-quiet" : variant === "compact" ? " story-row-compact" : ""}`}
       style={{ listStyle: "none" }}
       data-workitem-id={story.id}
       data-workitem-role="story"
@@ -262,7 +264,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         coachAnimate={swipeCoach.animate}
       />
       <div
-        className={`story-row-content${driver ? " has-driver" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
+        className={`story-row-content${showDriverAssignment ? " has-driver" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
         onPointerDown={(event) => {
           if (swipeCoach.active && event.pointerType === "touch") {
@@ -273,7 +275,9 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         onPointerMove={swipe.handlers.onPointerMove}
         onPointerUp={swipe.handlers.onPointerUp}
         onPointerCancel={swipe.handlers.onPointerCancel}
-        onClickCapture={swipe.handlers.onClickCapture}
+        onClickCapture={event => {
+          if (!(event.target as Element).closest(".story-row-driver-avatar")) swipe.handlers.onClickCapture(event);
+        }}
       >
         <button
           type="button"
@@ -408,16 +412,17 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
             <span>{projectRevisitLabel}</span>
           </button>
         ) : null}
-        {driver ? (
+        {showDriverAssignment ? (
           <button
             type="button"
             className="story-row-driver-avatar"
-            aria-label={`${strings.assignDriver}: ${driver.name}`}
-            title={driver.name}
+            aria-label={driverLabel}
+            title={driver?.name ?? driverLabel}
             disabled={busy}
-            onClick={() => dispatch({ type: "story.assignDriver", story })}
+            onPointerDown={event => event.stopPropagation()}
+            onClick={event => { event.stopPropagation(); dispatch({ type: "story.assignDriver", story }); }}
           >
-            <MemberAvatar member={driver} size="sm" />
+            <MemberAvatar member={driver ?? null} placeholder={story.ownerMemberId === null ? "unassigned" : undefined} size="sm" />
           </button>
         ) : null}
         {isActiveWaiting ? (

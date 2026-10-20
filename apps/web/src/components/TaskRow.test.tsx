@@ -831,12 +831,51 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("does not render a clickable owner avatar for a task with no effective owner", async () => {
-    const task = makeTask({ id: 37, title: "Ohne Zuständigkeit", status: "actionable" });
+  it.each([1, 2])("assigns a shared task to member %s through the existing owner picker", async ownerMemberId => {
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Alex" })]);
+    const task = makeTask({ id: 37, title: "Ohne Zuständigkeit", status: "actionable", effectiveOwnerId: null });
     renderOutlineWithDetail(task);
-    await screen.findByText("Ohne Zuständigkeit");
+    const button = await screen.findByRole("button", { name: "Gemeinsam – Zuständigkeit wählen" });
+    expect(button.querySelector(".avatar-placeholder")).toBeInTheDocument();
+    expect(button.closest(".task-row-content")).toHaveClass("has-owner");
+    // A prior incomplete swipe must not swallow a fresh assignment click.
+    const row = button.closest(".task-row-content")!;
+    fireEvent.pointerDown(row, { pointerType: "touch", clientX: 0, clientY: 40 });
+    fireEvent.pointerMove(row, { pointerType: "touch", clientX: 30, clientY: 40 });
+    fireEvent.pointerUp(row, { pointerType: "touch", clientX: 30, clientY: 40 });
+    fireEvent.pointerDown(button, { pointerType: "touch", clientX: 200, clientY: 40 });
+    fireEvent.pointerMove(button, { pointerType: "touch", clientX: 320, clientY: 40 });
+    fireEvent.pointerUp(button, { pointerType: "touch" });
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    button.focus();
+    await userEvent.keyboard("{Enter}");
+    const group = await screen.findByRole("group", { name: "Zuständig" });
+    expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
+    await userEvent.click(within(group).getByRole("button", { name: ownerMemberId === 1 ? "Mira" : "Alex" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      ownerMemberId, ownerInheritanceMode: "explicit", expectedRevision: task.revision,
+    }));
+  });
 
-    expect(screen.queryByRole("button", { name: /^Zuweisen:/ })).not.toBeInTheDocument();
+  it("keeps unknown effective owners distinct from shared ownership", async () => {
+    renderOutlineWithDetail(makeTask({ id: 38, title: "Unknown owner", effectiveOwnerId: 999 }));
+    const button = await screen.findByRole("button", { name: "Zuweisen: Unbekannte Person" });
+    expect(button).toHaveTextContent("?");
+    expect(screen.queryByRole("button", { name: "Gemeinsam – Zuständigkeit wählen" })).not.toBeInTheDocument();
+  });
+
+  it("retains the assignment affordance in compact descendants but not reference rows", async () => {
+    const reference = makeTask({ id: 40, title: "Material", kind: "reference", effectiveOwnerId: 1 });
+    const child = makeTask({ id: 39, title: "Compact shared", effectiveOwnerId: null });
+    const parent = makeTask({ id: 38, title: "Parent", children: [child] });
+    const { container } = renderWithProviders(<TaskOutline tasks={[parent, reference]} compactDescendants emptyMessage="Empty" />);
+    await screen.findByText("Compact shared");
+    const compact = container.querySelector(".task-row-content.compact")!;
+    expect(within(compact as HTMLElement).getByRole("button", { name: "Gemeinsam – Zuständigkeit wählen" })).toBeInTheDocument();
+    const refRow = screen.getByText("Material").closest(".task-row-content")!;
+    expect(refRow.querySelector(".task-row-owner-avatar")).toBeNull();
+    expect(refRow).not.toHaveClass("has-owner");
   });
 
   it("can make an inherited effective owner explicit from the owner avatar without changing the person", async () => {

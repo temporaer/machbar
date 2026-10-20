@@ -3489,8 +3489,12 @@ details[open] > .disclosure-summary::after {
 }
 
 .task-row-content.has-owner {
-  min-height: 76px;
+  min-height: 90px;
 }
+
+.task-row-content.has-owner .task-row-main-wrap { padding-right: 18px; }
+.task-row-content.compact .task-row-main-wrap { padding-right: 0; }
+.task-row-content.compact .task-row-owner-avatar { position: static; align-self: center; flex-shrink: 0; }
 
 .task-row-content.compact {
   padding: 6px 8px;
@@ -5482,3 +5486,13 @@ details[open] > .disclosure-summary::after {
 .goal-assessment-head {
   justify-content: space-between;
 }
+
+/* Assignment controls retain the avatar footprint and a comfortable tap target. */
+.task-row-owner-avatar, .story-row-driver-avatar {
+  width: 44px; height: 44px; display: grid; place-items: center;
+}
+.task-row-owner-avatar:focus-visible, .story-row-driver-avatar:focus-visible {
+  outline: 2px solid var(--color-primary); outline-offset: 2px;
+}
+.avatar-placeholder { color: var(--color-text-muted); background: var(--color-surface-alt); border: 1px dashed var(--color-border); }
+.avatar-placeholder svg { width: 75%; height: 75%; }

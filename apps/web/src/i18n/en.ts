@@ -923,6 +923,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   stepParentRevisionMissing: "Reload the task before saving these steps.",
   removeStep: "Remove step",
   confirmDone: "Done",
+  chooseSharedTaskOwner: "Shared – choose an owner",
+  chooseUnassignedProjectDriver: "Unassigned – choose a project lead",
   unknownMember: "Unknown person",
   ownerInheritFromProject: (owner: string) => `Use project owner: ${owner}`,
   ownerInheritFromParent: (owner: string) => `Use parent task owner: ${owner}`,
