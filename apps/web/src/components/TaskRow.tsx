@@ -9,8 +9,6 @@ import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useInteractionScope } from "../lib/interactionScope";
-import { useSwipeSettings } from "../lib/swipeSettings";
-import type { PrimarySwipeAction } from "../lib/swipeSettings";
 import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
 import type { OrganizeDirection } from "../lib/useOutlineOrganize";
 import { useNextActionBadge } from "../lib/nextActionBadge";
@@ -73,20 +71,11 @@ export interface TaskRowProps {
 /** Short, status-like label for the primary-swipe reveal background. */
 function primaryActionBgLabel(
   task: Task,
-  action: PrimarySwipeAction,
   strings: Strings,
 ): string {
   if (task.status === "done" || task.status === "cancelled") return strings.reopen;
   if (task.status === "captured") return strings.actionable;
-  switch (action) {
-    case "someday":
-      return strings.someday;
-    case "cancel":
-      return strings.cancelled;
-    case "complete":
-    default:
-      return strings.done;
-  }
+  return strings.done;
 }
 
 /**
@@ -134,7 +123,6 @@ export function TaskRow({
   const swallowLongPressClick = useRef(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { members, currentMemberId } = useIdentity();
-  const { primarySwipeAction } = useSwipeSettings();
   // Structural editing (drag handle, keyboard moves, drop preview) is
   // provided by the surrounding `TaskOutline`; it stays absent — and every
   // handle with it — in views whose row order carries no hierarchy meaning.
@@ -293,7 +281,7 @@ export function TaskRow({
   const isDeepDrag = dragX >= DEEP_ACTION_THRESHOLD;
   const primarySwipeLabel = isDeepDrag
     ? strings.status
-    : primaryActionBgLabel(task, primarySwipeAction, strings);
+    : primaryActionBgLabel(task, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
     !isReference && !busy && !isRetained && !chipsOpen,

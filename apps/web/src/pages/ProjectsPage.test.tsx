@@ -120,17 +120,14 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     ]);
   });
 
-  it("shows backlog projects in a collapsed later section and reveals the page purpose on demand", async () => {
+  it("shows backlog projects in a collapsed later section without page help", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
 
     const hint =
       "Projekte halten ein gewünschtes Ergebnis und den Weg dorthin zusammen. Aktiv sind sie nur mit einem nächsten Schritt oder bewusstem Warten.";
     expect(screen.queryByText(hint)).not.toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
-    );
-    expect(screen.getByText(hint)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hinweise zu dieser Seite/ })).not.toBeInTheDocument();
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
     const backlogSection = container.querySelector<HTMLDetailsElement>(
       '[data-project-section="backlog"]',

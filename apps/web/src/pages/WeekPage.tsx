@@ -506,7 +506,6 @@ export function WeekPage() {
               </button>
             </div>
           }
-          hints={[{ text: strings.weekPlanningHint }]}
         />
         <p className="text-muted week-range">{formattedRange}</p>
         <Link to="/today" className="link-plain week-back-link">
@@ -517,7 +516,8 @@ export function WeekPage() {
         {mutationError ? <p className="capture-error" role="alert">{mutationError}</p> : null}
         {currentAgenda ? (
           <>
-            <div className="week-grid" role="list">
+            <p className="text-muted" id="week-gesture-hint">{strings.weekPlanningHint}</p>
+            <div className="week-grid" role="list" aria-describedby="week-gesture-hint">
               {currentAgenda.days.map((day) => (
                 <WeekDropZone
                   key={day.date}

@@ -2050,3 +2050,27 @@ Callers must pass asynchronous save/mutation state explicitly through
 Task/project notes and Capture lock input during submission; quick append
 combines its own pending state with the caller lock. Intake content edits are
 synchronous draft edits inside a modal, with no asynchronous field save.
+
+### Navigation chrome (#238)
+
+`PageHeader` renders a heading and supplied actions. Generic page information
+buttons, expandable page explanations, and their catalog entries are removed;
+contextual warnings, privacy disclosures, validation, and gesture/shortcut
+instructions remain with the relevant interaction.
+
+Today exposes cleanup (when available), week planning, the existing agenda scope
+toggle, and a localized search icon, in that order. Header actions retain 44px
+touch targets and wrap below the heading on narrow screens or enlarged text.
+Search links to the existing `/more/all` inventory; direct links still work.
+`SearchFilterBar` keeps the text field first and keyboard reachable without
+programmatic focus, so opening the inventory does not summon a mobile keyboard.
+The redundant inventory link is removed from More; other sections keep their
+existing names and grouping.
+
+Task right-swipe dispatches `task.primaryAction`: captured tasks retain their
+clarification step, open tasks use guarded completion, and done/cancelled tasks
+reopen. Pointer, keyboard, and explicit buttons share the existing commands and
+completion guards. The swipe settings context, options, and storage reader/writer
+are removed; previously stored preferences are ignored without migration.
+Left-swipe contextual rails, deep-swipe lifecycle rails, project/refinement
+semantics, and mobile drag thresholds are unchanged.

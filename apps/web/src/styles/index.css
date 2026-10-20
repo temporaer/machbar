@@ -879,6 +879,18 @@ a {
   gap: 8px;
 }
 
+/* Keep all four Today actions at their 44px touch size, even with longer
+ * localized headings or larger text. The action row may move below the title. */
+.today-page > .page-header {
+  flex-wrap: wrap;
+}
+
+.today-page > .page-header > .page-header-actions {
+  margin-left: auto;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 .project-task-header-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -897,6 +909,11 @@ a {
   cursor: pointer;
 }
 
+.page-header-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+  outline-offset: 2px;
+}
+
 .page-header-button:hover,
 .page-header-button:focus-visible {
   border-color: color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
@@ -909,8 +926,7 @@ a {
   text-decoration: none;
 }
 
-.page-header-button[aria-pressed="true"],
-.page-info-button[aria-expanded="true"] {
+.page-header-button[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border));
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
   color: var(--color-primary);
@@ -926,39 +942,6 @@ a {
 .page-header-button svg {
   width: 22px;
   height: 22px;
-}
-
-.page-info-button {
-  font: 700 0.9rem/1 Georgia, serif;
-}
-
-.page-info-button:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
-  outline-offset: 2px;
-}
-
-.page-info-callout {
-  display: grid;
-  gap: 10px;
-  margin: -4px 4px 16px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 14%, var(--color-border));
-  border-left: 3px solid color-mix(in srgb, var(--color-primary) 52%, var(--color-border));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.page-info-hint {
-  display: grid;
-  gap: 2px;
-}
-
-.page-info-hint strong {
-  color: var(--color-text);
-  font-size: 0.78rem;
 }
 
 .page-subtitle {

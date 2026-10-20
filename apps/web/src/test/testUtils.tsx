@@ -6,7 +6,6 @@ import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
-import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { InteractionScopeProvider } from "../lib/interactionScope";
@@ -31,21 +30,19 @@ function AllProviders({
           <MemoryRouter {...(initialEntries ? { initialEntries } : {})}>
             <IdentityProvider>
               <RefreshProvider>
-                <SwipeSettingsProvider>
-                    <SwipeCoachProvider>
-                      <TaskActionsProvider>
-                        <ProjectActionsProvider>
-                          <InteractionScopeProvider>
-                            <TaskDetailProvider>
-                              <TaskWorkflowProvider>
-                                <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
-                              </TaskWorkflowProvider>
-                            </TaskDetailProvider>
-                          </InteractionScopeProvider>
-                        </ProjectActionsProvider>
-                      </TaskActionsProvider>
-                    </SwipeCoachProvider>
-                </SwipeSettingsProvider>
+                  <SwipeCoachProvider>
+                    <TaskActionsProvider>
+                      <ProjectActionsProvider>
+                        <InteractionScopeProvider>
+                          <TaskDetailProvider>
+                            <TaskWorkflowProvider>
+                              <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
+                            </TaskWorkflowProvider>
+                          </TaskDetailProvider>
+                        </InteractionScopeProvider>
+                      </ProjectActionsProvider>
+                    </TaskActionsProvider>
+                  </SwipeCoachProvider>
               </RefreshProvider>
             </IdentityProvider>
           </MemoryRouter>

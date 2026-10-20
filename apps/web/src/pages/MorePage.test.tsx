@@ -141,17 +141,15 @@ describe("MorePage", () => {
     );
   });
 
-  it("shows the consolidated Review count and exhaustive inventory", async () => {
+  it("shows the consolidated Review count without the redundant inventory link", async () => {
     renderWithProviders(<MorePage />);
 
     expect(await screen.findByRole("link", { name: /Review.*7/ })).toHaveAttribute(
       "href",
       "/more/review",
     );
-    expect(screen.getByRole("link", { name: "Alles" })).toHaveAttribute(
-      "href",
-      "/more/all",
-    );
+    expect(screen.queryByRole("link", { name: "Alles" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Wischgeste" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Festgefahren|Backlog prüfen|Arbeit klären/ }))
       .not.toBeInTheDocument();
   });

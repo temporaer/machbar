@@ -8,7 +8,6 @@ import type {
   TaskSize,
   TaskStatus,
 } from "@machbar/shared";
-import type { PrimarySwipeAction } from "../lib/swipeSettings";
 
 /**
  * The frontend owns its complete catalog. Do not import localized prose from
@@ -235,7 +234,6 @@ const base = {
   waitingFollowUpNotePlaceholder: "Angerufen, Rückmeldung erhalten …",
   continueWaiting: "Weiter warten",
   revisit: "Wiedervorlage",
-  revisitHint: "Heute erneut entscheiden: angehen, planen oder zurückstellen.",
   invalidRevisitTime: "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
   completedToday: "Heute erledigt",
   completedTodayHint: "Erledigte Aufgaben bei Bedarf wieder aktivieren.",
@@ -526,9 +524,6 @@ const extra = {
   errorRecoveryHint: "Versuche es erneut. Deine vorhandenen Daten wurden nicht verändert.",
   networkError: "Machbar konnte den Server nicht erreichen. Prüfe deine Verbindung und versuche es erneut.",
   retry: "Erneut versuchen",
-  pageHints: "Hinweise",
-  showPageHints: "Hinweise zu dieser Seite anzeigen",
-  hidePageHints: "Hinweise zu dieser Seite ausblenden",
   searchPlaceholder: "Titel, Notizen, Ort …",
   filters: "Filter",
   resetFilters: "Filter zurücksetzen",
@@ -598,8 +593,6 @@ const extra = {
   priorityDown: "Tiefer",
   manageTags: "Tags verwalten",
   manageTagsHint: "Tag-Katalog, Typen und Gruppierung bearbeiten.",
-  manageTagsPageHint:
-    "Tags geben Arbeit nützliche Perspektiven wie Bereich, Person oder Kontext, ohne die Projektstruktur zu ersetzen.",
   deleteTag: "Tag löschen",
   deleteTagTitle: (name: string) => `Tag „${name}“ löschen?`,
   deleteTagWarning:
@@ -718,10 +711,6 @@ const extra = {
   todayHouseholdScope: "Aufgaben aller Personen anzeigen",
   todayWorkScope: "Nur eigene Arbeitsaufgaben anzeigen",
   todayMineScope: "Nur eigene Aufgaben anzeigen",
-  todayScopeHint:
-    "„Alle“ zeigt die Aufgaben des ganzen Haushalts, ohne deine Identität für Änderungen zu wechseln.",
-  inboxHint:
-    "Hier landet noch ungeklärte Arbeit. Entscheide, was machbar ist, zu einem Projekt gehört oder bewusst später dran ist.",
   inboxHouseholdScope: "Ungeklärtes aller Personen anzeigen",
   inboxWorkScope: "Nur eigenes ungeklärtes Arbeitsmaterial anzeigen",
   inboxMineScope: "Nur eigenes ungeklärtes Material anzeigen",
@@ -765,7 +754,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   moreMomentum: "Gemeinsam vorankommen",
   moreFindAndReview: "Finden und prüfen",
   discussionTitle: "Besprechen",
-  discussionDescription: "Für ein gemeinsames Gespräch vorgemerkte Aufgaben und Projekte.",
   discussionEmpty: "Noch nichts zum Besprechen vorgemerkt.",
   addDiscussion: "Für Besprechung vormerken",
   removeDiscussion: "Besprechungsmarkierung entfernen",
@@ -915,8 +903,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   resultComplete: "Ergebnis vollständig",
   noTags: "Keine Tags.",
   searchDependency: "Aufgabe suchen …",
-  todayExplanation:
-    "Hier steht, was jetzt wirklich dran ist: geplante und fällige Arbeit, Wiedervorlagen und die nächsten machbaren Projektschritte.",
   manageMembers: "Personen verwalten",
   manageMembersHint: "Lege Personen an, benenne sie um oder entferne sie.",
   memberName: "Name",
@@ -926,9 +912,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   renameMember: "Umbenennen",
   memberDeleteConfirm: "Person endgültig löschen?",
   noMembers: "Noch keine Personen angelegt.",
-  swipeSettingTitle: "Wischgeste",
-  swipeSettingHint:
-    "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt kontextbezogene Aktionen ohne Statuswechsel. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
   railLabels: {
     plan: "Planen",
     split: "Aufteilen",
@@ -1081,8 +1064,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   swipeCoachHint: (rightAction: string) =>
     `Wischen: rechts „${rightAction}“, links mehr. Oder ⋯ tippen.`,
   swipeCoachDismiss: "Wischhinweis schließen",
-  taskGestureHint: (rightAction: string) =>
-    `Nach rechts wischen: „${rightAction}“. Nach links wischen öffnet kontextbezogene Aktionen ohne Statuswechsel. Am Desktop geht das auch über ⋯.`,
+  taskGestureHint:
+    `Nach rechts wischen: erledigen oder wieder öffnen. Nach links wischen öffnet kontextbezogene Aktionen ohne Statuswechsel. Am Desktop geht das auch über ⋯.`,
   assign: "Zuweisen",
   schedule: "Planen",
   scheduleShortcuts: "Schnell planen",
@@ -1143,11 +1126,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   unmarkAdditionalNextAction: "Nicht mehr als weitere nächste Aktion markieren",
   toProject: "Zum Projekt",
   noProjectChipHint: "Kein Projekt zugeordnet",
-  primarySwipeActionLabels: {
-    complete: "Erledigen / Wieder öffnen",
-    someday: "Irgendwann",
-    cancel: "Verwerfen",
-  } satisfies Record<PrimarySwipeAction, string>,
   refinementMatrixTitle: "Zuständig × Aufwand",
   refinementListTitle: "Arbeit ansehen",
   unestimated: "Ohne Aufwand",
@@ -1165,8 +1143,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   effortGuide: "Aufwand überblicken",
 
   reviewTitle: "Review",
-  reviewHint:
-    "Hier landet Arbeit, die eine bewusste Entscheidung braucht: klären, weiterführen, parken oder abschließen.",
   reviewEmpty: "Alles ist bewusst entschieden. Es gibt gerade nichts zu prüfen.",
   reviewPrimaryQueue: "Entscheidungen",
   reviewPlanningTools: "Optionale Planungswerkzeuge",
@@ -1209,8 +1185,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   reviewAcknowledged: "Für jetzt bestätigt",
 
   allTitle: "Alles",
-  allHint:
-    "Hier findest du den vollständigen Bestand, auch wenn fokussierte Ansichten etwas bewusst ausblenden.",
   allProjectsHeading: "Projekte",
   allStandaloneTasksHeading: "Eigenständige Aufgaben",
   allMatchingTasksHeading: "Passende Aufgaben",
@@ -1262,10 +1236,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   storyReturnedToBacklog: "Auf später verschoben",
 
   // --- Projects tab (Projekte) -----------------------------------------
-  projectsHint:
-    "Projekte halten ein gewünschtes Ergebnis und den Weg dorthin zusammen. Aktiv sind sie nur mit einem nächsten Schritt oder bewusstem Warten.",
-  waitingPageHint:
-    "Hier liegt Arbeit, die gerade nicht weitergeht. Sieh, worauf sie wartet und wann du wieder nachhaken solltest.",
   waitingHouseholdScope: "Wartende Aufgaben aller Personen anzeigen",
   waitingWorkScope: "Nur eigene wartende Arbeitsaufgaben anzeigen",
   waitingMineScope: "Nur eigene wartende Aufgaben anzeigen",
@@ -1327,8 +1297,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   homeAssistantNoKnownLocation: "An keinem bekannten Ort",
   homeAssistantObservedAt: (time: string) => `Stand ${time}`,
   homeAssistantUnmapped: "Nicht zugeordnet",
-  projectTasksHint:
-    "Diese Liste zeigt den Weg zum Projektergebnis: vom nächsten machbaren Schritt über Abhängigkeiten bis zu späterer Arbeit.",
   projectStatus: "Status",
   projectOverview: "Projektüberblick",
   projectRevisitDate: "Wiedervorlage",

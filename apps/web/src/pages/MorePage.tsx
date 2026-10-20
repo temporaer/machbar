@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
-import { useSwipeSettings, primarySwipeActions } from "../lib/swipeSettings";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
 import { useState } from "react";
@@ -23,7 +22,6 @@ export function MorePage() {
   const { locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
   const { currentMember, authEnabled, logout } = useIdentity();
-  const { primarySwipeAction, setPrimarySwipeAction } = useSwipeSettings();
   const { developerMode, setDeveloperMode } = useDeveloperMode();
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -98,10 +96,6 @@ export function MorePage() {
             </span>
             <span aria-hidden="true">›</span>
           </Link>
-          <Link to="/more/all" className="list-link more-list-link">
-            <span>{strings.allTitle}</span>
-            <span aria-hidden="true">›</span>
-          </Link>
           <Link to="/more/activity" className="list-link more-list-link">
             <span>
               <strong>{strings.activities}</strong>
@@ -153,29 +147,6 @@ export function MorePage() {
                   {strings.localeLabels[value]}
                 </button>
               ))}
-            </div>
-          </div>
-
-          <div className="card more-setting-card">
-            <h3>{strings.swipeSettingTitle}</h3>
-            <p className="text-muted">{strings.swipeSettingHint}</p>
-            <div className="field">
-              <label htmlFor="primary-swipe-action">{strings.swipeSettingTitle}</label>
-              <select
-                id="primary-swipe-action"
-                value={primarySwipeAction}
-                onChange={(event) =>
-                  setPrimarySwipeAction(
-                    event.target.value as (typeof primarySwipeActions)[number],
-                  )
-                }
-              >
-                {primarySwipeActions.map((action) => (
-                  <option key={action} value={action}>
-                    {strings.primarySwipeActionLabels[action]}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         </div>

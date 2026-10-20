@@ -8,7 +8,6 @@ export function TagsPage() {
     <div>
       <PageHeader
         title={strings.manageTags}
-        hints={[{ text: strings.manageTagsPageHint }]}
       />
       <TagManager />
     </div>

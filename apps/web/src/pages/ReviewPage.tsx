@@ -486,7 +486,7 @@ export function ReviewPage() {
 
   return (
     <div>
-      <PageHeader title={strings.reviewTitle} hints={[{ text: strings.reviewHint }]} />
+      <PageHeader title={strings.reviewTitle} />
       {loading ? <LoadingState /> : null}
       {error ? (
         <ErrorState

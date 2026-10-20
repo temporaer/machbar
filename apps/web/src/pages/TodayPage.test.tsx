@@ -87,6 +87,27 @@ describe("TodayPage", () => {
     vi.useRealTimers();
   });
 
+  it.each([["de", "Suchen"], ["en", "Search"]] as const)(
+    "offers keyboard-accessible inventory search in %s without changing agenda scope",
+    async (locale, label) => {
+      renderWithProviders(<TodayPage />, { locale });
+      const search = await screen.findByRole("link", { name: label });
+      expect(search).toHaveAttribute("href", "/more/all");
+      expect(search).toHaveAttribute("title", label);
+      expect(search.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+      const header = search.closest(".page-header")!;
+      expect(header.querySelector(".page-header-actions")?.lastElementChild).toBe(search);
+      expect(header.querySelector('a[href="/more/week"]')).toBeInTheDocument();
+      expect(header.querySelector(".today-scope-toggle")).toBeInTheDocument();
+      const user = userEvent.setup();
+      for (let attempt = 0; attempt < 10 && document.activeElement !== search; attempt++) {
+        await user.tab();
+      }
+      expect(search).toHaveFocus();
+      expect(window.sessionStorage.getItem("machbar:today-scope")).toBeNull();
+    },
+  );
+
   it("settles all four queries after slow responses and sustained external invalidations", async () => {
     window.localStorage.setItem("machbar:identity-member-id", "1");
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -484,10 +505,7 @@ describe("TodayPage", () => {
     const explanation =
       "Hier steht, was jetzt wirklich dran ist: geplante und fällige Arbeit, Wiedervorlagen und die nächsten machbaren Projektschritte.";
     expect(screen.queryByText(explanation)).not.toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
-    );
-    expect(screen.getByText(explanation)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hinweise zu dieser Seite/ })).not.toBeInTheDocument();
     expect(
       container.querySelector(".task-row-surface-actionable"),
     ).toBeInTheDocument();
@@ -525,14 +543,7 @@ describe("TodayPage", () => {
     const revisitHint =
       "Heute erneut entscheiden: angehen, planen oder zurückstellen.";
     expect(screen.queryByText(revisitHint)).not.toBeInTheDocument();
-    const infoButtons = screen.getAllByRole("button", {
-      name: "Hinweise zu dieser Seite anzeigen",
-    });
-    expect(infoButtons).toHaveLength(1);
-    await userEvent.click(
-      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
-    );
-    expect(screen.getByText(revisitHint)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hinweise zu dieser Seite/ })).not.toBeInTheDocument();
     expect(screen.getByText("Leiter zurückbringen")).toBeInTheDocument();
     expect(screen.getByText("Wiedervorlage: heute")).toBeInTheDocument();
     // The normal blocked lock indicator from TaskRow must still show up.

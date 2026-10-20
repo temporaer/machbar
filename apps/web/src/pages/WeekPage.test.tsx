@@ -209,6 +209,7 @@ describe("WeekPage", () => {
     const scheduledStoryCard = screen.getByRole("button", {
       name: /^Balkon planen/,
     }).closest("article") as HTMLElement;
+    expect(screen.getByText("Ziehe Karten auf einen Tag, um sie zu planen. Das Fähnchen-Feld ändert nur die Fälligkeit.")).toBeVisible();
     expect(taskCard).toBeInTheDocument();
     expect(storyCard).toBeInTheDocument();
     expect(within(taskCard).getByText("Geplant für")).toBeInTheDocument();

@@ -11,7 +11,6 @@ import {
   hasOpenDescendants,
   markOpenDescendantsTerminal,
 } from "./taskHelpers";
-import type { PrimarySwipeAction } from "./swipeSettings";
 import {
   ownerAssignmentPatch,
   setOwnerInheritance,
@@ -481,38 +480,6 @@ function useTaskActionsState() {
     [cancel],
   );
 
-  /**
-   * Dispatches the configured primary swipe action. Regardless of what is
-   * configured, a task that is already done/cancelled is always reopened —
-   * re-applying "Warten"/"Irgendwann"/"Verwerfen" to a finished task would
-   * be incoherent, and reopening is the one transition every configuration
-   * agrees on.
-   */
-  const requestPrimarySwipe = useCallback(
-    (task: Task, action: PrimarySwipeAction) => {
-      if (task.status === "done" || task.status === "cancelled") {
-        void reopen(task);
-        return;
-      }
-      if (task.status === "captured") {
-        void clarify(task);
-        return;
-      }
-      switch (action) {
-        case "someday":
-          void setStatus(task, "someday");
-          return;
-        case "cancel":
-          requestCancel(task);
-          return;
-        case "complete":
-        default:
-          requestToggle(task);
-      }
-    },
-    [reopen, clarify, setStatus, requestCancel, requestToggle],
-  );
-
   const resolvePolicy = useCallback(
     (policy: ChildPolicy) => {
       if (!pending) return;
@@ -534,7 +501,6 @@ function useTaskActionsState() {
     clearError,
     requestToggle,
     requestCancel,
-    requestPrimarySwipe,
     setStatus,
     clarify,
     deferClarification,
