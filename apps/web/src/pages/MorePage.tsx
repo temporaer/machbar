@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { version as appVersion } from "../../../../package.json";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { IdentitySelector } from "../components/IdentitySelector";
@@ -229,7 +230,7 @@ export function MorePage() {
               <h3>{strings.about}</h3>
               <p className="text-muted">{strings.tagline}</p>
               <p className="text-muted">
-                {strings.version} 0.1.0
+                {strings.version} {appVersion}
               </p>
             </div>
 
