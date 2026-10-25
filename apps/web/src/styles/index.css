@@ -2902,7 +2902,10 @@ details[open] > .disclosure-summary::after {
 
 .sheet-backdrop {
   position: fixed;
-  inset: 0;
+  top: var(--sheet-viewport-top, 0px);
+  left: var(--sheet-viewport-left, 0px);
+  width: var(--sheet-viewport-width, 100%);
+  height: var(--sheet-viewport-height, 100%);
   background: var(--color-overlay);
   z-index: 40;
   display: flex;
@@ -2914,7 +2917,10 @@ details[open] > .disclosure-summary::after {
   width: 100%;
   min-width: 0;
   max-width: min(100vw, 720px);
-  max-height: 92vh;
+  /* Percentage resolves against the keyboard-aware backdrop, padding included. */
+  box-sizing: border-box;
+  max-height: 92%;
+  overscroll-behavior-y: contain;
   overflow-y: auto;
   overflow-x: hidden;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;

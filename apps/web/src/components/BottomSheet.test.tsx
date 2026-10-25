@@ -1,10 +1,83 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { BottomSheet } from "./BottomSheet";
 
 describe("BottomSheet", () => {
+  it("tracks visible bounds through keyboard resize, pan, rotation and reopen", () => {
+    const viewport = Object.assign(new EventTarget(), {
+      height: 800, width: 400, offsetTop: 0, offsetLeft: 0,
+    });
+    vi.stubGlobal("visualViewport", viewport);
+    const remove = vi.spyOn(viewport, "removeEventListener");
+    try {
+      const { rerender, unmount } = render(
+        <BottomSheet title="Capture" onClose={vi.fn()}><input aria-label="Title" /><button>Create</button></BottomSheet>,
+      );
+      const backdrop = screen.getByRole("dialog").parentElement!;
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-height")).toBe("800px");
+      act(() => {
+        Object.assign(viewport, { height: 300, offsetTop: 40 });
+        viewport.dispatchEvent(new Event("resize"));
+      });
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-height")).toBe("300px");
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-top")).toBe("40px");
+      expect(screen.getByRole("textbox")).toHaveFocus();
+      act(() => {
+        Object.assign(viewport, { width: 700, offsetLeft: 12, offsetTop: 60 });
+        viewport.dispatchEvent(new Event("scroll"));
+      });
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-width")).toBe("700px");
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-left")).toBe("12px");
+      rerender(<BottomSheet suspended title="Capture" onClose={vi.fn()}>Draft</BottomSheet>);
+      expect(remove).toHaveBeenCalledWith("resize", expect.any(Function));
+      expect(remove).toHaveBeenCalledWith("scroll", expect.any(Function));
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-height")).toBe("");
+      Object.assign(viewport, { height: 800, offsetTop: 0, offsetLeft: 0, width: 400 });
+      rerender(<BottomSheet title="Capture" onClose={vi.fn()}>Draft</BottomSheet>);
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-height")).toBe("800px");
+      expect(backdrop.style.getPropertyValue("--sheet-viewport-top")).toBe("0px");
+      unmount();
+      const reopened = render(<BottomSheet onClose={vi.fn()}>Again</BottomSheet>);
+      expect(screen.getByRole("dialog").parentElement!.style.getPropertyValue("--sheet-viewport-height")).toBe("800px");
+      reopened.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("updates stacked sheets independently and removes listeners in StrictMode", () => {
+    const viewport = Object.assign(new EventTarget(), {
+      height: 800, width: 400, offsetTop: 0, offsetLeft: 0,
+    });
+    vi.stubGlobal("visualViewport", viewport);
+    const add = vi.spyOn(viewport, "addEventListener");
+    const remove = vi.spyOn(viewport, "removeEventListener");
+    try {
+      const { rerender, unmount } = render(<StrictMode>
+        <BottomSheet title="Bottom" onClose={vi.fn()}>Bottom</BottomSheet>
+        <BottomSheet title="Top" onClose={vi.fn()}>Top</BottomSheet>
+      </StrictMode>);
+      act(() => { viewport.height = 320; viewport.dispatchEvent(new Event("resize")); });
+      const backdrops = document.querySelectorAll<HTMLElement>(".sheet-backdrop");
+      for (const backdrop of backdrops) {
+        expect(backdrop.style.getPropertyValue("--sheet-viewport-height")).toBe("320px");
+      }
+      expect(backdrops[0]).toHaveAttribute("inert");
+      rerender(<StrictMode><BottomSheet title="Bottom" onClose={vi.fn()}>Bottom</BottomSheet></StrictMode>);
+      act(() => { viewport.height = 800; viewport.dispatchEvent(new Event("resize")); });
+      expect(screen.getByRole("dialog").parentElement!.style.getPropertyValue("--sheet-viewport-height")).toBe("800px");
+      unmount();
+      for (const [event, listener] of add.mock.calls) {
+        expect(remove).toHaveBeenCalledWith(event, listener);
+      }
+      expect(remove.mock.calls).toHaveLength(add.mock.calls.length);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("portals the overlay outside transformed or clipped ancestors", () => {
     const { container } = render(
       <div className="task-row">

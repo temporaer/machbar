@@ -230,6 +230,31 @@ export function BottomSheet({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // Keep the scroll container inside the visible viewport, including browsers
+  // whose soft keyboard resizes only the visual (not layout) viewport.
+  useLayoutEffect(() => {
+    const backdrop = backdropRef.current;
+    const viewport = window.visualViewport;
+    if (suspended || !backdrop || !viewport) return;
+
+    const updateViewport = () => {
+      backdrop.style.setProperty("--sheet-viewport-top", `${viewport.offsetTop}px`);
+      backdrop.style.setProperty("--sheet-viewport-left", `${viewport.offsetLeft}px`);
+      backdrop.style.setProperty("--sheet-viewport-height", `${viewport.height}px`);
+      backdrop.style.setProperty("--sheet-viewport-width", `${viewport.width}px`);
+    };
+    updateViewport();
+    viewport.addEventListener("resize", updateViewport);
+    viewport.addEventListener("scroll", updateViewport);
+    return () => {
+      viewport.removeEventListener("resize", updateViewport);
+      viewport.removeEventListener("scroll", updateViewport);
+      for (const dimension of ["top", "left", "height", "width"]) {
+        backdrop.style.removeProperty(`--sheet-viewport-${dimension}`);
+      }
+    };
+  }, [suspended]);
+
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
     const backdrop = backdropRef.current;
