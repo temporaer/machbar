@@ -1610,10 +1610,11 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     });
     mockedApi.completeProject.mockResolvedValue({
       ...story,
+      revision: 2,
       status: "completed",
       availableActions: ["reopen", "archive"],
     });
-    mockedApi.reopenProject.mockResolvedValue({ ...story, status: "active" });
+    mockedApi.reopenProject.mockResolvedValue({ ...story, revision: 3, status: "active" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Zyklus");
 
@@ -1634,9 +1635,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.reopenProject).toHaveBeenCalledWith(61, {
-      expectedRevision: 1,
-    });
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(61, { expectedRevision: 2 });
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
   });
 
