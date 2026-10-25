@@ -1,3 +1,4 @@
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useEffect } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -69,8 +70,9 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
     () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
     [taskId],
   );
+  useRetentionInteraction(taskId, taskActions.pauseRetention, taskId !== null);
   const retained = taskId !== null ? taskActions.retained.get(taskId) : undefined;
-  const task = retained ?? fetchedTask;
+  const task = fetchedTask ? taskActions.projectTask(fetchedTask) : retained ?? null;
 
   useEffect(() => {
     if (taskId !== null) reload();

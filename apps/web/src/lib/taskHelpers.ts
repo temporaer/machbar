@@ -103,3 +103,48 @@ export function flattenTasks(tasks: Task[]): Task[] {
   walk(tasks);
   return out;
 }
+
+/** Index each unique task once, reusing cached descendant sets for ancestors
+ * and for callers supplying an already flattened tree. */
+export function indexTaskDescendants(tasks: readonly Task[]): Map<number, Set<number>> {
+  const index = new Map<number, Set<number>>();
+  const visit = (task: Task): Set<number> => {
+    const cached = index.get(task.id);
+    if (cached) return cached;
+    const descendants = new Set<number>();
+    index.set(task.id, descendants);
+    for (const child of task.children) {
+      descendants.add(child.id);
+      for (const id of visit(child)) descendants.add(id);
+    }
+    return descendants;
+  };
+  tasks.forEach(visit);
+  return index;
+}
+
+/** A parent's terminal policy may change a child's lifecycle, not its other
+ * authoritative fields or hierarchy. Equal-revision derived values stay fresh. */
+export function applyDescendantTerminalOutcome<T extends Task>(current: T, inherited: Task): T {
+  if (inherited.kind !== "action" || inherited.revision < current.revision ||
+      (inherited.status !== "done" && inherited.status !== "cancelled") ||
+      inherited.status === current.status) return current;
+  return { ...current, revision: inherited.revision, status: inherited.status,
+    completedAt: inherited.completedAt, cancelledAt: inherited.cancelledAt,
+    needsClarification: inherited.needsClarification };
+}
+
+/** Confirmed equal-revision reads own derived fields. Pending writes keep
+ * their optimistic values until the request settles. */
+export function projectTaskValue(current: Task, retained: Task | undefined, pending = false): Task {
+  return retained && (retained.revision > current.revision || (pending && retained.revision === current.revision))
+    ? retained : current;
+}
+
+/** Sort authoritative siblings before placement; rendered placement is final. */
+export function orderTaskTree(tasks: Task[], preserveRoots = false, preserveDescendants = false): Task[] {
+  const roots = preserveRoots ? tasks : sortByPosition(tasks);
+  return roots.map(task => ({ ...task,
+    children: preserveDescendants ? task.children : orderTaskTree(task.children),
+  }));
+}

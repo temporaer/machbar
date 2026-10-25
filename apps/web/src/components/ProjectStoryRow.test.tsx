@@ -232,6 +232,19 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
   });
 
+  it("uses the current status label when a newer server revision supersedes a retained completion", async () => {
+    const story = makeProject({ id: 21, title: "Reopened elsewhere", status: "active", ownerMemberId: 1 });
+    mockedApi.completeProject.mockResolvedValue({ ...story, status: "completed", revision: 2 });
+    const { container, rerender } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText(story.title);
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Abschließen" }));
+    await act(async () => { await flushMicrotasks(); });
+    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    rerender(<Harness story={{ ...story, revision: 3 }} />);
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
+    expect(container.querySelector(".story-row-status-badge")).not.toHaveTextContent("Abgeschlossen");
+  });
+
   it("completes an active story from the status rail whose criteria are all checked", async () => {
     const story = makeProject({
       id: 27,
@@ -1597,10 +1610,11 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     });
     mockedApi.completeProject.mockResolvedValue({
       ...story,
+      revision: 2,
       status: "completed",
       availableActions: ["reopen", "archive"],
     });
-    mockedApi.reopenProject.mockResolvedValue({ ...story, status: "active" });
+    mockedApi.reopenProject.mockResolvedValue({ ...story, revision: 3, status: "active" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Zyklus");
 
@@ -1621,9 +1635,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.reopenProject).toHaveBeenCalledWith(61, {
-      expectedRevision: 1,
-    });
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(61, { expectedRevision: 2 });
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
   });
 

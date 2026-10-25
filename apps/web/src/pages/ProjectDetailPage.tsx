@@ -41,6 +41,7 @@ import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
 import { recordRecentlyViewed } from "../lib/recentlyViewed";
 import type { ProjectWithActions } from "../lib/api";
+import { useTaskActions } from "../lib/useTaskActions";
 import { useProjectActions } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
@@ -122,6 +123,7 @@ export function ProjectDetailPage() {
     error: projectError,
     reload: reloadProject,
   } = useAsync(() => api.getProject(projectId), [projectId]);
+  useTaskActions(flattenTasks(loadedProject?.tasks ?? []));
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
   useEffect(() => {
@@ -134,15 +136,18 @@ export function ProjectDetailPage() {
       return current;
     });
   }, [loadedProject]);
-  const project =
+  const baseProject =
     loadedProject &&
     confirmedProject?.id === loadedProject.id &&
     confirmedProject.revision > loadedProject.revision
-      ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks }
+      ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks, childStories: loadedProject.childStories ?? [] }
       : loadedProject;
   const projectActions = useProjectActions(
-    loadedProject ? [loadedProject] : [],
+    loadedProject ? [loadedProject, ...(loadedProject.childStories ?? [])] : [],
   );
+  const project = baseProject
+    ? { ...projectActions.projectStory(baseProject), tasks: baseProject.tasks, childStories: baseProject.childStories ?? [] }
+    : baseProject;
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
 
   const owner = project
@@ -821,6 +826,7 @@ export function ProjectDetailPage() {
                 </ul>
               ) : null}
               <TaskOutline
+                key={project.id}
                 tasks={project.tasks}
                 emptyMessage={strings.noTasks}
                 organizable

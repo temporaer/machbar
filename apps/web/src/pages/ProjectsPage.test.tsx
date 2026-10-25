@@ -1,4 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { useState } from "react";
+import { useProjectActions } from "../lib/useProjectActions";
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
+import { useRefresh } from "../lib/refresh";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
@@ -20,6 +24,7 @@ vi.mock("../lib/api", () => ({
     activateProject: vi.fn(),
     returnProjectToBacklog: vi.fn(),
     completeProject: vi.fn(),
+    acknowledgeProjectReview: vi.fn(),
     reopenProject: vi.fn(),
     archiveProject: vi.fn(),
     addCriterion: vi.fn(),
@@ -31,6 +36,7 @@ vi.mock("../lib/api", () => ({
 }));
 
 const mockedApi = vi.mocked(api, true);
+afterEach(() => { vi.useRealTimers(); });
 
 async function flushMicrotasks(times = 3) {
   for (let i = 0; i < times; i += 1) {
@@ -312,6 +318,83 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     });
     expect(screen.getByText("Fertige Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
+  });
+
+  it("keeps a held project's original tag group while its workflow is active", async () => {
+    const oldTag = makeTag({ id: 91, name: "Original area", kind: "area" });
+    const newTag = makeTag({ id: 92, name: "New area", kind: "area" });
+    const project = makeProject({ id: 90, title: "Retag held project", status: "active", ownerMemberId: 1,
+      effectiveTags: [oldTag], nextAction: makeTask({ id: 900 }) });
+    const held = { ...project, revision: 2, reviewedAt: "2026-10-25T12:30:00Z" };
+    const updated = { ...held, revision: 3, effectiveTags: [newTag] };
+    let phase = 0;
+    mockedApi.getProjects.mockImplementation(async () => [phase === 0 ? project : phase === 1 ? held : updated]);
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { phase = 1; return held; });
+    mockedApi.updateProject.mockImplementation(async () => { phase = 2; return updated; });
+    function Controls() {
+      const actions = useProjectActions();
+      const [open, setOpen] = useState(false);
+      useRetentionInteraction(project.id, actions.pauseRetention, open);
+      return <>
+        <button onClick={() => void actions.acknowledgeReview(project)}>Hold project</button>
+        <button onClick={() => { setOpen(true); void actions.update(held, { tagIds: [newTag.id] }); }}>Retag in workflow</button>
+        <button onClick={() => setOpen(false)}>Close workflow</button>
+      </>;
+    }
+    renderWithProviders(<><ProjectsPage /><Controls /></>);
+    await screen.findByText(project.title);
+    fireEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" })).getByRole("button", { name: "Bereich" }));
+    const originalGroup = screen.getByRole("heading", { name: oldTag.name }).closest(".collapsible-group")!;
+    const originalRow = screen.getByText(project.title).closest("li")!;
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Hold project" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("button", { name: "Retag in workflow" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(originalRow).toBeInTheDocument();
+    expect(originalRow.closest(".collapsible-group")).toBe(originalGroup);
+    expect(screen.queryByRole("heading", { name: newTag.name })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close workflow" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    expect(originalRow).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(originalGroup).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: newTag.name })).toBeInTheDocument();
+    expect(screen.getAllByText(project.title)).toHaveLength(1);
+  });
+
+  it("uses equal-revision project data to refresh derived next-action fields during a hold", async () => {
+    const project = makeProject({
+      id: 93,
+      title: "Project with refreshed guidance",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: makeTask({ id: 930, title: "Old next action" }),
+    });
+    const held = { ...project, revision: 2, reviewedAt: "2026-10-25T12:30:00Z" };
+    const refreshed = { ...held, nextAction: makeTask({ id: 931, title: "Fresh next action" }), stuckReason: null };
+    let phase = 0;
+    mockedApi.getProjects.mockImplementation(async () => [phase === 0 ? project : phase === 1 ? held : refreshed]);
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { phase = 1; return held; });
+    function Controls() {
+      const actions = useProjectActions();
+      const refresh = useRefresh();
+      return <>
+        <button onClick={() => void actions.acknowledgeReview(project)}>Hold project</button>
+        <button onClick={() => { phase = 2; refresh.bump(); }}>Refresh derived project data</button>
+      </>;
+    }
+    renderWithProviders(<><ProjectsPage /><Controls /></>);
+    await screen.findByText(/Old next action/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Hold project" }));
+    await waitFor(() => expect(mockedApi.getProjects.mock.calls.length).toBeGreaterThan(1));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh derived project data" }));
+
+    expect(await screen.findByText(/Fresh next action/)).toBeInTheDocument();
+    expect(screen.queryByText(/Old next action/)).not.toBeInTheDocument();
   });
 
   it("offers tag types instead of tag values and groups stories by the selected type", async () => {
@@ -948,7 +1031,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     });
   });
 
-  it("moves a story into the folded terminal section once it optimistically completes", async () => {
+  it("keeps a completed story in its original section while showing the confirmed status", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -975,11 +1058,12 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.completeProject).toHaveBeenCalledWith(1, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
-    expect(rowFor(container, "Aktive Geschichte").closest("details")).not.toBeNull();
+    expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
+    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
   });
 
-  it("moves a retained reopened story from terminal into the quiet section immediately", async () => {
+  it("keeps a reopened story in its original terminal section during retention", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -1027,10 +1111,10 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(1, {
       expectedRevision: 1,
     });
-    expect(screen.getByRole("heading", { name: "Wartet / zurückgestellt (1)" })).toBeInTheDocument();
-    expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Wartet / zurückgestellt (1)" })).not.toBeInTheDocument();
+    expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
     expect(
       rowFor(container, "Wieder zu prüfende Geschichte").closest("[data-project-section]"),
-    ).toHaveAttribute("data-project-section", "quiet");
+    ).toHaveAttribute("data-project-section", "terminal");
   });
 });

@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRetainedPlacement } from "../lib/useRetainedPlacement";
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
+import { flattenTasks } from "../lib/taskHelpers";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ReviewCategory,
   ReviewItem,
@@ -44,6 +47,16 @@ function reviewItemKey(item: ReviewItem): string {
   return `${item.entityType}:${item.entityId}:${item.category}:${item.reason}`;
 }
 
+function ReviewCard({ item, cardRef, pause, children }: {
+  item: ReviewItem;
+  cardRef: (element: HTMLElement | null) => void;
+  pause: (id: number) => () => void;
+  children: ReactNode;
+}) {
+  const interaction = useRetentionInteraction(item.entityId, pause);
+  return <article className="card review-item" ref={cardRef} tabIndex={-1} {...interaction}>{children}</article>;
+}
+
 export function ReviewPage() {
   const strings = useStrings();
   const navigate = useNavigate();
@@ -75,24 +88,28 @@ export function ReviewPage() {
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks({}), []);
   const projectActions = useProjectActions(projects ?? []);
-  const taskActions = useTaskActions();
+  const rawTasks = flattenTasks(tasks ?? []);
+  const taskActions = useTaskActions(rawTasks);
   const projectById = useMemo(
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
   );
   const taskById = useMemo(
-    () => new Map((tasks ?? []).map((task) => [task.id, task])),
+    () => new Map(flattenTasks(tasks ?? []).map((task) => [task.id, task])),
     [tasks],
   );
-  const groups = categoryOrder
-    .map((category) => ({
-      category,
-      items: (items ?? []).filter((item) => item.category === category),
-    }))
-    .filter((group) => group.items.length > 0);
+  const candidates = (items ?? []).map(item => ({ ...item, id: reviewItemKey(item) }));
+  const buckets = useRetainedPlacement({
+    clarification_repair: candidates.filter(item => item.category === "clarification_repair"),
+    completion: candidates.filter(item => item.category === "completion"),
+    reconsider: candidates.filter(item => item.category === "reconsider"),
+  }, item => (item.entityType === "task" ? taskActions : projectActions).holdingIds.has(item.entityId), item => item);
+  const visibleItems = categoryOrder.flatMap(category => buckets[category]);
+  const groups = categoryOrder.map(category => ({ category, items: buckets[category] }))
+    .filter(group => group.items.length > 0);
 
   const focusReturnedItem = (origin: ReviewReturn) => {
-    const candidates = items ?? [];
+    const candidates = visibleItems;
     const target =
       candidates.find((item) => reviewItemKey(item) === origin.issueKey) ??
       candidates[Math.min(origin.issueIndex, candidates.length - 1)];
@@ -317,11 +334,11 @@ export function ReviewPage() {
   };
 
   const projectDecisionButtons = (item: ReviewItem) => {
-    const project = projectById.get(item.entityId);
+    const project = projectById.get(item.entityId) ?? projectActions.retained.get(item.entityId)?.story;
     if (!project) return null;
-    const displayed = projectActions.retained.get(project.id)?.story ?? project;
+    const displayed = projectActions.projectStory(project);
     if (item.reason === "backlog_revisit_reached") {
-      const issueIndex = (items ?? []).indexOf(item);
+      const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
       return (
         <>
           {displayed.availableActions.includes("activate") ? (
@@ -360,7 +377,7 @@ export function ReviewPage() {
             onClick={() => dispatchWithReturn(
               { type: "story.activate", story: displayed },
               item,
-              (items ?? []).indexOf(item),
+              visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item)),
             )}
           >
             {strings.reviewStart}
@@ -385,7 +402,7 @@ export function ReviewPage() {
                   state: {
                     reviewReturn: {
                       issueKey: reviewItemKey(item),
-                      issueIndex: (items ?? []).indexOf(item),
+                      issueIndex: visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item)),
                     },
                   },
                 });
@@ -420,9 +437,9 @@ export function ReviewPage() {
   };
 
   const taskDecisionButtons = (item: ReviewItem) => {
-    const task = taskById.get(item.entityId);
+    const task = taskById.get(item.entityId) ?? taskActions.retained.get(item.entityId);
     if (!task) return null;
-    const displayed: Task = taskActions.retained.get(task.id) ?? task;
+    const displayed: Task = taskActions.projectTask(task);
     return (
       <>
         {displayed.status !== "actionable" ? (
@@ -464,21 +481,11 @@ export function ReviewPage() {
   };
   const isAcknowledged = (item: ReviewItem): boolean => {
     if (item.entityType === "project") {
-      const source = projectById.get(item.entityId);
-      const retained = projectActions.retained.get(item.entityId)?.story;
-      return Boolean(
-        source &&
-          retained?.reviewedAt &&
-          retained.reviewedAt !== source.reviewedAt,
-      );
+      return projectActions.acknowledgedReviewIds.has(item.entityId) &&
+        projectActions.holdingIds.has(item.entityId);
     }
-    const source = taskById.get(item.entityId);
-    const retained = taskActions.retained.get(item.entityId);
-    return Boolean(
-      source &&
-        retained?.reviewedAt &&
-        retained.reviewedAt !== source.reviewedAt,
-    );
+    return taskActions.acknowledgedReviewIds.has(item.entityId) &&
+      taskActions.holdingIds.has(item.entityId);
   };
 
   const loading = itemsLoading || projectsLoading || tasksLoading;
@@ -503,22 +510,22 @@ export function ReviewPage() {
           <h2 id="review-queue-heading" className="section-title">
             {strings.reviewPrimaryQueue}
           </h2>
-          {items.length === 0 ? <EmptyState message={strings.reviewEmpty} /> : null}
+          {visibleItems.length === 0 ? <EmptyState message={strings.reviewEmpty} /> : null}
           {groups.map((group) => (
             <section className="review-group" key={group.category}>
               <h3>{categoryLabel(group.category)}</h3>
               <div className="review-list">
                 {group.items.map((item) => {
-                  const issueIndex = (items ?? []).indexOf(item);
+                  const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
                   return (
-                  <article
-                    className="card review-item"
+                  <ReviewCard
+                    item={item}
+                    pause={item.entityType === "task" ? taskActions.pauseRetention : projectActions.pauseRetention}
                     key={reviewItemKey(item)}
-                    ref={(element) => {
+                    cardRef={(element) => {
                       if (element) itemRefs.current.set(reviewItemKey(item), element);
                       else itemRefs.current.delete(reviewItemKey(item));
                     }}
-                    tabIndex={-1}
                   >
                     <div className="review-item-heading">
                       <strong>{item.entityTitle}</strong>
@@ -549,7 +556,7 @@ export function ReviewPage() {
                         ? projectDecisionButtons(item)
                         : taskDecisionButtons(item)}
                     </div>
-                  </article>
+                  </ReviewCard>
                   );
                 })}
               </div>

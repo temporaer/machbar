@@ -1,6 +1,9 @@
+import { useProjectActions } from "../lib/useProjectActions";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useRefresh } from "../lib/refresh";
 import { markdownValue, selectMarkdown, setMarkdownValue } from "../test/markdownEditor";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Task } from "@machbar/shared";
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -42,6 +45,7 @@ vi.mock("../lib/api", () => ({
     checkCriterion: vi.fn(),
     updateProject: vi.fn(),
     completeProject: vi.fn(),
+    acknowledgeProjectReview: vi.fn(),
     startWorkRefinement: vi.fn(),
     getActivity: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
@@ -205,6 +209,124 @@ describe("ProjectDetailPage task explanations", () => {
       originalFileName: "plan.pdf",
       mimeType: "application/pdf",
     });
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it.each(["expired", "active", "interaction"] as const)("keeps same-revision child membership after a parent edit during %s retention", async mode => {
+    const parent = makeTask({ id: 71, title: "Parent before edit", projectId: 42 });
+    const child = makeTask({ id: 72, title: "Moved sibling", projectId: 42 });
+    const renamed = { ...parent, title: "Renamed parent", revision: 2 };
+    let saved = false;
+    let moved = false;
+    mockedApi.getProject.mockImplementation(async () => ({
+      ...makeProject({ id: 42 }), tasks: moved ? [{ ...renamed, children: [child] }] : [saved ? renamed : parent, child],
+    }));
+    mockedApi.updateTask.mockImplementation(async () => { saved = true; return renamed; });
+    function Controls() {
+      const actions = useTaskActions();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.update(parent, { title: renamed.title })}>Rename parent</button>
+        <button onClick={() => { moved = true; bump(); }}>Load moved hierarchy</button>
+        <output data-testid="parent-overlay">{String(actions.retained.has(parent.id))}</output>
+      </>;
+    }
+    renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
+      { initialEntries: ["/projects/42"] });
+    await screen.findByText(parent.title);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Rename parent" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText(renamed.title)).toBeInTheDocument();
+    let menu: HTMLElement | null = null;
+    if (mode === "expired") {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+      expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
+    } else if (mode === "interaction") {
+      menu = within(screen.getByText(renamed.title).closest("li")!).getByRole("button", { name: "Weitere Aktionen" });
+      fireEvent.click(menu);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Load moved hierarchy" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
+    if (mode === "interaction") {
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(screen.getByTestId("parent-overlay")).toHaveTextContent("true");
+      expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
+      fireEvent.click(menu!);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    } else if (mode === "active") {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    }
+    expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
+  });
+
+  it("preserves fresh child stories while a parent project hold remains active", async () => {
+    const child = makeProject({ id: 73, title: "Old child title", parentId: 42, openCount: 1, doneCount: 0 });
+    const added = makeProject({ id: 74, title: "New child project", parentId: 42 });
+    const parent = { ...makeProject({ id: 42, title: "Held project" }), childStories: [child] };
+    const held = { ...parent, revision: 2, reviewedAt: "2026-10-25T12:00:00Z" };
+    let saved = false;
+    let changed = false;
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { saved = true; return held; });
+    mockedApi.getProject.mockImplementation(async () => ({
+      ...(saved ? held : parent), tasks: [],
+      childStories: changed ? [{ ...child, title: "Fresh child title", openCount: 3, revision: 2 }, added] : [child],
+    }));
+    function Controls() {
+      const actions = useProjectActions();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.acknowledgeReview(parent)}>Hold parent project</button>
+        <button onClick={() => { changed = true; bump(); }}>Refresh child projects</button>
+        <output data-testid="parent-project-held">{String(actions.holdingIds.has(parent.id))}</output>
+      </>;
+    }
+    renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
+      { initialEntries: ["/projects/42"] });
+    await screen.findByText(child.title);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Hold parent project" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh child projects" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId("parent-project-held")).toHaveTextContent("true");
+    expect(screen.queryByText(child.title)).not.toBeInTheDocument();
+    expect(screen.getByText("Fresh child title").closest("li")).toHaveTextContent("0/3");
+    expect(screen.getByText(added.title)).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByTestId("parent-project-held")).toHaveTextContent("true");
+    expect(screen.getByText(added.title)).toBeInTheDocument();
+  });
+
+  it("reconciles child project metadata before same-revision counts change", async () => {
+    const child = makeProject({ id: 73, title: "Child project", parentId: 42, openCount: 1, doneCount: 0 });
+    const renamed = { ...child, title: "Renamed child", revision: 2 };
+    let saved = false;
+    let changedCounts = false;
+    mockedApi.getProject.mockImplementation(async () => ({
+      ...makeProject({ id: 42 }), tasks: [],
+      childStories: [saved ? { ...renamed, openCount: changedCounts ? 3 : 1 } : child],
+    }));
+    mockedApi.updateProject.mockImplementation(async () => { saved = true; return renamed; });
+    function Controls() {
+      const actions = useProjectActions();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.update(child, { title: renamed.title })}>Rename child project</button>
+        <button onClick={() => { changedCounts = true; bump(); }}>Load new counts</button>
+      </>;
+    }
+    renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
+      { initialEntries: ["/projects/42"] });
+    await screen.findByText(child.title);
+    await userEvent.click(screen.getByRole("button", { name: "Rename child project" }));
+    await screen.findByText(renamed.title);
+    await userEvent.click(screen.getByRole("button", { name: "Load new counts" }));
+    await waitFor(() => expect(screen.getByText(renamed.title).closest("li")).toHaveTextContent("0/3"));
   });
 
   it("edits discussion nomination in project details through the canonical command", async () => {

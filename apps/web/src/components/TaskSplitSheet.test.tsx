@@ -1,5 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useRefresh } from "../lib/refresh";
+import { TaskWorkflowHost } from "./TaskWorkflowHost";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { api } from "../lib/api";
@@ -24,6 +28,7 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn(),
     createTaskStepBatchForTask: vi.fn(),
     getTask: vi.fn(),
+    updateTask: vi.fn(),
     getProject: vi.fn(),
     moveTask: vi.fn(),
   },
@@ -38,6 +43,44 @@ describe("TaskSplitSheet", () => {
     mockedApi.getTags.mockResolvedValue([]);
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 7, revision: 1 }));
     mockedApi.createTaskStepBatchForTask.mockResolvedValue({ tasks: [] });
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("uses equal-revision fetched children after editing a parent while its split workflow stays open", async () => {
+    const oldChild = makeTask({ id: 8, title: "Old workflow child", parentTaskId: 7 });
+    const newChild = makeTask({ id: 9, title: "Fresh workflow child", parentTaskId: 7 });
+    const parent = makeTask({ id: 7, title: "Original parent", children: [oldChild] });
+    const renamed = { ...parent, title: "Edited parent", revision: 2 };
+    let saved = false;
+    let changed = false;
+    mockedApi.updateTask.mockImplementation(async () => { saved = true; return renamed; });
+    mockedApi.getTask.mockImplementation(async () => saved ? { ...renamed, children: changed ? [newChild] : [oldChild] } : parent);
+    function Controls() {
+      const actions = useTaskActions();
+      const dispatch = useWorkItemCommands();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.update(parent, { title: renamed.title })}>Rename workflow parent</button>
+        <button onClick={() => dispatch({ type: "task.split", taskId: parent.id })}>Open split workflow</button>
+        <button onClick={() => { changed = true; bump(); }}>Refresh workflow children</button>
+        <output data-testid="workflow-parent-held">{String(actions.holdingIds.has(parent.id))}</output>
+      </>;
+    }
+    renderWithProviders(<><Controls /><TaskWorkflowHost /></>);
+    const refresh = screen.getByRole("button", { name: "Refresh workflow children" });
+    await userEvent.click(screen.getByRole("button", { name: "Rename workflow parent" }));
+    await waitFor(() => expect(saved).toBe(true));
+    await userEvent.click(screen.getByRole("button", { name: "Open split workflow" }));
+    await screen.findByText(oldChild.title);
+    vi.useFakeTimers();
+    fireEvent.click(refresh);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText(newChild.title)).toBeInTheDocument();
+    expect(screen.queryByText(oldChild.title)).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(screen.getByTestId("workflow-parent-held")).toHaveTextContent("true");
+    expect(screen.getByText(newChild.title)).toBeInTheDocument();
   });
 
   it("submits all filled rows in one atomic request and keeps one empty trailing row", async () => {

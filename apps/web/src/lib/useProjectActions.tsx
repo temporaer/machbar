@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import type { ProjectActivationResolution } from "@machbar/shared";
+import type { Project, ProjectActivationResolution } from "@machbar/shared";
 import type { ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
 import { useRetainedMutations } from "./useRetainedMutations";
@@ -24,8 +24,7 @@ export interface RetainedStory {
  *
  * Transitions are optimistic and retained for `RETENTION_MS`, mirroring
  * `TaskRow`'s "stays visible for ~4s before the list drops it" behaviour —
- * see `useTaskActions` for why the global refresh (`bump()`) is deliberately
- * deferred until the retention window elapses rather than fired immediately.
+ * state updates and refreshes are immediate, independently of list placement.
  * Pending state is tracked per project and cleared as soon as the request
  * resolves, so a retained row becomes actionable again right away.
  *
@@ -40,7 +39,8 @@ export interface RetainedStory {
  * catches up, independent of any other mounted view.
  */
 function useProjectActionsState() {
-  const mutations = useRetainedMutations<RetainedStory>();
+  const mutations = useRetainedMutations<RetainedStory>({ immediateRefresh: true });
+  const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
   const {
     run,
     release,
@@ -50,6 +50,21 @@ function useProjectActionsState() {
     errors,
     clearError,
   } = mutations;
+  const projectStory = useCallback(<T extends Project,>(current: T): T => {
+    const candidate = retained.get(current.id)?.story;
+    return candidate &&
+      (candidate.revision > current.revision ||
+        (isPending(current.id) && candidate.revision === current.revision))
+      ? { ...current, ...candidate }
+      : current;
+  }, [isPending, retained]);
+
+  useEffect(() => {
+    setAcknowledgedReviewIds(current => {
+      const next = new Set([...current].filter(id => mutations.holdingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [mutations.holdingIds]);
 
   const call = useCallback(
     (
@@ -219,8 +234,8 @@ function useProjectActionsState() {
   );
 
   const acknowledgeReview = useCallback(
-    (story: ProjectWithActions) =>
-      run({
+    async (story: ProjectWithActions) => {
+      const result = await run({
         id: story.id,
         optimistic: {
           story: {
@@ -235,13 +250,19 @@ function useProjectActionsState() {
           }),
         confirmed: (confirmed) => ({ story: confirmed }),
         refreshImmediately: true,
-        retainUntilRefresh: true,
-      }),
+      });
+      if (result) setAcknowledgedReviewIds(current => new Set(current).add(story.id));
+      return result;
+    },
     [run],
   );
 
   return {
+    acknowledgedReviewIds,
+    projectStory,
     pendingIds,
+    holdingIds: mutations.holdingIds,
+    pauseRetention: mutations.pauseRetention,
     isPending,
     retained,
     release,
@@ -294,13 +315,13 @@ export function useProjectActions(
 
   useEffect(() => {
     for (const [id, entry] of retained) {
-      if (entry.action !== undefined) continue;
+      if (context.holdingIds.has(id) || context.isPending(id)) continue;
       const authoritative = authoritativeProjects.find((project) => project.id === id);
       if (authoritative && entry.story && authoritative.revision >= entry.story.revision) {
         release(id);
       }
     }
-  }, [authoritativeProjects, release, retained]);
+  }, [authoritativeProjects, release, retained, context.holdingIds, context.isPending]);
 
   return { retained, ...rest };
 }

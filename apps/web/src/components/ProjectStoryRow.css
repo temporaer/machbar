@@ -198,7 +198,7 @@
 
 /* See `.task-row-content.retained` in `styles/index.css` for the rationale. */
 .story-row-content.retained {
-  opacity: 0.55;
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
 }
 
 .story-row-quiet {

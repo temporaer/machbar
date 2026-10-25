@@ -25,6 +25,7 @@ export type OrganizeDirection = "up" | "down" | "indent" | "outdent";
 const DRAG_START_THRESHOLD = 4;
 
 export interface OutlineOrganizeValue {
+  taskIds: ReadonlySet<number>;
   /** False for compiled views, where screen order carries no hierarchy meaning. */
   enabled: boolean;
   activeId: number | null;
@@ -55,8 +56,9 @@ const OutlineOrganizeContext = createContext<OutlineOrganizeValue | null>(null);
 export const OutlineOrganizeProvider = OutlineOrganizeContext.Provider;
 
 /** Rows read this to render their handle, drag state and inline move errors. */
-export function useOutlineOrganizeRow(): OutlineOrganizeValue | null {
-  return useContext(OutlineOrganizeContext);
+export function useOutlineOrganizeRow(taskId: number): OutlineOrganizeValue | null {
+  const context = useContext(OutlineOrganizeContext);
+  return context?.taskIds.has(taskId) ? context : null;
 }
 
 interface DragSession {
@@ -119,6 +121,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     revision: number;
   } | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [placementVersion, setPlacementVersion] = useState(0);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [projection, setProjection] = useState<DropProjection | null>(null);
   const [indicatorTop, setIndicatorTop] = useState(0);
@@ -231,6 +234,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       }
 
       clearError(taskId);
+      setPlacementVersion(version => version + 1);
       setOverride({
         tasks: optimistic,
         taskId,
@@ -259,6 +263,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
           bump();
         } catch (err) {
           if (!mounted.current) return;
+          setPlacementVersion(version => version + 1);
           setOverride(previousOverride);
           if (isStaleWriteConflict(err)) {
             staleTaskRevisions.current.set(taskId, plan.expectedRevision);
@@ -527,8 +532,16 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     return `${dragged.task.title}: ${target} · ${strings.dropPosition} ${projection.index + 1}`;
   }, [activeId, projection, effectiveTasks, rootGroup]);
 
+  const taskIds = useMemo(() => {
+    const ids = new Set<number>();
+    const visit = (tasks: Task[]) => { for (const task of tasks) { ids.add(task.id); visit(task.children ?? []); } };
+    visit(effectiveTasks);
+    return ids;
+  }, [effectiveTasks]);
+
   const value = useMemo<OutlineOrganizeValue>(
     () => ({
+      taskIds,
       enabled,
       activeId,
       pendingId,
@@ -544,6 +557,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       clearError,
     }),
     [
+      taskIds,
       enabled,
       activeId,
       pendingId,
@@ -563,6 +577,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   return {
     /** The tree to render: server data, or the optimistic tree while a move is pending. */
     tasks: effectiveTasks,
+    placementVersion,
     enabled,
     value,
     containerRef,

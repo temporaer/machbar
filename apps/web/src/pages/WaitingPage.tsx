@@ -1,3 +1,5 @@
+import { flattenTasks } from "../lib/taskHelpers";
+import { useTaskActions } from "../lib/useTaskActions";
 import { useState } from "react";
 import { api, type AgendaScope } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -28,6 +30,7 @@ export function WaitingPage() {
     () => api.getWaiting(currentMemberId, scope),
     [currentMemberId, scope],
   );
+  useTaskActions(flattenTasks((entries ?? []).map(entry => entry.task)));
   return (
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
@@ -63,7 +66,7 @@ export function WaitingPage() {
         />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
-        {entries ? <WaitingGroupList entries={entries} /> : null}
+        {entries ? <WaitingGroupList key={`${scope}:${currentMemberId}`} entries={entries} /> : null}
       </div>
     </InteractionScopeProvider>
   );

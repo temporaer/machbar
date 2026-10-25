@@ -1273,16 +1273,73 @@ action contract.
 
 ### Optimistic retention
 
-`useRetainedMutations` tracks in-flight entity IDs. Retained mutations keep an
-optimistic snapshot for `RETENTION_MS` (4 s) and defer the global `bump()` until
-the window elapses — an immediate bump could unmount the list holding the
-retained state. Project metadata instead bumps immediately and keeps its
-confirmed overlay without a timer until the authoritative project collection
-reaches that revision; a slow or failed refresh therefore cannot expose stale
-controls. Non-retained external-wait commands bump when the confirmed result
-arrives.
+`useRetainedMutations` separates confirmed/optimistic values from `holdingIds`.
+Task and project controllers opt into immediate refresh on success. Their
+confirmed overlays outlive the four-second display window and are reconciled
+by revision, preventing stale reads from restoring old controls. Query owners
+feed raw flattened task responses into reconciliation, including project
+details, task details, Waiting and Review; projected row props are never
+authoritative. The window
+starts after confirmation; failures roll back without a pending expiry.
+The shared `TaskActions.projectTask`/`taskHelpers.projectTaskValue` projection
+prefers authoritative equal-revision task fields after confirmation while
+preserving pending optimistic values. Rows, placement projectors, details,
+Review and workflow hosts all use it, since
+child changes can leave the parent's own revision unchanged. Task workflow
+hosts apply the same equal-revision preference; project detail keeps raw tasks
+and child stories independently from retained parent metadata.
+Refinement's existing matrix projection still uses delayed refresh.
 
-Consequence, and it is intentional: **a retained row is disabled only while the request is in flight, and becomes fully actionable again as soon as the request resolves** — while still displayed crossed-out inside its retention window. That lets a user immediately swipe the just-completed row again to reopen it (`erledigt → wieder offen`).
+`useRetainedPlacement` owns view-local placement, not domain state. Today,
+Inbox, Waiting, discussion, inventory, Review, project groups and task outlines retain observed
+rows (including their ancestor path) at their old position while holdingIds
+contains them. Current values are indexed across every response bucket and
+descendant, independently of their retained location. Removed ancestors carry
+only retained paths, while held subtrees own their displayed descendants.
+Each merge filters only its sibling level and projects descendants once,
+rather than recursively cloning each remaining subtree at every depth.
+Frozen sibling anchors are precomputed and merged through a linked list,
+avoiding repeated sibling scans and array insertion copies for wide subtrees.
+Authoritative child membership is independent of retained scalar values;
+equal-revision authoritative child fields win over inherited snapshots.
+The optional domain projection uses `taskHelpers.applyDescendantTerminalOutcome`
+to apply only an actual completion/cancellation outcome (lifecycle fields),
+preserving fresh derived values and unrelated future fields. Descendant
+outcomes propagate recursively without replacing authoritative membership.
+Authoritative sibling ordering is established recursively before placement;
+TaskRow renders the projected order. Explicit outline keyboard/pointer moves
+(and rollback) advance the local placement generation, making structural
+commands immediately visible without discarding confirmed values.
+Project placement includes lifecycle sections and rendered tag-group nodes,
+so tag edits cannot unmount a held row by changing its group.
+Review uses stable issue keys and entity-specific holding predicates, preserving
+each card in its original group until its task/project hold ends. Explicit
+project Review acknowledgement acquires the same timed hold as task decisions;
+ordinary project metadata edits retain their existing until-refresh behavior. Card focus
+and gestures use the same interaction leases as ordinary rows; details and
+workflow hosts continue the lease across the transition.
+This keeps the last item and its section mounted during an
+immediate refresh, suppresses copies in destination buckets, and resets on
+explicit filter/identity changes. Rows removed from structural outlines do
+not become drag targets.
+
+`useRetentionInteraction` leases the display window while row menus,
+workflows, details, keyboard focus or pointer gestures are active. Task leases
+protect both directions: a child's interaction holds its placement ancestors,
+and an ancestor's interaction holds the descendants keeping it mounted.
+Raw query owners and outlines observe task trees without acknowledging projected
+rows. At transition start the controller snapshots relevant ancestor/subtree
+relations through the display lifetime, even if a later response omits them.
+New observations union newly attached descendants into active ownership.
+The controller's live interaction registry acquires additional owner leases for
+already-open interactions, without dropping removed paths; cleanup releases
+all leases together. `taskHelpers.indexTaskDescendants`
+memoizes each task's descendant set once per observation, reusing it across
+ancestors and repeated flattened entries rather than retraversing subtrees. Child-policy prompts hold the pending
+task until the decision closes or its transition finishes. The last
+lease's release provides at least two seconds of orientation time. Pointer
+focus alone does not hold a row indefinitely. Only an in-flight request
+disables mutation controls; retained rows remain readable and actionable.
 
 ### Focused quick sheets
 

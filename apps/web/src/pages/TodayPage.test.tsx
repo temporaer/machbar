@@ -1,5 +1,6 @@
+import { useTaskActions } from "../lib/useTaskActions";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
@@ -11,7 +12,7 @@ import {
   newDateOnlyRevisitAt,
   type Agenda,
 } from "@machbar/shared";
-import { TIMED_ELIGIBILITY_REFRESH_MS } from "../lib/refresh";
+import { TIMED_ELIGIBILITY_REFRESH_MS, useRefresh } from "../lib/refresh";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -21,9 +22,9 @@ vi.mock("../lib/api", () => ({
     getContributionSummary: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
     completeTask: vi.fn(),
+    updateTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
-    updateTask: vi.fn(),
     moveTask: vi.fn(),
     createTask: vi.fn(),
   },
@@ -348,6 +349,147 @@ describe("TodayPage", () => {
     await waitFor(() =>
       expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(1, "mine"),
     );
+  });
+
+  it("refreshes immediately but keeps the last completed task in Today until its display window ends", async () => {
+    const task = makeTask({ id: 9001, title: "Bleibt kurz in Today", status: "actionable" });
+    const done = makeTask({ ...task, status: "done", revision: 2 });
+    let completed = false;
+    mockedApi.getAgenda.mockImplementation(async () => ({
+      ...makeEmptyAgenda(), planned: completed ? [] : [task], completedToday: completed ? [done] : [],
+    }));
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    renderWithProviders(<TodayPage />);
+    const row = (await screen.findByText(task.title)).closest("li")!;
+    const sourceSection = row.closest(".section")!;
+    vi.useFakeTimers();
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mockedApi.getAgenda.mock.calls.length).toBeGreaterThan(1);
+    expect(screen.getAllByText(task.title)).toHaveLength(1);
+    expect(screen.getByText(task.title).closest(".section")).toBe(sourceSection);
+    expect(within(row).getByRole("button", { name: "Wieder öffnen" })).not.toBeDisabled();
+    expect(screen.getByText(task.title)).toHaveClass("done");
+    expect(screen.queryByText("Heute erledigt (1)")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(screen.getAllByText(task.title)).toHaveLength(1);
+    expect(screen.getByText(task.title).closest(".section")).not.toBe(sourceSection);
+    expect(sourceSection).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])("retains open children under a completed parent, protecting an open child menu: %s", async openMenu => {
+    const child = makeTask({ id: 9022, title: "Child left open", parentTaskId: 9021 });
+    const parent = makeTask({ id: 9021, title: "Completed parent", children: [child] });
+    const done = { ...parent, status: "done" as const, revision: 2, children: [] };
+    let completed = false;
+    mockedApi.getAgenda.mockImplementation(async () => ({ ...makeEmptyAgenda(),
+      planned: completed ? [] : [parent], unscheduled: completed ? [child] : [],
+      completedToday: completed ? [{ ...done, children: [] }] : [],
+    }));
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    function CompleteParent() {
+      const actions = useTaskActions();
+      return <button onClick={() => void actions.complete(parent, "leave_open")}>Complete parent</button>;
+    }
+    renderWithProviders(<><TodayPage /><CompleteParent /></>);
+    await screen.findByText(child.title);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Complete parent" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(parent.id, "leave_open", undefined, 1);
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(parent.title);
+    if (openMenu) {
+      const childRow = screen.getByText(child.title).closest("li")!;
+      const toggle = within(childRow).getByRole("button", { name: "Weitere Aktionen" });
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(childRow).toBeInTheDocument();
+      expect(within(childRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+      expect(childRow).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    } else {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    }
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toBeNull();
+  });
+
+  it("protects a newly attached child's menu when its held parent moves between Today buckets", async () => {
+    const parent = makeTask({ id: 9031, title: "Parent before edit" });
+    const renamed = { ...parent, title: "Held parent with new child", revision: 2 };
+    const child = makeTask({ id: 9032, title: "Newly attached child" });
+    let saved = false;
+    let moved = false;
+    mockedApi.updateTask.mockImplementation(async () => { saved = true; return renamed; });
+    mockedApi.getAgenda.mockImplementation(async () => ({ ...makeEmptyAgenda(),
+      planned: moved ? [] : [saved ? renamed : parent],
+      dueToday: moved ? [{ ...renamed, children: [{ ...child, parentTaskId: parent.id, revision: 2 }] }] : [],
+      unscheduled: moved ? [] : [child],
+    }));
+    function Controls() {
+      const actions = useTaskActions();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.update(parent, { title: renamed.title })}>Rename held parent</button>
+        <button onClick={() => { moved = true; bump(); }}>Attach child and move bucket</button>
+      </>;
+    }
+    renderWithProviders(<><TodayPage /><Controls /></>);
+    const sourceSection = (await screen.findByText(parent.title)).closest(".section")!;
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Rename held parent" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("button", { name: "Attach child and move bucket" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const childRow = screen.getByText(child.title).closest("li")!;
+    const toggle = within(childRow).getByRole("button", { name: "Weitere Aktionen" });
+    fireEvent.click(toggle);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(childRow).toBeInTheDocument();
+    expect(childRow.closest(".section")).toBe(sourceSection);
+    expect(within(childRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
+    fireEvent.click(toggle);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    expect(childRow).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(sourceSection).not.toBeInTheDocument();
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+  });
+
+  it.each([false, true])("keeps a held child and its ancestor while the ancestor menu is open: %s", async openParentMenu => {
+    const child = makeTask({ id: 9012, title: "Nested retained task" });
+    const parent = makeTask({ id: 9011, title: "Retained ancestor", children: [child] });
+    const done = makeTask({ ...child, status: "done", revision: 2 });
+    let completed = false;
+    mockedApi.getAgenda.mockImplementation(async () => ({ ...makeEmptyAgenda(),
+      dueToday: completed ? [] : [parent], completedToday: completed ? [done] : [],
+    }));
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    renderWithProviders(<TodayPage />);
+    const row = (await screen.findByText(child.title)).closest("li")!;
+    vi.useFakeTimers();
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(parent.title)).toBeInTheDocument();
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).not.toBeNull();
+    if (openParentMenu) {
+      const ancestor = screen.getByText(parent.title).closest("li")!;
+      const toggle = within(ancestor).getAllByRole("button", { name: "Weitere Aktionen" })[0]!;
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(ancestor).toBeInTheDocument();
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+      expect(ancestor).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    } else {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    }
+    expect(screen.queryByText(parent.title)).not.toBeInTheDocument();
   });
 
   it.each(["member", "scope"])("does not expose a retained row after changing the selected %s", async selection => {

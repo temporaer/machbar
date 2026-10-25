@@ -1,3 +1,7 @@
+import { flattenTasks } from "../lib/taskHelpers";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useProjectActions } from "../lib/useProjectActions";
+import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useMemo, useState } from "react";
 import type { SearchFilters } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -42,7 +46,7 @@ export function AllPage() {
     error: tasksError,
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks({ ...filters, includeTerminal: true }), [filtersKey]);
-  const filteredProjects = useMemo(
+  const projectCandidates = useMemo(
     () =>
       filterAndSortProjects(filterInventoryProjects(projects ?? [], filters), {
         query: "",
@@ -53,7 +57,7 @@ export function AllPage() {
     [filtersKey, locale, projects],
   );
   const filtering = hasInventoryFilters(filters);
-  const visibleTasks = sortInventoryTasks(
+  const taskCandidates = sortInventoryTasks(
     filtering
       ? topLevelTaskResults(tasks ?? [])
       : (tasks ?? []).filter(
@@ -63,6 +67,12 @@ export function AllPage() {
     locale,
     { recencyRank: recencyRankLookup("task") },
   );
+  const taskActions = useTaskActions(flattenTasks(tasks ?? []));
+  const projectActions = useProjectActions(projects ?? []);
+  const { rows: visibleTasks } = useRetainedPlacement({ rows: taskCandidates }, taskActions.holdingIds,
+    taskActions.projectTask, filtersKey);
+  const { rows: filteredProjects } = useRetainedPlacement({ rows: projectCandidates }, projectActions.holdingIds,
+    projectActions.projectStory, filtersKey);
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
 
@@ -124,6 +134,7 @@ export function AllPage() {
                       : strings.allStandaloneTasksHeading}
                   </h2>
                   <TaskOutline
+                    key={filtersKey}
                     tasks={visibleTasks}
                     emptyMessage={strings.allEmpty}
                     preserveRootOrder

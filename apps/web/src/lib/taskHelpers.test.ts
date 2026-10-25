@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { makeTask } from "../test/fixtures";
 import {
   countTasks,
+  projectTaskValue,
+  indexTaskDescendants,
   hasOpenDescendants,
   markOpenDescendantsTerminal,
   openDescendantRoots,
@@ -95,5 +97,36 @@ describe("taskHelpers reference transparency", () => {
     ];
 
     expect(countTasks(projectTasks)).toEqual({ open: 1, done: 0 });
+  });
+});
+
+describe("task descendant indexing", () => {
+  it("reads each unique subtree once for an already flattened 400-task chain", () => {
+    const nodes: ReturnType<typeof makeTask>[] = [];
+    let reads = 0;
+    for (let id = 400; id >= 1; id -= 1) {
+      const children = nodes.length ? [nodes[0]!] : [];
+      const task = makeTask({ id });
+      Object.defineProperty(task, "children", { get: () => { reads += 1; return children; } });
+      nodes.unshift(task);
+    }
+    const index = indexTaskDescendants([...nodes, ...nodes]);
+    expect(reads).toBe(400);
+    expect(index.size).toBe(400);
+    expect(index.get(1)?.size).toBe(399);
+    expect(index.get(200)?.size).toBe(200);
+    expect(index.get(400)?.size).toBe(0);
+    expect(index.get(1)?.has(400)).toBe(true);
+  });
+});
+
+describe("retained task value selection", () => {
+  it("prefers confirmed equal-revision derived fields but keeps pending optimistic changes", () => {
+    const retained = makeTask({ revision: 2, blocked: true });
+    const fresh = { ...retained, blocked: false, executable: true };
+    expect(projectTaskValue(fresh, retained)).toBe(fresh);
+    expect(projectTaskValue(fresh, retained, true)).toBe(retained);
+    expect(projectTaskValue({ ...fresh, revision: 1 }, retained)).toBe(retained);
+    expect(projectTaskValue({ ...fresh, revision: 3 }, retained, true).revision).toBe(3);
   });
 });

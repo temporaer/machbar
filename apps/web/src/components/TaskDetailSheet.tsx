@@ -1,3 +1,4 @@
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesAppend } from "./NotesAppend";
 import {
   useEffect,
@@ -21,7 +22,7 @@ import { useStrings } from "../lib/strings";
 import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
-import { isCapturedInboxItem } from "../lib/taskHelpers";
+import { flattenTasks, isCapturedInboxItem } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
@@ -105,7 +106,6 @@ export function TaskDetailSheet() {
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
-  const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
   const suspended = detailSuspended;
@@ -141,9 +141,9 @@ export function TaskDetailSheet() {
     error,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
-  const task = loadedTask
-    ? (taskActions.retained.get(loadedTask.id) ?? loadedTask)
-    : null;
+  const taskActions = useTaskActions(flattenTasks(loadedTask ? [loadedTask] : []));
+  useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
+  const task = loadedTask ? taskActions.projectTask(loadedTask) : null;
 
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.

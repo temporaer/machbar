@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Task, TaskStatus } from "@machbar/shared";
 import { api } from "./api";
 import type {
@@ -8,6 +8,9 @@ import type {
 } from "./api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
 import {
+  flattenTasks,
+  indexTaskDescendants,
+  projectTaskValue,
   hasOpenDescendants,
   markOpenDescendantsTerminal,
 } from "./taskHelpers";
@@ -35,23 +38,10 @@ type WithoutExpectedRevision<T> = T extends unknown
  * Complete and cancel accept every descendant policy and apply the parent
  * transition plus descendant outcomes in one backend transaction.
  *
- * Retention: every mutation here is optimistic. The instant it starts, the
- * mutated task is snapshotted (with its *new* status/timestamps) into
- * `retained`, so any list still rendering that row can keep showing it —
- * crossed out or muted — instead of yanking it away the moment the
- * compiled view (Heute/Eingang/Suche/…) refetches and no longer includes
- * it. Crucially, the global refresh (`bump()`) does *not* fire the instant
- * the mutation succeeds: several compiled views only render a section (and
- * the `TaskOutline` within it) while that section is non-empty, so an
- * immediate refetch can unmount the very `TaskOutline` holding the
- * `retained` snapshot — cutting the "stays crossed out" window down to a
- * single render frame instead of `RETENTION_MS`. Instead, `bump()` is
- * deferred to fire exactly once, precisely when the retention window
- * naturally elapses (see `retain`), so counts/badges elsewhere and this
- * row's removal settle together. A failed mutation clears the retained
- * entry (and cancels that pending bump) immediately, which restores the row
- * to its last known-good (pre-mutation) state, and records a message
- * consumers can surface inline — no delayed refresh is left behind.
+ * Retention holds list placement independently from the optimistic/confirmed
+ * state. Successful writes refresh immediately; lists preserve their own
+ * observed rows while holdingIds contains them. Confirmed overlays outlive
+ * display retention so late reads cannot restore stale values.
  *
  * This is the underlying state/logic; it is instantiated exactly once by
  * `TaskActionsProvider` below so every consumer (row, detail sheet, review,
@@ -60,8 +50,68 @@ type WithoutExpectedRevision<T> = T extends unknown
  */
 function useTaskActionsState() {
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
-  const mutations = useRetainedMutations<Task>();
+  const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
+  const mutations = useRetainedMutations<Task>({ immediateRefresh: true });
   const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
+  const projectTask = useCallback((task: Task) => projectTaskValue(task, retained.get(task.id), isPending(task.id)), [retained, isPending]);
+  useEffect(() => {
+    setAcknowledgedReviewIds(current => {
+      const next = new Set([...current].filter(id => mutations.holdingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [mutations.holdingIds]);
+  // Placement can preserve a subtree that a confirmed response no longer
+  // contains. Remember its original ownership through the display lifetime.
+  const placementDescendants = useRef(new Map<number, Set<number>>());
+  const observedDescendants = useRef(new Map<number, Set<number>>());
+  const liveState = useRef({ holding: mutations.holdingIds, pending: pendingIds });
+  liveState.current = { holding: mutations.holdingIds, pending: pendingIds };
+  const interactions = useRef(new Set<{ id: number; leases: Map<number, () => void> }>());
+  const syncInteractions = useCallback(() => {
+    for (const interaction of interactions.current) {
+      const owners = new Set([interaction.id]);
+      for (const [owner, descendants] of placementDescendants.current) {
+        if (descendants.has(interaction.id)) owners.add(owner);
+        if (owner === interaction.id) {
+          for (const child of descendants) if (liveState.current.holding.has(child)) owners.add(child);
+        }
+      }
+      for (const owner of owners) {
+        if (!interaction.leases.has(owner)) interaction.leases.set(owner, mutations.pauseRetention(owner));
+      }
+    }
+  }, [mutations.pauseRetention]);
+  const observeTasks = useCallback((tasks: readonly Task[]) => {
+    for (const [id, descendants] of indexTaskDescendants(tasks)) {
+      observedDescendants.current.set(id, descendants);
+      const previous = placementDescendants.current.get(id);
+      const { holding, pending } = liveState.current;
+      if (holding.has(id) || pending.has(id) || [...(previous ?? []), ...descendants].some(child => holding.has(child) || pending.has(child))) {
+        placementDescendants.current.set(id, new Set([...(previous ?? []), ...descendants]));
+      }
+    }
+    // Existing interactions acquire new owners too, without dropping the old
+    // paths that still keep their displayed row mounted.
+    syncInteractions();
+  }, [syncInteractions]);
+  useEffect(() => {
+    for (const [id, descendants] of placementDescendants.current) {
+      if (![id, ...descendants].some(candidate => mutations.holdingIds.has(candidate) || pendingIds.has(candidate))) placementDescendants.current.delete(id);
+    }
+  }, [mutations.holdingIds, pendingIds]);
+  useLayoutEffect(syncInteractions, [syncInteractions, mutations.holdingIds, pendingIds]);
+  const pauseRetention = useCallback((id: number) => {
+    const interaction = { id, leases: new Map<number, () => void>() };
+    interactions.current.add(interaction);
+    syncInteractions();
+    return () => {
+      if (!interactions.current.delete(interaction)) return;
+      interaction.leases.forEach(close => close());
+    };
+  }, [syncInteractions]);
+  useEffect(() => {
+    if (pending) return pauseRetention(pending.task.id);
+  }, [pending, pauseRetention]);
 
   const runTransition = useCallback(
     async (
@@ -70,6 +120,12 @@ function useTaskActionsState() {
       job: () => Promise<Task>,
       throwOnError = false,
     ) => {
+      for (const [ancestor, descendants] of observedDescendants.current) {
+        if (descendants.has(task.id)) {
+          placementDescendants.current.set(ancestor, new Set([...(placementDescendants.current.get(ancestor) ?? []), ...descendants]));
+        }
+      }
+      placementDescendants.current.set(task.id, new Set([...(placementDescendants.current.get(task.id) ?? []), ...flattenTasks(task.children ?? []).map(child => child.id)]));
       try {
         return await run({
           id: task.id,
@@ -380,18 +436,20 @@ function useTaskActionsState() {
   );
 
   const acknowledgeReview = useCallback(
-    (task: Task) => {
+    async (task: Task) => {
       const now = new Date().toISOString();
       const optimistic: Task = {
         ...task,
         revision: task.revision + 1,
         reviewedAt: now,
       };
-      return runTransition(
+      const result = await runTransition(
         task,
         optimistic,
         () => api.acknowledgeTaskReview(task.id, task.revision),
       );
+      if (result) setAcknowledgedReviewIds(current => new Set(current).add(task.id));
+      return result;
     },
     [runTransition],
   );
@@ -492,6 +550,12 @@ function useTaskActionsState() {
   const cancelPrompt = useCallback(() => setPending(null), []);
 
   return {
+    observeTasks,
+    projectTask,
+    acknowledgedReviewIds,
+    release: mutations.release,
+    holdingIds: mutations.holdingIds,
+    pauseRetention,
     pendingTask: pending?.task ?? null,
     pendingAction: pending?.action ?? null,
     pendingIds,
@@ -540,10 +604,17 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
 }
 
 /** Consumes the shared task action controller mounted by `TaskActionsProvider`. */
-export function useTaskActions(): TaskActionsValue {
+export function useTaskActions(authoritative: readonly Task[] = []): TaskActionsValue {
   const context = useContext(TaskActionsContext);
   if (!context) {
     throw new Error("useTaskActions must be used within a TaskActionsProvider");
   }
+  useEffect(() => {
+    context.observeTasks(authoritative);
+    for (const task of authoritative) {
+      const overlay = context.retained.get(task.id);
+      if (overlay && !context.holdingIds.has(task.id) && !context.isPending(task.id) && task.revision >= overlay.revision) context.release(task.id);
+    }
+  }, [authoritative, context]);
   return context;
 }

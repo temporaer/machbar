@@ -1,7 +1,9 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { TaskDetailSheet } from "../components/TaskDetailSheet";
+import { useRefresh } from "../lib/refresh";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReviewItem } from "@machbar/shared";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { api } from "../lib/api";
 import { makeProject, makeTask } from "../test/fixtures";
@@ -18,6 +20,8 @@ vi.mock("../lib/api", () => ({
     }),
     getMembers: vi.fn().mockResolvedValue([]),
     getTask: vi.fn(),
+    getTaskRecurrenceHistory: vi.fn().mockResolvedValue({ summary: { hitCount: 0, missCount: 0, totalCount: 0, hitRate: null }, occurrences: [] }),
+    getActivity: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     getTags: vi.fn().mockResolvedValue([]),
     getPhysicalContexts: vi.fn().mockResolvedValue([]),
     getReviewItems: vi.fn(),
@@ -114,6 +118,117 @@ describe("ReviewPage", () => {
       revision: 2,
       reviewedAt: "2026-08-31T20:00:00.000Z",
     });
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it.each(["task", "project"] as const)("retains a resolved %s issue in its original group after Review omits it", async entityType => {
+    const issue = reviewItems.find(item => item.entityType === entityType && item.category === "reconsider")!;
+    const entity = entityType === "task" ? task : staleProject;
+    let resolved = false;
+    mockedApi.getReviewItems.mockImplementation(async () => resolved ? [] : [issue]);
+    mockedApi.updateTask.mockImplementation(async () => { resolved = true; return { ...task, status: "actionable", revision: 2 }; });
+    mockedApi.completeProject.mockImplementation(async () => { resolved = true; return { ...staleProject, status: "completed", revision: 2 }; });
+    renderWithProviders(<ReviewPage />);
+    const card = (await screen.findByText(entity.title)).closest("article")!;
+    const group = card.closest(".review-group");
+    vi.useFakeTimers();
+    fireEvent.click(within(card).getByRole("button", { name: entityType === "task" ? "Machbar" : "Abschließen" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(resolved).toBe(true);
+    expect(mockedApi.getReviewItems.mock.calls.length).toBeGreaterThan(1);
+    expect(card).toBeInTheDocument();
+    expect(card.closest(".review-group")).toBe(group);
+    expect(screen.getAllByText(entity.title)).toHaveLength(1);
+    expect(screen.queryByText("Alles ist bewusst entschieden. Es gibt gerade nichts zu prüfen.")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
+    expect(card).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(card).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])("retains an acknowledged project issue, keyboard focused: %s", async keyboardFocused => {
+    const issue = reviewItems.find(item => item.entityType === "project" && item.category === "reconsider")!;
+    const confirmed = { ...staleProject, revision: 2, reviewedAt: "2026-10-25T11:00:00.000Z" };
+    let acknowledged = false;
+    mockedApi.getReviewItems.mockImplementation(async () => acknowledged ? [] : [issue]);
+    mockedApi.getProjects.mockImplementation(async () => [acknowledged ? confirmed : staleProject]);
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { acknowledged = true; return confirmed; });
+    renderWithProviders(<><ReviewPage /><button>Outside Review</button></>);
+    const card = (await screen.findByText(staleProject.title)).closest("article")!;
+    const keep = within(card).getByRole("button", { name: "So beibehalten" });
+    vi.useFakeTimers();
+    if (keyboardFocused) act(() => keep.focus());
+    fireEvent.click(keep);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mockedApi.acknowledgeProjectReview).toHaveBeenCalledWith(staleProject.id, { expectedRevision: 1 });
+    expect(acknowledged).toBe(true);
+    expect(card).toBeInTheDocument();
+    expect(within(card).getByText("Für jetzt bestätigt")).toBeInTheDocument();
+    if (keyboardFocused) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(card).toBeInTheDocument();
+      act(() => screen.getByRole("button", { name: "Outside Review" }).focus());
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    } else {
+      await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
+    }
+    expect(card).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(card).not.toBeInTheDocument();
+  });
+
+  it("keeps a task acknowledgement confirmation after the refreshed task matches it", async () => {
+    const issue = reviewItems[2]!;
+    const confirmed = { ...task, revision: 2, reviewedAt: "2026-10-25T11:00:00.000Z" };
+    let acknowledged = false;
+    mockedApi.getReviewItems.mockImplementation(async () => acknowledged ? [] : [issue]);
+    mockedApi.searchTasks.mockImplementation(async () => [acknowledged ? confirmed : task]);
+    mockedApi.acknowledgeTaskReview.mockImplementation(async () => {
+      acknowledged = true;
+      return confirmed;
+    });
+    renderWithProviders(<ReviewPage />);
+
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "So beibehalten" }));
+
+    await waitFor(() => {
+      expect(mockedApi.getReviewItems.mock.calls.length).toBeGreaterThan(1);
+      expect(within(card).getByText("Für jetzt bestätigt")).toBeInTheDocument();
+    });
+  });
+
+  it.each(["keyboard", "details"] as const)("keeps an omitted Review issue while %s interaction is active", async interaction => {
+    let resolved = false;
+    const current = { ...task, status: "actionable" as const, revision: 2 };
+    mockedApi.getReviewItems.mockImplementation(async () => resolved ? [] : [reviewItems[2]!]);
+    mockedApi.searchTasks.mockImplementation(async () => [resolved ? current : task]);
+    mockedApi.getTask.mockResolvedValue(current);
+    mockedApi.updateTask.mockImplementation(async () => { resolved = true; return current; });
+    renderWithProviders(<><ReviewPage /><TaskDetailSheet /><button>Outside Review</button></>);
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    vi.useFakeTimers();
+    fireEvent.click(within(card).getByRole("button", { name: "Machbar" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    if (interaction === "keyboard") {
+      act(() => card.focus());
+    } else {
+      fireEvent.click(within(card).getAllByRole("button", { name: "Details öffnen" })[0]!);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(card).toBeInTheDocument();
+    if (interaction === "details") {
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Schließen" }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+    }
+    act(() => screen.getByRole("button", { name: "Outside Review" }).focus());
+    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    expect(card).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(card).not.toBeInTheDocument();
   });
 
   it("renders grouped decisions with reasons and keeps refinement tools optional", async () => {
@@ -243,6 +358,27 @@ describe("ReviewPage", () => {
         expectedRevision: 1,
       }),
     );
+  });
+
+  it("uses newer nested task data for Review decisions despite a retained edit", async () => {
+    let current = task;
+    mockedApi.searchTasks.mockImplementation(async () => [makeTask({ id: 100, children: [current] })]);
+    mockedApi.updateTask.mockImplementation(async () => {
+      current = { ...task, status: "actionable", revision: current.revision + 1 };
+      return current;
+    });
+    function RefreshNewest() {
+      const { bump } = useRefresh();
+      return <button onClick={() => { current = { ...task, revision: 3 }; bump(); }}>Load newest revision</button>;
+    }
+    renderWithProviders(<><ReviewPage /><RefreshNewest /></>);
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "Machbar" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, { status: "actionable", expectedRevision: 1 }));
+    await userEvent.click(screen.getByRole("button", { name: "Load newest revision" }));
+    const classify = await within(card).findByRole("button", { name: "Machbar" });
+    await userEvent.click(classify);
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenLastCalledWith(task.id, { status: "actionable", expectedRevision: 3 }));
   });
 
   it("returns from project repair to the originating focused queue item", async () => {
