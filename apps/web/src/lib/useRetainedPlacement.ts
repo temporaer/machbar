@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef } from "react";
-import { retainPlacement, type PlacedItem } from "./retainedPlacement";
+import { retainPlacement, type PlacedItem, type PlacementId } from "./retainedPlacement";
 
 /** One instance per view, reset by its explicit filter/identity selection. */
 export function useRetainedPlacement<T extends PlacedItem, K extends string>(
-  buckets: Record<K, T[]>, holding: ReadonlySet<number>, latest: (item: T) => T,
+  buckets: Record<K, T[]>, holding: ReadonlySet<PlacementId> | ((item: T) => boolean), latest: (item: T) => T,
   selectionKey = "",
 ): Record<K, T[]> {
   const layout = useRef<{ key: string; buckets: Record<string, T[]> }>({ key: selectionKey, buckets: {} });

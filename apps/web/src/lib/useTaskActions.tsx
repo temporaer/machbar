@@ -9,6 +9,7 @@ import type {
 import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
 import {
   flattenTasks,
+  indexTaskDescendants,
   hasOpenDescendants,
   markOpenDescendantsTerminal,
 } from "./taskHelpers";
@@ -55,10 +56,8 @@ function useTaskActionsState() {
   const placementDescendants = useRef(new Map<number, Set<number>>());
   const observedDescendants = useRef(new Map<number, Set<number>>());
   const observeTasks = useCallback((tasks: readonly Task[]) => {
-    for (const task of tasks) {
-      for (const node of flattenTasks([task])) {
-        observedDescendants.current.set(node.id, new Set(flattenTasks(node.children ?? []).map(child => child.id)));
-      }
+    for (const [id, descendants] of indexTaskDescendants(tasks)) {
+      observedDescendants.current.set(id, descendants);
     }
   }, []);
   useEffect(() => {

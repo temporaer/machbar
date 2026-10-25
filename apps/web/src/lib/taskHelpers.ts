@@ -103,3 +103,22 @@ export function flattenTasks(tasks: Task[]): Task[] {
   walk(tasks);
   return out;
 }
+
+/** Index each unique task once, reusing cached descendant sets for ancestors
+ * and for callers supplying an already flattened tree. */
+export function indexTaskDescendants(tasks: readonly Task[]): Map<number, Set<number>> {
+  const index = new Map<number, Set<number>>();
+  const visit = (task: Task): Set<number> => {
+    const cached = index.get(task.id);
+    if (cached) return cached;
+    const descendants = new Set<number>();
+    index.set(task.id, descendants);
+    for (const child of task.children) {
+      descendants.add(child.id);
+      for (const id of visit(child)) descendants.add(id);
+    }
+    return descendants;
+  };
+  tasks.forEach(visit);
+  return index;
+}

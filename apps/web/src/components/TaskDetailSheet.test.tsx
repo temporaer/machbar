@@ -181,6 +181,40 @@ describe("TaskDetailSheet", () => {
     ]);
   });
 
+  it("refreshes child states at equal parent revision while the edited parent remains open", async () => {
+    let child = makeTask({ id: 43, title: "Child to finish", parentTaskId: 42 });
+    let parent = makeTask({ id: 42, title: "Parent before edit", children: [child] });
+    mockedApi.getTask.mockImplementation(async id => id === parent.id ? parent : child);
+    mockedApi.updateTask.mockImplementation(async () => {
+      parent = { ...parent, title: "Edited parent", revision: 2 };
+      return parent;
+    });
+    mockedApi.completeTask.mockImplementation(async () => {
+      child = { ...child, status: "done", revision: 2 };
+      parent = { ...parent, children: [child] };
+      return child;
+    });
+    mockedApi.reopenTask.mockImplementation(async () => {
+      child = { ...child, status: "actionable", revision: 3 };
+      parent = { ...parent, children: [child] };
+      return child;
+    });
+    renderSheet(parent.id);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle(parent.title);
+    const title = await openTitleEditor();
+    await userEvent.clear(title);
+    await userEvent.type(title, "Edited parent");
+    await userEvent.click(within(title.closest(".field")!).getByRole("button", { name: "Speichern" }));
+    await waitForTaskTitle("Edited parent");
+    const childRow = screen.getByRole("button", { name: child.title }).closest("li")!;
+    await userEvent.click(within(childRow).getByRole("button", { name: "Erledigt" }));
+    const reopen = await within(childRow).findByRole("button", { name: "Wieder öffnen" });
+    expect(parent.revision).toBe(2);
+    await userEvent.click(reopen);
+    await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(child.id, 2));
+  });
+
   it("loads an opened task despite repeated refreshes while its first response is pending", async () => {
     const task = makeTask({ id: 42, title: "Slow task", repeatAfterDays: 7 });
     let resolve!: (value: typeof task) => void;
@@ -623,17 +657,12 @@ describe("TaskDetailSheet", () => {
   });
 
   it("offers to mark or unmark a project task as an additional Next Action, but only when it has a project", async () => {
-    mockedApi.getTask.mockResolvedValue(
-      makeTask({
-        id: 42,
-        title: "Menü abstimmen",
-        projectId: 7,
-        additionalNextAction: false,
-      }),
-    );
-    mockedApi.updateTask.mockImplementation(async (id, input) =>
-      makeTask({ id, title: "Menü abstimmen", projectId: 7, ...(input as Partial<Task>) }),
-    );
+    let current = makeTask({ id: 42, title: "Menü abstimmen", projectId: 7, additionalNextAction: false });
+    mockedApi.getTask.mockImplementation(async () => current);
+    mockedApi.updateTask.mockImplementation(async (id, input) => {
+      current = { ...current, additionalNextAction: input.additionalNextAction ?? current.additionalNextAction, id, revision: current.revision + 1 };
+      return current;
+    });
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Menü abstimmen");

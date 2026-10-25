@@ -1281,15 +1281,21 @@ feed raw flattened task responses into reconciliation, including project
 details, task details, Waiting and Review; projected row props are never
 authoritative. The window
 starts after confirmation; failures roll back without a pending expiry.
+Open task details prefer an authoritative response at equal revision, since
+child changes can leave the parent's own revision unchanged.
 Refinement's existing matrix projection still uses delayed refresh.
 
 `useRetainedPlacement` owns view-local placement, not domain state. Today,
-Inbox, Waiting, discussion, inventory, project groups and task outlines retain observed
+Inbox, Waiting, discussion, inventory, Review, project groups and task outlines retain observed
 rows (including their ancestor path) at their old position while holdingIds
 contains them. Current values are indexed across every response bucket and
 descendant, independently of their retained location. Removed ancestors carry
 only retained paths, while held subtrees own their displayed descendants.
 TaskRow applies retained scalar values while preserving the projected children.
+Review uses stable issue keys and entity-specific holding predicates, preserving
+each card in its original group until its task/project hold ends. Card focus
+and gestures use the same interaction leases as ordinary rows; details and
+workflow hosts continue the lease across the transition.
 This keeps the last item and its section mounted during an
 immediate refresh, suppresses copies in destination buckets, and resets on
 explicit filter/identity changes. Rows removed from structural outlines do
@@ -1301,7 +1307,9 @@ protect both directions: a child's interaction holds its placement ancestors,
 and an ancestor's interaction holds the descendants keeping it mounted.
 Raw query owners and outlines observe task trees without acknowledging projected
 rows. At transition start the controller snapshots relevant ancestor/subtree
-relations through the display lifetime, even if a later response omits them. Child-policy prompts hold the pending
+relations through the display lifetime, even if a later response omits them. `taskHelpers.indexTaskDescendants`
+memoizes each task's descendant set once per observation, reusing it across
+ancestors and repeated flattened entries rather than retraversing subtrees. Child-policy prompts hold the pending
 task until the decision closes or its transition finishes. The last
 lease's release provides at least two seconds of orientation time. Pointer
 focus alone does not hold a row indefinitely. Only an in-flight request

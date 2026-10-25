@@ -1,13 +1,14 @@
 /** Keep only previously visible rows at their old location, using fresh values.
  * This is presentation state, never another domain mutation or query cache. */
-export interface PlacedItem { id: number; revision?: number; children?: PlacedItem[] }
+export type PlacementId = number | string;
+export interface PlacedItem { id: PlacementId; revision?: number; children?: PlacedItem[] }
 
 export function retainPlacement<T extends PlacedItem>(
-  previous: Record<string, T[]>, current: Record<string, T[]>, holding: ReadonlySet<number>,
+  previous: Record<string, T[]>, current: Record<string, T[]>, holding: ReadonlySet<PlacementId> | ((item: T) => boolean),
   latest: (item: T) => T,
 ): Record<string, T[]> {
   // Values may have moved elsewhere in the response; location is independent.
-  const currentById = new Map<number, T>();
+  const currentById = new Map<PlacementId, T>();
   const index = (items: T[]) => { for (const item of items) {
     const existing = currentById.get(item.id);
     if (!existing || (item.revision ?? 0) >= (existing.revision ?? 0)) currentById.set(item.id, item);
@@ -16,12 +17,13 @@ export function retainPlacement<T extends PlacedItem>(
   Object.values(current).forEach(index);
   // A held subtree owns its displayed descendants as well as its root;
   // otherwise promoted open children would also render in a destination bucket.
-  const frozen = new Set<number>();
-  const collect = (items: PlacedItem[], heldAncestor = false): boolean => {
+  const frozen = new Set<PlacementId>();
+  const isHeld = typeof holding === "function" ? holding : (item: T) => holding.has(item.id);
+  const collect = (items: T[], heldAncestor = false): boolean => {
     let any = false;
     for (const item of items) {
-      const owned = heldAncestor || holding.has(item.id);
-      const childHeld = collect(item.children ?? [], owned);
+      const owned = heldAncestor || isHeld(item);
+      const childHeld = collect((item.children ?? []) as T[], owned);
       if (owned || childHeld) { frozen.add(item.id); any = true; }
     }
     return any;
