@@ -78,4 +78,33 @@ describe("retained list placement", () => {
     expect(nested ? result.other![0]!.children : result.other).toEqual([]);
   });
 
+  it("does bounded tree work when nothing is held in an unchanged 400-task chain", () => {
+    let root = task(400);
+    let reads = 0;
+    for (let id = 399; id >= 1; id -= 1) {
+      const child = root;
+      root = task(id);
+      Object.defineProperty(root, "children", { enumerable: true, get: () => { reads += 1; return [child]; } });
+    }
+    const result = retainPlacement({ rows: [root] }, { rows: [root] }, new Set(), identity);
+    expect(reads).toBeLessThan(400 * 12);
+    let count = 0;
+    let row = result.rows![0];
+    while (row) { count += 1; row = row.children[0]; }
+    expect(count).toBe(400);
+  });
+
+  it("keeps fresh child membership during a parent hold while applying retained values", () => {
+    const original = task(2);
+    const moved = task(3);
+    const parent = { ...task(1), children: [original] };
+    const snapshot = { ...parent, title: "Renamed", revision: 2 };
+    const current = { ...snapshot, children: [original, moved] };
+    const result = retainPlacement({ rows: [parent, moved] }, { rows: [current] }, new Set([1]),
+      item => item.id === 1 ? snapshot : item);
+    expect(result.rows![0]!.title).toBe("Renamed");
+    expect(result.rows![0]!.children.map(item => item.id)).toEqual([2, 3]);
+    expect(result.rows).toHaveLength(1);
+  });
+
 });

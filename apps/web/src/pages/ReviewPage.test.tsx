@@ -147,6 +147,36 @@ describe("ReviewPage", () => {
     expect(card).not.toBeInTheDocument();
   });
 
+  it.each([false, true])("retains an acknowledged project issue, keyboard focused: %s", async keyboardFocused => {
+    const issue = reviewItems.find(item => item.entityType === "project" && item.category === "reconsider")!;
+    const confirmed = { ...staleProject, revision: 2, reviewedAt: "2026-10-25T11:00:00.000Z" };
+    let acknowledged = false;
+    mockedApi.getReviewItems.mockImplementation(async () => acknowledged ? [] : [issue]);
+    mockedApi.getProjects.mockImplementation(async () => [acknowledged ? confirmed : staleProject]);
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { acknowledged = true; return confirmed; });
+    renderWithProviders(<><ReviewPage /><button>Outside Review</button></>);
+    const card = (await screen.findByText(staleProject.title)).closest("article")!;
+    const keep = within(card).getByRole("button", { name: "So beibehalten" });
+    vi.useFakeTimers();
+    if (keyboardFocused) act(() => keep.focus());
+    fireEvent.click(keep);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mockedApi.acknowledgeProjectReview).toHaveBeenCalledWith(staleProject.id, { expectedRevision: 1 });
+    expect(acknowledged).toBe(true);
+    expect(card).toBeInTheDocument();
+    if (keyboardFocused) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(card).toBeInTheDocument();
+      act(() => screen.getByRole("button", { name: "Outside Review" }).focus());
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    } else {
+      await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
+    }
+    expect(card).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(card).not.toBeInTheDocument();
+  });
+
   it.each(["keyboard", "details"] as const)("keeps an omitted Review issue while %s interaction is active", async interaction => {
     let resolved = false;
     const current = { ...task, status: "actionable" as const, revision: 2 };

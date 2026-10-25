@@ -1291,9 +1291,15 @@ rows (including their ancestor path) at their old position while holdingIds
 contains them. Current values are indexed across every response bucket and
 descendant, independently of their retained location. Removed ancestors carry
 only retained paths, while held subtrees own their displayed descendants.
-TaskRow applies retained scalar values while preserving the projected children.
+Each merge filters only its sibling level and projects descendants once,
+rather than recursively cloning each remaining subtree at every depth.
+Authoritative child membership is independent of retained scalar values;
+inherited descendant-policy values preserve optimistic completion/cancellation
+without hiding newly moved children. TaskRow keeps those projected children.
 Review uses stable issue keys and entity-specific holding predicates, preserving
-each card in its original group until its task/project hold ends. Card focus
+each card in its original group until its task/project hold ends. Explicit
+project Review acknowledgement acquires the same timed hold as task decisions;
+ordinary project metadata edits retain their existing until-refresh behavior. Card focus
 and gestures use the same interaction leases as ordinary rows; details and
 workflow hosts continue the lease across the transition.
 This keeps the last item and its section mounted during an

@@ -29,30 +29,36 @@ export function retainPlacement<T extends PlacedItem>(
     return any;
   };
   Object.values(previous).forEach(items => collect(items));
-  const strip = (items: T[]): T[] => items.filter(item => !frozen.has(item.id)).map(item =>
-    item.children ? { ...item, children: strip(item.children as T[]) } : item);
-  const merge = (before: T[], after: T[]): T[] => {
-    const result = strip(after).map(item => {
-      const old = before.find(candidate => candidate.id === item.id);
-      return item.children ? { ...latest(item), children: merge((old?.children ?? []) as T[], item.children as T[]) } : latest(item);
-    });
+  // Each level filters only its own siblings. Child membership comes from
+  // the current response; retained parent values may supply descendant-policy
+  // outcomes, but cannot replace an authoritative hierarchy.
+  const merge = (before: T[], after: T[], inherited: T[] = []): T[] => {
+    const beforeById = new Map(before.map(item => [item.id, item]));
+    const inheritedById = new Map(inherited.map(item => [item.id, item]));
+    const project = (old: T | undefined, item: T | undefined): T => {
+      const id = (item ?? old)!.id;
+      const raw = currentById.get(id) ?? item;
+      const policyValue = inheritedById.get(id);
+      const source = policyValue && (!raw || (policyValue.revision ?? 0) >= (raw.revision ?? 0))
+        ? policyValue : raw ?? old!;
+      const fresh = latest(source);
+      return old?.children || raw?.children || fresh.children
+        ? { ...fresh, children: merge((old?.children ?? []) as T[], (raw?.children ?? []) as T[], (fresh.children ?? []) as T[]) }
+        : fresh;
+    };
+    const result = after.filter(item => !frozen.has(item.id))
+      .map(item => project(beforeById.get(item.id), item));
+    const present = new Set(result.map(item => item.id));
     for (let index = 0; index < before.length; index += 1) {
       const old = before[index]!;
       if (!frozen.has(old.id)) continue;
-      const elsewhere = currentById.get(old.id);
-      const local = after.find(item => item.id === old.id);
-      const source = elsewhere && (!local || (elsewhere.revision ?? 0) > (local.revision ?? 0)) ? elsewhere : local;
-      const fresh = latest(source ?? old);
-      // An absent ancestor exists only to carry retained paths. Unheld
-      // siblings belong to the fresh response, not this reconstructed path.
-      const children = (fresh.children ?? []) as T[];
-      const visibleChildren = elsewhere ? children : children.filter(child => frozen.has(child.id));
-      const item = old.children ? { ...fresh, children: merge(old.children as T[], visibleChildren) } : fresh;
-      const next = before.slice(index + 1).find(candidate => result.some(row => row.id === candidate.id));
-      const prior = before.slice(0, index).reverse().find(candidate => result.some(row => row.id === candidate.id));
+      const item = project(old, currentById.get(old.id));
+      const next = before.slice(index + 1).find(candidate => present.has(candidate.id));
+      const prior = before.slice(0, index).reverse().find(candidate => present.has(candidate.id));
       const position = next ? result.findIndex(row => row.id === next.id)
         : prior ? result.findIndex(row => row.id === prior.id) + 1 : Math.min(index, result.length);
       result.splice(position, 0, item);
+      present.add(item.id);
     }
     return result;
   };

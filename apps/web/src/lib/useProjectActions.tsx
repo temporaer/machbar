@@ -234,7 +234,6 @@ function useProjectActionsState() {
           }),
         confirmed: (confirmed) => ({ story: confirmed }),
         refreshImmediately: true,
-        retainUntilRefresh: true,
       }),
     [run],
   );

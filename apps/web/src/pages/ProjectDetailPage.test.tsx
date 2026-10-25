@@ -212,7 +212,7 @@ describe("ProjectDetailPage task explanations", () => {
 
   afterEach(() => { vi.useRealTimers(); });
 
-  it("reconciles confirmed task edits before a same-revision parent receives a moved sibling", async () => {
+  it.each(["expired", "active", "interaction"] as const)("keeps same-revision child membership after a parent edit during %s retention", async mode => {
     const parent = makeTask({ id: 71, title: "Parent before edit", projectId: 42 });
     const child = makeTask({ id: 72, title: "Moved sibling", projectId: 42 });
     const renamed = { ...parent, title: "Renamed parent", revision: 2 };
@@ -238,10 +238,28 @@ describe("ProjectDetailPage task explanations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rename parent" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByText(renamed.title)).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
+    let menu: HTMLElement | null = null;
+    if (mode === "expired") {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+      expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
+    } else if (mode === "interaction") {
+      menu = within(screen.getByText(renamed.title).closest("li")!).getByRole("button", { name: "Weitere Aktionen" });
+      fireEvent.click(menu);
+    }
     fireEvent.click(screen.getByRole("button", { name: "Load moved hierarchy" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
+    if (mode === "interaction") {
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(screen.getByTestId("parent-overlay")).toHaveTextContent("true");
+      expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
+      fireEvent.click(menu!);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    } else if (mode === "active") {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    }
+    expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
   });
 
