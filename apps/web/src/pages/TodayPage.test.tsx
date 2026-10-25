@@ -377,7 +377,7 @@ describe("TodayPage", () => {
     expect(sourceSection).not.toBeInTheDocument();
   });
 
-  it("retains open children only under a completed parent until its placement is released", async () => {
+  it.each([false, true])("retains open children under a completed parent, protecting an open child menu: %s", async openMenu => {
     const child = makeTask({ id: 9022, title: "Child left open", parentTaskId: 9021 });
     const parent = makeTask({ id: 9021, title: "Completed parent", children: [child] });
     const done = { ...parent, status: "done" as const, revision: 2 };
@@ -399,7 +399,20 @@ describe("TodayPage", () => {
     expect(mockedApi.completeTask).toHaveBeenCalledWith(parent.id, "leave_open", undefined, 1);
     expect(screen.getAllByText(child.title)).toHaveLength(1);
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(parent.title);
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    if (openMenu) {
+      const childRow = screen.getByText(child.title).closest("li")!;
+      const toggle = within(childRow).getByRole("button", { name: "Weitere Aktionen" });
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(childRow).toBeInTheDocument();
+      expect(within(childRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+      expect(childRow).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    } else {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    }
     expect(screen.getAllByText(child.title)).toHaveLength(1);
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toBeNull();
   });

@@ -1,3 +1,4 @@
+import { useProjectActions } from "../lib/useProjectActions";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useRefresh } from "../lib/refresh";
 import { markdownValue, selectMarkdown, setMarkdownValue } from "../test/markdownEditor";
@@ -242,6 +243,33 @@ describe("ProjectDetailPage task explanations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load moved hierarchy" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
+  });
+
+  it("reconciles child project metadata before same-revision counts change", async () => {
+    const child = makeProject({ id: 73, title: "Child project", parentId: 42, openCount: 1, doneCount: 0 });
+    const renamed = { ...child, title: "Renamed child", revision: 2 };
+    let saved = false;
+    let changedCounts = false;
+    mockedApi.getProject.mockImplementation(async () => ({
+      ...makeProject({ id: 42 }), tasks: [],
+      childStories: [saved ? { ...renamed, openCount: changedCounts ? 3 : 1 } : child],
+    }));
+    mockedApi.updateProject.mockImplementation(async () => { saved = true; return renamed; });
+    function Controls() {
+      const actions = useProjectActions();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.update(child, { title: renamed.title })}>Rename child project</button>
+        <button onClick={() => { changedCounts = true; bump(); }}>Load new counts</button>
+      </>;
+    }
+    renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
+      { initialEntries: ["/projects/42"] });
+    await screen.findByText(child.title);
+    await userEvent.click(screen.getByRole("button", { name: "Rename child project" }));
+    await screen.findByText(renamed.title);
+    await userEvent.click(screen.getByRole("button", { name: "Load new counts" }));
+    await waitFor(() => expect(screen.getByText(renamed.title).closest("li")).toHaveTextContent("0/3"));
   });
 
   it("edits discussion nomination in project details through the canonical command", async () => {

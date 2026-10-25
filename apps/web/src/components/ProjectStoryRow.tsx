@@ -102,8 +102,9 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)
   // instead of snapping to its refetched state immediately. Exactly like the
   // task list, the row stays *actionable* the moment the request resolves.
-  const retainedEntry = retained.get(storyProp.id);
-  const story = retainedEntry && retainedEntry.story.revision >= storyProp.revision ? retainedEntry.story : storyProp;
+  const candidate = retained.get(storyProp.id);
+  const retainedEntry = candidate && candidate.story.revision >= storyProp.revision ? candidate : undefined;
+  const story = retainedEntry?.story ?? storyProp;
   const isRetained = holdingIds.has(storyProp.id);
   const rowError = errors[storyProp.id];
   const busy = isPending(story.id);

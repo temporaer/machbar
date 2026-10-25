@@ -1,3 +1,4 @@
+import { flattenTasks } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useRetainedPlacement } from "../lib/useRetainedPlacement";
@@ -66,7 +67,7 @@ export function AllPage() {
     locale,
     { recencyRank: recencyRankLookup("task") },
   );
-  const taskActions = useTaskActions(tasks ?? []);
+  const taskActions = useTaskActions(flattenTasks(tasks ?? []));
   const projectActions = useProjectActions(projects ?? []);
   const { rows: visibleTasks } = useRetainedPlacement({ rows: taskCandidates }, taskActions.holdingIds,
     task => { const overlay = taskActions.retained.get(task.id); return overlay && overlay.revision >= task.revision ? overlay : task; }, filtersKey);

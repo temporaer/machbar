@@ -143,7 +143,7 @@ export function ProjectDetailPage() {
       ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks }
       : loadedProject;
   const projectActions = useProjectActions(
-    loadedProject ? [loadedProject] : [],
+    loadedProject ? [loadedProject, ...(loadedProject.childStories ?? [])] : [],
   );
   const projectOverlay = loadedProject ? projectActions.retained.get(loadedProject.id)?.story : undefined;
   const project = baseProject && projectOverlay && projectOverlay.revision >= baseProject.revision

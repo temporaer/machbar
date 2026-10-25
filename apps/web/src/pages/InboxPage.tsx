@@ -1,3 +1,4 @@
+import { flattenTasks } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useEffect, useRef, useState } from "react";
@@ -38,7 +39,7 @@ export function InboxPage() {
     () => api.getInbox(currentMemberId, scope),
     [currentMemberId, scope],
   );
-  const actions = useTaskActions(loadedTasks ?? []);
+  const actions = useTaskActions(flattenTasks(loadedTasks ?? []));
   const { rows } = useRetainedPlacement({ rows: loadedTasks ?? [] }, actions.holdingIds,
     task => { const overlay = actions.retained.get(task.id); return overlay && overlay.revision >= task.revision ? overlay : task; }, `${scope}:${currentMemberId}`);
   const tasks = loadedTasks ? rows : null;

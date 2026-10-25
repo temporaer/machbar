@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Task, TaskStatus } from "@machbar/shared";
 import { api } from "./api";
 import type {
@@ -8,6 +8,7 @@ import type {
 } from "./api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
 import {
+  flattenTasks,
   hasOpenDescendants,
   markOpenDescendantsTerminal,
 } from "./taskHelpers";
@@ -49,6 +50,28 @@ function useTaskActionsState() {
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
   const mutations = useRetainedMutations<Task>({ immediateRefresh: true });
   const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
+  // Placement can preserve a subtree that a confirmed response no longer
+  // contains. Remember its original ownership through the display lifetime.
+  const placementDescendants = useRef(new Map<number, Set<number>>());
+  useEffect(() => {
+    for (const id of placementDescendants.current.keys()) {
+      if (!mutations.holdingIds.has(id) && !pendingIds.has(id)) placementDescendants.current.delete(id);
+    }
+  }, [mutations.holdingIds, pendingIds]);
+  const pauseRetention = useCallback((id: number) => {
+    const owners = new Set([id]);
+    for (const [owner, descendants] of placementDescendants.current) {
+      if (descendants.has(id)) owners.add(owner);
+    }
+    for (const [owner, task] of retained) {
+      if (flattenTasks(task.children ?? []).some(child => child.id === id)) owners.add(owner);
+    }
+    const close = [...owners].map(owner => mutations.pauseRetention(owner));
+    return () => { close.forEach(release => release()); };
+  }, [retained, mutations.holdingIds, mutations.pauseRetention]);
+  useEffect(() => {
+    if (pending) return pauseRetention(pending.task.id);
+  }, [pending, pauseRetention]);
 
   const runTransition = useCallback(
     async (
@@ -57,6 +80,7 @@ function useTaskActionsState() {
       job: () => Promise<Task>,
       throwOnError = false,
     ) => {
+      placementDescendants.current.set(task.id, new Set([...(placementDescendants.current.get(task.id) ?? []), ...flattenTasks(task.children ?? []).map(child => child.id)]));
       try {
         return await run({
           id: task.id,
@@ -481,7 +505,7 @@ function useTaskActionsState() {
   return {
     release: mutations.release,
     holdingIds: mutations.holdingIds,
-    pauseRetention: mutations.pauseRetention,
+    pauseRetention,
     pendingTask: pending?.task ?? null,
     pendingAction: pending?.action ?? null,
     pendingIds,

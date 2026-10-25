@@ -1291,7 +1291,10 @@ explicit filter/identity changes. Rows removed from structural outlines do
 not become drag targets.
 
 `useRetentionInteraction` leases the display window while row menus,
-workflows, details, keyboard focus or pointer gestures are active. The last
+workflows, details, keyboard focus or pointer gestures are active. Task leases
+include retained placement ancestors, using the original subtree even if a
+confirmed response omits descendants. Child-policy prompts hold the pending
+task until the decision closes or its transition finishes. The last
 lease's release provides at least two seconds of orientation time. Pointer
 focus alone does not hold a row indefinitely. Only an in-flight request
 disables mutation controls; retained rows remain readable and actionable.
