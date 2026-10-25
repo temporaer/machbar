@@ -19,7 +19,7 @@ export function DiscussionPage() {
   const { rows: tasks } = useRetainedPlacement({ rows: data?.tasks ?? [] }, taskActions.holdingIds,
     taskActions.projectTask);
   const { rows: projects } = useRetainedPlacement({ rows: data?.projects ?? [] }, projectActions.holdingIds,
-    project => { const overlay = projectActions.retained.get(project.id)?.story; return overlay && overlay.revision >= project.revision ? overlay : project; });
+    projectActions.projectStory);
   const empty = data !== null && tasks.length === 0 && projects.length === 0;
 
   return (

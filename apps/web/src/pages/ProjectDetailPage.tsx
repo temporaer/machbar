@@ -145,9 +145,9 @@ export function ProjectDetailPage() {
   const projectActions = useProjectActions(
     loadedProject ? [loadedProject, ...(loadedProject.childStories ?? [])] : [],
   );
-  const projectOverlay = loadedProject ? projectActions.retained.get(loadedProject.id)?.story : undefined;
-  const project = baseProject && projectOverlay && projectOverlay.revision >= baseProject.revision
-    ? { ...baseProject, ...projectOverlay, tasks: baseProject.tasks, childStories: baseProject.childStories ?? [] } : baseProject;
+  const project = baseProject
+    ? { ...projectActions.projectStory(baseProject), tasks: baseProject.tasks, childStories: baseProject.childStories ?? [] }
+    : baseProject;
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
 
   const owner = project

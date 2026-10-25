@@ -336,8 +336,7 @@ export function ReviewPage() {
   const projectDecisionButtons = (item: ReviewItem) => {
     const project = projectById.get(item.entityId) ?? projectActions.retained.get(item.entityId)?.story;
     if (!project) return null;
-    const overlay = projectActions.retained.get(project.id)?.story;
-    const displayed = overlay && overlay.revision >= project.revision ? overlay : project;
+    const displayed = projectActions.projectStory(project);
     if (item.reason === "backlog_revisit_reached") {
       const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
       return (
@@ -482,23 +481,11 @@ export function ReviewPage() {
   };
   const isAcknowledged = (item: ReviewItem): boolean => {
     if (item.entityType === "project") {
-      const source = projectById.get(item.entityId);
-      const candidate = projectActions.retained.get(item.entityId)?.story;
-      const retained = source && candidate && candidate.revision >= source.revision ? candidate : undefined;
-      return Boolean(
-        source &&
-          retained?.reviewedAt &&
-          retained.reviewedAt !== source.reviewedAt,
-      );
+      return projectActions.acknowledgedReviewIds.has(item.entityId) &&
+        projectActions.holdingIds.has(item.entityId);
     }
-    const source = taskById.get(item.entityId);
-    const candidate = taskActions.retained.get(item.entityId);
-    const retained = source && candidate && candidate.revision >= source.revision ? candidate : undefined;
-    return Boolean(
-      source &&
-        retained?.reviewedAt &&
-        retained.reviewedAt !== source.reviewedAt,
-    );
+    return taskActions.acknowledgedReviewIds.has(item.entityId) &&
+      taskActions.holdingIds.has(item.entityId);
   };
 
   const loading = itemsLoading || projectsLoading || tasksLoading;

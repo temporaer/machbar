@@ -50,9 +50,16 @@ type WithoutExpectedRevision<T> = T extends unknown
  */
 function useTaskActionsState() {
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
+  const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
   const mutations = useRetainedMutations<Task>({ immediateRefresh: true });
   const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
   const projectTask = useCallback((task: Task) => projectTaskValue(task, retained.get(task.id), isPending(task.id)), [retained, isPending]);
+  useEffect(() => {
+    setAcknowledgedReviewIds(current => {
+      const next = new Set([...current].filter(id => mutations.holdingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [mutations.holdingIds]);
   // Placement can preserve a subtree that a confirmed response no longer
   // contains. Remember its original ownership through the display lifetime.
   const placementDescendants = useRef(new Map<number, Set<number>>());
@@ -429,18 +436,20 @@ function useTaskActionsState() {
   );
 
   const acknowledgeReview = useCallback(
-    (task: Task) => {
+    async (task: Task) => {
       const now = new Date().toISOString();
       const optimistic: Task = {
         ...task,
         revision: task.revision + 1,
         reviewedAt: now,
       };
-      return runTransition(
+      const result = await runTransition(
         task,
         optimistic,
         () => api.acknowledgeTaskReview(task.id, task.revision),
       );
+      if (result) setAcknowledgedReviewIds(current => new Set(current).add(task.id));
+      return result;
     },
     [runTransition],
   );
@@ -543,6 +552,7 @@ function useTaskActionsState() {
   return {
     observeTasks,
     projectTask,
+    acknowledgedReviewIds,
     release: mutations.release,
     holdingIds: mutations.holdingIds,
     pauseRetention,

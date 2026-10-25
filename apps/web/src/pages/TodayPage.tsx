@@ -88,8 +88,8 @@ export function TodayPage() {
     dueSoon: projectCandidates.filter(entry => entry.attentionBucket === "dueSoon"),
   },
     projectActions.holdingIds, entry => {
-      const overlay = projectActions.retained.get(entry.id)?.story;
-      return overlay && overlay.revision >= entry.project.revision ? { ...entry, project: overlay } : entry;
+      const project = projectActions.projectStory(entry.project);
+      return project === entry.project ? entry : { ...entry, project };
     }, agendaSelectionKey);
   const revisitTasks = taskBuckets.revisit;
   const completedTodayTasks = taskBuckets.completedToday;

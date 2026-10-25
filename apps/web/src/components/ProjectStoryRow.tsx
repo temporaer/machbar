@@ -96,7 +96,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const scope = useOptionalInteractionScope();
   // Read the shared controller; only raw authoritative query results may
   // reconcile an overlay, not a row already projected through that overlay.
-  const { isPending, retained, holdingIds, pauseRetention, errors, clearError } = useProjectActions();
+  const { isPending, retained, projectStory, holdingIds, pauseRetention, errors, clearError } = useProjectActions();
 
   // A story that just transitioned keeps rendering here with the
   // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)
@@ -104,7 +104,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   // task list, the row stays *actionable* the moment the request resolves.
   const candidate = retained.get(storyProp.id);
   const retainedEntry = candidate && candidate.story.revision >= storyProp.revision ? candidate : undefined;
-  const story = retainedEntry?.story ?? storyProp;
+  const story = projectStory(storyProp);
   const isRetained = holdingIds.has(storyProp.id);
   const rowError = errors[storyProp.id];
   const busy = isPending(story.id);

@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import type { ProjectActivationResolution } from "@machbar/shared";
+import type { Project, ProjectActivationResolution } from "@machbar/shared";
 import type { ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
 import { useRetainedMutations } from "./useRetainedMutations";
@@ -40,6 +40,7 @@ export interface RetainedStory {
  */
 function useProjectActionsState() {
   const mutations = useRetainedMutations<RetainedStory>({ immediateRefresh: true });
+  const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
   const {
     run,
     release,
@@ -49,6 +50,21 @@ function useProjectActionsState() {
     errors,
     clearError,
   } = mutations;
+  const projectStory = useCallback(<T extends Project,>(current: T): T => {
+    const candidate = retained.get(current.id)?.story;
+    return candidate &&
+      (candidate.revision > current.revision ||
+        (isPending(current.id) && candidate.revision === current.revision))
+      ? { ...current, ...candidate }
+      : current;
+  }, [isPending, retained]);
+
+  useEffect(() => {
+    setAcknowledgedReviewIds(current => {
+      const next = new Set([...current].filter(id => mutations.holdingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [mutations.holdingIds]);
 
   const call = useCallback(
     (
@@ -218,8 +234,8 @@ function useProjectActionsState() {
   );
 
   const acknowledgeReview = useCallback(
-    (story: ProjectWithActions) =>
-      run({
+    async (story: ProjectWithActions) => {
+      const result = await run({
         id: story.id,
         optimistic: {
           story: {
@@ -234,11 +250,16 @@ function useProjectActionsState() {
           }),
         confirmed: (confirmed) => ({ story: confirmed }),
         refreshImmediately: true,
-      }),
+      });
+      if (result) setAcknowledgedReviewIds(current => new Set(current).add(story.id));
+      return result;
+    },
     [run],
   );
 
   return {
+    acknowledgedReviewIds,
+    projectStory,
     pendingIds,
     holdingIds: mutations.holdingIds,
     pauseRetention: mutations.pauseRetention,

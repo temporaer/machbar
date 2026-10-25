@@ -72,7 +72,7 @@ export function AllPage() {
   const { rows: visibleTasks } = useRetainedPlacement({ rows: taskCandidates }, taskActions.holdingIds,
     taskActions.projectTask, filtersKey);
   const { rows: filteredProjects } = useRetainedPlacement({ rows: projectCandidates }, projectActions.holdingIds,
-    project => { const overlay = projectActions.retained.get(project.id)?.story; return overlay && overlay.revision >= project.revision ? overlay : project; }, filtersKey);
+    projectActions.projectStory, filtersKey);
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
 

@@ -46,7 +46,7 @@ export function ProjectWorkflowHost() {
   );
   useRetentionInteraction(projectId, projectActions.pauseRetention, projectId !== null);
   const retained = projectId !== null ? projectActions.retained.get(projectId)?.story : undefined;
-  const story = retained && (!fetchedProject || retained.revision >= fetchedProject.revision) ? retained : fetchedProject;
+  const story = fetchedProject ? projectActions.projectStory(fetchedProject) : retained;
 
   if (!workflow.current || !story) return null;
   const close = workflow.close;

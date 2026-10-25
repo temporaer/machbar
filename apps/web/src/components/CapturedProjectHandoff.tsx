@@ -49,7 +49,7 @@ export function CapturedProjectHandoff({
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
   const projectActions = useProjectActions([currentProject]);
   const dispatch = useWorkItemCommands();
-  const displayedProject = projectActions.retained.get(currentProject.id)?.story ?? currentProject;
+  const displayedProject = projectActions.projectStory(currentProject);
   const canStart = displayedProject.availableActions.includes("activate");
   const activationReady = (displayedProject.activationReadiness.requiredDecisions ?? []).length === 0;
   const requestFingerprint = fingerprint(draftSteps);

@@ -125,8 +125,7 @@ function ProjectsPageContent() {
   };
 
   const latestProject = (project: NonNullable<typeof projects>[number]) => {
-    const overlay = actions.retained.get(project.id)?.story;
-    return overlay && overlay.revision >= project.revision ? overlay : project;
+    return actions.projectStory(project);
   };
   const allProjects = (projects ?? []).map(latestProject);
 

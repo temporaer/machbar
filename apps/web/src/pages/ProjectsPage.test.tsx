@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
+import { useRefresh } from "../lib/refresh";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -362,6 +363,38 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(originalGroup).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: newTag.name })).toBeInTheDocument();
     expect(screen.getAllByText(project.title)).toHaveLength(1);
+  });
+
+  it("uses equal-revision project data to refresh derived next-action fields during a hold", async () => {
+    const project = makeProject({
+      id: 93,
+      title: "Project with refreshed guidance",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: makeTask({ id: 930, title: "Old next action" }),
+    });
+    const held = { ...project, revision: 2, reviewedAt: "2026-10-25T12:30:00Z" };
+    const refreshed = { ...held, nextAction: makeTask({ id: 931, title: "Fresh next action" }), stuckReason: null };
+    let phase = 0;
+    mockedApi.getProjects.mockImplementation(async () => [phase === 0 ? project : phase === 1 ? held : refreshed]);
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { phase = 1; return held; });
+    function Controls() {
+      const actions = useProjectActions();
+      const refresh = useRefresh();
+      return <>
+        <button onClick={() => void actions.acknowledgeReview(project)}>Hold project</button>
+        <button onClick={() => { phase = 2; refresh.bump(); }}>Refresh derived project data</button>
+      </>;
+    }
+    renderWithProviders(<><ProjectsPage /><Controls /></>);
+    await screen.findByText(/Old next action/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Hold project" }));
+    await waitFor(() => expect(mockedApi.getProjects.mock.calls.length).toBeGreaterThan(1));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh derived project data" }));
+
+    expect(await screen.findByText(/Fresh next action/)).toBeInTheDocument();
+    expect(screen.queryByText(/Old next action/)).not.toBeInTheDocument();
   });
 
   it("offers tag types instead of tag values and groups stories by the selected type", async () => {

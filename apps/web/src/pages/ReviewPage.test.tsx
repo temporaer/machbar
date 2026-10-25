@@ -164,6 +164,7 @@ describe("ReviewPage", () => {
     expect(mockedApi.acknowledgeProjectReview).toHaveBeenCalledWith(staleProject.id, { expectedRevision: 1 });
     expect(acknowledged).toBe(true);
     expect(card).toBeInTheDocument();
+    expect(within(card).getByText("Für jetzt bestätigt")).toBeInTheDocument();
     if (keyboardFocused) {
       await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
       expect(card).toBeInTheDocument();
@@ -175,6 +176,27 @@ describe("ReviewPage", () => {
     expect(card).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(card).not.toBeInTheDocument();
+  });
+
+  it("keeps a task acknowledgement confirmation after the refreshed task matches it", async () => {
+    const issue = reviewItems[2]!;
+    const confirmed = { ...task, revision: 2, reviewedAt: "2026-10-25T11:00:00.000Z" };
+    let acknowledged = false;
+    mockedApi.getReviewItems.mockImplementation(async () => acknowledged ? [] : [issue]);
+    mockedApi.searchTasks.mockImplementation(async () => [acknowledged ? confirmed : task]);
+    mockedApi.acknowledgeTaskReview.mockImplementation(async () => {
+      acknowledged = true;
+      return confirmed;
+    });
+    renderWithProviders(<ReviewPage />);
+
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "So beibehalten" }));
+
+    await waitFor(() => {
+      expect(mockedApi.getReviewItems.mock.calls.length).toBeGreaterThan(1);
+      expect(within(card).getByText("Für jetzt bestätigt")).toBeInTheDocument();
+    });
   });
 
   it.each(["keyboard", "details"] as const)("keeps an omitted Review issue while %s interaction is active", async interaction => {
