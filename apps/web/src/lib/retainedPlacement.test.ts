@@ -44,4 +44,17 @@ describe("retained list placement", () => {
   it("does not inject a transition observed only in another view", () => {
     expect(retainPlacement({ rows: [task(2)] }, { rows: [task(2)] }, new Set([1]), identity).rows).toEqual([task(2)]);
   });
+  it("owns open descendants while their completed parent is retained, then releases them to their new bucket", () => {
+    const child = { ...task(2), children: [task(3)] };
+    const parent = { ...task(1), children: [child] };
+    const done = { ...parent, status: "done" as const };
+    const current = { today: [], additional: [child], done: [{ ...done, children: [] }] };
+    const latest = (value: typeof parent) => value.id === 1 ? done : value;
+    const held = retainPlacement({ today: [parent], additional: [], done: [] }, current, new Set([1]), latest);
+    expect(held.today).toEqual([done]);
+    expect(held.additional).toEqual([]);
+    expect(held.done).toEqual([]);
+    expect(retainPlacement(held, current, new Set(), identity)).toEqual(current);
+  });
+
 });

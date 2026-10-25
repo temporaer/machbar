@@ -1,6 +1,8 @@
+import { useTaskActions } from "../lib/useTaskActions";
+import { useRefresh } from "../lib/refresh";
 import { markdownValue, selectMarkdown, setMarkdownValue } from "../test/markdownEditor";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Task } from "@machbar/shared";
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -205,6 +207,41 @@ describe("ProjectDetailPage task explanations", () => {
       originalFileName: "plan.pdf",
       mimeType: "application/pdf",
     });
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("reconciles confirmed task edits before a same-revision parent receives a moved sibling", async () => {
+    const parent = makeTask({ id: 71, title: "Parent before edit", projectId: 42 });
+    const child = makeTask({ id: 72, title: "Moved sibling", projectId: 42 });
+    const renamed = { ...parent, title: "Renamed parent", revision: 2 };
+    let saved = false;
+    let moved = false;
+    mockedApi.getProject.mockImplementation(async () => ({
+      ...makeProject({ id: 42 }), tasks: moved ? [{ ...renamed, children: [child] }] : [saved ? renamed : parent, child],
+    }));
+    mockedApi.updateTask.mockImplementation(async () => { saved = true; return renamed; });
+    function Controls() {
+      const actions = useTaskActions();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.update(parent, { title: renamed.title })}>Rename parent</button>
+        <button onClick={() => { moved = true; bump(); }}>Load moved hierarchy</button>
+        <output data-testid="parent-overlay">{String(actions.retained.has(parent.id))}</output>
+      </>;
+    }
+    renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
+      { initialEntries: ["/projects/42"] });
+    await screen.findByText(parent.title);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Rename parent" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText(renamed.title)).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
+    fireEvent.click(screen.getByRole("button", { name: "Load moved hierarchy" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
   });
 
   it("edits discussion nomination in project details through the canonical command", async () => {

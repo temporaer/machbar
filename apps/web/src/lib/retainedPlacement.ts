@@ -6,16 +6,19 @@ export function retainPlacement<T extends PlacedItem>(
   previous: Record<string, T[]>, current: Record<string, T[]>, holding: ReadonlySet<number>,
   latest: (item: T) => T,
 ): Record<string, T[]> {
+  // A held subtree owns its displayed descendants as well as its root;
+  // otherwise promoted open children would also render in a destination bucket.
   const frozen = new Set<number>();
-  const collect = (items: PlacedItem[]): boolean => {
+  const collect = (items: PlacedItem[], heldAncestor = false): boolean => {
     let any = false;
     for (const item of items) {
-      const childHeld = collect(item.children ?? []);
-      if (holding.has(item.id) || childHeld) { frozen.add(item.id); any = true; }
+      const owned = heldAncestor || holding.has(item.id);
+      const childHeld = collect(item.children ?? [], owned);
+      if (owned || childHeld) { frozen.add(item.id); any = true; }
     }
     return any;
   };
-  Object.values(previous).forEach(collect);
+  Object.values(previous).forEach(items => collect(items));
   const strip = (items: T[]): T[] => items.filter(item => !frozen.has(item.id)).map(item =>
     item.children ? { ...item, children: strip(item.children as T[]) } : item);
   const merge = (before: T[], after: T[]): T[] => {

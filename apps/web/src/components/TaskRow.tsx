@@ -131,7 +131,7 @@ export function TaskRow({
   const dispatch = useWorkItemCommands();
   const taskActions = useTaskActions();
   const { isPending, retained, errors, clearError } = taskActions;
-  const outlineRefreshing = organize?.pendingId !== null;
+  const outlineRefreshing = organize?.pendingId != null;
   const busy = isPending(taskProp.id) || outlineRefreshing;
 
   // A row that just transitioned keeps rendering with its optimistic status

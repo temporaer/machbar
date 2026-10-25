@@ -122,6 +122,8 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     await act(async () => { await flushMicrotasks(); });
     rerender(<TaskOutline tasks={[{ ...parent, children: [] }]} emptyMessage="Empty" organizable />);
     expect(screen.getByText("Retained child")).toBeInTheDocument();
+    expect(within(screen.getByText("Retained child").closest("li")!).getByRole("button", { name: "Wieder öffnen" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Retained child" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Verschieben: Retained child" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben: Parent" })).toBeInTheDocument();
   });

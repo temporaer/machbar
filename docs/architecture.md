@@ -1276,7 +1276,9 @@ action contract.
 `useRetainedMutations` separates confirmed/optimistic values from `holdingIds`.
 Task and project controllers opt into immediate refresh on success. Their
 confirmed overlays outlive the four-second display window and are reconciled
-by revision, preventing stale reads from restoring old controls. The window
+by revision, preventing stale reads from restoring old controls. Query owners
+feed raw flattened task responses into reconciliation, including project
+details, task details and Waiting; projected row props are never authoritative. The window
 starts after confirmation; failures roll back without a pending expiry.
 Refinement's existing matrix projection still uses delayed refresh.
 

@@ -1,3 +1,4 @@
+import { useTaskActions } from "../lib/useTaskActions";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -374,6 +375,33 @@ describe("TodayPage", () => {
     expect(screen.getAllByText(task.title)).toHaveLength(1);
     expect(screen.getByText(task.title).closest(".section")).not.toBe(sourceSection);
     expect(sourceSection).not.toBeInTheDocument();
+  });
+
+  it("retains open children only under a completed parent until its placement is released", async () => {
+    const child = makeTask({ id: 9022, title: "Child left open", parentTaskId: 9021 });
+    const parent = makeTask({ id: 9021, title: "Completed parent", children: [child] });
+    const done = { ...parent, status: "done" as const, revision: 2 };
+    let completed = false;
+    mockedApi.getAgenda.mockImplementation(async () => ({ ...makeEmptyAgenda(),
+      planned: completed ? [] : [parent], unscheduled: completed ? [child] : [],
+      completedToday: completed ? [{ ...done, children: [] }] : [],
+    }));
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    function CompleteParent() {
+      const actions = useTaskActions();
+      return <button onClick={() => void actions.complete(parent, "leave_open")}>Complete parent</button>;
+    }
+    renderWithProviders(<><TodayPage /><CompleteParent /></>);
+    await screen.findByText(child.title);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Complete parent" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(parent.id, "leave_open", undefined, 1);
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(parent.title);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toBeNull();
   });
 
   it("keeps a held child nested when a refresh removes its parent and promotes completed work", async () => {

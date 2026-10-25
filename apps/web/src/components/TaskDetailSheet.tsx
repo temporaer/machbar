@@ -22,7 +22,7 @@ import { useStrings } from "../lib/strings";
 import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
-import { isCapturedInboxItem } from "../lib/taskHelpers";
+import { flattenTasks, isCapturedInboxItem } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
@@ -106,7 +106,6 @@ export function TaskDetailSheet() {
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
-  const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
   const suspended = detailSuspended;
@@ -134,7 +133,6 @@ export function TaskDetailSheet() {
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
-  useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
@@ -143,8 +141,11 @@ export function TaskDetailSheet() {
     error,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
+  const taskActions = useTaskActions(flattenTasks(loadedTask ? [loadedTask] : []));
+  useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
+  const retainedTask = loadedTask ? taskActions.retained.get(loadedTask.id) : undefined;
   const task = loadedTask
-    ? (taskActions.retained.get(loadedTask.id) && taskActions.retained.get(loadedTask.id)!.revision >= loadedTask.revision ? taskActions.retained.get(loadedTask.id)! : loadedTask)
+    ? (retainedTask && retainedTask.revision >= loadedTask.revision ? retainedTask : loadedTask)
     : null;
 
   // Recency is a soft ranking boost for search/pickers, not domain state —

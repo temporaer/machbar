@@ -41,6 +41,7 @@ import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
 import { recordRecentlyViewed } from "../lib/recentlyViewed";
 import type { ProjectWithActions } from "../lib/api";
+import { useTaskActions } from "../lib/useTaskActions";
 import { useProjectActions } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
@@ -122,6 +123,7 @@ export function ProjectDetailPage() {
     error: projectError,
     reload: reloadProject,
   } = useAsync(() => api.getProject(projectId), [projectId]);
+  useTaskActions(flattenTasks(loadedProject?.tasks ?? []));
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
   useEffect(() => {
