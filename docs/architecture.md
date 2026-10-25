@@ -1281,7 +1281,10 @@ feed raw flattened task responses into reconciliation, including project
 details, task details, Waiting and Review; projected row props are never
 authoritative. The window
 starts after confirmation; failures roll back without a pending expiry.
-Open task details prefer an authoritative response at equal revision, since
+The shared `TaskActions.projectTask`/`taskHelpers.projectTaskValue` projection
+prefers authoritative equal-revision task fields after confirmation while
+preserving pending optimistic values. Rows, placement projectors, details,
+Review and workflow hosts all use it, since
 child changes can leave the parent's own revision unchanged. Task workflow
 hosts apply the same equal-revision preference; project detail keeps raw tasks
 and child stories independently from retained parent metadata.
@@ -1295,12 +1298,20 @@ descendant, independently of their retained location. Removed ancestors carry
 only retained paths, while held subtrees own their displayed descendants.
 Each merge filters only its sibling level and projects descendants once,
 rather than recursively cloning each remaining subtree at every depth.
+Frozen sibling anchors are precomputed and merged through a linked list,
+avoiding repeated sibling scans and array insertion copies for wide subtrees.
 Authoritative child membership is independent of retained scalar values;
 equal-revision authoritative child fields win over inherited snapshots.
 The optional domain projection uses `taskHelpers.applyDescendantTerminalOutcome`
 to apply only an actual completion/cancellation outcome (lifecycle fields),
 preserving fresh derived values and unrelated future fields. Descendant
-outcomes propagate recursively without replacing authoritative membership. TaskRow keeps those projected children.
+outcomes propagate recursively without replacing authoritative membership.
+Authoritative sibling ordering is established recursively before placement;
+TaskRow renders the projected order. Explicit outline keyboard/pointer moves
+(and rollback) advance the local placement generation, making structural
+commands immediately visible without discarding confirmed values.
+Project placement includes lifecycle sections and rendered tag-group nodes,
+so tag edits cannot unmount a held row by changing its group.
 Review uses stable issue keys and entity-specific holding predicates, preserving
 each card in its original group until its task/project hold ends. Explicit
 project Review acknowledgement acquires the same timed hold as task decisions;

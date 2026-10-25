@@ -41,7 +41,7 @@ export function InboxPage() {
   );
   const actions = useTaskActions(flattenTasks(loadedTasks ?? []));
   const { rows } = useRetainedPlacement({ rows: loadedTasks ?? [] }, actions.holdingIds,
-    task => { const overlay = actions.retained.get(task.id); return overlay && overlay.revision >= task.revision ? overlay : task; }, `${scope}:${currentMemberId}`);
+    actions.projectTask, `${scope}:${currentMemberId}`);
   const tasks = loadedTasks ? rows : null;
   const { openQueue } = useTaskDetail();
   const location = useLocation();

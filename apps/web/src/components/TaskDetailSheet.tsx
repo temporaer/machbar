@@ -143,10 +143,7 @@ export function TaskDetailSheet() {
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
   const taskActions = useTaskActions(flattenTasks(loadedTask ? [loadedTask] : []));
   useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
-  const retainedTask = loadedTask ? taskActions.retained.get(loadedTask.id) : undefined;
-  const task = loadedTask
-    ? (retainedTask && retainedTask.revision > loadedTask.revision ? retainedTask : loadedTask)
-    : null;
+  const task = loadedTask ? taskActions.projectTask(loadedTask) : null;
 
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.

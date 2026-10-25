@@ -121,6 +121,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     revision: number;
   } | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [placementVersion, setPlacementVersion] = useState(0);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [projection, setProjection] = useState<DropProjection | null>(null);
   const [indicatorTop, setIndicatorTop] = useState(0);
@@ -233,6 +234,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       }
 
       clearError(taskId);
+      setPlacementVersion(version => version + 1);
       setOverride({
         tasks: optimistic,
         taskId,
@@ -261,6 +263,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
           bump();
         } catch (err) {
           if (!mounted.current) return;
+          setPlacementVersion(version => version + 1);
           setOverride(previousOverride);
           if (isStaleWriteConflict(err)) {
             staleTaskRevisions.current.set(taskId, plan.expectedRevision);
@@ -574,6 +577,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   return {
     /** The tree to render: server data, or the optimistic tree while a move is pending. */
     tasks: effectiveTasks,
+    placementVersion,
     enabled,
     value,
     containerRef,

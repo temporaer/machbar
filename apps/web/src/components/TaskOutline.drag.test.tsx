@@ -1,5 +1,6 @@
+import { useTaskActions } from "../lib/useTaskActions";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Task } from "@machbar/shared";
@@ -335,6 +336,45 @@ describe("TaskOutline Ziehen und Umbauen", () => {
 
     expect(screen.queryByRole("toolbar")).toBeNull();
     expect(mockedApi.moveTask).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("gives keyboard moves precedence over an active hold, including rollback: %s", async rejectMove => {
+    const initial = outlineTasks();
+    const edited = { ...initial[1]!, title: "Edited Beta", revision: 2 };
+    mockedApi.updateTask.mockResolvedValue(edited);
+    let reject!: (error: Error) => void;
+    if (rejectMove) mockedApi.moveTask.mockReturnValue(new Promise<Task>((_resolve, rejectPromise) => { reject = rejectPromise; }));
+    else mockedApi.moveTask.mockResolvedValue({ ...edited, revision: 3, parentTaskId: 1, position: 0 });
+    function Harness() {
+      const [tasks, setTasks] = useState(initial);
+      const actions = useTaskActions();
+      return <>
+        <button onClick={async () => { const task = await actions.update(initial[1]!, { title: edited.title }); if (task) setTasks([initial[0]!, task, initial[2]!]); }}>Edit Beta</button>
+        <output data-testid="held-values">{String(actions.retained.has(edited.id))}</output>
+        <TaskOutline tasks={tasks} emptyMessage="Empty" organizable />
+      </>;
+    }
+    renderWithProviders(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "Edit Beta" }));
+    await screen.findByText(edited.title);
+    act(() => handleFor(edited.title).focus());
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(edited.id, { parentTaskId: 1, position: 0, expectedRevision: 2 }));
+    expect(screen.getByText(edited.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent("Alpha");
+    expect(screen.getByTestId("held-values")).toHaveTextContent("true");
+    if (rejectMove) {
+      await act(async () => { reject(new Error("Move rejected")); });
+      await screen.findByText(/Move rejected/);
+      expect(screen.getByText(edited.title).closest("li")?.parentElement?.closest("li")).toBeNull();
+      expect(screen.getByTestId("held-values")).toHaveTextContent("true");
+      return;
+    }
+    await waitFor(() => expect(document.activeElement).toBe(handleFor(edited.title)));
+    mockedApi.moveTask.mockResolvedValue({ ...edited, revision: 4, parentTaskId: null, position: 1 });
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenLastCalledWith(edited.id, { parentTaskId: null, projectId: 5, position: 1, expectedRevision: 3 }));
+    expect(screen.getByText(edited.title).closest("li")?.parentElement?.closest("li")).toBeNull();
+    expect(screen.getByTestId("held-values")).toHaveTextContent("true");
   });
 
   it("verschiebt per Tastatur direkt am Ziehgriff", async () => {

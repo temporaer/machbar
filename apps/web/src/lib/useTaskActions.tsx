@@ -10,6 +10,7 @@ import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
 import {
   flattenTasks,
   indexTaskDescendants,
+  projectTaskValue,
   hasOpenDescendants,
   markOpenDescendantsTerminal,
 } from "./taskHelpers";
@@ -51,6 +52,7 @@ function useTaskActionsState() {
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
   const mutations = useRetainedMutations<Task>({ immediateRefresh: true });
   const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
+  const projectTask = useCallback((task: Task) => projectTaskValue(task, retained.get(task.id), isPending(task.id)), [retained, isPending]);
   // Placement can preserve a subtree that a confirmed response no longer
   // contains. Remember its original ownership through the display lifetime.
   const placementDescendants = useRef(new Map<number, Set<number>>());
@@ -540,6 +542,7 @@ function useTaskActionsState() {
 
   return {
     observeTasks,
+    projectTask,
     release: mutations.release,
     holdingIds: mutations.holdingIds,
     pauseRetention,

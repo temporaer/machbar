@@ -440,8 +440,7 @@ export function ReviewPage() {
   const taskDecisionButtons = (item: ReviewItem) => {
     const task = taskById.get(item.entityId) ?? taskActions.retained.get(item.entityId);
     if (!task) return null;
-    const overlay = taskActions.retained.get(task.id);
-    const displayed: Task = overlay && overlay.revision >= task.revision ? overlay : task;
+    const displayed: Task = taskActions.projectTask(task);
     return (
       <>
         {displayed.status !== "actionable" ? (

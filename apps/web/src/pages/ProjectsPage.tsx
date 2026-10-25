@@ -1,3 +1,5 @@
+import type { Tag } from "@machbar/shared";
+import type { ProjectWithActions } from "../lib/api";
 import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -165,21 +167,35 @@ function ProjectsPageContent() {
     const classification = classifications.get(project.id);
     return classification === "completed" || classification === "archived";
   });
-  const { active: activeProjects, quiet: quietProjects, backlog: backlogProjects, terminal: terminalProjects } =
-    useRetainedPlacement({ active: activeCandidates, quiet: quietCandidates, backlog: backlogCandidates, terminal: terminalCandidates },
-      actions.holdingIds, latestProject, `${query}:${scope}:${currentMemberId}:${groupBy}`);
-  const groupsFor = (items: typeof filteredProjects) =>
-    groupBy
-      ? groupItemsByTagKind(items, groupBy, locale)
-      : items.length > 0
-        ? [{ tag: null, items }]
-        : [];
+  type Section = "active" | "quiet" | "backlog" | "terminal";
+  type PlacementNode = { id: number | string; revision?: number; tag?: Tag | null; project?: ProjectWithActions; children?: PlacementNode[] };
+  const groupCandidates = (section: Section, projects: ProjectWithActions[]): PlacementNode[] => {
+    const groups = groupBy ? groupItemsByTagKind(projects, groupBy, locale) : projects.length ? [{ tag: null, items: projects }] : [];
+    return groups.map(group => ({ id: `${section}:${groupBy ?? "all"}:${group.tag?.id ?? "none"}`, tag: group.tag,
+      children: group.items.map(project => ({ id: project.id, revision: project.revision, project })) }));
+  };
+  const sections = useRetainedPlacement({
+    active: groupCandidates("active", activeCandidates), quiet: groupCandidates("quiet", quietCandidates),
+    backlog: groupCandidates("backlog", backlogCandidates), terminal: groupCandidates("terminal", terminalCandidates),
+  }, node => node.project !== undefined && actions.holdingIds.has(node.project.id), node => {
+    if (!node.project) return node;
+    const project = latestProject(node.project);
+    return { ...node, project, revision: project.revision };
+  }, `${query}:${scope}:${currentMemberId}:${groupBy}`);
+  const groupsFor = (section: Section) => sections[section].flatMap(node => {
+    const items = (node.children ?? []).flatMap(child => child.project ? [child.project] : []);
+    return items.length ? [{ tag: node.tag ?? null, items }] : [];
+  });
+  const projectsFor = (section: Section) => groupsFor(section).flatMap(group => group.items);
+  const activeProjects = projectsFor("active");
+  const quietProjects = projectsFor("quiet");
+  const backlogProjects = projectsFor("backlog");
+  const terminalProjects = projectsFor("terminal");
   const renderGroups = (
-    sectionKey: string,
-    items: typeof filteredProjects,
+    sectionKey: Section,
     headingLevel: 2 | 3,
   ) =>
-    groupsFor(items).map((group) =>
+    groupsFor(sectionKey).map((group) =>
       groupBy ? (
         <CollapsibleGroup
           key={`${sectionKey}-${groupBy}-${group.tag?.id ?? "none"}`}
@@ -320,7 +336,7 @@ function ProjectsPageContent() {
                 data-project-section="active"
                 aria-label={strings.activeProjectsSection}
               >
-                {renderGroups("active", activeProjects, 2)}
+                {renderGroups("active", 2)}
               </section>
             ) : null}
             {quietProjects.length > 0 ? (
@@ -335,7 +351,7 @@ function ProjectsPageContent() {
                     {strings.quietProjectsSection(quietProjects.length)}
                   </span>
                 </summary>
-                {renderGroups("quiet", quietProjects, 3)}
+                {renderGroups("quiet", 3)}
               </details>
             ) : null}
             {backlogProjects.length > 0 ? (
@@ -350,7 +366,7 @@ function ProjectsPageContent() {
                     {strings.backlogProjectsSection}
                   </span>
                 </summary>
-                {renderGroups("backlog", backlogProjects, 3)}
+                {renderGroups("backlog", 3)}
               </details>
             ) : null}
             {terminalProjects.length > 0 ? (
@@ -362,7 +378,7 @@ function ProjectsPageContent() {
                 <summary className="section-title disclosure-summary">
                   {strings.finishedProjectsSection(terminalProjects.length)}
                 </summary>
-                {renderGroups("terminal", terminalProjects, 3)}
+                {renderGroups("terminal", 3)}
               </details>
             ) : null}
           </>

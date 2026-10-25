@@ -52,19 +52,44 @@ export function retainPlacement<T extends PlacedItem>(
     };
     const result = after.filter(item => !frozen.has(item.id))
       .map(item => project(beforeById.get(item.id), item));
-    const present = new Set(result.map(item => item.id));
+    if (!before.some(item => frozen.has(item.id))) return result;
+    // Resolve anchors once. A linked sibling list makes each insertion O(1),
+    // including an entire wide subtree whose children are all frozen.
+    type Link = { item: T; previous: Link | null; next: Link | null };
+    const links = new Map<PlacementId, Link>();
+    let head: Link | null = null;
+    let tail: Link | null = null;
+    const insert = (item: T, next: Link | null): Link => {
+      const previous = next ? next.previous : tail;
+      const node: Link = { item, previous, next };
+      if (previous) previous.next = node; else head = node;
+      if (next) next.previous = node; else tail = node;
+      links.set(item.id, node);
+      return node;
+    };
+    const initial = result.map(item => insert(item, null));
+    const nextAnchors: (PlacementId | null)[] = new Array(before.length);
+    let anchor: PlacementId | null = null;
+    for (let index = before.length - 1; index >= 0; index -= 1) {
+      nextAnchors[index] = anchor;
+      const id = before[index]!.id;
+      if (links.has(id)) anchor = id;
+    }
+    let prior: Link | null = null;
     for (let index = 0; index < before.length; index += 1) {
       const old = before[index]!;
-      if (!frozen.has(old.id)) continue;
-      const item = project(old, currentById.get(old.id));
-      const next = before.slice(index + 1).find(candidate => present.has(candidate.id));
-      const prior = before.slice(0, index).reverse().find(candidate => present.has(candidate.id));
-      const position = next ? result.findIndex(row => row.id === next.id)
-        : prior ? result.findIndex(row => row.id === prior.id) + 1 : Math.min(index, result.length);
-      result.splice(position, 0, item);
-      present.add(item.id);
+      if (!frozen.has(old.id)) {
+        prior = links.get(old.id) ?? prior;
+        continue;
+      }
+      const nextId = nextAnchors[index];
+      const next = nextId != null ? links.get(nextId)! : prior ? prior.next : initial[Math.min(index, initial.length)] ?? null;
+      prior = insert(project(old, currentById.get(old.id)), next);
     }
-    return result;
+    const merged: T[] = [];
+    let node = head as Link | null;
+    while (node) { merged.push(node.item); node = node.next; }
+    return merged;
   };
   return Object.fromEntries([...new Set([...Object.keys(previous), ...Object.keys(current)])]
     .map(key => [key, merge(previous[key] ?? [], current[key] ?? [])]));

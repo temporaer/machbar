@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeTask } from "../test/fixtures";
 import {
   countTasks,
+  projectTaskValue,
   indexTaskDescendants,
   hasOpenDescendants,
   markOpenDescendantsTerminal,
@@ -116,5 +117,16 @@ describe("task descendant indexing", () => {
     expect(index.get(200)?.size).toBe(200);
     expect(index.get(400)?.size).toBe(0);
     expect(index.get(1)?.has(400)).toBe(true);
+  });
+});
+
+describe("retained task value selection", () => {
+  it("prefers confirmed equal-revision derived fields but keeps pending optimistic changes", () => {
+    const retained = makeTask({ revision: 2, blocked: true });
+    const fresh = { ...retained, blocked: false, executable: true };
+    expect(projectTaskValue(fresh, retained)).toBe(fresh);
+    expect(projectTaskValue(fresh, retained, true)).toBe(retained);
+    expect(projectTaskValue({ ...fresh, revision: 1 }, retained)).toBe(retained);
+    expect(projectTaskValue({ ...fresh, revision: 3 }, retained, true).revision).toBe(3);
   });
 });

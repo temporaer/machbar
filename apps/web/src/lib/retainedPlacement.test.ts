@@ -129,4 +129,18 @@ describe("retained list placement", () => {
     expect(result.rows![0]!.children[0]).toMatchObject({ status: "done", completedAt: completed.completedAt, blocked: false, futureMetric: "fresh" });
   });
 
+  it("merges a wide frozen subtree with bounded sibling work", () => {
+    let reads = 0;
+    const children = Array.from({ length: 400 }, (_, index) => {
+      const id = index + 2;
+      const child = task(id);
+      Object.defineProperty(child, "id", { enumerable: true, get: () => { reads += 1; return id; } });
+      return child;
+    });
+    const parent = { ...task(1), children };
+    const result = retainPlacement({ rows: [parent] }, { rows: [parent] }, new Set([1]), identity);
+    expect(reads).toBeLessThan(400 * 40);
+    expect(result.rows![0]!.children.map(child => child.id)).toEqual(children.map(child => child.id));
+  });
+
 });

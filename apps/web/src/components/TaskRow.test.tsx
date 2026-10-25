@@ -288,9 +288,9 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
   it("can swipe the retained crossed-out row again to reopen it", async () => {
     const task = makeTask({ id: 9, title: "Status direkt wechseln", status: "actionable" });
-    const completed = makeTask({ ...task, status: "done" });
+    const completed = makeTask({ ...task, status: "done", revision: 2 });
     mockedApi.completeTask.mockResolvedValue(completed);
-    mockedApi.reopenTask.mockResolvedValue(task);
+    mockedApi.reopenTask.mockResolvedValue({ ...task, revision: 3 });
     const { container } = renderWithProviders(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
     );
@@ -309,7 +309,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
     await waitFor(() =>
-      expect(mockedApi.reopenTask).toHaveBeenCalledWith(9, 1),
+      expect(mockedApi.reopenTask).toHaveBeenCalledWith(9, 2),
     );
   });
 

@@ -17,7 +17,7 @@ export function DiscussionPage() {
   const taskActions = useTaskActions(flattenTasks(data?.tasks ?? []));
   const projectActions = useProjectActions(data?.projects ?? []);
   const { rows: tasks } = useRetainedPlacement({ rows: data?.tasks ?? [] }, taskActions.holdingIds,
-    task => { const overlay = taskActions.retained.get(task.id); return overlay && overlay.revision >= task.revision ? overlay : task; });
+    taskActions.projectTask);
   const { rows: projects } = useRetainedPlacement({ rows: data?.projects ?? [] }, projectActions.holdingIds,
     project => { const overlay = projectActions.retained.get(project.id)?.story; return overlay && overlay.revision >= project.revision ? overlay : project; });
   const empty = data !== null && tasks.length === 0 && projects.length === 0;

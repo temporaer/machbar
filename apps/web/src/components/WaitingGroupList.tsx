@@ -37,7 +37,7 @@ export function WaitingGroupList({
   const actions = useTaskActions();
   const { external: externalTasks, context: contextTasks } = useRetainedPlacement(
     { external: externalCandidates, context: contextCandidates }, actions.holdingIds,
-    task => { const overlay = actions.retained.get(task.id); return overlay && overlay.revision >= task.revision ? overlay : task; });
+    actions.projectTask);
   const outline = (items: Task[], external: boolean) => (
     <TaskOutline
       tasks={items}

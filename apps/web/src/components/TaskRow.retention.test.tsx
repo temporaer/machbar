@@ -47,6 +47,52 @@ describe("TaskRow – retention of recently mutated rows", () => {
     vi.useRealTimers();
   });
 
+  it("prefers equal-revision authoritative blocker fields for the edited row itself", async () => {
+    const task = makeTask({ id: 1, title: "Blocked task", blocked: true });
+    const renamed = { ...task, title: "Renamed blocked task", revision: 2 };
+    mockedApi.updateTask.mockResolvedValue(renamed);
+    function Rename() {
+      const actions = useTaskActions();
+      return <button onClick={() => void actions.update(task, { title: renamed.title })}>Rename</button>;
+    }
+    const { rerender } = renderWithProviders(<><TaskOutline tasks={[task]} emptyMessage="Empty" /><Rename /></>);
+    expect(screen.getByLabelText("Blockiert durch")).toBeInTheDocument();
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    await act(async () => { await flushMicrotasks(); });
+    fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    rerender(<><TaskOutline tasks={[{ ...renamed, blocked: false, executable: true }]} emptyMessage="Empty" /><Rename /></>);
+    expect(screen.queryByLabelText("Blockiert durch")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(screen.queryByLabelText("Blockiert durch")).not.toBeInTheDocument();
+  });
+
+  it("preserves nested projected sibling order until the held child's menu closes", async () => {
+    const [a, b, c] = [0, 1, 2].map(position => makeTask({ id: position + 2, title: ["A", "B", "C"][position]!, position, parentTaskId: 1 }));
+    const parent = makeTask({ id: 1, title: "Parent", children: [a!, b!, c!] });
+    const renamed = { ...b!, title: "Held B", revision: 2 };
+    mockedApi.updateTask.mockResolvedValue(renamed);
+    function Rename() {
+      const actions = useTaskActions();
+      return <button onClick={() => void actions.update(b!, { title: renamed.title })}>Rename middle child</button>;
+    }
+    const { rerender } = renderWithProviders(<><TaskOutline tasks={[parent]} emptyMessage="Empty" /><Rename /></>);
+    const order = () => [...screen.getByText("Parent").closest("li")!.querySelector(".task-row-children")!.children].map(row => row.querySelector(".task-row-title")?.textContent);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Rename middle child" }));
+    await act(async () => { await flushMicrotasks(); });
+    const held = screen.getByText("Held B").closest("li")!;
+    const toggle = within(held).getByRole("button", { name: "Weitere Aktionen" });
+    fireEvent.click(toggle);
+    rerender(<><TaskOutline tasks={[{ ...parent, children: [a!, { ...c!, position: 1 }, { ...renamed, position: 2 }] }]} emptyMessage="Empty" /><Rename /></>);
+    expect(order()).toEqual(["A", "Held B", "C"]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(order()).toEqual(["A", "Held B", "C"]);
+    fireEvent.click(toggle);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(order()).toEqual(["A", "C", "Held B"]);
+  });
+
   it("keeps fresh child derived state during a held parent rename and open menu", async () => {
     const child = makeTask({ id: 2, title: "Previously blocked child", blocked: true });
     const parent = makeTask({ id: 1, title: "Before rename", children: [child] });
@@ -108,7 +154,7 @@ describe("TaskRow – retention of recently mutated rows", () => {
     expect(screen.getByRole("button", { name: "Wieder öffnen" })).toBeDisabled();
 
     await act(async () => {
-      resolveComplete({ ...task, status: "done" });
+      resolveComplete({ ...task, status: "done", revision: task.revision + 1 });
       await flushMicrotasks();
     });
 
@@ -185,7 +231,7 @@ describe("TaskRow – retention of recently mutated rows", () => {
   it("keeps a cancelled row visible with cancelled/crossed-out styling during the retention window", async () => {
     vi.useFakeTimers();
     const task = makeTask({ id: 101, title: "Altes Angebot", status: "actionable" });
-    mockedApi.cancelTask.mockResolvedValue({ ...task, status: "cancelled" });
+    mockedApi.cancelTask.mockResolvedValue({ ...task, status: "cancelled", revision: task.revision + 1 });
 
     const { rerender, container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     // Cancellation is an explicit lifecycle choice; right-swipe completes.
@@ -376,7 +422,7 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
   it("still retains a single nested task's own completion correctly, without touching its untouched parent, and without duplicating it at root", async () => {
     const child = makeTask({ id: 322, title: "Einzelnes Kind", status: "actionable" });
     const parent = makeTask({ id: 321, title: "Unveränderter Elternteil", status: "actionable", children: [child] });
-    mockedApi.completeTask.mockResolvedValue({ ...child, status: "done" });
+    mockedApi.completeTask.mockResolvedValue({ ...child, status: "done", revision: child.revision + 1 });
 
     const { container, rerender } = renderWithProviders(<TaskOutline tasks={[parent]} emptyMessage="Nichts da" />);
     await screen.findByText("Einzelnes Kind");

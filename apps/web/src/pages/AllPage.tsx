@@ -70,7 +70,7 @@ export function AllPage() {
   const taskActions = useTaskActions(flattenTasks(tasks ?? []));
   const projectActions = useProjectActions(projects ?? []);
   const { rows: visibleTasks } = useRetainedPlacement({ rows: taskCandidates }, taskActions.holdingIds,
-    task => { const overlay = taskActions.retained.get(task.id); return overlay && overlay.revision >= task.revision ? overlay : task; }, filtersKey);
+    taskActions.projectTask, filtersKey);
   const { rows: filteredProjects } = useRetainedPlacement({ rows: projectCandidates }, projectActions.holdingIds,
     project => { const overlay = projectActions.retained.get(project.id)?.story; return overlay && overlay.revision >= project.revision ? overlay : project; }, filtersKey);
   const loading = projectsLoading || tasksLoading;

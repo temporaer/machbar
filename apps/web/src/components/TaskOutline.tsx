@@ -1,8 +1,8 @@
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useMemo } from "react";
 import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
-import { applyDescendantTerminalOutcome, flattenTasks, sortByPosition } from "../lib/taskHelpers";
+import { applyDescendantTerminalOutcome, flattenTasks, orderTaskTree } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
@@ -67,13 +67,10 @@ export function TaskOutline({
   // the tree, so render what it hands back rather than the raw prop.
   const organize = useOutlineOrganize(tasks, organizable);
 
-  const sorted = preserveRootOrder ? organize.tasks : sortByPosition(organize.tasks);
+  const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
   useLayoutEffect(() => { taskActions.observeTasks(sorted); }, [sorted, taskActions.observeTasks]);
   const { rows: roots } = useRetainedPlacement({ rows: sorted }, taskActions.holdingIds,
-    task => {
-      const overlay = taskActions.retained.get(task.id);
-      return overlay && overlay.revision >= task.revision ? overlay : task;
-    }, "", applyDescendantTerminalOutcome);
+    taskActions.projectTask, String(organize.placementVersion), applyDescendantTerminalOutcome);
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
   if (roots.length === 0) return <EmptyState message={emptyMessage} />;
 

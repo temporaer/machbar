@@ -72,7 +72,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
   );
   useRetentionInteraction(taskId, taskActions.pauseRetention, taskId !== null);
   const retained = taskId !== null ? taskActions.retained.get(taskId) : undefined;
-  const task = retained && (!fetchedTask || retained.revision > fetchedTask.revision) ? retained : fetchedTask;
+  const task = fetchedTask ? taskActions.projectTask(fetchedTask) : retained ?? null;
 
   useEffect(() => {
     if (taskId !== null) reload();

@@ -133,3 +133,18 @@ export function applyDescendantTerminalOutcome<T extends Task>(current: T, inher
     completedAt: inherited.completedAt, cancelledAt: inherited.cancelledAt,
     needsClarification: inherited.needsClarification };
 }
+
+/** Confirmed equal-revision reads own derived fields. Pending writes keep
+ * their optimistic values until the request settles. */
+export function projectTaskValue(current: Task, retained: Task | undefined, pending = false): Task {
+  return retained && (retained.revision > current.revision || (pending && retained.revision === current.revision))
+    ? retained : current;
+}
+
+/** Sort authoritative siblings before placement; rendered placement is final. */
+export function orderTaskTree(tasks: Task[], preserveRoots = false, preserveDescendants = false): Task[] {
+  const roots = preserveRoots ? tasks : sortByPosition(tasks);
+  return roots.map(task => ({ ...task,
+    children: preserveDescendants ? task.children : orderTaskTree(task.children),
+  }));
+}

@@ -6,7 +6,6 @@ import { calendarDateForInstant, type Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
-import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useInteractionScope } from "../lib/interactionScope";
@@ -140,8 +139,8 @@ export function TaskRow({
   // `retained` map. Once the request is no longer busy, the optimistic row
   // remains fully actionable so another swipe can immediately continue the
   // state cycle (for example erledigt -> wieder offen).
-  const retainedTask = retained.get(taskProp.id);
-  const task = retainedTask && retainedTask.revision >= taskProp.revision ? { ...retainedTask, children: taskProp.children } : taskProp;
+  const projectedTask = taskActions.projectTask(taskProp);
+  const task = projectedTask === taskProp ? taskProp : { ...projectedTask, children: taskProp.children };
   const isReference = task.kind === "reference";
   const nextActionBadge = useNextActionBadge(task);
   const attachments = useMemo(
@@ -196,7 +195,7 @@ export function TaskRow({
 
   // Today has already compiled branch order across different original parents.
   // Full outlines still sort actual sibling groups by their stored positions.
-  const children = compactDescendants ? task.children : sortByPosition(task.children);
+  const children = task.children;
   // Compact presentation applies to every row below the outline's own
   // root; the root itself (depth 0) always stays full-featured.
   const isCompact = compactDescendants && depth > 0;

@@ -79,10 +79,7 @@ export function TodayPage() {
     dueToday: agenda?.dueToday ?? [], dueSoon: agenda?.dueSoon ?? [],
     revisit: agenda?.revisit ?? [], completedToday: agenda?.completedToday ?? [],
     additional: [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])],
-  }, taskActions.holdingIds, task => {
-    const overlay = taskActions.retained.get(task.id);
-    return overlay && overlay.revision >= task.revision ? overlay : task;
-  }, agendaSelectionKey);
+  }, taskActions.holdingIds, taskActions.projectTask, agendaSelectionKey);
   const projectCandidates = (agenda?.projects ?? []).map(entry => ({ ...entry, id: entry.project.id }));
   const projectBuckets = useRetainedPlacement({
     planned: projectCandidates.filter(entry => entry.attentionBucket === "planned"),

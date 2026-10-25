@@ -1,4 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { useState } from "react";
+import { useProjectActions } from "../lib/useProjectActions";
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
@@ -20,6 +23,7 @@ vi.mock("../lib/api", () => ({
     activateProject: vi.fn(),
     returnProjectToBacklog: vi.fn(),
     completeProject: vi.fn(),
+    acknowledgeProjectReview: vi.fn(),
     reopenProject: vi.fn(),
     archiveProject: vi.fn(),
     addCriterion: vi.fn(),
@@ -31,6 +35,7 @@ vi.mock("../lib/api", () => ({
 }));
 
 const mockedApi = vi.mocked(api, true);
+afterEach(() => { vi.useRealTimers(); });
 
 async function flushMicrotasks(times = 3) {
   for (let i = 0; i < times; i += 1) {
@@ -312,6 +317,51 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     });
     expect(screen.getByText("Fertige Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
+  });
+
+  it("keeps a held project's original tag group while its workflow is active", async () => {
+    const oldTag = makeTag({ id: 91, name: "Original area", kind: "area" });
+    const newTag = makeTag({ id: 92, name: "New area", kind: "area" });
+    const project = makeProject({ id: 90, title: "Retag held project", status: "active", ownerMemberId: 1,
+      effectiveTags: [oldTag], nextAction: makeTask({ id: 900 }) });
+    const held = { ...project, revision: 2, reviewedAt: "2026-10-25T12:30:00Z" };
+    const updated = { ...held, revision: 3, effectiveTags: [newTag] };
+    let phase = 0;
+    mockedApi.getProjects.mockImplementation(async () => [phase === 0 ? project : phase === 1 ? held : updated]);
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { phase = 1; return held; });
+    mockedApi.updateProject.mockImplementation(async () => { phase = 2; return updated; });
+    function Controls() {
+      const actions = useProjectActions();
+      const [open, setOpen] = useState(false);
+      useRetentionInteraction(project.id, actions.pauseRetention, open);
+      return <>
+        <button onClick={() => void actions.acknowledgeReview(project)}>Hold project</button>
+        <button onClick={() => { setOpen(true); void actions.update(held, { tagIds: [newTag.id] }); }}>Retag in workflow</button>
+        <button onClick={() => setOpen(false)}>Close workflow</button>
+      </>;
+    }
+    renderWithProviders(<><ProjectsPage /><Controls /></>);
+    await screen.findByText(project.title);
+    fireEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" })).getByRole("button", { name: "Bereich" }));
+    const originalGroup = screen.getByRole("heading", { name: oldTag.name }).closest(".collapsible-group")!;
+    const originalRow = screen.getByText(project.title).closest("li")!;
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Hold project" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("button", { name: "Retag in workflow" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(originalRow).toBeInTheDocument();
+    expect(originalRow.closest(".collapsible-group")).toBe(originalGroup);
+    expect(screen.queryByRole("heading", { name: newTag.name })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close workflow" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    expect(originalRow).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(originalGroup).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: newTag.name })).toBeInTheDocument();
+    expect(screen.getAllByText(project.title)).toHaveLength(1);
   });
 
   it("offers tag types instead of tag values and groups stories by the selected type", async () => {
