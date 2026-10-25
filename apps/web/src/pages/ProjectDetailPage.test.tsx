@@ -55,6 +55,14 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
+async function openDetailActions() {
+  await userEvent.click(await screen.findByRole("button", { name: "Aktionen" }));
+}
+async function openDetailOptions() {
+  await userEvent.click(screen.getByRole("button", { name: "Weitere Optionen" }));
+}
+
+
 function ProjectRouteLocation() {
   const location = useLocation();
   const reviewReturn = (
@@ -334,13 +342,15 @@ describe("ProjectDetailPage task explanations", () => {
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
     mockedApi.updateProject.mockResolvedValue({ ...project, revision: 2, discussionRequested: true });
     renderProjectRoute("/projects/5");
+    await openDetailActions();
     const button = await screen.findByRole("button", { name: strings.addDiscussion });
-    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveTextContent(strings.addDiscussion);
     await userEvent.click(button);
     await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(5, {
       discussionRequested: true, expectedRevision: 1,
     }));
-    expect(await screen.findByRole("button", { name: strings.removeDiscussion })).toHaveAttribute("aria-pressed", "true");
+    await openDetailActions();
+    expect(await screen.findByRole("button", { name: strings.removeDiscussion })).toBeVisible();
   });
 
   it("launches AI from the header action group and keeps controls together while editing", async () => {
@@ -355,7 +365,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(sparkles).toHaveAttribute("title", strings.workRefinement);
     await userEvent.click(within(actions).getByRole("button", { name: strings.edit }));
     expect(within(actions).getByRole("button", { name: strings.edit })).toBeDisabled();
-    expect(within(actions).getByRole("button", { name: strings.attach })).toBeEnabled();
+    expect(within(actions).getByRole("button", { name: "Aktionen" })).toBeEnabled();
     await userEvent.click(within(header).getByRole("button", { name: strings.cancel }));
     await userEvent.click(sparkles);
     const launcher = await screen.findByRole("dialog", { name: `${strings.workRefinement}: ${project.title}` });
@@ -451,7 +461,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
     expect(
       within(overview).queryByRole("button", {
-        name: /Wiedervorlage.*10\.09\.2026/,
+        name: /Erst wieder anzeigen ab.*10\.09\.2026/,
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -556,6 +566,20 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("adds a backlog revisit from role-appropriate options without exposing task-only properties", async () => {
+    const project = { ...makeProject({ id: 42, title: "Späteres Vorhaben", status: "backlog", revisitAt: null }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: project.title });
+    await openDetailOptions();
+    const options = screen.getByRole("dialog", { name: "Weitere Optionen" });
+    expect(within(options).queryByRole("button", { name: /Priorität|Wiederholen|Erinnern/ })).not.toBeInTheDocument();
+    await userEvent.click(within(options).getByRole("button", { name: "Erst wieder anzeigen ab …" }));
+    expect(await screen.findByRole("dialog", { name: strings.revisit })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Weitere Optionen" })).not.toBeInTheDocument();
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
   it("opens the canonical defer workflow from a backlog project's Wiedervorlage property", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({
@@ -572,7 +596,7 @@ describe("ProjectDetailPage task explanations", () => {
     const overview = await screen.findByLabelText(strings.projectOverview);
     await userEvent.click(
       within(overview).getByRole("button", {
-        name: /Wiedervorlage.*20\.09\.2026/,
+        name: /Erst wieder anzeigen ab.*20\.09\.2026/,
       }),
     );
 
@@ -754,7 +778,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
     const projectHeader = screen
-      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/, hidden: true })
       .closest<HTMLElement>(".page-header")!;
     const notesSection = screen
       .getByRole("heading", { name: "Notizen" })
@@ -811,7 +835,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     const projectHeader = screen
-      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/, hidden: true })
       .closest<HTMLElement>(".page-header")!;
     await userEvent.click(
       within(projectHeader).getByRole("button", { name: "Bearbeiten" }),
@@ -960,7 +984,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     await userEvent.click(
-      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
     const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
     await userEvent.click(deleteButton);
@@ -984,7 +1008,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     await userEvent.click(
-      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
     await userEvent.click(screen.getByRole("button", { name: strings.deleteProject }));
 
@@ -1001,20 +1025,12 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("styles the danger-zone disclosure and delete button like Task's", async () => {
+  it("separates destructive deletion inside the shared header action menu", async () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
-
-    const dangerSection = screen
-      .getByRole("heading", { name: strings.projectDangerSection, level: 3 })
-      .closest("details")!;
-    expect(dangerSection).toHaveClass("detail-danger-section");
-
-    await userEvent.click(
-      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
-    );
-    const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
-    expect(deleteButton).toHaveClass("btn-danger", "btn-block");
+    await openDetailActions();
+    expect(screen.getByRole("button", { name: strings.deleteProject })).toHaveClass("btn-danger", "detail-menu-danger");
+    expect(screen.queryByRole("heading", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
   it("shows Calendar export beside Share only for a dated Project", async () => {
@@ -1029,6 +1045,7 @@ describe("ProjectDetailPage task explanations", () => {
     });
     renderWithProviders(<ProjectDetailPage />);
 
+    await openDetailActions();
     expect(
       await screen.findByRole("button", { name: "Teilen" }),
     ).toBeInTheDocument();
@@ -1036,17 +1053,18 @@ describe("ProjectDetailPage task explanations", () => {
       screen.getByRole("button", { name: "In Kalender" }),
     ).toBeInTheDocument();
     const titleRow = screen
-      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/, hidden: true })
       .closest(".project-page-title-row");
     const actions = titleRow?.querySelector(".project-page-actions");
     expect(titleRow).toHaveClass("project-page-title-row");
     expect(actions).toHaveClass("project-page-actions");
-    expect(within(actions as HTMLElement).getAllByRole("button")).toHaveLength(5);
+    expect(within(actions as HTMLElement).getAllByRole("button", { hidden: true })).toHaveLength(3);
   });
 
   it("does not show Calendar export for a Project without a deadline", async () => {
     renderWithProviders(<ProjectDetailPage />);
 
+    await openDetailActions();
     expect(
       await screen.findByRole("button", { name: "Teilen" }),
     ).toBeInTheDocument();
@@ -1055,7 +1073,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("surfaces share/calendar feedback in one shared header status slot, not per-button", async () => {
+  it("keeps sharing feedback visible in the header action menu", async () => {
     Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -1064,20 +1082,12 @@ describe("ProjectDetailPage task explanations", () => {
     });
     renderWithProviders(<ProjectDetailPage />);
 
+    await openDetailActions();
     const shareButton = await screen.findByRole("button", { name: "Teilen" });
     await userEvent.click(shareButton);
 
-    const slot = await waitFor(() => {
-      const element = document.querySelector(".sheet-header-status");
-      expect(element).not.toBeNull();
-      return element as HTMLElement;
-    });
-    expect(within(slot).getByRole("status")).toHaveTextContent(
-      "In die Zwischenablage kopiert",
-    );
-    expect(
-      shareButton.closest(".native-share-control")?.querySelector("[role='status']"),
-    ).not.toBeInTheDocument();
+    expect(within(screen.getByRole("dialog", { name: "Aktionen" })).getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");
+    expect(shareButton.closest(".native-share-control")?.querySelector("[role='status']")).toBeVisible();
   });
 
   it("inserts a header attachment at the active notes cursor without saving", async () => {
@@ -1102,6 +1112,7 @@ describe("ProjectDetailPage task explanations", () => {
     const notes = within(notesSection).getByRole("textbox") as HTMLElement;
     selectMarkdown(notes, 7);
 
+    await openDetailActions();
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),
@@ -1136,6 +1147,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Sommerfest planen");
 
+    await openDetailActions();
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),

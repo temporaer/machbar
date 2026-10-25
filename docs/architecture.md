@@ -1373,24 +1373,32 @@ A household has at most ~5 members, so every focused assignment popup renders th
 - An explicit "nobody" chip (`Gemeinsam / offen` for tasks, `Niemand zugewiesen` for stories) where clearing is legal. Driver activation omits it because the API rejects activating without a driver.
 - Chips keep a ~44 px touch target (`.choice-chip`) and wrap rather than scroll.
 
-`TaskDetailSheet` is no longer an inspector and owns no scalar-property
-editor at all. It reads as a document: authored title and notes with explicit
-Edit/Save/Cancel, a compact meta row of *current* values, and the two real
-collections (subtasks, dependencies) as disclosures, followed by
-`Weitere Aktionen`, `Organisation`, activity and deletion.
+`TaskDetailSheet` and `ProjectDetailPage` read as documents. Authored title
+and notes keep explicit Edit/Save/Cancel. The summary groups status,
+responsibility/scope, timing, optional current values and direct tag/place
+shortcuts; it is neither an inspector form nor a pill catalog. Scheduled dates
+and deadlines have separate buttons and target the same planning draft.
 
-Every scalar value in the meta row is a button that dispatches the same
-semantic command as the fixed rail and keyboard — owner, planning, waiting,
-recurrence, priority, tags and contexts. Unset rare properties render nothing;
-only owner, planning and waiting keep a lightweight `+ …` affordance. Status
-shows as a clickable badge that toggles its own inline lifecycle chooser
-(`task.lifecycle`), not a `Weitere Aktionen` tile. Movement (`task.changeProject`),
-split (`task.split`), and convert-to-project (`task.convertToProject`) live in
-the existing `Struktur` workflow, also available in details, and successor creation is the
-contextual "+" in organizable outlines — none of them duplicate into
-`Weitere Aktionen`, which now holds only genuinely uncommon actions with no
-other affordance (priority/recurrence when unset, the additional-next-action
-toggle).
+`DetailPropertyPill` remains the shared current-value control. Detail summary
+CSS makes it quiet and wraps long values while keeping 44px touch targets;
+focused editors retain their existing presentation. Every current value opens
+its canonical editor directly. Unset tags/places always have a direct labelled
+shortcut. The optional-property menu contains only applicable unset revisit,
+reminder, waiting, recurrence, priority and prerequisite entries. Clearing a
+value brings its add entry back; no domain eligibility rules change.
+
+`DetailActionMenu` is a shared presentation wrapper over `BottomSheet` and
+`ActionTileGrid`, with no mutation or workflow routing. Its header instance
+owns discussion, manual clarification (tasks), structure, additional-next-action
+(tasks), attachments, sharing/export and a separately styled confirmed delete.
+The AI shortcut remains beside it. A selected command dismisses the menu before
+dispatching to the existing workflow host; sharing keeps its feedback in the
+menu. The old lower Weitere Aktionen and danger catalogs are removed. Contextual
+step, outcome and prerequisite actions remain at their content sections.
+Empty content has quiet add access instead of a prominent empty panel.
+Created/updated metadata is inside the final activity disclosure; recurrence
+history remains near that history area. Material/provenance and breadcrumbs keep
+their existing navigation.
 
 Focused task workflows may derive optional structured suggestions from the
 task title through the React-free `lib/captionHints.ts` primitive. It retains
@@ -1420,10 +1428,8 @@ the direct `useCriterionCheck` mutation with `AcceptanceCriteriaEditor`, while
 the explicit `story.editOutcome` action is the sole route for changing
 criterion structure — reachable both from the row rail's `Struktur` sheet and
 from the contextual icon button next to the outcome section. Its genuine
-non-property commands (there are none left once `story.planWork`/
-`story.defer` moved into the fixed rail) mean the page's own `Weitere
-Aktionen`/`ActionTileGrid` section is gone entirely; `ActionTileGrid` is now
-used only by `TaskDetailSheet`'s trimmed `Weitere Aktionen`.
+non-property commands use the same header `DetailActionMenu` as tasks, with
+only project-supported commands and properties.
 Deleting the sheet also deleted its private copies of
 activation-driver, activation-progress and completion-criteria prerequisite
 handling, which `resolveStoryPrerequisite()` already decides once. Review
@@ -2188,3 +2194,19 @@ keyboard geometry):
 
 These device checks remain manual; automated tests cover viewport events,
 stacking, suspension and listener cleanup.
+
+### Detail layout mobile checks (#246)
+
+Check task and project details at 320px and 390px, with 200% font size, long
+titles/member names, and multiple tags/places. Confirm wrapping without clipping
+and touch targets of at least 44px. Check keyboard Tab/focus return through
+header actions → focused workflow → detail, and direct tag/place selection.
+Use screen-reader button navigation to distinguish Geplant/Fällig, optional
+property values and add choices. Confirm activity timestamps are read in the
+history disclosure and destructive deletion still requires confirmation.
+
+Verified locally with real Chromium rendering and fixture API data: task and
+project details at 390px, then 320px with 200% root font size, long titles/member
+names and five tags. No horizontal overflow or clipped controls; summary touch
+targets were at least 44px. The More options → Priority editor route was also
+exercised. This does not replace real-device keyboard or screen-reader testing.

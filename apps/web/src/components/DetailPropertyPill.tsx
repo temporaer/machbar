@@ -1,15 +1,8 @@
 import type { ReactNode } from "react";
 
-/**
- * Canonical scalar-property pill shared by Task and Project detail
- * surfaces. Renders the existing `.detail-meta-button` geometry/padding/
- * typography/border/hover/hit-target for a *set* property, or the same
- * geometry with a muted "add" treatment (`variant="unset"`) for a property
- * that has no value yet — color is the only structural difference between
- * the two, per the shared interaction grammar. `StatusBadge`/
- * `ProjectStatusBadge` additionally layer semantic status color on top of
- * this same base class; that is the one deliberate exception beyond color.
- */
+/** Current-value control shared by detail summaries and focused planning.
+ * Summary groups provide quiet styling; editors keep their existing pill
+ * treatment. Both preserve the same click and accessible-name contract. */
 export function DetailPropertyPill({
   label,
   children,
@@ -21,10 +14,10 @@ export function DetailPropertyPill({
   ariaExpanded,
   ariaControls,
 }: {
-  label?: string;
+  label?: string | undefined;
   children: ReactNode;
   onClick: () => void;
-  ariaLabel?: string;
+  ariaLabel?: string | undefined;
   variant?: "set" | "unset";
   extraClassName?: string;
   disabled?: boolean;

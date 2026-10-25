@@ -103,7 +103,7 @@ describe("TaskPlanningSheet", () => {
     });
     mockedApi.updateTask.mockResolvedValue({ ...task, scheduledDate: null, revisitAt: null } as never);
     renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
-    await user.click(within(card(field === "plan" ? "Geplant für" : "Wiedervorlage")).getByRole("button", { name: /entfernen/ }));
+    await user.click(within(card(field === "plan" ? "Geplant für" : "Erst wieder anzeigen ab")).getByRole("button", { name: /entfernen/ }));
     expect(screen.getByLabelText("Zeitfenster")).toHaveValue("inside");
     await user.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalled());
@@ -192,7 +192,7 @@ describe("TaskPlanningSheet", () => {
       />,
     );
 
-    card("Wiedervorlage");
+    card("Erst wieder anzeigen ab");
     const dateInput = screen.getByLabelText("Datum");
     await user.clear(dateInput);
     await user.type(dateInput, "kein Datum");
@@ -228,7 +228,7 @@ describe("TaskPlanningSheet", () => {
     );
 
     expect(
-      within(card("Wiedervorlage")).getByRole("button", { name: "Morgen" }),
+      within(card("Erst wieder anzeigen ab")).getByRole("button", { name: "Morgen" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
@@ -249,9 +249,9 @@ describe("TaskPlanningSheet", () => {
       />,
     );
 
-    card("Wiedervorlage");
+    card("Erst wieder anzeigen ab");
     const dateInput = screen.getByLabelText("Datum");
-    const tomorrow = within(card("Wiedervorlage")).getByRole("button", {
+    const tomorrow = within(card("Erst wieder anzeigen ab")).getByRole("button", {
       name: "Morgen",
     });
     expect(tomorrow).toHaveAttribute("aria-pressed", "true");
@@ -280,7 +280,7 @@ describe("TaskPlanningSheet", () => {
     );
 
     await user.click(
-      within(card("Wiedervorlage")).getByRole("button", { name: "Morgen" }),
+      within(card("Erst wieder anzeigen ab")).getByRole("button", { name: "Morgen" }),
     );
     expect(
       within(card("Geplant für")).getByText(/Planung für/),
@@ -293,7 +293,7 @@ describe("TaskPlanningSheet", () => {
       within(card("Geplant für")).queryByText(/Planung für/),
     ).not.toBeInTheDocument();
     expect(
-      within(card("Wiedervorlage")).getByText(/Wiedervorlage für/),
+      within(card("Erst wieder anzeigen ab")).getByText(/Wiedervorlage für/),
     ).toBeInTheDocument();
   });
 
@@ -397,7 +397,7 @@ describe("TaskPlanningSheet", () => {
       />,
     );
     expect(observed).toHaveLength(1);
-    expect(observed[0]).toBe(card("Wiedervorlage"));
+    expect(observed[0]).toBe(card("Erst wieder anzeigen ab"));
 
     fireEvent.pointerDown(card("Deadline", false));
     rerender(
@@ -597,8 +597,8 @@ describe("TaskPlanningSheet", () => {
     await user.click(
       within(card("Wartet auf")).getByRole("button", { name: "Warten beenden" }),
     );
-    expect(within(card("Wiedervorlage")).getByLabelText("Datum")).toBeDisabled();
-    expect(within(card("Wiedervorlage")).getByLabelText("Datum")).toHaveValue("");
+    expect(within(card("Erst wieder anzeigen ab")).getByLabelText("Datum")).toBeDisabled();
+    expect(within(card("Erst wieder anzeigen ab")).getByLabelText("Datum")).toHaveValue("");
     expect(
       within(card("Wartet auf")).getByText("Die zugehörige Wiedervorlage wird entfernt."),
     ).toBeInTheDocument();
@@ -606,7 +606,7 @@ describe("TaskPlanningSheet", () => {
     await user.click(
       within(card("Wartet auf")).getByRole("button", { name: "Rückgängig" }),
     );
-    expect(within(card("Wiedervorlage")).getByLabelText("Datum")).toHaveValue(
+    expect(within(card("Erst wieder anzeigen ab")).getByLabelText("Datum")).toHaveValue(
       "20.10.2026",
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
@@ -681,7 +681,7 @@ describe("TaskPlanningSheet", () => {
       block: "nearest",
       behavior: "auto",
     });
-    expect(card("Wiedervorlage")).toHaveClass("task-planning-card-active");
+    expect(card("Erst wieder anzeigen ab")).toHaveClass("task-planning-card-active");
     expect(card("Wartet auf")).not.toHaveClass("task-planning-card-active");
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
@@ -705,7 +705,7 @@ describe("TaskPlanningSheet", () => {
     );
     await user.tab();
     await user.click(
-      within(card("Wiedervorlage")).getByRole("button", { name: "Morgen" }),
+      within(card("Erst wieder anzeigen ab")).getByRole("button", { name: "Morgen" }),
     );
     await user.click(
       within(card("Wartet auf")).getByRole("button", { name: "Entfernen" }),
@@ -745,7 +745,7 @@ describe("TaskPlanningSheet", () => {
     );
     await user.tab();
     await user.click(
-      within(card("Wiedervorlage")).getByRole("button", { name: "Morgen" }),
+      within(card("Erst wieder anzeigen ab")).getByRole("button", { name: "Morgen" }),
     );
     await user.clear(waitingInput);
 

@@ -32,7 +32,6 @@ import { ConfirmDeleteSheet } from "./ConfirmDeleteSheet";
 import { WorkItemInlineError } from "./WorkItemInlineError";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MemberLabel } from "./MemberAvatar";
-import { TaskCardTags } from "./TaskCardTags";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { NativeShareButton } from "./NativeShareButton";
@@ -59,7 +58,7 @@ import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
-import { ActionTileGrid } from "./ActionTileGrid";
+import { DetailActionMenu } from "./DetailActionMenu";
 import { formatReminderSummary } from "../lib/reminderLabels";
 import { parseReferenceContent } from "../lib/referenceContent";
 
@@ -86,13 +85,9 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
  * (`task.plan`, `task.assignOwner`, `task.waitingLifecycle`, …), which
  * `useWorkItemCommands()` routes into the one focused workflow that also
  * serves the fixed row rail (`Später`/`Struktur`), the keyboard, and
- * Review's repairs. Properties that are unset stay invisible unless they
- * are common enough to deserve a lightweight affordance. Movement
- * (`task.changeProject`), split (`task.split`), and convert-to-project
- * (`task.convertToProject`) now live in the row rail's `Struktur` sheet, not
- * here — `Weitere Aktionen` only holds genuinely uncommon actions that have
- * no other affordance (priority/recurrence when unset, the additional-
- * next-action toggle).
+ * Review's repairs. Set values have direct editors; unset optional properties
+ * live in the summary's More options menu. Tags and places stay one tap away.
+ * The header action menu owns uncommon commands, sharing and attachments.
  *
  * What remains here is genuinely document-shaped and has no other home:
  * authored text (title/notes, with explicit Edit/Save/Cancel), the subtask
@@ -123,7 +118,6 @@ export function TaskDetailSheet() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [makeActionBusy, setMakeActionBusy] = useState(false);
   const [makeActionError, setMakeActionError] = useState<string | null>(null);
-  const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [classificationBusy, setClassificationBusy] = useState(false);
   const [convertedProject, setConvertedProject] =
     useState<ProjectWithActions | null>(null);
@@ -196,7 +190,6 @@ export function TaskDetailSheet() {
       setAttachmentOpen(false);
       setLifecycleOpen(false);
       setDeleting(false);
-      setShareStatus(null);
       setConvertedProject(null);
     }
     const hasUnsavedEdits =
@@ -398,14 +391,6 @@ export function TaskDetailSheet() {
     : undefined;
   const localDate = (value: string) =>
     formatExactLocalDate(value, locale) ?? value;
-  const planValue = task
-    ? [
-        task.scheduledDate ? localDate(task.scheduledDate) : null,
-        task.dueDate ? `${strings.due} ${localDate(task.dueDate)}` : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(" · ")
-    : "";
   const revisitAtValue = task?.revisitAt
     ? formatDateTime(task.revisitAt, locale)
     : null;
@@ -470,14 +455,31 @@ export function TaskDetailSheet() {
               disabled={taskMutationPending || savingTextFields || classificationBusy || deleting}
               onClick={() => dispatch({ type: "task.refine", taskId: task.id })}
             />
-            <NativeShareButton
+            <DetailActionMenu label={strings.detailActions} resetKey={task.id}
+              disabled={taskMutationPending || savingTextFields || classificationBusy || deleting}
+              items={[
+                { key: "discussion", icon: "followUp", label: task.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
+                  onClick: () => { void dispatch({ type: "task.setDiscussion", task, requested: !task.discussionRequested })?.catch(() => {}); } },
+                ...(!isReference && !taskIsCapturedInboxItem ? [{ key: "clarify", icon: "edit" as const,
+                  label: task.needsClarification ? strings.clarifyNow : strings.clarifyAgain,
+                  onClick: () => { void dispatch({ type: "task.setClarification", task, requested: !task.needsClarification })?.catch(() => {}); } }] : []),
+                ...(!isReference && task.needsClarification ? [{ key: "clarifyLater", icon: "schedule" as const,
+                  label: strings.clarifyLater, onClick: () => runCommand("task.deferClarification") }] : []),
+                { key: "structure", icon: "split", label: strings.actionTileLabels["task.structure"], onClick: () => runCommand("task.structure") },
+                ...(!isReference && !taskIsCapturedInboxItem && task.projectId !== null ? [{
+                  key: "additional", icon: "actionable" as const,
+                  label: task.additionalNextAction ? strings.unmarkAdditionalNextAction : strings.markAdditionalNextAction,
+                  onClick: () => { void dispatch({ type: "task.toggleAdditionalNextAction", task }); },
+                }] : []),
+                { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => setAttachmentOpen(true) },
+              ]}>
+            <NativeShareButton showLabel
               title={task.title}
               text={serializeTaskForShare(task, locale)}
               url={buildTaskShareUrl(task.id)}
-              showStatus={false}
-              onStatusChange={setShareStatus}
+              showStatus
             />
-            <CalendarExportButton
+            <CalendarExportButton showLabel
               item={{
                 kind: "task",
                 id: task.id,
@@ -485,25 +487,15 @@ export function TaskDetailSheet() {
                 notes: task.notes,
                 dueDate: task.dueDate,
               }}
-              showStatus={false}
-              onStatusChange={setShareStatus}
+              showStatus
             />
-            <IconActionButton
-              kind="attachment"
-              label={strings.attach}
-              disabled={taskMutationPending}
-              onClick={() => setAttachmentOpen(true)}
-            />
+
+              <button type="button" className="btn btn-danger detail-menu-danger" disabled={deleting || taskMutationPending} onClick={() => setConfirmingDelete(true)}>{strings.delete}</button>
+            </DetailActionMenu>
           </>
         ) : null
       }
-      headerStatus={
-        shareStatus ? (
-          <span className="text-muted native-share-status" role="status">
-            {shareStatus}
-          </span>
-        ) : null
-      }
+
     >
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
@@ -517,7 +509,7 @@ export function TaskDetailSheet() {
           {loadedTask?.ancestors?.length ? (
             <WorkItemBreadcrumbs ancestors={loadedTask.ancestors} />
           ) : null}
-          <div className="field" ref={titleFieldRef}>
+          <div className="field task-detail-title-field" ref={titleFieldRef}>
             {titleEditing ? (
               <>
                 <label className="field-label" htmlFor="task-title">
@@ -554,35 +546,25 @@ export function TaskDetailSheet() {
               </>
             ) : (
               <div className="task-detail-title-row">
+                {!isReference && !taskIsCapturedInboxItem ? <button type="button"
+                  className="detail-complete-trigger"
+                  aria-label={task.status === "done" || task.status === "cancelled" ? strings.reopen : strings.done}
+                  onClick={() => dispatch({ type: "task.toggleDone", task })}>
+                  <span aria-hidden="true" className={`task-row-checkbox${task.status === "done" ? " done" : ""}${task.status === "cancelled" ? " cancelled" : ""}`}>{task.status === "done" ? "✓" : task.status === "cancelled" ? "×" : ""}</span>
+                </button> : null}
                 <h1>
                   {task.title}
+                </h1>
                   <IconActionButton
                     kind="edit"
                     label={strings.edit}
                     onClick={() => setTitleEditing(true)}
                   />
-                </h1>
               </div>
             )}
           </div>
           <ExternalRefBadge refs={loadedTask?.externalRefs ?? []} />
-          <div className="row">
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={taskMutationPending}
-              aria-pressed={task.discussionRequested}
-              onClick={async () => {
-                try {
-                  await dispatch({ type: "task.setDiscussion", task, requested: !task.discussionRequested });
-                } catch {
-                  // The shared action provider renders the mutation error below.
-                }
-              }}
-            >
-              {task.discussionRequested ? strings.removeDiscussion : strings.addDiscussion}
-            </button>
-          </div>
+
 
           {isReference ? (
             <div className="task-detail-reference-header">
@@ -631,39 +613,11 @@ export function TaskDetailSheet() {
             </div>
           ) : null}
 
-          {!isReference ? (
-          <div className="detail-meta-row">
-            {taskIsCapturedInboxItem ? <span className="sr-only">{strings.status}: </span> : null}
-            <StatusBadge
-              status={task.status}
-              {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })}
-            />
-            {!taskIsCapturedInboxItem && !isReference ? (
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={taskMutationPending}
-                onClick={async () => {
-                  try {
-                    await dispatch({ type: "task.setClarification", task, requested: !task.needsClarification });
-                  } catch {
-                    // The shared action provider renders the mutation error below.
-                  }
-                }}
-              >
-                {task.needsClarification ? strings.clarifyNow : strings.clarifyAgain}
-              </button>
-            ) : null}
-            {task.needsClarification && !isReference ? (
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={taskMutationPending}
-                onClick={() => runCommand("task.deferClarification")}
-              >
-                {strings.clarifyLater}
-              </button>
-            ) : null}
+          <div className="detail-summary">
+            {!isReference ? <div className="detail-summary-status">
+              <StatusBadge status={task.status} {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })} />
+            </div> : null}
+            {!isReference ? <div className="detail-summary-group detail-meta-row" aria-label={strings.detailResponsibility}>
             {task.projectId !== null && task.projectTitle ? (
               <span className="detail-meta-static">
                 <span className="detail-meta-label">{strings.project}</span>
@@ -681,7 +635,7 @@ export function TaskDetailSheet() {
             ) : null}
             {effectiveOwner ? (
               <DetailPropertyPill
-                label={strings.owner}
+                label={strings.detailResponsibility}
                 onClick={() => runCommand("task.assignOwner")}
               >
                 <MemberLabel member={effectiveOwner} size="xs" />
@@ -696,7 +650,7 @@ export function TaskDetailSheet() {
             )}
             {task.parentTaskId === null && task.projectId === null ? (
               <DetailPropertyPill
-                label={strings.scope}
+                label={strings.detailScope}
                 onClick={async () => {
                   setSaveError(null);
                   try {
@@ -720,104 +674,59 @@ export function TaskDetailSheet() {
                 </span>
               </DetailPropertyPill>
             ) : null}
-            {planValue ? (
-              <DetailPropertyPill
-                label={strings.taskPlanFor}
-                onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: task.scheduledDate ? "scheduled" : "deadline" })}
-              >
-                <span>{planValue}</span>
+
+            </div> : null}
+            {!isReference ? <>
+              <div className="detail-summary-group detail-meta-row" aria-label={strings.planning}>
+                <DetailPropertyPill label={task.scheduledDate ? strings.detailPlanned : undefined}
+                  variant={task.scheduledDate ? "set" : "unset"}
+                  onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "scheduled" })}>
+                  {task.scheduledDate ? localDate(task.scheduledDate) : strings.addPlan}
+                </DetailPropertyPill>
+                <DetailPropertyPill label={task.dueDate ? strings.due : undefined}
+                  variant={task.dueDate ? "set" : "unset"}
+                  onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "deadline" })}>
+                  {task.dueDate ? localDate(task.dueDate) : strings.addDeadline}
+                </DetailPropertyPill>
+                {revisitAtValue ? <DetailPropertyPill label={strings.detailShowAgain} onClick={() => runCommand("task.availability")}>{revisitAtValue}</DetailPropertyPill> : null}
+                {task.availabilityRule ? <DetailPropertyPill label={strings.availabilityWindow} onClick={() => runCommand("task.availability")}>
+                  {task.availabilityRule.match === "inside" ? strings.availabilityBusinessHours : strings.availabilityOutsideBusinessHours}
+                </DetailPropertyPill> : null}
+                {task.reminders.length > 0 && reminderSummary ? <DetailPropertyPill label={strings.detailReminder} onClick={() => runCommand("task.reminders")}>
+                  {reminderSummary.label}{reminderSummary.overflowCount > 0 ? ` +${reminderSummary.overflowCount}` : ""}
+                </DetailPropertyPill> : null}
+                {task.externalWait ? <DetailPropertyPill label={strings.waitingFor} onClick={() => runCommand("task.waitingLifecycle")}>{waitValue || strings.waiting}</DetailPropertyPill> : null}
+                {task.repeatAfterDays !== null ? <DetailPropertyPill onClick={() => runCommand("task.recurrence")}>
+                  {strings.detailRecurrence(task.repeatAfterDays)}
+                </DetailPropertyPill> : null}
+              </div>
+              {task.priority !== null || task.dependencies.length > 0 ? <div className="detail-summary-group detail-meta-row">
+                {task.priority !== null ? <DetailPropertyPill label={strings.priority} onClick={() => runCommand("task.priority")}>
+                  {strings.detailPriorityNames[String(task.priority) as keyof typeof strings.detailPriorityNames] ?? task.priority}
+                </DetailPropertyPill> : null}
+                {task.dependencies.length > 0 ? <DetailPropertyPill label={strings.detailPrerequisites}
+                  onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" })}>
+                  {task.dependencies.map((dep) => dep.title ?? `#${dep.dependsOnTaskId}`).join(" · ")}
+                </DetailPropertyPill> : null}
+              </div> : null}
+            </> : null}
+            <div className="detail-summary-group detail-shortcuts detail-meta-row">
+              <DetailPropertyPill ariaLabel={task.effectiveTags.length ? `${strings.tags}: ${task.effectiveTags.map((tag) => tag.name).join(", ")}` : undefined} variant={task.effectiveTags.length ? "set" : "unset"} onClick={() => runCommand("task.tags")}>
+                {task.effectiveTags.length ? <>{strings.tags}: {task.effectiveTags.map((tag) => <span key={tag.id}>{tag.name}</span>)}</> : strings.addTags}
               </DetailPropertyPill>
-            ) : (
-              <DetailPropertyPill variant="unset" onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "scheduled" })}>
-                {strings.addPlan}
+              <DetailPropertyPill ariaLabel={task.effectiveContexts.length ? `${strings.physicalContexts}: ${task.effectiveContexts.map((context) => context.name).join(", ")}` : undefined} variant={task.effectiveContexts.length ? "set" : "unset"} onClick={() => runCommand("task.contexts")}>
+                {task.effectiveContexts.length ? <>{strings.physicalContexts}: {task.effectiveContexts.map((context) => <span key={context.id}>{context.name}</span>)}</> : strings.addContexts}
               </DetailPropertyPill>
-            )}
-            {revisitAtValue ? (
-              <DetailPropertyPill
-                label={strings.notBefore}
-                onClick={() => runCommand("task.availability")}
-              >
-                <span>{revisitAtValue}</span>
-              </DetailPropertyPill>
-            ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>
-                {strings.addRevisit}
-              </DetailPropertyPill>
-            )}
-            {task.reminders.length > 0 && reminderSummary ? (
-              <DetailPropertyPill
-                label={strings.reminders}
-                onClick={() => runCommand("task.reminders")}
-              >
-                <span>
-                  {reminderSummary.label}
-                  {reminderSummary.overflowCount > 0 ? ` +${reminderSummary.overflowCount}` : ""}
-                </span>
-              </DetailPropertyPill>
-            ) : !isReference ? (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.reminders")}>
-                {strings.addReminder}
-              </DetailPropertyPill>
-            ) : null}
-            {task.externalWait ? (
-              <DetailPropertyPill
-                label={strings.waitingFor}
-                onClick={() => runCommand("task.waitingLifecycle")}
-              >
-                <span>{waitValue}</span>
-              </DetailPropertyPill>
-            ) : (
-              <DetailPropertyPill
-                variant="unset"
-                onClick={() => runCommand("task.waitingLifecycle")}
-              >
-                {strings.addWaiting}
-              </DetailPropertyPill>
-            )}
-            {task.repeatAfterDays !== null ? (
-              <DetailPropertyPill
-                label={strings.recurrence}
-                onClick={() => runCommand("task.recurrence")}
-              >
-                <span>{strings.recurrenceEveryDays(task.repeatAfterDays)}</span>
-              </DetailPropertyPill>
-            ) : null}
-            {task.priority !== null ? (
-              <DetailPropertyPill
-                label={strings.priority}
-                onClick={() => runCommand("task.priority")}
-              >
-                <span>{task.priority}</span>
-              </DetailPropertyPill>
-            ) : null}
-            {task.effectiveTags.length > 0 ? (
-              <DetailPropertyPill
-                ariaLabel={strings.tags}
-                extraClassName="detail-meta-label-button"
-                onClick={() => runCommand("task.tags")}
-              >
-                <TaskCardTags tags={task.effectiveTags} />
-              </DetailPropertyPill>
-            ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.tags")}>
-                {strings.addTags}
-              </DetailPropertyPill>
-            )}
-            {task.effectiveContexts.length > 0 ? (
-              <DetailPropertyPill
-                ariaLabel={strings.physicalContexts}
-                extraClassName="detail-meta-label-button"
-                onClick={() => runCommand("task.contexts")}
-              >
-                <TaskCardTags tags={[]} contexts={task.effectiveContexts} />
-              </DetailPropertyPill>
-            ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.contexts")}>
-                {strings.addContexts}
-              </DetailPropertyPill>
-            )}
+              {!isReference ? <DetailActionMenu label={strings.detailMoreOptions} resetKey={task.id} items={[
+                ...(!revisitAtValue ? [{ key: "revisit", icon: "schedule" as const, label: strings.detailAddRevisit, onClick: () => runCommand("task.availability") }] : []),
+                ...(!task.reminders.length ? [{ key: "reminder", icon: "today" as const, label: strings.detailAddReminder, onClick: () => runCommand("task.reminders") }] : []),
+                ...(!task.externalWait ? [{ key: "wait", icon: "waiting" as const, label: strings.detailAddWait, onClick: () => runCommand("task.waitingLifecycle") }] : []),
+                ...(task.repeatAfterDays === null ? [{ key: "recurrence", icon: "recurrence" as const, label: strings.detailAddRecurrence, onClick: () => runCommand("task.recurrence") }] : []),
+                ...(task.priority === null ? [{ key: "priority", icon: "priority" as const, label: strings.detailAddPriority, onClick: () => runCommand("task.priority") }] : []),
+                ...(!task.dependencies.length ? [{ key: "dependencies", icon: "criteria" as const, label: strings.detailAddPrerequisites, onClick: () => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" }) }] : []),
+              ]} /> : null}
+            </div>
           </div>
-          ) : null}
 
           {lifecycleOpen ? (
             <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
@@ -841,10 +750,7 @@ export function TaskDetailSheet() {
             </div>
           ) : null}
 
-          <p className="text-muted task-detail-metadata">
-            {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
-            {strings.updated}: {formatDateTime(task.updatedAt, locale)}
-          </p>
+
 
           {saveError ?? taskActions.errors[task.id] ? (
             <WorkItemInlineError message={saveError ?? taskActions.errors[task.id]!} />
@@ -881,7 +787,7 @@ export function TaskDetailSheet() {
             </div>
           ) : null}
 
-          <section className="section task-notes-section">
+          <section className={`section task-notes-section${!task.notes && !notesEditing ? " detail-empty-content" : ""}`}>
             <div className="row-between">
               <h2 className="section-title" id="task-notes-label">{strings.notes}</h2>
               {!notesEditing ? (
@@ -969,10 +875,11 @@ export function TaskDetailSheet() {
                 ? strings.projects
                 : task.children.length > 0
                   ? strings.subtaskSummary(task.children.length)
-                  : strings.noSubtasks
+                  : undefined
             }
             defaultOpen={task.children.length > 0 || (loadedTask?.childStories?.length ?? 0) > 0}
             resetKey={task.id}
+            className={!task.children.length && !loadedTask?.childStories?.length ? "detail-empty-content" : ""}
           >
             <div className="field">
             <ul className="list" style={{ padding: 0, margin: 0 }}>
@@ -1040,6 +947,7 @@ export function TaskDetailSheet() {
                 : undefined
             }
             defaultOpen={task.dependencies.length > 0}
+            className={!task.dependencies.length ? "detail-empty-content" : ""}
             forceOpen={focusField === "dependencies"}
             resetKey={task.id}
           >
@@ -1065,57 +973,7 @@ export function TaskDetailSheet() {
           </WorkItemDetailDisclosure>
           ) : null}
 
-          {task ? (
-            <WorkItemDetailDisclosure
-              title={strings.moreActions}
-              resetKey={task.id}
-              className="task-detail-commands"
-            >
-              <ActionTileGrid
-                items={[
-                  ...(!isReference && task.priority === null
-                    ? [
-                        {
-                          key: "task.priority",
-                          icon: "priority" as const,
-                          label: strings.actionTileLabels["task.priority"],
-                          onClick: () => runCommand("task.priority"),
-                        },
-                      ]
-                    : []),
-                  {
-                    key: "task.structure",
-                    icon: "split" as const,
-                    label: strings.actionTileLabels["task.structure"],
-                    onClick: () => runCommand("task.structure"),
-                  },
-                  ...(!isReference && task.repeatAfterDays === null
-                    ? [
-                        {
-                          key: "task.recurrence",
-                          icon: "recurrence" as const,
-                          label: strings.actionTileLabels["task.recurrence"],
-                          onClick: () => runCommand("task.recurrence"),
-                        },
-                      ]
-                    : []),
-                  ...(!isReference && !taskIsCapturedInboxItem && task.projectId !== null
-                    ? [
-                        {
-                          key: "task.toggleAdditionalNextAction",
-                          icon: "actionable" as const,
-                          label: task.additionalNextAction
-                            ? strings.unmarkAdditionalNextAction
-                            : strings.markAdditionalNextAction,
-                          onClick: () =>
-                            dispatch({ type: "task.toggleAdditionalNextAction", task }),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-            </WorkItemDetailDisclosure>
-          ) : null}
+
 
           {task.repeatAfterDays !== null ||
           (recurrenceHistory?.summary.totalCount ?? 0) > 0 ? (
@@ -1204,22 +1062,14 @@ export function TaskDetailSheet() {
             key={`task-activity-${task.id}`}
             filters={{ taskId: task.id }}
             idPrefix={`task-${task.id}-activity`}
-          />
-
-          <WorkItemDetailDisclosure
-            title={strings.taskDangerSection}
-            resetKey={task.id}
-            className="detail-danger-section"
           >
-            <button
-              type="button"
-              className="btn btn-danger btn-block"
-              disabled={deleting}
-              onClick={() => setConfirmingDelete(true)}
-            >
-              {strings.delete}
-            </button>
-          </WorkItemDetailDisclosure>
+          <p className="text-muted task-detail-metadata">
+            {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
+            {strings.updated}: {formatDateTime(task.updatedAt, locale)}
+          </p>
+          </RecentActivity>
+
+
         </fieldset>
       ) : null}
 

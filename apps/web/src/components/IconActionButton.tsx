@@ -180,19 +180,21 @@ export function IconActionButton({
   kind,
   label,
   title = label,
+  showLabel = false,
   disabled,
   onClick,
 }: {
   kind: IconActionKind;
   label: string;
   title?: string | undefined;
+  showLabel?: boolean;
   disabled?: boolean;
   onClick: MouseEventHandler<HTMLButtonElement>;
 }) {
   return (
     <button
       type="button"
-      className="icon-action-button"
+      className={showLabel ? "icon-action-button icon-action-labelled" : "icon-action-button"}
       aria-label={label}
       aria-disabled={disabled || undefined}
       title={title}
@@ -200,6 +202,7 @@ export function IconActionButton({
       onClick={onClick}
     >
       <IconActionGlyph kind={kind} />
+      {showLabel ? <span>{label}</span> : null}
     </button>
   );
 }

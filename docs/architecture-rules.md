@@ -233,7 +233,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project/task completion with unchecked criteria | `CompleteWithCriteriaSheet` via the project/task workflow hosts; `story.complete` and task completion stay the canonical lifecycle mutations |
 | Completion-with-open-tasks continuation | `apps/web/src/components/CompleteWithOpenTasksSheet.tsx`, opened as the `completeWithOpenTasks` workflow |
 | Project list classification/sort presentation | `apps/web/src/lib/projectListFilter.ts` (`ProjectListClassification`, including the non-stuck `active-review` bucket for `completion_review`) |
-| Detail action projection | `apps/web/src/components/ActionTileGrid.tsx` |
+| Detail action projection | `DetailActionMenu` presents header commands and unset optional choices in `BottomSheet` using `ActionTileGrid`; current values and tag/place shortcuts dispatch directly to existing workflow hosts. No lower action catalog. |
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
 | Page navigation chrome | `PageHeader` renders headings and actions only. Today links to the existing `/more/all` inventory through `IconActionGlyph`; `SearchFilterBar` keeps text search first without automatic focus/mobile keyboard activation. |
 | Task primary action | `task.primaryAction` in `useWorkItemCommands` clarifies captured tasks and otherwise uses the canonical guarded completion/reopen command. No swipe preferences or persistence; gesture thresholds and the separate lifecycle rail remain in `useHorizontalSwipe`/`TaskRow`. |
@@ -279,7 +279,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
 | Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
 | Compiled-view (Today) compact descendant presentation and terminal-descendant hiding | `apps/web/src/components/TaskOutline.tsx` (`compactDescendants` prop) and `apps/web/src/components/TaskRow.tsx`; compiled descendants preserve traversal order across promoted branches; each outline owns its current IDs plus actively retained removals, relinquishes stale section membership, and resets on Today member/scope changes. |
-| Task/Project scalar-property pill (set and unset states) | `apps/web/src/components/DetailPropertyPill.tsx` |
+| Task/Project scalar-property control | `DetailPropertyPill` in compact semantic summary groups; quiet detail styling, unchanged focused-editor treatment, direct canonical commands. |
 | Task/Project inline work-item error presentation | `apps/web/src/components/WorkItemInlineError.tsx` |
 | In-app single-choice delete confirmation | `apps/web/src/components/ConfirmDeleteSheet.tsx` (project deletion's task-cascade choice remains `apps/web/src/components/ProjectDeleteChoiceSheet.tsx`) |
 | Task/story hierarchy ancestor chain (source of truth) | `Graph.taskAncestorsFor()` and `Graph`'s private `ancestorsFor()` in `apps/api/src/domain/graph.ts`, exposed on `GET /api/tasks/:id` (`TaskDetailRecord`) and `GET /api/projects/:id` (`ProjectRecord.ancestors`) |

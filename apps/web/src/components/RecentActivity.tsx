@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { ActivityEvent } from "@machbar/shared";
 import { Link } from "react-router-dom";
 import { api, type ActivityFilters } from "../lib/api";
@@ -19,9 +19,11 @@ function activityHref(filters: ActivityFilters): string {
 export function RecentActivity({
   filters,
   idPrefix,
+  children,
 }: {
   filters: Pick<ActivityFilters, "taskId" | "projectId">;
   idPrefix: string;
+  children?: ReactNode;
 }) {
   const strings = useStrings();
   const { version } = useRefresh();
@@ -90,6 +92,7 @@ export function RecentActivity({
         <span role="heading" aria-level={2}>{strings.recentActivities}</span>
       </summary>
       <div className="contextual-activity-content">
+        {children}
         {loading ? <p className="text-muted contextual-activity-state" role="status">{strings.activityLoading}</p> : null}
         {!loading && error ? (
           <div className="contextual-activity-state" role="alert">

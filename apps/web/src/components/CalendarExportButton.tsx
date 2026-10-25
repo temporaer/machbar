@@ -10,10 +10,12 @@ import { IconActionButton } from "./IconActionButton";
 export function CalendarExportButton({
   item,
   showStatus = true,
+  showLabel = false,
   onStatusChange,
 }: {
   item: Omit<CalendarExportItem, "dueDate"> & { dueDate: string | null };
   showStatus?: boolean;
+  showLabel?: boolean;
   onStatusChange?: (status: string | null) => void;
 }) {
   const strings = useStrings();
@@ -72,6 +74,7 @@ export function CalendarExportButton({
   return (
     <span className="native-share-control">
       <IconActionButton
+        showLabel={showLabel}
         kind="schedule"
         label={strings.addToCalendar}
         disabled={busy}
