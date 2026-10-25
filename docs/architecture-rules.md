@@ -239,6 +239,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task primary action | `task.primaryAction` in `useWorkItemCommands` clarifies captured tasks and otherwise uses the canonical guarded completion/reopen command. No swipe preferences or persistence; gesture thresholds and the separate lifecycle rail remain in `useHorizontalSwipe`/`TaskRow`. |
 | Horizontal row/card swipe | `apps/web/src/lib/useHorizontalSwipe.ts`; guided capture opts out of interactive-control starts and reuses its existing area navigation |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
+| Modal sheet viewport and focus | `BottomSheet` owns visual viewport resize/scroll bounds, scroll containment, modal isolation and focus; forms do not add keyboard offsets. |
 | Markdown note editing and input | `MarkdownEditor` (CodeMirror 6), `MarkdownEditorHandle`; existing toolbar/attachment flow and caller-owned explicit save/cancel |
 | Quick note append / current-note tail | `NotesAppend`, `NotesTail`, `noteMarkdown.ts` / `noteEntries.ts`, and task/project `appendNotes` actions; existing atomic notes endpoints |
 | Markdown attachment references and projections | `packages/shared/src/paperlessMarkdown.ts`, `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |

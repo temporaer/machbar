@@ -2156,3 +2156,35 @@ capability guards and tab order. No settings or route abstraction is added.
 all entry points and headings: Kopf freimachen / Clear your mind and Rückblick &
 Coaching / Review & coaching. The capture deck, local factual briefing, external
 handoff, preview and privacy-consent semantics are unchanged.
+
+### Keyboard-visible bottom sheets (#244)
+
+`BottomSheet` constrains its fixed backdrop to `visualViewport` height/width
+and offsets, updating on resize and scroll while registered or resumed. Its
+border-box sheet is capped at 92% of that visible area, retains safe-area
+padding and scrolls internally. Unsupported browsers keep the fixed full-viewport
+CSS fallback. Each stacked sheet owns and cleans up its listener pair; focus
+and modal isolation keep their existing shared stack behavior.
+
+`interactive-widget=resizes-content` could restore Android Chrome layout
+resizing, but changes layout for the entire application and is not universal.
+The scoped visual viewport handling also covers browsers that ignore that hint,
+without adding a second keyboard-sizing mechanism or changing zoom policy.
+See https://developer.chrome.com/blog/viewport-resize-behavior/ and
+https://developer.mozilla.org/en-US/docs/Web/API/VisualViewport.
+
+Manual mobile release checks (real keyboard required; DOM mocks cannot verify
+keyboard geometry):
+- Android Chrome and installed PWA: open Inbox Quick Add, focus title, type,
+  scroll to Erstellen and submit without dismissing the keyboard.
+- Expand modifiers/suggestions and use long notes; verify all controls remain
+  reachable by scrolling and safe-area padding remains visible.
+- Dismiss/reopen the keyboard, rotate with it open, close/reopen Quick Add;
+  check sheet bounds recover without a stale gap or clipped bottom.
+- Open a nested picker, return to the underlying form, and suspend/resume a
+  planning sheet; verify keyboard bounds, draft, focus and Escape/backdrop close.
+- Check a non-input sheet, desktop, browser zoom and iOS Safari; confirm normal
+  scrolling, focus trapping and opener restoration.
+
+These device checks remain manual; automated tests cover viewport events,
+stacking, suspension and listener cleanup.
