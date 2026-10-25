@@ -1,3 +1,5 @@
+import { useTaskActions } from "../lib/useTaskActions";
+import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useEffect, useRef, useState } from "react";
 import type { Task } from "@machbar/shared";
 import { api, type AgendaScope } from "../lib/api";
@@ -28,7 +30,7 @@ export function InboxPage() {
     writeTodayScope(nextScope);
   };
   const {
-    data: tasks,
+    data: loadedTasks,
     loading,
     error,
     reload,
@@ -36,6 +38,10 @@ export function InboxPage() {
     () => api.getInbox(currentMemberId, scope),
     [currentMemberId, scope],
   );
+  const actions = useTaskActions(loadedTasks ?? []);
+  const { rows } = useRetainedPlacement({ rows: loadedTasks ?? [] }, actions.holdingIds,
+    task => { const overlay = actions.retained.get(task.id); return overlay && overlay.revision >= task.revision ? overlay : task; }, `${scope}:${currentMemberId}`);
+  const tasks = loadedTasks ? rows : null;
   const { openQueue } = useTaskDetail();
   const location = useLocation();
 
@@ -99,6 +105,7 @@ export function InboxPage() {
             <EmptyState message={strings.clarifyEmpty} />
           ) : (
             <TaskOutline
+              key={`${scope}:${currentMemberId}`}
               tasks={tasks}
               emptyMessage={strings.clarifyEmpty}
               preserveRootOrder

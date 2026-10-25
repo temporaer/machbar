@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
@@ -66,48 +66,14 @@ export function TaskOutline({
   // the tree, so render what it hands back rather than the raw prop.
   const organize = useOutlineOrganize(tasks, organizable);
 
-  // The shared action controller retains rows for every screen. Only an
-  // outline that actually displayed a row may keep it after compilation
-  // removes it; otherwise each Today section would inject the same ghost.
-  const observedIds = useRef(new Set<number>());
-  useEffect(() => {
-    const currentIds = new Set(flattenTasks(organize.tasks).map((task) => task.id));
-    // Keep ownership across completion-triggered removal, but relinquish rows
-    // that left this section before their transition began elsewhere.
-    for (const id of observedIds.current) {
-      if (taskActions.retained.has(id)) currentIds.add(id);
-    }
-    observedIds.current = currentIds;
-  }, [organize.tasks, taskActions.retained]);
-
-  // Root-level rows that just transitioned may no longer be present in
-  // `tasks` once the compiled view (Heute/Eingang/Suche/…) refetches — see
-  // `useTaskActions`'s retention window. Re-insert them (with their
-  // optimistic status) at the end so the row keeps rendering instead of
-  // disappearing the instant the underlying list updates.
-  //
-  // `presentIds` must cover the *whole* tree (every nested descendant), not
-  // just root ids: a retained task that is a nested child stays nested
-  // inside its still-present parent's `children` array and is rendered from
-  // there. Checking only root ids would never find it there, so it would
-  // wrongly get appended a second time as a duplicate top-level row on every
-  // render while retained.
-  //
-  // They are kept *separate* from the real roots on purpose: a retention
-  // ghost has no place in the stored sibling group, so it must not be
-  // registered as a drop target (its slot would shift every index the drag
-  // projects) nor offer a handle of its own. Rendering it outside the
-  // organize provider below achieves both without any extra prop.
-  const { roots, ghosts } = useMemo(() => {
-    const sorted = preserveRootOrder ? organize.tasks : sortByPosition(organize.tasks);
-    const presentIds = new Set(flattenTasks(sorted).map((t) => t.id));
-    const stillRetained = [...taskActions.retained.values()].filter(
-      (task) => observedIds.current.has(task.id) && !presentIds.has(task.id),
-    );
-    return { roots: sorted, ghosts: stillRetained };
-  }, [organize.tasks, preserveRootOrder, taskActions.retained]);
-
-  if (roots.length === 0 && ghosts.length === 0) return <EmptyState message={emptyMessage} />;
+  const sorted = preserveRootOrder ? organize.tasks : sortByPosition(organize.tasks);
+  const { rows: roots } = useRetainedPlacement({ rows: sorted }, taskActions.holdingIds,
+    task => {
+      const overlay = taskActions.retained.get(task.id);
+      return overlay && overlay.revision >= task.revision ? overlay : task;
+    });
+  const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
+  if (roots.length === 0) return <EmptyState message={emptyMessage} />;
 
   const content = (
     <div className="task-outline" ref={organize.containerRef}>
@@ -119,37 +85,14 @@ export function TaskOutline({
           {organize.enabled ? <span className="text-muted">{strings.dragHint}</span> : null}
         </div>
       ) : null}
-      <OutlineOrganizeProvider value={organize.value}>
-        <ul className="list" style={{ padding: 0, margin: 0 }}>
-          {roots.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              parentTask={null}
-              depth={0}
-              showRevisitDate={showRevisitDate}
-              compactDescendants={compactDescendants}
-              {...(attentionTone ? { attentionTone } : {})}
-            />
-          ))}
-        </ul>
-      </OutlineOrganizeProvider>
-      {ghosts.length > 0 ? (
-        // `marginTop` replaces the flex `gap` the two lists cannot share.
-        <ul className="list" style={{ padding: 0, margin: "8px 0 0" }}>
-          {ghosts.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              parentTask={null}
-              depth={0}
-              showRevisitDate={showRevisitDate}
-              compactDescendants={compactDescendants}
-              {...(attentionTone ? { attentionTone } : {})}
-            />
-          ))}
-        </ul>
-      ) : null}
+      <ul className="list" style={{ padding: 0, margin: 0 }}>
+        {roots.map(task => {
+          const row = <TaskRow task={task} parentTask={null} depth={0}
+            showRevisitDate={showRevisitDate} compactDescendants={compactDescendants}
+            {...(attentionTone ? { attentionTone } : {})} />;
+          return <OutlineOrganizeProvider key={task.id} value={actualIds.has(task.id) ? organize.value : null}>{row}</OutlineOrganizeProvider>;
+        })}
+      </ul>
       {organize.projection ? (
         <div
           className="task-drop-indicator"

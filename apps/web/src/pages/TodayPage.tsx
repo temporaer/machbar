@@ -1,3 +1,7 @@
+import { flattenTasks } from "../lib/taskHelpers";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useProjectActions } from "../lib/useProjectActions";
+import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type AgendaScope } from "../lib/api";
@@ -68,33 +72,41 @@ export function TodayPage() {
     setScope(nextScope);
     writeTodayScope(nextScope);
   };
-  const revisitTasks = agenda?.revisit ?? [];
-  const completedTodayTasks = agenda?.completedToday ?? [];
-  const additionalTasks = [
-    ...(agenda?.shared ?? []),
-    ...(agenda?.unscheduled ?? []),
-  ];
-  const projectAgenda = agenda?.projects ?? [];
-  const projectsByBucket: Record<
-    "planned" | "overdue" | "dueToday" | "dueSoon",
-    typeof projectAgenda
-  > = {
-    planned: [],
-    overdue: [],
-    dueToday: [],
-    dueSoon: [],
-  };
-  for (const entry of projectAgenda) {
-    projectsByBucket[entry.attentionBucket].push(entry);
-  }
+  const taskActions = useTaskActions(flattenTasks([...(agenda?.planned ?? []), ...(agenda?.overdue ?? []), ...(agenda?.dueToday ?? []), ...(agenda?.dueSoon ?? []), ...(agenda?.revisit ?? []), ...(agenda?.completedToday ?? []), ...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])]));
+  const projectActions = useProjectActions();
+  const taskBuckets = useRetainedPlacement({
+    planned: agenda?.planned ?? [], overdue: agenda?.overdue ?? [],
+    dueToday: agenda?.dueToday ?? [], dueSoon: agenda?.dueSoon ?? [],
+    revisit: agenda?.revisit ?? [], completedToday: agenda?.completedToday ?? [],
+    additional: [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])],
+  }, taskActions.holdingIds, task => {
+    const overlay = taskActions.retained.get(task.id);
+    return overlay && overlay.revision >= task.revision ? overlay : task;
+  }, agendaSelectionKey);
+  const projectCandidates = (agenda?.projects ?? []).map(entry => ({ ...entry, id: entry.project.id }));
+  const projectBuckets = useRetainedPlacement({
+    planned: projectCandidates.filter(entry => entry.attentionBucket === "planned"),
+    overdue: projectCandidates.filter(entry => entry.attentionBucket === "overdue"),
+    dueToday: projectCandidates.filter(entry => entry.attentionBucket === "dueToday"),
+    dueSoon: projectCandidates.filter(entry => entry.attentionBucket === "dueSoon"),
+  },
+    projectActions.holdingIds, entry => {
+      const overlay = projectActions.retained.get(entry.id)?.story;
+      return overlay && overlay.revision >= entry.project.revision ? { ...entry, project: overlay } : entry;
+    }, agendaSelectionKey);
+  const revisitTasks = taskBuckets.revisit;
+  const completedTodayTasks = taskBuckets.completedToday;
+  const additionalTasks = taskBuckets.additional;
+  const projectAgenda = Object.values(projectBuckets).flat();
+  const projectsByBucket = projectBuckets;
   const visibleSectionTasks: Record<
     "planned" | "overdue" | "dueToday" | "dueSoon",
     Task[]
   > = {
-    planned: agenda?.planned ?? [],
-    overdue: agenda?.overdue ?? [],
-    dueToday: agenda?.dueToday ?? [],
-    dueSoon: agenda?.dueSoon ?? [],
+    planned: taskBuckets.planned,
+    overdue: taskBuckets.overdue,
+    dueToday: taskBuckets.dueToday,
+    dueSoon: taskBuckets.dueSoon,
   };
   const resolveProjectOwner = (ownerMemberId: number | null) =>
     scope === "all" && ownerMemberId !== null

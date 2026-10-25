@@ -7,6 +7,7 @@ import { useRefresh } from "../lib/refresh";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
 import { RETENTION_MS, useTaskActions } from "../lib/useTaskActions";
+import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { makeMember, makeTask } from "../test/fixtures";
 
 vi.mock("../lib/api", () => ({
@@ -40,14 +41,7 @@ function VersionLog({ log }: { log: number[] }) {
   return null;
 }
 
-/**
- * Exercises `useTaskActions` directly, bypassing `TaskRow`'s UI-level
- * disabling of a retained row's own controls (by design, a retained row's
- * checkbox is disabled — see `TaskRow.retention.test.tsx` — so a real second
- * click can't reach the hook mid-window). This is a true unit test of the
- * hook's own supersede/idempotency guarantees, independent of what the
- * chip/checkbox UI currently allows.
- */
+/** Exercises repeated confirmed mutations through the shared controller. */
 function HookHarness({ task }: { task: Task }) {
   const actions = useTaskActions();
   return (
@@ -62,15 +56,7 @@ function HookHarness({ task }: { task: Task }) {
   );
 }
 
-/**
- * Stands in for a real compiled-view page (Heute/Eingang/Suche/…): it only
- * re-derives what it shows from the "server" when the global refresh bumps,
- * and — just like `TodayPage`'s `.filter((s) => agenda[s.key].length > 0)` —
- * it stops rendering its `TaskOutline` (and the section around it) the
- * moment that server-derived list is empty. This lets a component test
- * reproduce the "compiled section unmounts and destroys per-TaskOutline
- * retained state" failure mode without touching any page component.
- */
+/** Keeps placement at the page level even when fresh server data is empty. */
 function CompiledSectionHarness({ beforeTasks, afterTasks }: { beforeTasks: Task[]; afterTasks: Task[] }) {
   const { version } = useRefresh();
   const baseline = useRef(version);
@@ -80,15 +66,17 @@ function CompiledSectionHarness({ beforeTasks, afterTasks }: { beforeTasks: Task
     setServerTasks(afterTasks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
-  if (serverTasks.length === 0) return <div data-testid="section-empty" />;
+  const actions = useTaskActions();
+  const { rows } = useRetainedPlacement({ rows: serverTasks }, actions.holdingIds, (task) => actions.retained.get(task.id) ?? task);
+  if (rows.length === 0) return <div data-testid="section-empty" />;
   return (
     <div data-testid="section">
-      <TaskOutline tasks={serverTasks} emptyMessage="Nichts da" />
+      <TaskOutline tasks={rows} emptyMessage="Nichts da" />
     </div>
   );
 }
 
-describe("useTaskActions – deferred global refresh vs. compiled-section unmount", () => {
+describe("useTaskActions – immediate refresh with retained placement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
@@ -99,7 +87,7 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
     vi.useRealTimers();
   });
 
-  it("does not bump (and so does not let the compiled section unmount) before the full retention window elapses, then bumps exactly once at expiry", async () => {
+  it("refreshes immediately while retaining the last compiled row until expiry", async () => {
     vi.useFakeTimers();
     const task = makeTask({ id: 500, title: "Rasen mähen", status: "actionable" });
     mockedApi.completeTask.mockResolvedValue({ ...task, status: "done" });
@@ -119,31 +107,16 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
       await flushMicrotasks();
     });
 
-    // Optimistic cross-out happens immediately, but the section must not
-    // have been asked to re-derive its data yet — no bump yet.
     expect(screen.getByText("Rasen mähen").className).toContain("done");
     expect(screen.getByTestId("section")).toBeInTheDocument();
-    expect(versionLog).toEqual([0]);
-
-    // Just shy of the retention window: still crossed out, section still
-    // mounted, still no bump — this is exactly the "split second" window the
-    // bug report described collapsing to.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(RETENTION_MS - 250);
-    });
-    expect(screen.getByText("Rasen mähen")).toBeInTheDocument();
-    expect(screen.getByText("Rasen mähen").className).toContain("done");
-    expect(screen.getByTestId("section")).toBeInTheDocument();
-    expect(versionLog).toEqual([0]);
-
-    // Past the window: exactly one bump fires, the harness re-derives its
-    // "server" data (now empty), and the whole section — TaskOutline
-    // included — is finally allowed to unmount.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
     expect(versionLog).toEqual([0, 1]);
-    expect(screen.queryByTestId("section")).not.toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(RETENTION_MS - 250); });
+    expect(screen.getByText("Rasen mähen")).toBeInTheDocument();
+    expect(versionLog).toEqual([0, 1]);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(versionLog).toEqual([0, 1]);
     expect(screen.getByTestId("section-empty")).toBeInTheDocument();
     expect(screen.queryByText("Rasen mähen")).not.toBeInTheDocument();
   });
@@ -198,7 +171,7 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(versionLog).toEqual([0]);
+    expect(versionLog).toEqual([0, 1]);
 
     // Reopen well before the task's retention window elapses. The shared
     // runtime updates the same retained entry instead of adding another timer.
@@ -209,20 +182,19 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(versionLog).toEqual([0]);
+    expect(versionLog).toEqual([0, 1, 2]);
 
-    // The original per-task deadline emits one refresh for the latest
-    // confirmed response.
+    // The previous deadline must not emit another refresh.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1500);
     });
-    expect(versionLog).toEqual([0, 1]);
+    expect(versionLog).toEqual([0, 1, 2]);
 
-    // There is no second timer for the reopen response.
+    // Expiring placement does not emit another refresh.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(RETENTION_MS);
     });
-    expect(versionLog).toEqual([0, 1]);
+    expect(versionLog).toEqual([0, 1, 2]);
   });
 
   it("clears its retention timer on unmount and never bumps afterwards", async () => {
@@ -242,7 +214,7 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(versionLog).toEqual([0]);
+    expect(versionLog).toEqual([0, 1]);
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     unmount();

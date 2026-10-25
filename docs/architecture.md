@@ -1273,16 +1273,26 @@ action contract.
 
 ### Optimistic retention
 
-`useRetainedMutations` tracks in-flight entity IDs. Retained mutations keep an
-optimistic snapshot for `RETENTION_MS` (4 s) and defer the global `bump()` until
-the window elapses — an immediate bump could unmount the list holding the
-retained state. Project metadata instead bumps immediately and keeps its
-confirmed overlay without a timer until the authoritative project collection
-reaches that revision; a slow or failed refresh therefore cannot expose stale
-controls. Non-retained external-wait commands bump when the confirmed result
-arrives.
+`useRetainedMutations` separates confirmed/optimistic values from `holdingIds`.
+Task and project controllers opt into immediate refresh on success. Their
+confirmed overlays outlive the four-second display window and are reconciled
+by revision, preventing stale reads from restoring old controls. The window
+starts after confirmation; failures roll back without a pending expiry.
+Refinement's existing matrix projection still uses delayed refresh.
 
-Consequence, and it is intentional: **a retained row is disabled only while the request is in flight, and becomes fully actionable again as soon as the request resolves** — while still displayed crossed-out inside its retention window. That lets a user immediately swipe the just-completed row again to reopen it (`erledigt → wieder offen`).
+`useRetainedPlacement` owns view-local placement, not domain state. Today,
+Inbox, Waiting, discussion, inventory, project groups and task outlines retain observed
+rows (including their ancestor path) at their old position while holdingIds
+contains them. This keeps the last item and its section mounted during an
+immediate refresh, suppresses copies in destination buckets, and resets on
+explicit filter/identity changes. Rows removed from structural outlines do
+not become drag targets.
+
+`useRetentionInteraction` leases the display window while row menus,
+workflows, details, keyboard focus or pointer gestures are active. The last
+lease's release provides at least two seconds of orientation time. Pointer
+focus alone does not hold a row indefinitely. Only an in-flight request
+disables mutation controls; retained rows remain readable and actionable.
 
 ### Focused quick sheets
 

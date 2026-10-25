@@ -1,3 +1,4 @@
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesTail } from "./NotesTail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -126,7 +127,7 @@ export function TaskRow({
   // Structural editing (drag handle, keyboard moves, drop preview) is
   // provided by the surrounding `TaskOutline`; it stays absent — and every
   // handle with it — in views whose row order carries no hierarchy meaning.
-  const organize = useOutlineOrganizeRow();
+  const organize = useOutlineOrganizeRow(taskProp.id);
   const dispatch = useWorkItemCommands();
   const taskActions = useTaskActions();
   const { isPending, retained, errors, clearError } = taskActions;
@@ -140,7 +141,7 @@ export function TaskRow({
   // remains fully actionable so another swipe can immediately continue the
   // state cycle (for example erledigt -> wieder offen).
   const retainedTask = retained.get(taskProp.id);
-  const task = retainedTask ?? taskProp;
+  const task = retainedTask && retainedTask.revision >= taskProp.revision ? retainedTask : taskProp;
   const isReference = task.kind === "reference";
   const nextActionBadge = useNextActionBadge(task);
   const attachments = useMemo(
@@ -155,7 +156,7 @@ export function TaskRow({
     () => (isReference ? parseReferenceContent(task.notes) : null),
     [isReference, task.notes],
   );
-  const isRetained = Boolean(retainedTask);
+  const isRetained = taskActions.holdingIds.has(taskProp.id);
   const statusError = errors[taskProp.id];
   const organizeError = organize?.errors[taskProp.id];
   const rowError = statusError ?? organizeError;
@@ -275,6 +276,7 @@ export function TaskRow({
   const showCompleteBg = !isReference && dragX > 0;
   const showCancelBg = !isReference && (dragX < 0 || chipsOpen);
   const lifecycleOpen = !isReference && scope.openLifecycleId === taskProp.id;
+  const retentionInteraction = useRetentionInteraction(task.id, taskActions.pauseRetention, chipsOpen || lifecycleOpen);
   // Live feedback that continuing the drag will open the status rail
   // instead of running the primary action, updated during the drag itself
   // (not just on release) so the switch is visible as it happens.
@@ -335,6 +337,7 @@ export function TaskRow({
       />
       <div
         ref={contentRef}
+        {...retentionInteraction}
         className={`task-row-content${!isReference ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}${isCompact ? " compact" : ""}`}
         style={
           dragX || dragDepthShift
@@ -493,7 +496,7 @@ export function TaskRow({
                           : strings.nextActionBadgeMarked}
                     </span>
                   ) : null}
-                  {isCompact ? null : task.status !== "actionable" ? (
+                  {(!isCompact || isRetained) && (task.status !== "actionable" || isRetained) ? (
                     <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
                       {strings.taskStatusLabels[task.status]}
                     </span>

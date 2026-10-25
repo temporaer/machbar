@@ -134,7 +134,7 @@ export function ProjectDetailPage() {
       return current;
     });
   }, [loadedProject]);
-  const project =
+  const baseProject =
     loadedProject &&
     confirmedProject?.id === loadedProject.id &&
     confirmedProject.revision > loadedProject.revision
@@ -143,6 +143,9 @@ export function ProjectDetailPage() {
   const projectActions = useProjectActions(
     loadedProject ? [loadedProject] : [],
   );
+  const projectOverlay = loadedProject ? projectActions.retained.get(loadedProject.id)?.story : undefined;
+  const project = baseProject && projectOverlay && projectOverlay.revision >= baseProject.revision
+    ? { ...baseProject, ...projectOverlay, tasks: baseProject.tasks } : baseProject;
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
 
   const owner = project
@@ -821,6 +824,7 @@ export function ProjectDetailPage() {
                 </ul>
               ) : null}
               <TaskOutline
+                key={project.id}
                 tasks={project.tasks}
                 emptyMessage={strings.noTasks}
                 organizable

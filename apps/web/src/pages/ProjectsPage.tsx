@@ -1,3 +1,4 @@
+import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
@@ -121,19 +122,11 @@ function ProjectsPageContent() {
     }
   };
 
-  // A story that just transitioned optimistically must keep rendering during
-  // its retention window even if a refetch drops it from the fetched list — but,
-  // just like every other row, it still obeys the current search/scope and
-  // must never appear twice alongside its refetched counterpart. When both
-  // copies exist, the retained story is the effective one for filtering and
-  // section placement as well as for the row itself.
-  const retainedOnly = [...actions.retained.values()]
-    .map((entry) => entry.story)
-    .filter((story) => !(projects ?? []).some((p) => p.id === story.id));
-  const allProjects = [
-    ...(projects ?? []).map((project) => actions.retained.get(project.id)?.story ?? project),
-    ...retainedOnly,
-  ];
+  const latestProject = (project: NonNullable<typeof projects>[number]) => {
+    const overlay = actions.retained.get(project.id)?.story;
+    return overlay && overlay.revision >= project.revision ? overlay : project;
+  };
+  const allProjects = (projects ?? []).map(latestProject);
 
   const now = new Date();
   const filteredProjects = filterAndSortProjects(allProjects, {
@@ -153,7 +146,7 @@ function ProjectsPageContent() {
   const classifications = new Map(
     filteredProjects.map((project) => [project.id, classifyProjectListItem(project, now)]),
   );
-  const activeProjects = filteredProjects.filter((project) => {
+  const activeCandidates = filteredProjects.filter((project) => {
     const classification = classifications.get(project.id);
     return (
       classification === "active-actionable" ||
@@ -161,17 +154,20 @@ function ProjectsPageContent() {
       classification === "active-stuck"
     );
   });
-  const quietProjects = filteredProjects.filter((project) => {
+  const quietCandidates = filteredProjects.filter((project) => {
     const classification = classifications.get(project.id);
     return classification === "active-waiting" || classification === "active-deferred";
   });
-  const backlogProjects = filteredProjects.filter(
+  const backlogCandidates = filteredProjects.filter(
     (project) => classifications.get(project.id) === "backlog",
   );
-  const terminalProjects = filteredProjects.filter((project) => {
+  const terminalCandidates = filteredProjects.filter((project) => {
     const classification = classifications.get(project.id);
     return classification === "completed" || classification === "archived";
   });
+  const { active: activeProjects, quiet: quietProjects, backlog: backlogProjects, terminal: terminalProjects } =
+    useRetainedPlacement({ active: activeCandidates, quiet: quietCandidates, backlog: backlogCandidates, terminal: terminalCandidates },
+      actions.holdingIds, latestProject, `${query}:${scope}:${currentMemberId}:${groupBy}`);
   const groupsFor = (items: typeof filteredProjects) =>
     groupBy
       ? groupItemsByTagKind(items, groupBy, locale)
@@ -312,9 +308,9 @@ function ProjectsPageContent() {
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {projects ? (
-        allProjects.length === 0 ? (
+        allProjects.length === 0 && activeProjects.length + quietProjects.length + backlogProjects.length + terminalProjects.length === 0 ? (
           <EmptyState message={strings.noProjects} />
-        ) : filteredProjects.length === 0 ? (
+        ) : activeProjects.length + quietProjects.length + backlogProjects.length + terminalProjects.length === 0 ? (
           <EmptyState message={strings.noMatchingProjects} />
         ) : (
           <>

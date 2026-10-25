@@ -25,6 +25,7 @@ export type OrganizeDirection = "up" | "down" | "indent" | "outdent";
 const DRAG_START_THRESHOLD = 4;
 
 export interface OutlineOrganizeValue {
+  taskIds: ReadonlySet<number>;
   /** False for compiled views, where screen order carries no hierarchy meaning. */
   enabled: boolean;
   activeId: number | null;
@@ -55,8 +56,9 @@ const OutlineOrganizeContext = createContext<OutlineOrganizeValue | null>(null);
 export const OutlineOrganizeProvider = OutlineOrganizeContext.Provider;
 
 /** Rows read this to render their handle, drag state and inline move errors. */
-export function useOutlineOrganizeRow(): OutlineOrganizeValue | null {
-  return useContext(OutlineOrganizeContext);
+export function useOutlineOrganizeRow(taskId: number): OutlineOrganizeValue | null {
+  const context = useContext(OutlineOrganizeContext);
+  return context?.taskIds.has(taskId) ? context : null;
 }
 
 interface DragSession {
@@ -527,8 +529,16 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     return `${dragged.task.title}: ${target} · ${strings.dropPosition} ${projection.index + 1}`;
   }, [activeId, projection, effectiveTasks, rootGroup]);
 
+  const taskIds = useMemo(() => {
+    const ids = new Set<number>();
+    const visit = (tasks: Task[]) => { for (const task of tasks) { ids.add(task.id); visit(task.children ?? []); } };
+    visit(effectiveTasks);
+    return ids;
+  }, [effectiveTasks]);
+
   const value = useMemo<OutlineOrganizeValue>(
     () => ({
+      taskIds,
       enabled,
       activeId,
       pendingId,
@@ -544,6 +554,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       clearError,
     }),
     [
+      taskIds,
       enabled,
       activeId,
       pendingId,

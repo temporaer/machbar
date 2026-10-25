@@ -63,7 +63,7 @@ export function WaitingPage() {
         />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
-        {entries ? <WaitingGroupList entries={entries} /> : null}
+        {entries ? <WaitingGroupList key={`${scope}:${currentMemberId}`} entries={entries} /> : null}
       </div>
     </InteractionScopeProvider>
   );

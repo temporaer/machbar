@@ -1,3 +1,4 @@
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesTail } from "./NotesTail";
 import { useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
@@ -93,19 +94,17 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   // `null` on any host outside a navigable interaction surface; logical
   // active-item updates are best-effort there.
   const scope = useOptionalInteractionScope();
-  // Sourced from the shared `ProjectActionsProvider` instance (see
-  // `useProjectActions.tsx`); passing just this row's own `story` is enough
-  // for its retained entry to release once this prop confirms the same
-  // revision, without needing the host page's whole loaded collection.
-  const { isPending, retained, errors, clearError } = useProjectActions([storyProp]);
+  // Read the shared controller; only raw authoritative query results may
+  // reconcile an overlay, not a row already projected through that overlay.
+  const { isPending, retained, holdingIds, pauseRetention, errors, clearError } = useProjectActions();
 
-  // A story that just transitioned keeps rendering here — muted, with the
+  // A story that just transitioned keeps rendering here with the
   // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)
   // instead of snapping to its refetched state immediately. Exactly like the
   // task list, the row stays *actionable* the moment the request resolves.
   const retainedEntry = retained.get(storyProp.id);
-  const story = retainedEntry?.story ?? storyProp;
-  const isRetained = Boolean(retainedEntry);
+  const story = retainedEntry && retainedEntry.story.revision >= storyProp.revision ? retainedEntry.story : storyProp;
+  const isRetained = holdingIds.has(storyProp.id);
   const rowError = errors[storyProp.id];
   const busy = isPending(story.id);
 
@@ -207,6 +206,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const { dragX } = swipe;
   const chipsOpen = scope?.openRailId === storyProp.id;
   const lifecycleOpen = scope?.openLifecycleId === storyProp.id;
+  const retentionInteraction = useRetentionInteraction(story.id, pauseRetention, chipsOpen || lifecycleOpen);
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
   const swipeCoach = useSwipeCoach(
@@ -264,6 +264,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         coachAnimate={swipeCoach.animate}
       />
       <div
+        {...retentionInteraction}
         className={`story-row-content${showDriverAssignment ? " has-driver" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
         onPointerDown={(event) => {

@@ -112,6 +112,20 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     vi.useRealTimers();
   });
 
+  it("keeps a removed retained child readable without registering it as a drag target", async () => {
+    const child = makeTask({ id: 2, title: "Retained child", parentTaskId: 1, projectId: 5 });
+    const parent = makeTask({ id: 1, title: "Parent", projectId: 5, children: [child] });
+    mockedApi.completeTask.mockResolvedValue({ ...child, status: "done", revision: 2 });
+    const { rerender } = renderWithProviders(<TaskOutline tasks={[parent]} emptyMessage="Empty" organizable />);
+    const row = screen.getByText("Retained child").closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await act(async () => { await flushMicrotasks(); });
+    rerender(<TaskOutline tasks={[{ ...parent, children: [] }]} emptyMessage="Empty" organizable />);
+    expect(screen.getByText("Retained child")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Verschieben: Retained child" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verschieben: Parent" })).toBeInTheDocument();
+  });
+
   it("sortiert Geschwister durch senkrechtes Ziehen um", async () => {
     mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1 }));
     renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);

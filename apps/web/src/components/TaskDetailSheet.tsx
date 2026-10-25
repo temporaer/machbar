@@ -1,3 +1,4 @@
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesAppend } from "./NotesAppend";
 import {
   useEffect,
@@ -133,6 +134,7 @@ export function TaskDetailSheet() {
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
+  useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
@@ -142,7 +144,7 @@ export function TaskDetailSheet() {
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
   const task = loadedTask
-    ? (taskActions.retained.get(loadedTask.id) ?? loadedTask)
+    ? (taskActions.retained.get(loadedTask.id) && taskActions.retained.get(loadedTask.id)!.revision >= loadedTask.revision ? taskActions.retained.get(loadedTask.id)! : loadedTask)
     : null;
 
   // Recency is a soft ranking boost for search/pickers, not domain state —

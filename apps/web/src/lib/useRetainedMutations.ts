@@ -16,11 +16,14 @@ interface RetainedMutation<TStored, TResult> {
   throwOnError?: boolean;
 }
 
-export function useRetainedMutations<TStored>() {
+export function useRetainedMutations<TStored>({ immediateRefresh = false } = {}) {
   const strings = useStrings();
   const { bump } = useRefresh();
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [retained, setRetained] = useState<Map<number, TStored>>(new Map());
+  const [holdingIds, setHoldingIds] = useState<Set<number>>(new Set());
+  const leases = useRef(new Map<number, number>());
+  const deadlines = useRef(new Map<number, number>());
   const [errors, setErrors] = useState<Record<number, string>>({});
   const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const inFlight = useRef<Set<number>>(new Set());
@@ -39,6 +42,8 @@ export function useRetainedMutations<TStored>() {
       clearTimeout(timer);
       timers.current.delete(id);
     }
+    deadlines.current.delete(id);
+    setHoldingIds((current) => { const next = new Set(current); next.delete(id); return next; });
     setRetained((current) => {
       if (!current.has(id)) return current;
       const next = new Map(current);
@@ -48,33 +53,51 @@ export function useRetainedMutations<TStored>() {
     if (refresh) bump();
   }, [bump]);
 
-  const retain = useCallback((id: number, value: TStored, untilRefresh = false) => {
-    setRetained((current) => {
-      const next = new Map(current);
-      next.set(id, value);
-      return next;
-    });
-    const existingTimer = timers.current.get(id);
-    if (untilRefresh) {
-      if (existingTimer) {
-        clearTimeout(existingTimer);
-        timers.current.delete(id);
-      }
-      return;
-    }
-    if (existingTimer) return;
-    const timer = setTimeout(() => {
+  // A confirmed value and its display lifetime are independent: expiry must
+  // never put an older server snapshot back on screen.
+  const retain = useCallback((id: number, value: TStored) => {
+    setRetained((current) => new Map(current).set(id, value));
+  }, []);
+
+  const schedule = useCallback(function scheduleExpiry(id: number) {
+    const existing = timers.current.get(id);
+    if (existing) clearTimeout(existing);
+    timers.current.delete(id);
+    const deadline = deadlines.current.get(id);
+    if (deadline === undefined || leases.current.has(id)) return;
+    timers.current.set(id, setTimeout(() => {
       timers.current.delete(id);
-      setRetained((current) => {
-        if (!current.has(id)) return current;
-        const next = new Map(current);
+      deadlines.current.delete(id);
+      if (!immediateRefresh) {
+        setRetained(current => { const next = new Map(current); next.delete(id); return next; });
+        bump();
+      }
+      setHoldingIds((current) => {
+        const next = new Set(current);
         next.delete(id);
         return next;
       });
-      bump();
-    }, RETENTION_MS);
-    timers.current.set(id, timer);
-  }, [bump]);
+    }, Math.max(0, deadline - Date.now())));
+  }, [bump, immediateRefresh]);
+
+  const pauseRetention = useCallback((id: number) => {
+    leases.current.set(id, (leases.current.get(id) ?? 0) + 1);
+    const timer = timers.current.get(id);
+    if (timer) clearTimeout(timer);
+    timers.current.delete(id);
+    return () => {
+      const remaining = (leases.current.get(id) ?? 1) - 1;
+      if (remaining > 0) leases.current.set(id, remaining);
+      else {
+        leases.current.delete(id);
+        const deadline = deadlines.current.get(id);
+        if (deadline !== undefined) {
+          deadlines.current.set(id, Math.max(deadline, Date.now() + 2000));
+          schedule(id);
+        }
+      }
+    };
+  }, [schedule]);
 
   const clearError = useCallback((id: number) => {
     setErrors((current) => {
@@ -108,13 +131,26 @@ export function useRetainedMutations<TStored>() {
       inFlight.current.add(id);
       setPendingIds((current) => new Set(current).add(id));
       clearError(id);
-      if (optimistic !== undefined) retain(id, optimistic, retainUntilRefresh);
+      const holdPosition = !retainUntilRefresh || deadlines.current.has(id);
+      const oldTimer = timers.current.get(id);
+      if (oldTimer) clearTimeout(oldTimer);
+      timers.current.delete(id);
+      deadlines.current.delete(id);
+      if (optimistic !== undefined) {
+        retain(id, optimistic);
+        if (holdPosition) setHoldingIds((current) => new Set(current).add(id));
+      }
 
       try {
         const result = await mutate();
         if (shouldRetain) {
-          if (confirmed) retain(id, confirmed(result), retainUntilRefresh);
-          if (refreshImmediately) bump();
+          if (confirmed) retain(id, confirmed(result));
+          if (holdPosition) {
+            setHoldingIds((current) => new Set(current).add(id));
+            deadlines.current.set(id, Date.now() + RETENTION_MS);
+            schedule(id);
+          }
+          if (immediateRefresh || refreshImmediately) bump();
         } else {
           release(id);
           bump();
@@ -138,13 +174,15 @@ export function useRetainedMutations<TStored>() {
         });
       }
     },
-    [bump, clearError, release, retain, strings],
+    [bump, clearError, release, retain, schedule, strings, immediateRefresh],
   );
 
   const isPending = useCallback((id: number) => pendingIds.has(id), [pendingIds]);
 
   return {
     pendingIds,
+    holdingIds,
+    pauseRetention,
     isPending,
     retained,
     errors,

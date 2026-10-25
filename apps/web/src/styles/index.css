@@ -3526,13 +3526,13 @@ details[open] > .disclosure-summary::after {
 /*
  * A recently completed/cancelled/transitioned row keeps rendering for a
  * few seconds (see `useTaskActions`'s retention window) instead of
- * disappearing the instant the compiled view refetches. This muted look
- * signals "about to go away" independent of whether the new status is
+ * disappearing the instant the compiled view refetches. The subtle background
+ * signals a recent transition without dimming controls, whether the status is
  * done/cancelled (crossed out via `.task-row-title.done/.cancelled` below)
  * or a non-terminal one like waiting/someday.
  */
 .task-row-content.retained {
-  opacity: 0.55;
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
 }
 
 .task-row-checkbox {

@@ -948,7 +948,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     });
   });
 
-  it("moves a story into the folded terminal section once it optimistically completes", async () => {
+  it("keeps a completed story in its original section while showing the confirmed status", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -975,11 +975,12 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.completeProject).toHaveBeenCalledWith(1, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
-    expect(rowFor(container, "Aktive Geschichte").closest("details")).not.toBeNull();
+    expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
+    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
   });
 
-  it("moves a retained reopened story from terminal into the quiet section immediately", async () => {
+  it("keeps a reopened story in its original terminal section during retention", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -1027,10 +1028,10 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(1, {
       expectedRevision: 1,
     });
-    expect(screen.getByRole("heading", { name: "Wartet / zurückgestellt (1)" })).toBeInTheDocument();
-    expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Wartet / zurückgestellt (1)" })).not.toBeInTheDocument();
+    expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
     expect(
       rowFor(container, "Wieder zu prüfende Geschichte").closest("[data-project-section]"),
-    ).toHaveAttribute("data-project-section", "quiet");
+    ).toHaveAttribute("data-project-section", "terminal");
   });
 });

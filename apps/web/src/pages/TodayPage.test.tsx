@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
@@ -348,6 +348,53 @@ describe("TodayPage", () => {
     await waitFor(() =>
       expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(1, "mine"),
     );
+  });
+
+  it("refreshes immediately but keeps the last completed task in Today until its display window ends", async () => {
+    const task = makeTask({ id: 9001, title: "Bleibt kurz in Today", status: "actionable" });
+    const done = makeTask({ ...task, status: "done", revision: 2 });
+    let completed = false;
+    mockedApi.getAgenda.mockImplementation(async () => ({
+      ...makeEmptyAgenda(), planned: completed ? [] : [task], completedToday: completed ? [done] : [],
+    }));
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    renderWithProviders(<TodayPage />);
+    const row = (await screen.findByText(task.title)).closest("li")!;
+    const sourceSection = row.closest(".section")!;
+    vi.useFakeTimers();
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mockedApi.getAgenda.mock.calls.length).toBeGreaterThan(1);
+    expect(screen.getAllByText(task.title)).toHaveLength(1);
+    expect(screen.getByText(task.title).closest(".section")).toBe(sourceSection);
+    expect(within(row).getByRole("button", { name: "Wieder öffnen" })).not.toBeDisabled();
+    expect(screen.getByText(task.title)).toHaveClass("done");
+    expect(screen.queryByText("Heute erledigt (1)")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(screen.getAllByText(task.title)).toHaveLength(1);
+    expect(screen.getByText(task.title).closest(".section")).not.toBe(sourceSection);
+    expect(sourceSection).not.toBeInTheDocument();
+  });
+
+  it("keeps a held child nested when a refresh removes its parent and promotes completed work", async () => {
+    const child = makeTask({ id: 9012, title: "Nested retained task" });
+    const parent = makeTask({ id: 9011, title: "Retained ancestor", children: [child] });
+    const done = makeTask({ ...child, status: "done", revision: 2 });
+    let completed = false;
+    mockedApi.getAgenda.mockImplementation(async () => ({ ...makeEmptyAgenda(),
+      dueToday: completed ? [] : [parent], completedToday: completed ? [done] : [],
+    }));
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    renderWithProviders(<TodayPage />);
+    const row = (await screen.findByText(child.title)).closest("li")!;
+    vi.useFakeTimers();
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
+    expect(screen.getByText(parent.title)).toBeInTheDocument();
+    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).not.toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(screen.queryByText(parent.title)).not.toBeInTheDocument();
   });
 
   it.each(["member", "scope"])("does not expose a retained row after changing the selected %s", async selection => {
