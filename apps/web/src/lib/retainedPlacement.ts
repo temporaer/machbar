@@ -6,6 +6,7 @@ export interface PlacedItem { id: PlacementId; revision?: number; children?: Pla
 export function retainPlacement<T extends PlacedItem>(
   previous: Record<string, T[]>, current: Record<string, T[]>, holding: ReadonlySet<PlacementId> | ((item: T) => boolean),
   latest: (item: T) => T,
+  inheritValue: (current: T, inherited: T) => T = current => current,
 ): Record<string, T[]> {
   // Values may have moved elsewhere in the response; location is independent.
   const currentById = new Map<PlacementId, T>();
@@ -39,11 +40,14 @@ export function retainPlacement<T extends PlacedItem>(
       const id = (item ?? old)!.id;
       const raw = currentById.get(id) ?? item;
       const policyValue = inheritedById.get(id);
-      const source = policyValue && (!raw || (policyValue.revision ?? 0) >= (raw.revision ?? 0))
+      const source = policyValue && (!raw || (policyValue.revision ?? 0) > (raw.revision ?? 0))
         ? policyValue : raw ?? old!;
-      const fresh = latest(source);
+      const value = latest(source);
+      const fresh = raw && policyValue ? inheritValue(value, policyValue) : value;
+      const descendantValues = policyValue && (policyValue.revision ?? 0) >= (value.revision ?? 0)
+        ? policyValue.children : value.children;
       return old?.children || raw?.children || fresh.children
-        ? { ...fresh, children: merge((old?.children ?? []) as T[], (raw?.children ?? []) as T[], (fresh.children ?? []) as T[]) }
+        ? { ...fresh, children: merge((old?.children ?? []) as T[], (raw?.children ?? []) as T[], (descendantValues ?? []) as T[]) }
         : fresh;
     };
     const result = after.filter(item => !frozen.has(item.id))

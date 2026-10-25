@@ -45,6 +45,7 @@ vi.mock("../lib/api", () => ({
     checkCriterion: vi.fn(),
     updateProject: vi.fn(),
     completeProject: vi.fn(),
+    acknowledgeProjectReview: vi.fn(),
     startWorkRefinement: vi.fn(),
     getActivity: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
@@ -261,6 +262,44 @@ describe("ProjectDetailPage task explanations", () => {
     }
     expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
+  });
+
+  it("preserves fresh child stories while a parent project hold remains active", async () => {
+    const child = makeProject({ id: 73, title: "Old child title", parentId: 42, openCount: 1, doneCount: 0 });
+    const added = makeProject({ id: 74, title: "New child project", parentId: 42 });
+    const parent = { ...makeProject({ id: 42, title: "Held project" }), childStories: [child] };
+    const held = { ...parent, revision: 2, reviewedAt: "2026-10-25T12:00:00Z" };
+    let saved = false;
+    let changed = false;
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => { saved = true; return held; });
+    mockedApi.getProject.mockImplementation(async () => ({
+      ...(saved ? held : parent), tasks: [],
+      childStories: changed ? [{ ...child, title: "Fresh child title", openCount: 3, revision: 2 }, added] : [child],
+    }));
+    function Controls() {
+      const actions = useProjectActions();
+      const { bump } = useRefresh();
+      return <>
+        <button onClick={() => void actions.acknowledgeReview(parent)}>Hold parent project</button>
+        <button onClick={() => { changed = true; bump(); }}>Refresh child projects</button>
+        <output data-testid="parent-project-held">{String(actions.holdingIds.has(parent.id))}</output>
+      </>;
+    }
+    renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
+      { initialEntries: ["/projects/42"] });
+    await screen.findByText(child.title);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Hold parent project" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh child projects" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId("parent-project-held")).toHaveTextContent("true");
+    expect(screen.queryByText(child.title)).not.toBeInTheDocument();
+    expect(screen.getByText("Fresh child title").closest("li")).toHaveTextContent("0/3");
+    expect(screen.getByText(added.title)).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByTestId("parent-project-held")).toHaveTextContent("true");
+    expect(screen.getByText(added.title)).toBeInTheDocument();
   });
 
   it("reconciles child project metadata before same-revision counts change", async () => {

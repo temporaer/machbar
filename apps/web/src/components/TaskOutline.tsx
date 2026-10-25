@@ -2,7 +2,7 @@ import { useLayoutEffect } from "react";
 import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
-import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
+import { applyDescendantTerminalOutcome, flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
@@ -73,7 +73,7 @@ export function TaskOutline({
     task => {
       const overlay = taskActions.retained.get(task.id);
       return overlay && overlay.revision >= task.revision ? overlay : task;
-    });
+    }, "", applyDescendantTerminalOutcome);
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
   if (roots.length === 0) return <EmptyState message={emptyMessage} />;
 

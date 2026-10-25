@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Task, TaskStatus } from "@machbar/shared";
 import { api } from "./api";
 import type {
@@ -55,30 +55,51 @@ function useTaskActionsState() {
   // contains. Remember its original ownership through the display lifetime.
   const placementDescendants = useRef(new Map<number, Set<number>>());
   const observedDescendants = useRef(new Map<number, Set<number>>());
+  const liveState = useRef({ holding: mutations.holdingIds, pending: pendingIds });
+  liveState.current = { holding: mutations.holdingIds, pending: pendingIds };
+  const interactions = useRef(new Set<{ id: number; leases: Map<number, () => void> }>());
+  const syncInteractions = useCallback(() => {
+    for (const interaction of interactions.current) {
+      const owners = new Set([interaction.id]);
+      for (const [owner, descendants] of placementDescendants.current) {
+        if (descendants.has(interaction.id)) owners.add(owner);
+        if (owner === interaction.id) {
+          for (const child of descendants) if (liveState.current.holding.has(child)) owners.add(child);
+        }
+      }
+      for (const owner of owners) {
+        if (!interaction.leases.has(owner)) interaction.leases.set(owner, mutations.pauseRetention(owner));
+      }
+    }
+  }, [mutations.pauseRetention]);
   const observeTasks = useCallback((tasks: readonly Task[]) => {
     for (const [id, descendants] of indexTaskDescendants(tasks)) {
       observedDescendants.current.set(id, descendants);
+      const previous = placementDescendants.current.get(id);
+      const { holding, pending } = liveState.current;
+      if (holding.has(id) || pending.has(id) || [...(previous ?? []), ...descendants].some(child => holding.has(child) || pending.has(child))) {
+        placementDescendants.current.set(id, new Set([...(previous ?? []), ...descendants]));
+      }
     }
-  }, []);
+    // Existing interactions acquire new owners too, without dropping the old
+    // paths that still keep their displayed row mounted.
+    syncInteractions();
+  }, [syncInteractions]);
   useEffect(() => {
     for (const [id, descendants] of placementDescendants.current) {
       if (![id, ...descendants].some(candidate => mutations.holdingIds.has(candidate) || pendingIds.has(candidate))) placementDescendants.current.delete(id);
     }
   }, [mutations.holdingIds, pendingIds]);
+  useLayoutEffect(syncInteractions, [syncInteractions, mutations.holdingIds, pendingIds]);
   const pauseRetention = useCallback((id: number) => {
-    const owners = new Set([id]);
-    for (const [owner, descendants] of placementDescendants.current) {
-      if (descendants.has(id)) owners.add(owner);
-      if (owner === id) {
-        for (const child of descendants) if (mutations.holdingIds.has(child)) owners.add(child);
-      }
-    }
-    for (const [owner, task] of retained) {
-      if (flattenTasks(task.children ?? []).some(child => child.id === id)) owners.add(owner);
-    }
-    const close = [...owners].map(owner => mutations.pauseRetention(owner));
-    return () => { close.forEach(release => release()); };
-  }, [retained, mutations.holdingIds, mutations.pauseRetention]);
+    const interaction = { id, leases: new Map<number, () => void>() };
+    interactions.current.add(interaction);
+    syncInteractions();
+    return () => {
+      if (!interactions.current.delete(interaction)) return;
+      interaction.leases.forEach(close => close());
+    };
+  }, [syncInteractions]);
   useEffect(() => {
     if (pending) return pauseRetention(pending.task.id);
   }, [pending, pauseRetention]);

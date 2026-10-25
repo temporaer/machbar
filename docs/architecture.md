@@ -1282,7 +1282,9 @@ details, task details, Waiting and Review; projected row props are never
 authoritative. The window
 starts after confirmation; failures roll back without a pending expiry.
 Open task details prefer an authoritative response at equal revision, since
-child changes can leave the parent's own revision unchanged.
+child changes can leave the parent's own revision unchanged. Task workflow
+hosts apply the same equal-revision preference; project detail keeps raw tasks
+and child stories independently from retained parent metadata.
 Refinement's existing matrix projection still uses delayed refresh.
 
 `useRetainedPlacement` owns view-local placement, not domain state. Today,
@@ -1294,8 +1296,11 @@ only retained paths, while held subtrees own their displayed descendants.
 Each merge filters only its sibling level and projects descendants once,
 rather than recursively cloning each remaining subtree at every depth.
 Authoritative child membership is independent of retained scalar values;
-inherited descendant-policy values preserve optimistic completion/cancellation
-without hiding newly moved children. TaskRow keeps those projected children.
+equal-revision authoritative child fields win over inherited snapshots.
+The optional domain projection uses `taskHelpers.applyDescendantTerminalOutcome`
+to apply only an actual completion/cancellation outcome (lifecycle fields),
+preserving fresh derived values and unrelated future fields. Descendant
+outcomes propagate recursively without replacing authoritative membership. TaskRow keeps those projected children.
 Review uses stable issue keys and entity-specific holding predicates, preserving
 each card in its original group until its task/project hold ends. Explicit
 project Review acknowledgement acquires the same timed hold as task decisions;
@@ -1313,7 +1318,11 @@ protect both directions: a child's interaction holds its placement ancestors,
 and an ancestor's interaction holds the descendants keeping it mounted.
 Raw query owners and outlines observe task trees without acknowledging projected
 rows. At transition start the controller snapshots relevant ancestor/subtree
-relations through the display lifetime, even if a later response omits them. `taskHelpers.indexTaskDescendants`
+relations through the display lifetime, even if a later response omits them.
+New observations union newly attached descendants into active ownership.
+The controller's live interaction registry acquires additional owner leases for
+already-open interactions, without dropping removed paths; cleanup releases
+all leases together. `taskHelpers.indexTaskDescendants`
 memoizes each task's descendant set once per observation, reusing it across
 ancestors and repeated flattened entries rather than retraversing subtrees. Child-policy prompts hold the pending
 task until the decision closes or its transition finishes. The last

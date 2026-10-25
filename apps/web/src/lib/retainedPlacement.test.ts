@@ -1,3 +1,4 @@
+import { applyDescendantTerminalOutcome } from "./taskHelpers";
 import { describe, expect, it } from "vitest";
 import { retainPlacement } from "./retainedPlacement";
 import { makeTask } from "../test/fixtures";
@@ -105,6 +106,27 @@ describe("retained list placement", () => {
     expect(result.rows![0]!.title).toBe("Renamed");
     expect(result.rows![0]!.children.map(item => item.id)).toEqual([2, 3]);
     expect(result.rows).toHaveLength(1);
+  });
+
+  it("keeps equal-revision authoritative derived and future fields after a parent title edit", () => {
+    const child = { ...task(2), blocked: true, executable: false, futureMetric: "old" };
+    const parent = { ...task(1), children: [child] };
+    const snapshot = { ...parent, title: "Renamed", revision: 2 };
+    const refreshed = { ...child, blocked: false, executable: true, futureMetric: "fresh" };
+    const result = retainPlacement({ rows: [parent] }, { rows: [{ ...snapshot, children: [refreshed] }] },
+      new Set([1]), item => item.id === 1 ? snapshot : item, applyDescendantTerminalOutcome);
+    expect(result.rows![0]!.children[0]).toMatchObject({ blocked: false, executable: true, futureMetric: "fresh" });
+  });
+
+  it("overlays only lifecycle fields for an inherited terminal policy at equal revision", () => {
+    const child = { ...task(2), blocked: true, futureMetric: "old" };
+    const parent = { ...task(1), children: [child] };
+    const completed = { ...child, status: "done" as const, completedAt: "2026-10-25T12:00:00Z", needsClarification: false };
+    const snapshot = { ...parent, status: "done" as const, revision: 2, children: [completed] };
+    const freshChild = { ...child, blocked: false, futureMetric: "fresh" };
+    const result = retainPlacement({ rows: [parent] }, { rows: [{ ...parent, children: [freshChild] }] },
+      new Set([1]), item => item.id === 1 ? snapshot : item, applyDescendantTerminalOutcome);
+    expect(result.rows![0]!.children[0]).toMatchObject({ status: "done", completedAt: completed.completedAt, blocked: false, futureMetric: "fresh" });
   });
 
 });

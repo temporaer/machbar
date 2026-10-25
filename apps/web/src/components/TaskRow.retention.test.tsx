@@ -4,7 +4,7 @@ import type { Task } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
-import { RETENTION_MS } from "../lib/useTaskActions";
+import { RETENTION_MS, useTaskActions } from "../lib/useTaskActions";
 import { makeMember, makeTask } from "../test/fixtures";
 
 vi.mock("../lib/api", () => ({
@@ -45,6 +45,31 @@ describe("TaskRow – retention of recently mutated rows", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("keeps fresh child derived state during a held parent rename and open menu", async () => {
+    const child = makeTask({ id: 2, title: "Previously blocked child", blocked: true });
+    const parent = makeTask({ id: 1, title: "Before rename", children: [child] });
+    const renamed = { ...parent, title: "After rename", revision: 2 };
+    mockedApi.updateTask.mockResolvedValue(renamed);
+    function Rename() {
+      const actions = useTaskActions();
+      return <button onClick={() => void actions.update(parent, { title: renamed.title })}>Rename parent</button>;
+    }
+    const { rerender } = renderWithProviders(<><TaskOutline tasks={[parent]} emptyMessage="Empty" /><Rename /></>);
+    expect(within(screen.getByText(child.title).closest("li")!).getByLabelText("Blockiert durch")).toBeInTheDocument();
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Rename parent" }));
+    await act(async () => { await flushMicrotasks(); });
+    const parentRow = screen.getByText(renamed.title).closest("li")!;
+    fireEvent.click(within(parentRow).getAllByRole("button", { name: "Weitere Aktionen" })[0]!);
+    const fresh = { ...renamed, children: [{ ...child, blocked: false, executable: true }] };
+    rerender(<><TaskOutline tasks={[fresh]} emptyMessage="Empty" /><Rename /></>);
+    const row = screen.getByText(child.title).closest("li")!;
+    expect(within(row).queryByLabelText("Blockiert durch")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(row).toBeInTheDocument();
+    expect(within(row).queryByLabelText("Blockiert durch")).not.toBeInTheDocument();
   });
 
   it("keeps a completed row visible with crossed-out styling after it leaves the compiled view, then drops it once the retention window elapses", async () => {

@@ -140,14 +140,14 @@ export function ProjectDetailPage() {
     loadedProject &&
     confirmedProject?.id === loadedProject.id &&
     confirmedProject.revision > loadedProject.revision
-      ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks }
+      ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks, childStories: loadedProject.childStories ?? [] }
       : loadedProject;
   const projectActions = useProjectActions(
     loadedProject ? [loadedProject, ...(loadedProject.childStories ?? [])] : [],
   );
   const projectOverlay = loadedProject ? projectActions.retained.get(loadedProject.id)?.story : undefined;
   const project = baseProject && projectOverlay && projectOverlay.revision >= baseProject.revision
-    ? { ...baseProject, ...projectOverlay, tasks: baseProject.tasks } : baseProject;
+    ? { ...baseProject, ...projectOverlay, tasks: baseProject.tasks, childStories: baseProject.childStories ?? [] } : baseProject;
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
 
   const owner = project

@@ -60,4 +60,33 @@ describe("task placement interaction ownership", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(result.current.holdingIds.has(task.id)).toBe(false);
   });
+  it.each([false, true])("adds new placement owners to existing descendant interactions: already open %s", async alreadyOpen => {
+    vi.useFakeTimers();
+    const removed = makeTask({ id: 2 });
+    const attached = makeTask({ id: 3 });
+    const parent = makeTask({ id: 1, children: [removed] });
+    const renamed = { ...parent, title: "Edited", revision: 2 };
+    mockedApi.updateTask.mockResolvedValue(renamed);
+    const { result, rerender } = renderHook(({ open }) => {
+      const actions = useTaskActions();
+      useRetentionInteraction(attached.id, actions.pauseRetention, open);
+      return actions;
+    }, { wrapper, initialProps: { open: alreadyOpen } });
+    await act(async () => { await result.current.update(parent, { title: renamed.title }); });
+    act(() => result.current.observeTasks([{ ...renamed, children: [attached] }]));
+    rerender({ open: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(result.current.holdingIds.has(parent.id)).toBe(true);
+    let closeOldPath!: () => void;
+    act(() => { closeOldPath = result.current.pauseRetention(removed.id); });
+    rerender({ open: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(result.current.holdingIds.has(parent.id)).toBe(true);
+    act(() => closeOldPath());
+    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    expect(result.current.holdingIds.has(parent.id)).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(result.current.holdingIds.has(parent.id)).toBe(false);
+  });
+
 });

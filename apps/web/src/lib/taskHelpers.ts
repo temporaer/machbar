@@ -122,3 +122,14 @@ export function indexTaskDescendants(tasks: readonly Task[]): Map<number, Set<nu
   tasks.forEach(visit);
   return index;
 }
+
+/** A parent's terminal policy may change a child's lifecycle, not its other
+ * authoritative fields or hierarchy. Equal-revision derived values stay fresh. */
+export function applyDescendantTerminalOutcome<T extends Task>(current: T, inherited: Task): T {
+  if (inherited.kind !== "action" || inherited.revision < current.revision ||
+      (inherited.status !== "done" && inherited.status !== "cancelled") ||
+      inherited.status === current.status) return current;
+  return { ...current, revision: inherited.revision, status: inherited.status,
+    completedAt: inherited.completedAt, cancelledAt: inherited.cancelledAt,
+    needsClarification: inherited.needsClarification };
+}
