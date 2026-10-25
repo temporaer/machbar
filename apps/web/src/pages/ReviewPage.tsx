@@ -1,3 +1,4 @@
+import { flattenTasks } from "../lib/taskHelpers";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ReviewCategory,
@@ -75,13 +76,14 @@ export function ReviewPage() {
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks({}), []);
   const projectActions = useProjectActions(projects ?? []);
-  const taskActions = useTaskActions();
+  const rawTasks = flattenTasks(tasks ?? []);
+  const taskActions = useTaskActions(rawTasks);
   const projectById = useMemo(
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
   );
   const taskById = useMemo(
-    () => new Map((tasks ?? []).map((task) => [task.id, task])),
+    () => new Map(flattenTasks(tasks ?? []).map((task) => [task.id, task])),
     [tasks],
   );
   const groups = categoryOrder
@@ -319,7 +321,8 @@ export function ReviewPage() {
   const projectDecisionButtons = (item: ReviewItem) => {
     const project = projectById.get(item.entityId);
     if (!project) return null;
-    const displayed = projectActions.retained.get(project.id)?.story ?? project;
+    const overlay = projectActions.retained.get(project.id)?.story;
+    const displayed = overlay && overlay.revision >= project.revision ? overlay : project;
     if (item.reason === "backlog_revisit_reached") {
       const issueIndex = (items ?? []).indexOf(item);
       return (
@@ -422,7 +425,8 @@ export function ReviewPage() {
   const taskDecisionButtons = (item: ReviewItem) => {
     const task = taskById.get(item.entityId);
     if (!task) return null;
-    const displayed: Task = taskActions.retained.get(task.id) ?? task;
+    const overlay = taskActions.retained.get(task.id);
+    const displayed: Task = overlay && overlay.revision >= task.revision ? overlay : task;
     return (
       <>
         {displayed.status !== "actionable" ? (
@@ -465,7 +469,8 @@ export function ReviewPage() {
   const isAcknowledged = (item: ReviewItem): boolean => {
     if (item.entityType === "project") {
       const source = projectById.get(item.entityId);
-      const retained = projectActions.retained.get(item.entityId)?.story;
+      const candidate = projectActions.retained.get(item.entityId)?.story;
+      const retained = source && candidate && candidate.revision >= source.revision ? candidate : undefined;
       return Boolean(
         source &&
           retained?.reviewedAt &&
@@ -473,7 +478,8 @@ export function ReviewPage() {
       );
     }
     const source = taskById.get(item.entityId);
-    const retained = taskActions.retained.get(item.entityId);
+    const candidate = taskActions.retained.get(item.entityId);
+    const retained = source && candidate && candidate.revision >= source.revision ? candidate : undefined;
     return Boolean(
       source &&
         retained?.reviewedAt &&

@@ -1,3 +1,4 @@
+import { useRefresh } from "../lib/refresh";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReviewItem } from "@machbar/shared";
@@ -243,6 +244,27 @@ describe("ReviewPage", () => {
         expectedRevision: 1,
       }),
     );
+  });
+
+  it("uses newer nested task data for Review decisions despite a retained edit", async () => {
+    let current = task;
+    mockedApi.searchTasks.mockImplementation(async () => [makeTask({ id: 100, children: [current] })]);
+    mockedApi.updateTask.mockImplementation(async () => {
+      current = { ...task, status: "actionable", revision: current.revision + 1 };
+      return current;
+    });
+    function RefreshNewest() {
+      const { bump } = useRefresh();
+      return <button onClick={() => { current = { ...task, revision: 3 }; bump(); }}>Load newest revision</button>;
+    }
+    renderWithProviders(<><ReviewPage /><RefreshNewest /></>);
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "Machbar" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, { status: "actionable", expectedRevision: 1 }));
+    await userEvent.click(screen.getByRole("button", { name: "Load newest revision" }));
+    const classify = await within(card).findByRole("button", { name: "Machbar" });
+    await userEvent.click(classify);
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenLastCalledWith(task.id, { status: "actionable", expectedRevision: 3 }));
   });
 
   it("returns from project repair to the originating focused queue item", async () => {

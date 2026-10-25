@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -67,6 +68,7 @@ export function TaskOutline({
   const organize = useOutlineOrganize(tasks, organizable);
 
   const sorted = preserveRootOrder ? organize.tasks : sortByPosition(organize.tasks);
+  useLayoutEffect(() => { taskActions.observeTasks(sorted); }, [sorted, taskActions.observeTasks]);
   const { rows: roots } = useRetainedPlacement({ rows: sorted }, taskActions.holdingIds,
     task => {
       const overlay = taskActions.retained.get(task.id);

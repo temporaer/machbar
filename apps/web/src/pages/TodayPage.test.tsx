@@ -380,7 +380,7 @@ describe("TodayPage", () => {
   it.each([false, true])("retains open children under a completed parent, protecting an open child menu: %s", async openMenu => {
     const child = makeTask({ id: 9022, title: "Child left open", parentTaskId: 9021 });
     const parent = makeTask({ id: 9021, title: "Completed parent", children: [child] });
-    const done = { ...parent, status: "done" as const, revision: 2 };
+    const done = { ...parent, status: "done" as const, revision: 2, children: [] };
     let completed = false;
     mockedApi.getAgenda.mockImplementation(async () => ({ ...makeEmptyAgenda(),
       planned: completed ? [] : [parent], unscheduled: completed ? [child] : [],
@@ -417,7 +417,7 @@ describe("TodayPage", () => {
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toBeNull();
   });
 
-  it("keeps a held child nested when a refresh removes its parent and promotes completed work", async () => {
+  it.each([false, true])("keeps a held child and its ancestor while the ancestor menu is open: %s", async openParentMenu => {
     const child = makeTask({ id: 9012, title: "Nested retained task" });
     const parent = makeTask({ id: 9011, title: "Retained ancestor", children: [child] });
     const done = makeTask({ ...child, status: "done", revision: 2 });
@@ -434,7 +434,19 @@ describe("TodayPage", () => {
     expect(screen.getAllByText(child.title)).toHaveLength(1);
     expect(screen.getByText(parent.title)).toBeInTheDocument();
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).not.toBeNull();
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    if (openParentMenu) {
+      const ancestor = screen.getByText(parent.title).closest("li")!;
+      const toggle = within(ancestor).getAllByRole("button", { name: "Weitere Aktionen" })[0]!;
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+      expect(ancestor).toBeInTheDocument();
+      fireEvent.click(toggle);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+      expect(ancestor).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    } else {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    }
     expect(screen.queryByText(parent.title)).not.toBeInTheDocument();
   });
 

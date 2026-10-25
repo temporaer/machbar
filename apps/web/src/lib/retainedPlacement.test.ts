@@ -57,4 +57,25 @@ describe("retained list placement", () => {
     expect(retainPlacement(held, current, new Set(), identity)).toEqual(current);
   });
 
+  it("reconstructs only held paths when an absent ancestor has a promoted unheld sibling", () => {
+    const held = task(2);
+    const sibling = task(3);
+    const parent = { ...task(1), children: [held, sibling] };
+    const done = { ...held, status: "done" as const, revision: 2 };
+    const result = retainPlacement({ today: [parent], other: [] },
+      { today: [], other: [done, sibling] }, new Set([2]), identity);
+    expect(result.today![0]!.children).toEqual([done]);
+    expect(result.other).toEqual([sibling]);
+  });
+
+  it.each([false, true])("uses newer current values from another location, nested: %s", nested => {
+    const old = task(1);
+    const fresh = { ...old, title: "Changed elsewhere", status: "someday" as const, revision: 3 };
+    const destination = nested ? [{ ...task(2), children: [fresh] }] : [fresh];
+    const result = retainPlacement({ today: [old], other: [] },
+      { today: [], other: destination }, new Set([1]), identity);
+    expect(result.today).toEqual([fresh]);
+    expect(nested ? result.other![0]!.children : result.other).toEqual([]);
+  });
+
 });

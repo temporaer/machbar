@@ -53,15 +53,26 @@ function useTaskActionsState() {
   // Placement can preserve a subtree that a confirmed response no longer
   // contains. Remember its original ownership through the display lifetime.
   const placementDescendants = useRef(new Map<number, Set<number>>());
+  const observedDescendants = useRef(new Map<number, Set<number>>());
+  const observeTasks = useCallback((tasks: readonly Task[]) => {
+    for (const task of tasks) {
+      for (const node of flattenTasks([task])) {
+        observedDescendants.current.set(node.id, new Set(flattenTasks(node.children ?? []).map(child => child.id)));
+      }
+    }
+  }, []);
   useEffect(() => {
-    for (const id of placementDescendants.current.keys()) {
-      if (!mutations.holdingIds.has(id) && !pendingIds.has(id)) placementDescendants.current.delete(id);
+    for (const [id, descendants] of placementDescendants.current) {
+      if (![id, ...descendants].some(candidate => mutations.holdingIds.has(candidate) || pendingIds.has(candidate))) placementDescendants.current.delete(id);
     }
   }, [mutations.holdingIds, pendingIds]);
   const pauseRetention = useCallback((id: number) => {
     const owners = new Set([id]);
     for (const [owner, descendants] of placementDescendants.current) {
       if (descendants.has(id)) owners.add(owner);
+      if (owner === id) {
+        for (const child of descendants) if (mutations.holdingIds.has(child)) owners.add(child);
+      }
     }
     for (const [owner, task] of retained) {
       if (flattenTasks(task.children ?? []).some(child => child.id === id)) owners.add(owner);
@@ -80,6 +91,11 @@ function useTaskActionsState() {
       job: () => Promise<Task>,
       throwOnError = false,
     ) => {
+      for (const [ancestor, descendants] of observedDescendants.current) {
+        if (descendants.has(task.id)) {
+          placementDescendants.current.set(ancestor, new Set([...(placementDescendants.current.get(ancestor) ?? []), ...descendants]));
+        }
+      }
       placementDescendants.current.set(task.id, new Set([...(placementDescendants.current.get(task.id) ?? []), ...flattenTasks(task.children ?? []).map(child => child.id)]));
       try {
         return await run({
@@ -503,6 +519,7 @@ function useTaskActionsState() {
   const cancelPrompt = useCallback(() => setPending(null), []);
 
   return {
+    observeTasks,
     release: mutations.release,
     holdingIds: mutations.holdingIds,
     pauseRetention,
@@ -560,6 +577,7 @@ export function useTaskActions(authoritative: readonly Task[] = []): TaskActions
     throw new Error("useTaskActions must be used within a TaskActionsProvider");
   }
   useEffect(() => {
+    context.observeTasks(authoritative);
     for (const task of authoritative) {
       const overlay = context.retained.get(task.id);
       if (overlay && !context.holdingIds.has(task.id) && !context.isPending(task.id) && task.revision >= overlay.revision) context.release(task.id);

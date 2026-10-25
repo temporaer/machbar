@@ -1,11 +1,19 @@
 /** Keep only previously visible rows at their old location, using fresh values.
  * This is presentation state, never another domain mutation or query cache. */
-export interface PlacedItem { id: number; children?: PlacedItem[] }
+export interface PlacedItem { id: number; revision?: number; children?: PlacedItem[] }
 
 export function retainPlacement<T extends PlacedItem>(
   previous: Record<string, T[]>, current: Record<string, T[]>, holding: ReadonlySet<number>,
   latest: (item: T) => T,
 ): Record<string, T[]> {
+  // Values may have moved elsewhere in the response; location is independent.
+  const currentById = new Map<number, T>();
+  const index = (items: T[]) => { for (const item of items) {
+    const existing = currentById.get(item.id);
+    if (!existing || (item.revision ?? 0) >= (existing.revision ?? 0)) currentById.set(item.id, item);
+    index((item.children ?? []) as T[]);
+  } };
+  Object.values(current).forEach(index);
   // A held subtree owns its displayed descendants as well as its root;
   // otherwise promoted open children would also render in a destination bucket.
   const frozen = new Set<number>();
@@ -29,8 +37,15 @@ export function retainPlacement<T extends PlacedItem>(
     for (let index = 0; index < before.length; index += 1) {
       const old = before[index]!;
       if (!frozen.has(old.id)) continue;
-      const fresh = latest(after.find(item => item.id === old.id) ?? old);
-      const item = old.children ? { ...fresh, children: merge(old.children as T[], (fresh.children ?? []) as T[]) } : fresh;
+      const elsewhere = currentById.get(old.id);
+      const local = after.find(item => item.id === old.id);
+      const source = elsewhere && (!local || (elsewhere.revision ?? 0) > (local.revision ?? 0)) ? elsewhere : local;
+      const fresh = latest(source ?? old);
+      // An absent ancestor exists only to carry retained paths. Unheld
+      // siblings belong to the fresh response, not this reconstructed path.
+      const children = (fresh.children ?? []) as T[];
+      const visibleChildren = elsewhere ? children : children.filter(child => frozen.has(child.id));
+      const item = old.children ? { ...fresh, children: merge(old.children as T[], visibleChildren) } : fresh;
       const next = before.slice(index + 1).find(candidate => result.some(row => row.id === candidate.id));
       const prior = before.slice(0, index).reverse().find(candidate => result.some(row => row.id === candidate.id));
       const position = next ? result.findIndex(row => row.id === next.id)

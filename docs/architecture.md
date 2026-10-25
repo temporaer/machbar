@@ -1278,22 +1278,30 @@ Task and project controllers opt into immediate refresh on success. Their
 confirmed overlays outlive the four-second display window and are reconciled
 by revision, preventing stale reads from restoring old controls. Query owners
 feed raw flattened task responses into reconciliation, including project
-details, task details and Waiting; projected row props are never authoritative. The window
+details, task details, Waiting and Review; projected row props are never
+authoritative. The window
 starts after confirmation; failures roll back without a pending expiry.
 Refinement's existing matrix projection still uses delayed refresh.
 
 `useRetainedPlacement` owns view-local placement, not domain state. Today,
 Inbox, Waiting, discussion, inventory, project groups and task outlines retain observed
 rows (including their ancestor path) at their old position while holdingIds
-contains them. This keeps the last item and its section mounted during an
+contains them. Current values are indexed across every response bucket and
+descendant, independently of their retained location. Removed ancestors carry
+only retained paths, while held subtrees own their displayed descendants.
+TaskRow applies retained scalar values while preserving the projected children.
+This keeps the last item and its section mounted during an
 immediate refresh, suppresses copies in destination buckets, and resets on
 explicit filter/identity changes. Rows removed from structural outlines do
 not become drag targets.
 
 `useRetentionInteraction` leases the display window while row menus,
 workflows, details, keyboard focus or pointer gestures are active. Task leases
-include retained placement ancestors, using the original subtree even if a
-confirmed response omits descendants. Child-policy prompts hold the pending
+protect both directions: a child's interaction holds its placement ancestors,
+and an ancestor's interaction holds the descendants keeping it mounted.
+Raw query owners and outlines observe task trees without acknowledging projected
+rows. At transition start the controller snapshots relevant ancestor/subtree
+relations through the display lifetime, even if a later response omits them. Child-policy prompts hold the pending
 task until the decision closes or its transition finishes. The last
 lease's release provides at least two seconds of orientation time. Pointer
 focus alone does not hold a row indefinitely. Only an in-flight request

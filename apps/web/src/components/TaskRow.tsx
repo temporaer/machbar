@@ -141,7 +141,7 @@ export function TaskRow({
   // remains fully actionable so another swipe can immediately continue the
   // state cycle (for example erledigt -> wieder offen).
   const retainedTask = retained.get(taskProp.id);
-  const task = retainedTask && retainedTask.revision >= taskProp.revision ? retainedTask : taskProp;
+  const task = retainedTask && retainedTask.revision >= taskProp.revision ? { ...retainedTask, children: taskProp.children } : taskProp;
   const isReference = task.kind === "reference";
   const nextActionBadge = useNextActionBadge(task);
   const attachments = useMemo(
