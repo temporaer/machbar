@@ -2072,6 +2072,9 @@ const assessmentBandLabels: Record<AssessmentBand, string> = {
 };
 
 export const de = {
+  projectReviewOn: "Wieder ansehen am",
+  projectAddReviewOn: "Wieder ansehen am …",
+  projectEmptyStepsHint: "Plane einen nächsten Schritt, um das Projekt voranzubringen.",
   detailActions: "Aktionen",
   detailMoreOptions: "Weitere Optionen",
   detailResponsibility: "Zuständig",

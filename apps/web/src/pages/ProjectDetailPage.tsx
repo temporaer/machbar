@@ -160,7 +160,7 @@ export function ProjectDetailPage() {
   const dueDate = project ? formatDate(project.dueDate, locale) : null;
   const showProjectRevisit =
     project?.status === "backlog" && !project.archivedAt;
-  const revisitDate = project && project.revisitAt
+  const revisitDate = project && showProjectRevisit && project.revisitAt
     ? formatRevisitAt(project.revisitAt, locale, householdTimezone)
     : null;
 
@@ -451,6 +451,11 @@ export function ProjectDetailPage() {
                   />
                   <DetailActionMenu label={strings.detailActions} resetKey={project.id} disabled={projectMutationPending}
                     items={[
+                      ...project.availableActions.map((action) => ({
+                        key: `lifecycle-${action}`, icon: "project" as const,
+                        label: projectWorkflowLabel(action, strings, project.status),
+                        onClick: () => dispatch(storyWorkflowCommand(project, action)),
+                      })),
                       { key: "discussion", icon: "followUp", label: project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
                         onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.then((confirmed) => {
                           if (confirmed && "availableActions" in confirmed) setConfirmedProject(confirmed);
@@ -578,8 +583,9 @@ export function ProjectDetailPage() {
                   <div className="detail-summary-group detail-meta-row" aria-label={strings.planning}>
                     <DetailPropertyPill label={dueDate ? strings.due : undefined} variant={dueDate ? "set" : "unset"} disabled={projectMutationPending}
                       onClick={() => dispatch({ type: "story.deadline", story: project })}>{dueDate || strings.addDeadline}</DetailPropertyPill>
-                    {revisitDate ? <DetailPropertyPill label={strings.detailShowAgain} disabled={projectMutationPending}
-                      onClick={() => dispatch({ type: "story.defer", story: project })}>{revisitDate}</DetailPropertyPill> : null}
+                    {showProjectRevisit ? <DetailPropertyPill label={revisitDate ? strings.projectReviewOn : undefined}
+                      variant={revisitDate ? "set" : "unset"} disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.defer", story: project })}>{revisitDate || strings.projectAddReviewOn}</DetailPropertyPill> : null}
                   </div>
                   <div className="detail-summary-group detail-shortcuts detail-meta-row">
                     <DetailPropertyPill ariaLabel={project.tags.length ? `${strings.tags}: ${project.tags.map((tag) => tag.name).join(", ")}` : undefined} variant={project.tags.length ? "set" : "unset"} disabled={projectMutationPending}
@@ -590,9 +596,7 @@ export function ProjectDetailPage() {
                       onClick={() => dispatch({ type: "story.contexts", story: project })}>
                       {project.contexts.length ? <>{strings.physicalContexts}: {project.contexts.map((context) => <span key={context.id}>{context.name}</span>)}</> : strings.addContexts}
                     </DetailPropertyPill>
-                    {showProjectRevisit && !revisitDate ? <DetailActionMenu label={strings.detailMoreOptions} resetKey={project.id} disabled={projectMutationPending} items={[
-                      { key: "revisit", icon: "schedule", label: strings.detailAddRevisit, onClick: () => dispatch({ type: "story.defer", story: project }) },
-                    ]} /> : null}
+
                   </div>
                 </div>
               </div>
@@ -674,7 +678,7 @@ export function ProjectDetailPage() {
               )}
 
 </section>
-            <section className={`section project-outcome-section${!criteriaTotal ? " detail-empty-content" : ""}`}>
+            <section className="section project-outcome-section">
               <div className="row-between">
                 <h2 className="section-title" id="project-outcome-label">
                   {strings.outcomeSectionTitle}
@@ -685,12 +689,13 @@ export function ProjectDetailPage() {
                     </span>
                   ) : null}
                 </h2>
-                <IconActionButton
+                {criteriaTotal > 0 ? <IconActionButton
                   kind="criteria"
                   label={strings.structureEditOutcome}
                   disabled={projectMutationPending}
                   onClick={() => dispatch({ type: "story.editOutcome", story: project })}
-                />
+                /> : <button type="button" className="btn btn-sm" disabled={projectMutationPending}
+                  onClick={() => dispatch({ type: "story.editOutcome", story: project })}>{strings.structureEditOutcome}</button>}
               </div>
               {criteriaTotal > 0 ? (
                 <span className="criteria-progress" aria-hidden="true">
@@ -703,7 +708,7 @@ export function ProjectDetailPage() {
                 criteria={project.acceptanceCriteria}
               />
             </section>
-            <section className={`section project-content-tasks${!project.tasks.length && !project.childStories?.length ? " detail-empty-content" : ""}`}>
+            <section className="section project-content-tasks">
               <PageHeader
                 title={strings.taskSummary}
                 headingLevel={2}
@@ -736,6 +741,7 @@ export function ProjectDetailPage() {
                   ) : null
                 }
               />
+              {!project.tasks.length && !project.childStories?.length ? <p className="text-muted">{strings.projectEmptyStepsHint}</p> : null}
               {project.childStories?.length ? (
                 <ul className="project-story-list">
                   {project.childStories.map((story) => (

@@ -2210,3 +2210,19 @@ project details at 390px, then 320px with 200% root font size, long titles/membe
 names and five tags. No horizontal overflow or clipped controls; summary touch
 targets were at least 44px. The More options → Priority editor route was also
 exercised. This does not replace real-device keyboard or screen-reader testing.
+
+### Role-specific detail scope (#246 clarification)
+
+Only ordinary tasks use the six optional-property add entries. Projects share
+visual conventions and direct tags/places, not task properties. Their deadline
+is directly editable; their revisit value is guarded by unarchived backlog
+status and labelled “Wieder ansehen am”. There is no project More options menu
+when the supported missing properties already have direct access.
+Project status and header lifecycle choices use server `availableActions` and
+`storyWorkflowCommand`. Deferral remains the existing project workflow, including
+explicit withdrawal decisions and the canonical atomic return-to-backlog command
+for active/archived projects. `story.planWork` adds a next action, never a project
+execution date. Outcome guidance/edit access and next-step guidance/actions remain
+prominent for empty projects; completed/archived projects retain their existing
+next-step eligibility guards. Task captured/reference/recurrence/terminal guards
+remain independent.

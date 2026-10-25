@@ -5,6 +5,7 @@ import { markdownValue, selectMarkdown, setMarkdownValue } from "../test/markdow
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import type { Task } from "@machbar/shared";
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
@@ -45,6 +46,8 @@ vi.mock("../lib/api", () => ({
     checkCriterion: vi.fn(),
     updateProject: vi.fn(),
     completeProject: vi.fn(),
+    returnProjectToBacklog: vi.fn(),
+    activateProject: vi.fn(),
     acknowledgeProjectReview: vi.fn(),
     startWorkRefinement: vi.fn(),
     getActivity: vi.fn(),
@@ -57,9 +60,6 @@ const mockedApi = vi.mocked(api, true);
 
 async function openDetailActions() {
   await userEvent.click(await screen.findByRole("button", { name: "Aktionen" }));
-}
-async function openDetailOptions() {
-  await userEvent.click(screen.getByRole("button", { name: "Weitere Optionen" }));
 }
 
 
@@ -461,7 +461,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
     expect(
       within(overview).queryByRole("button", {
-        name: /Erst wieder anzeigen ab.*10\.09\.2026/,
+        name: /Wieder ansehen am.*10\.09\.2026/,
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -566,18 +566,75 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("adds a backlog revisit from role-appropriate options without exposing task-only properties", async () => {
-    const project = { ...makeProject({ id: 42, title: "Späteres Vorhaben", status: "backlog", revisitAt: null }), tasks: [] };
+  it.each(["active", "backlog", "completed", "archived"] as const)("keeps %s projects role-specific, including empty outcome and next steps", async (status) => {
+    const project = { ...makeProject({ id: 42, title: `Empty ${status}`, status, revisitAt: "2026-09-20T06:00:00Z" }), tasks: [], ...(status === "active" ? { stuckReason: "blocked_without_clear_path" as const } : {}) };
     mockedApi.getProject.mockResolvedValue(project);
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { name: project.title });
-    await openDetailOptions();
-    const options = screen.getByRole("dialog", { name: "Weitere Optionen" });
-    expect(within(options).queryByRole("button", { name: /Priorität|Wiederholen|Erinnern/ })).not.toBeInTheDocument();
-    await userEvent.click(within(options).getByRole("button", { name: "Erst wieder anzeigen ab …" }));
-    expect(await screen.findByRole("dialog", { name: strings.revisit })).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Weitere Optionen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: strings.addDriver })).toBeVisible();
+    expect(screen.getByRole("button", { name: strings.addDeadline })).toBeVisible();
+    expect(screen.getByRole("button", { name: strings.addTags })).toBeVisible();
+    expect(screen.getByRole("button", { name: strings.addContexts })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Weitere Optionen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Erst wieder anzeigen ab|Wartet auf|Erinnern am|Wiederholen alle|Priorität setzen|Kann erst beginnen nach|Geplant/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Wieder ansehen am/ }) !== null).toBe(status === "backlog");
+    const outcome = screen.getByRole("heading", { name: strings.outcomeSectionTitle }).closest("section")!;
+    expect(outcome).not.toHaveClass("detail-empty-content");
+    expect(within(outcome).getByText(strings.outcomeSectionEmpty)).toBeVisible();
+    expect(within(outcome).getByRole("button", { name: strings.structureEditOutcome })).toBeVisible();
+    expect(screen.getByText(strings.projectEmptyStepsHint)).toBeVisible();
+    if (status === "active") expect(screen.getByRole("heading", { name: strings.stuckProjectHeading })).toBeVisible();
+    expect(screen.getByText(/Aufgaben: 0 offen/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: strings.addNextAction }) !== null).toBe(status === "active" || status === "backlog");
+    await openDetailActions();
+    const menu = screen.getByRole("dialog", { name: "Aktionen" });
+    for (const action of project.availableActions) {
+      expect(within(menu).getByRole("button", { name: projectWorkflowLabel(action, strings, status) })).toBeVisible();
+    }
+    expect(within(menu).queryByRole("button", { name: /Priorität|Wiederholen|Erinnern|Jetzt klären|weitere nächste Aktion/ })).not.toBeInTheDocument();
+  });
+
+  it("does not show a backlog revisit when the project is archived via archivedAt", async () => {
+    mockedApi.getProject.mockResolvedValue({ ...makeProject({ id: 42, status: "backlog", archivedAt: "2026-10-20T06:00:00Z", revisitAt: "2026-10-30T06:00:00Z" }), tasks: [] });
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByRole("button", { name: /Wieder ansehen am/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: strings.addNextAction })).not.toBeInTheDocument();
+  });
+
+  it.each(["active", "archived"] as const)("defers a %s project through the atomic lifecycle command with explicit withdrawal", async (status) => {
+    const child = makeTask({ id: 73, revision: 4, projectId: 42, scheduledDate: "2026-10-27" });
+    const project = { ...makeProject({ id: 42, title: "Commitments", status, ownerMemberId: 1, revision: 3 }), tasks: [child] };
+    mockedApi.getProject.mockResolvedValue(project);
+    mockedApi.returnProjectToBacklog.mockResolvedValue({ ...project, status: "backlog", revision: 4, archivedAt: null });
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: project.title });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: status === "active" ? strings.returnToBacklogStory : strings.restoreProjectToBacklog }));
+    const dialog = await screen.findByRole("dialog", { name: status === "active" ? strings.deferProject : strings.restoreProjectToBacklog });
+    expect(within(dialog).getByText(strings.projectDeferQuestion)).toBeVisible();
+    const withdraw = within(dialog).getByRole("checkbox", { name: strings.withdrawProjectCommitments });
+    expect(withdraw).not.toBeChecked();
+    expect(mockedApi.returnProjectToBacklog).not.toHaveBeenCalled();
+    await userEvent.click(withdraw);
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.projectDeferWithoutRevisit }));
+    await waitFor(() => expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(42, {
+      expectedRevision: 3, revisitAt: null, withdrawCommitments: true, expectedTaskRevisions: [{ taskId: 73, revision: 4 }],
+    }));
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("keeps driver decisions in the project activation workflow", async () => {
+    const project = { ...makeProject({ id: 42, title: "Needs driver", status: "backlog", ownerMemberId: null }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: project.title });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.activateStory }));
+    const dialog = await screen.findByRole("dialog", { name: strings.activateStory });
+    expect(within(dialog).getByRole("combobox", { name: strings.commitmentDriverFor(project.title) })).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: strings.activateStory })).toBeDisabled();
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
   it("opens the canonical defer workflow from a backlog project's Wiedervorlage property", async () => {
@@ -596,7 +653,7 @@ describe("ProjectDetailPage task explanations", () => {
     const overview = await screen.findByLabelText(strings.projectOverview);
     await userEvent.click(
       within(overview).getByRole("button", {
-        name: /Erst wieder anzeigen ab.*20\.09\.2026/,
+        name: /Wieder ansehen am.*20\.09\.2026/,
       }),
     );
 

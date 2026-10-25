@@ -56,6 +56,9 @@ const assessmentBandLabels: Record<AssessmentBand, string> = {
 };
 
 const en = {
+  projectReviewOn: "Review again on",
+  projectAddReviewOn: "Review again on …",
+  projectEmptyStepsHint: "Plan a next action to move this project forward.",
   detailActions: "Actions",
   detailMoreOptions: "More options",
   detailResponsibility: "Responsible",

@@ -5547,3 +5547,6 @@ details[open] > .disclosure-summary::after {
 .project-content-tasks .page-header-actions { min-width: 0; max-width: 100%; flex-wrap: wrap; margin-left: auto; }
 .project-content-tasks .project-task-header-actions { min-width: 0; max-width: 100%; }
 .project-content-tasks .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+.project-outcome-section > .row-between { flex-wrap: wrap; }
+.project-outcome-section > .row-between > .btn { min-height: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
