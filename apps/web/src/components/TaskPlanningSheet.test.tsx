@@ -12,6 +12,7 @@ import { resolveAbsolutePreset } from "../lib/reminderPresets";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),

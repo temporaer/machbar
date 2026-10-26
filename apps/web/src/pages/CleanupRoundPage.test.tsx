@@ -642,7 +642,7 @@ describe("CleanupRoundPage", () => {
     renderAt("/more/cleanup-round/r1");
 
     const project = await screen.findByRole("article", { name: "Keller" });
-    await userEvent.click(within(project).getByRole("button", { name: "Zum Projekt machen …" }));
+    await userEvent.click(within(project).getByRole("button", { name: "In Projekt umwandeln …" }));
     expect(screen.getByTestId("workflow")).toHaveTextContent("convertToProject:7");
 
     const reference = screen.getByRole("article", { name: "Öffnungszeiten" });

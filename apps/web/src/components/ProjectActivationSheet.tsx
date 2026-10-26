@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import type { Project, ProjectActivationResolution } from "@machbar/shared";
-import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
+import type { ProjectDetail, ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import {
+  projectActivationPromptFromSnapshot,
   projectActivationResolutionFromPrompt,
   refreshProjectActivationPrompt,
   type ProjectActivationPrompt,
@@ -11,7 +12,8 @@ import {
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import { BottomSheet } from "./BottomSheet";
 
-function activationPrompt(story: ProjectWithActions): ProjectActivationPrompt {
+function activationPrompt(story: ProjectWithActions & Pick<ProjectDetail, "directActivationDecisionSnapshot">): ProjectActivationPrompt {
+  if (story.directActivationDecisionSnapshot) return projectActivationPromptFromSnapshot(story.directActivationDecisionSnapshot);
   const required = story.activationReadiness.requiredDecisions ?? [];
   return {
     projects: required.length > 0 ? [{
@@ -37,7 +39,7 @@ export function ProjectActivationSheet({
   onClose,
   onActivate,
 }: {
-  story: ProjectWithActions;
+  story: ProjectWithActions & Pick<ProjectDetail, "directActivationDecisionSnapshot">;
   action: Extract<ProjectWorkflowAction, "activate" | "reopen">;
   onClose: () => void;
   onActivate: (ownerMemberId: number | null, resolution: ProjectActivationResolution, expectedRevision?: number) => Promise<void>;

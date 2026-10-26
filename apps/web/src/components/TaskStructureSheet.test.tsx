@@ -27,6 +27,9 @@ import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),
@@ -544,9 +547,9 @@ describe("TaskStructureSheet routing", () => {
     renderStructure(72);
 
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Zum Projekt machen" }));
+    await userEvent.click(await screen.findByRole("button", { name: "In Projekt umwandeln" }));
 
-    await userEvent.click(await screen.findByRole("button", { name: "Ins Backlog" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectBacklog }));
 
     await waitFor(() =>
       expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(72, {
@@ -567,10 +570,10 @@ describe("TaskStructureSheet routing", () => {
     mockedApi.getProject.mockResolvedValue({ ...makeProject({ id: 74 }), tasks: [] });
     renderStructure(74);
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Zum Projekt machen" }));
+    await userEvent.click(await screen.findByRole("button", { name: "In Projekt umwandeln" }));
     await userEvent.clear(screen.getByLabelText(strings.convertToProjectPreservedStep));
     await userEvent.type(screen.getByLabelText(strings.convertToProjectPreservedStep), "Authored retained step");
-    await userEvent.click(await screen.findByRole("button", { name: "Ins Backlog" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectBacklog }));
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(74, expect.objectContaining({
       expectedHierarchyRevisions: task.hierarchyRevisions,
       expectedDescendantRevisions: [],
@@ -582,24 +585,22 @@ describe("TaskStructureSheet routing", () => {
     const project = makeProject({ id: 72, title: "Keller organisieren", status: "active", ownerMemberId: 1, revision: 3 });
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 72, status: "captured" }));
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
-    mockedApi.convertTaskToStory.mockRejectedValueOnce(Object.assign(new Error("Decision required"), {
-      code: "project_commitment_resolution_required",
-      details: {
-        targetRevision: 1,
-        expectedProjects: [{ projectId: 72, revision: 1 }],
-        projects: [{ projectId: 72, title: project.title, revision: 1, ownerMemberId: null, required: needsPath ? ["driver", "progressPath"] : ["driver"] }],
-      },
-    })).mockResolvedValueOnce(project);
+    mockedApi.previewTaskConversion.mockResolvedValueOnce({ activatingProjects: [{ id: 72, title: project.title }], decision: {
+      targetRevision: 1, expectedProjects: [{ projectId: 72, revision: 1 }],
+      projects: [{ projectId: 72, title: project.title, revision: 1, ownerMemberId: null, required: needsPath ? ["driver", "progressPath"] : ["driver"] }],
+    } });
+    mockedApi.convertTaskToStory.mockResolvedValueOnce(project);
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
     renderStructure(72);
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Zum Projekt machen" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Aktivieren" }));
+    await userEvent.click(await screen.findByRole("button", { name: "In Projekt umwandeln" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectActive }));
     const picker = await screen.findByRole("dialog");
+    expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
     expect(within(picker).getByText(strings.commitmentResolutionHint)).toBeInTheDocument();
     await userEvent.selectOptions(within(picker).getByLabelText(strings.commitmentDriverFor(project.title)), "1");
     if (needsPath) await userEvent.type(within(picker).getByLabelText(strings.commitmentNextActionLabel), "Ersten Schritt festlegen");
-    await userEvent.click(within(picker).getByRole("button", { name: strings.convertToProjectActive }));
+    await userEvent.click(within(picker).getByRole("button", { name: strings.activateStory }));
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenLastCalledWith(72, {
       status: "active", expectedRevision: 1, dependencyMappings: [], expectedDescendantRevisions: [],
       activationResolution: {
@@ -619,8 +620,8 @@ describe("TaskStructureSheet routing", () => {
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
     renderStructure(72);
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Zum Projekt machen" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Aktivieren" }));
+    await userEvent.click(await screen.findByRole("button", { name: "In Projekt umwandeln" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectActive }));
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledOnce());
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(screen.queryByText(strings.commitmentResolutionHint)).not.toBeInTheDocument();
@@ -642,7 +643,7 @@ describe("TaskStructureSheet routing", () => {
 
     expect(screen.getByRole("button", { name: "Aufteilen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Zum Projekt machen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "In Projekt umwandeln" })).toBeInTheDocument();
   });
 
   it("dispatches task.changeProject and opens MoveTaskSheet for a captured inbox item (refile flow)", async () => {
@@ -692,7 +693,7 @@ describe("TaskStructureSheet routing", () => {
     await screen.findByRole("dialog", { name: "Struktur: Fahrplan" });
 
     expect(screen.queryByRole("button", { name: "Aufteilen" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Zum Projekt machen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "In Projekt umwandeln" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
   });
 });

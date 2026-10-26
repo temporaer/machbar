@@ -1,3 +1,4 @@
+import { useLocation } from "react-router-dom";
 import { useState } from "react";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
@@ -181,24 +182,21 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("auto-expands and highlights a just-created backlog project handed off via router state", async () => {
-    const { container } = renderWithProviders(<ProjectsPage />, {
-      initialEntries: [{ pathname: "/projects", state: { highlightProjectId: 70 } }],
-    });
+  it("creates a title-only inactive project and opens its document, preserving the title after a failure", async () => {
+    mockedApi.createProject.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(makeProject({ id: 87, title: "Only a title", status: "backlog" }));
+    function Location() { const location = useLocation(); return <output aria-label="location">{location.pathname}{JSON.stringify(location.state)}</output>; }
+    renderWithProviders(<><ProjectsPage /><Location /></>, { initialEntries: ["/projects"] });
     await screen.findByText("Aktive Geschichte");
-
-    const backlogSection = container.querySelector<HTMLDetailsElement>(
-      '[data-project-section="backlog"]',
-    );
-    expect(backlogSection).toHaveAttribute("open");
-    expect(screen.getByText("Backlog-Geschichte")).toBeVisible();
-
-    const row = container.querySelector('[data-workitem-id="70"]');
-    expect(row).not.toBeNull();
-    await waitFor(() => expect(row).toHaveClass("project-row-highlight"));
-    await waitFor(() => expect(row).not.toHaveClass("project-row-highlight"), {
-      timeout: 3000,
-    });
+    await userEvent.click(screen.getByRole("button", { name: "Projekt anlegen" }));
+    const dialog = screen.getByRole("dialog", { name: "Neues Projekt" });
+    await userEvent.type(within(dialog).getByLabelText("Projekttitel"), "Only a title");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Projekt anlegen" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+    expect(within(dialog).getByDisplayValue("Only a title")).toBeVisible();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Projekt anlegen" }));
+    await waitFor(() => expect(screen.getByLabelText("location")).toHaveTextContent('/projects/87{"createdProjectId":87}'));
+    expect(mockedApi.createProject).toHaveBeenLastCalledWith({ title: "Only a title" });
+    expect(screen.queryByRole("dialog", { name: "Aufgaben hinzufügen" })).not.toBeInTheDocument();
   });
 
   it("opens project creation from the bottom-right plus button", async () => {
@@ -293,7 +291,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     swipeRow(row, 100);
     const lifecycle = within(row).getByRole("group", { name: "Status" });
     expect(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" })).toBeInTheDocument();
-    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 

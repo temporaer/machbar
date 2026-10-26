@@ -23,7 +23,7 @@ import { MemberChoiceGroup } from "./MemberChoiceGroup";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import {
-  projectActivationPromptFromError,
+  projectActivationPromptFromSnapshot, projectActivationPromptFromError,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
@@ -212,15 +212,21 @@ export function CaptureForm({
     setError(null);
     try {
       const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
-      const task = await api.createTask(
-        taskInput(
+      const input = taskInput(
           needsClarification,
           preparedNotes,
-          currentActivationPrompt
+          currentActivationPrompt?.projects.length
             ? projectActivationResolutionFromPrompt(currentActivationPrompt) ?? undefined
             : undefined,
-        ),
-      );
+        );
+      if (!currentActivationPrompt && (effectiveProjectId !== null || parentTaskId != null)) {
+        const preview = await api.previewTaskCreation(input);
+        if (preview.activatingProjects.length) {
+          setActivationPrompt({ ...projectActivationPromptFromSnapshot(preview.decision), requestFingerprint });
+          return;
+        }
+      }
+      const task = await api.createTask(input);
       onCaptured({ kind: "task", task, needsClarification });
       if (isThought && activeDraftKey.current === thoughtDraft?.key) {
         focusAfterSave.current = thoughtDraft?.key;

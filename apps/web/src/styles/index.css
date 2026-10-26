@@ -3453,16 +3453,6 @@ details[open] > .disclosure-summary::after {
   60%, 78% { opacity: 1; }
 }
 
-@keyframes project-row-highlight-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 var(--color-info-surface); }
-  50% { box-shadow: 0 0 0 4px var(--color-info-surface); }
-}
-
-.project-row-highlight {
-  animation: project-row-highlight-pulse 0.8s ease-in-out 2;
-  border-radius: var(--radius-sm);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .task-row,
   .task-row:hover,

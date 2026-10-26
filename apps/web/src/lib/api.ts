@@ -1,3 +1,4 @@
+import type { ActivationPreview } from "@machbar/shared";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
   AvailabilityRule,
@@ -582,6 +583,12 @@ export function paperlessDocumentDownloadUrl(id: number): string {
 }
 
 export const api = {
+  previewTaskCreation: (input: CreateTaskInput) => request<ActivationPreview>("/tasks", { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
+  previewTaskUpdate: (id: number, input: UpdateTaskInput) => request<ActivationPreview>(`/tasks/${id}`, { method: "PATCH", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
+  previewTaskConversion: (id: number, input: ConvertTaskToStoryInput) => request<ActivationPreview>(`/tasks/${id}/convert-to-story`, { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
+  previewTaskSteps: (id: number, input: CreateTaskStepBatchInput) => request<ActivationPreview>(`/tasks/${id}/children/batch`, { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
+  previewProjectSteps: (id: number, input: CreateTaskStepBatchInput) => request<ActivationPreview>(`/projects/${id}/tasks/batch`, { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
+
   getAuthStatus: () => request<AuthStatus>("/auth/status"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   getPushConfig: () => request<PushConfig>("/push/config"),
@@ -981,7 +988,7 @@ export const api = {
       body: JSON.stringify(input),
     }),
   createTaskStepBatchForProject: (projectId: number, input: CreateTaskStepBatchInput) =>
-    request<CreateTaskStepBatchResult>(`/projects/${projectId}/tasks/batch`, {
+    request<{ tasks: TaskDetail[]; project: ProjectWithActions }>(`/projects/${projectId}/tasks/batch`, {
       method: "POST",
       body: JSON.stringify(input),
     }),

@@ -1,3 +1,4 @@
+import { ProjectTaskEntrySheet } from "../components/ProjectTaskEntrySheet";
 import { NotesAppend } from "../components/NotesAppend";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -392,6 +393,7 @@ export function ProjectDetailPage() {
         ) : null}
         {project ? (
           <>
+            {(location.state as { createdProjectId?: number } | null)?.createdProjectId === project.id ? <p role="status">{strings.projectCreated}</p> : null}
             <div className="page-header project-page-header">
               <div className="row-between project-page-title-row">
                 {titleEditing ? (
@@ -781,10 +783,8 @@ export function ProjectDetailPage() {
             onClose={() => setConfirmingDelete(false)}
           />
         ) : null}
-        <QuickAdd
-          autoOpen={focus === "next-action"}
-          onAutoOpenClose={() => clearRouteFocus()}
-        />
+        <QuickAdd />
+        {focus === "next-action" && project ? <ProjectTaskEntrySheet key={project.id} project={project} onClose={clearRouteFocus} /> : null}
         {attachmentOpen && project ? (
           <MarkdownAttachmentSheet
             onClose={() => setAttachmentOpen(false)}

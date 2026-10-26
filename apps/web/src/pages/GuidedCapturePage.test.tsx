@@ -12,6 +12,7 @@ import { CaptureForm } from "../components/CaptureForm";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     createTask: vi.fn(),
     getTags: vi.fn().mockResolvedValue([]),
     getProjects: vi.fn().mockResolvedValue([]),

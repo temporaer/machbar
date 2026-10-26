@@ -24,6 +24,9 @@ import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     createTaskStepBatchForTask: vi.fn(),
@@ -46,6 +49,25 @@ describe("TaskSplitSheet", () => {
   });
 
   afterEach(() => { vi.useRealTimers(); });
+
+  it("restores independent drafts when the member changes in another tab", async () => {
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 }), makeMember({ id: 2 })]);
+    localStorage.setItem("machbar:identity-member-id", "1");
+    renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={1} onClose={vi.fn()} />);
+    const rows = () => screen.getAllByPlaceholderText(strings.splitTaskRowPlaceholder);
+    await userEvent.type(rows()[0]!, "First member draft");
+    const selectMember = (id: string) => act(() => {
+      localStorage.setItem("machbar:identity-member-id", id);
+      window.dispatchEvent(new StorageEvent("storage", { key: "machbar:identity-member-id", newValue: id, storageArea: localStorage }));
+    });
+    selectMember("2");
+    await waitFor(() => expect(rows()[0]).toHaveValue(""));
+    await userEvent.type(rows()[0]!, "Second member draft");
+    selectMember("1");
+    await waitFor(() => expect(rows()[0]).toHaveValue("First member draft"));
+    selectMember("2");
+    await waitFor(() => expect(rows()[0]).toHaveValue("Second member draft"));
+  });
 
   it("uses equal-revision fetched children after editing a parent while its split workflow stays open", async () => {
     const oldChild = makeTask({ id: 8, title: "Old workflow child", parentTaskId: 7 });

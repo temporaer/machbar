@@ -10,6 +10,7 @@ vi.mock("../lib/api", async (importOriginal) => {
   return {
     ...actual,
     api: {
+    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
       createTask: vi.fn(),
       getTags: vi.fn(),
       getProjects: vi.fn(),

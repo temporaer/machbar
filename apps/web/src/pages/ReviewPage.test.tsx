@@ -13,6 +13,9 @@ import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getAuthStatus: vi.fn().mockResolvedValue({
       enabled: false,
       authenticated: false,

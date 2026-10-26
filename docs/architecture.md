@@ -885,18 +885,13 @@ either executable progress or an intentional healthy future-waiting path:
   person still drives an active project. The project must be reassigned or
   returned to backlog first.
 
-Quick project capture creates backlog work and preserves the selected driver.
-Its handoff may add a first action, but Start remains explicit. Active
-task-to-story conversion is subject to the same invariant; role conversion
-preserves the task identity, compatible metadata, and descendants rather than
-manufacturing readiness.
-
-The conversion sheet creates a backlog project first. Its Activate choice and
-the captured-project handoff's Start button dispatch `story.activate`, so
-`ProjectWorkflowHost` collects a missing driver with the existing member picker.
-Selection assigns the driver and activates atomically when a progress path is
-ready; otherwise the lifecycle continuation guides the user to plan the next
-action without bypassing activation readiness.
+Quick project capture creates title-only backlog work and opens the project.
+Adding work and starting are separate explicit actions there. Conversion opens
+the resulting project after its existing mapping/commitment decisions; no extra
+post-conversion task-entry dialog remains. Explicit Start uses the server's
+activation snapshot and the canonical activation command, collecting only missing
+decisions before confirmation. Proposed task creation/planning uses a rollback-only
+preview of that same canonical mutation to account for the actual proposed graph.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
@@ -948,14 +943,14 @@ take over.
 ### Entering successive tasks
 
 `StepComposer` is the shared authored step-entry component used for inline
-successors, task splitting, and the post-conversion project handoff. Inline
+successors, task splitting, and explicit project task entry. Inline
 **Nächsten Schritt danach hinzufügen** still creates one actionable sibling at
 the same outline level and makes it depend on its source task;
 `POST /api/tasks/:id/successors` performs creation and dependency insertion in
 one SQLite transaction. It may include the optional plan or deadline collected
 by the shared composer.
 
-Task splitting and project handoff submit every filled row in one request to
+Task splitting and project task entry submit every filled row in one request to
 `domain/taskStepBatch.ts`. The domain operation checks the selected parent or
 project revision and the full containing project chain, creates all tasks,
 classifies an Inbox parent with its first child, and runs the Phase 1
@@ -2233,3 +2228,38 @@ a synchronously opened sheet captures its focus-return target. Detail completion
 glyphs explicitly stay visible for coarse pointers; outline checkbox hiding
 retains its existing touch behavior. Regression coverage checks attachment
 open/cancel focus return for both task and project details.
+
+### Project creation, task entry and starting (#248)
+
+Project creation/conversion opens the resulting project with a confirmation.
+The separate post-conversion handoff is removed; title-only inactive projects
+remain valid. Existing conversion mapping and commitment decisions remain in
+the canonical conversion workflow. Project next-action entry is now explicitly
+“Aufgaben hinzufügen”, with one task per line and count-aware submission.
+StepComposer preserves project/split drafts per member in session storage across
+closing and navigation; successful submissions clear only the submitted draft.
+Enter advances rows; single-successor behavior retains its own contract.
+
+Explicit project start consumes the server direct activation snapshot. For
+operations that can imply activation, the first confirmation evaluates the
+exact proposed mutation without persisting it, then displays missing decisions
+and the start consequence before the final mutation. The preview reuses the
+canonical domain function inside a rollback-only transaction (including all
+activity/contribution writes), rather than approximating the proposed graph
+in the UI. Canonical revisions, permissions and validation also apply on the
+final request; stale failures keep drafts. Preview responses suppress the
+mutation notification hook.
+
+Mobile Chromium verification for #248 used a 390px viewport reduced to 320px
+visible height: the two-task submit control remained reachable by scrolling,
+Enter advanced the row, and closing/reopening restored both draft rows. A real
+on-screen keyboard remains a manual device check; BottomSheet owns viewport
+bounds as documented above. Verify creation/conversion opens the project with
+confirmation, and check ready/unready starts plus stale-state draft recovery.
+
+Review hardening for #248: activation previews authorize source/destination IDs
+against the viewer-aware graph before evaluating mutations, and guard both
+activation output and decision snapshot IDs. Non-snapshot conflicts retain their
+canonical status. Conversion snapshot refreshes retain authored decisions for
+reconciliation with new requirements; split composers remount per task/member
+to isolate session drafts.

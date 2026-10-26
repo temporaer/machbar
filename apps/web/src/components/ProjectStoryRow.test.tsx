@@ -32,6 +32,7 @@ import "./ProjectStoryRow.css";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getProjects: vi.fn(),
     getProject: vi.fn(),
@@ -201,7 +202,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     await screen.findByText("Kellerregal bauen");
 
     const lifecycle = openLifecycleRail(container);
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Projekt starten" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -576,7 +577,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     await screen.findByText("Gartenhaus streichen");
 
     const lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
     fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
     const restoreSheet = await screen.findByRole("dialog", { name: "In Backlog zurückholen" });
     await userEvent.click(within(restoreSheet).getByRole("button", { name: "Ohne Wiedervorlage" }));
@@ -642,12 +643,12 @@ describe("ProjectStoryRow – activation preparation", () => {
     await screen.findByText("Ohne Driver backlog");
 
     const lifecycle = openLifecycleRail(container);
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Projekt starten" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Ohne Driver backlog“"), "2");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Aktiv machen" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
     // Assigning and activating happen in one atomic backend call.
     await waitFor(() =>
@@ -683,7 +684,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText(story.title);
 
-    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
 
     await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(34, { expectedRevision: 1 }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -708,13 +709,13 @@ describe("ProjectStoryRow – activation preparation", () => {
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText(story.title);
-    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Beide Aktivierungsvoraussetzungen fehlen“"), "2");
     await userEvent.type(within(dialog).getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"), "Ersten Schritt vorbereiten");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Aktiv machen" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
     await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(33, {
       expectedRevision: 1,
@@ -745,7 +746,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText(story.title);
-    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
 
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
@@ -763,7 +764,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Aktivierung abgebrochen");
-    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
@@ -786,7 +787,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     await screen.findByText("Ohne Driver archived");
 
     const lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
     fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
     const restoreSheet = await screen.findByRole("dialog", { name: "In Backlog zurückholen" });
     await userEvent.click(within(restoreSheet).getByRole("button", { name: "Ohne Wiedervorlage" }));
@@ -815,9 +816,9 @@ describe("ProjectStoryRow – activation preparation", () => {
     await screen.findByText("Archiv ohne Driver");
 
     const lifecycle = openLifecycleRail(container);
-    await userEvent.click(within(lifecycle).getByRole("button", { name: "Aktiv machen" }));
+    await userEvent.click(within(lifecycle).getByRole("button", { name: "Projekt starten" }));
 
-    expect(await screen.findByRole("heading", { name: "Aktiv machen" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Projekt starten" })).toBeInTheDocument();
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 });
@@ -853,7 +854,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Archivierte Geschichte");
     lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" })).toBeInTheDocument();
-    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 
@@ -1160,7 +1161,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
   });
 
   it.each<[ProjectStatus, string, string]>([
-    ["backlog", "Später / noch nicht aktiv", "Aktiv machen"],
+    ["backlog", "Später / noch nicht aktiv", "Projekt starten"],
     ["active", "Aktiv", "Abschließen"],
   ])(
     "shows the current status (%s) and a labelled non-gesture primary control",

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { Task } from "@machbar/shared";
-import { api, type CreateTaskStepBatchInput, type ProjectRevisionSnapshot, type ProjectWithActions } from "../lib/api";
+import { api, type CreateTaskStepBatchInput, type ProjectRevisionSnapshot } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { sortByPosition } from "../lib/taskHelpers";
 import {
+  projectActivationPromptFromSnapshot,
   projectActivationPromptFromError,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
@@ -15,7 +16,9 @@ import { BottomSheet } from "./BottomSheet";
 import { TaskOutline } from "./TaskOutline";
 import { StepComposer, type StepDraft } from "./StepComposer";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
-import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
+import { useNavigate } from "react-router-dom";
+import { useIdentity } from "../lib/identity";
+import { useTaskDetail } from "../lib/taskDetailContext";
 
 function fingerprint(steps: StepDraft[], convert: boolean, projectId: number | null): string {
   return JSON.stringify({ steps, convert, projectId });
@@ -48,13 +51,15 @@ export function TaskSplitSheet({
   onClose: () => void;
 }) {
   const strings = useStrings();
+  const navigate = useNavigate();
+  const detail = useTaskDetail();
+  const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
   const [draftSteps, setDraftSteps] = useState<StepDraft[]>([]);
   const [convertParent, setConvertParent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
   const [currentProject, setCurrentProject] = useState<ProjectRevisionSnapshot | null>(null);
-  const [convertedProject, setConvertedProject] = useState<ProjectWithActions | null>(null);
   const [currentParentRevision, setCurrentParentRevision] = useState(parentRevision);
   const [currentParentStatus, setCurrentParentStatus] = useState(parentStatus);
   const [currentProjectId, setCurrentProjectId] = useState(projectId);
@@ -113,9 +118,16 @@ export function TaskSplitSheet({
       expectedRevision: currentParentRevision,
       expectedProjectRevisions: convertParent ? [] : expectedProjectRevisions,
       ...(convertParent ? { convertParentToProject: true } : {}),
-      ...(activationResolution ? { activationResolution } : {}),
+      ...(activationPrompt?.projects.length && activationResolution ? { activationResolution } : {}),
     };
     try {
+      if (!activationPrompt && (currentProjectId !== null || convertParent)) {
+        const preview = await api.previewTaskSteps(parentId, input);
+        if (preview.activatingProjects.length) {
+          setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt: projectActivationPromptFromSnapshot(preview.decision) });
+          return false;
+        }
+      }
       const result = await api.createTaskStepBatchForTask(parentId, input);
       if (result.parent) {
         setCurrentParentRevision(result.parent.revision);
@@ -124,7 +136,12 @@ export function TaskSplitSheet({
         setCurrentProject(result.projectSnapshot ?? null);
       }
       bump();
-      if (result.convertedProject) setConvertedProject(result.convertedProject);
+      setActivationState(null);
+      if (result.convertedProject) {
+        onClose();
+        detail.close();
+        navigate(`/projects/${result.convertedProject.id}`, { state: { createdProjectId: result.convertedProject.id } });
+      }
     } catch (cause) {
       const prompt = projectActivationPromptFromError(cause, activationPrompt);
       if (prompt) setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt });
@@ -138,9 +155,6 @@ export function TaskSplitSheet({
     }
   };
 
-  if (convertedProject) {
-    return <CapturedProjectHandoff project={convertedProject} onDone={onClose} />;
-  }
 
   return (
     <BottomSheet title={strings.splitTask} onClose={() => !busy && onClose()}>
@@ -168,7 +182,9 @@ export function TaskSplitSheet({
             setActivationState({ fingerprint: requestFingerprint, prompt })} />
         ) : null}
         <StepComposer
+          key={`task-${parentId}-member-${currentMemberId ?? "shared"}`}
           inputIdPrefix={`task-step-${parentId}`}
+          draftKey={`task-${parentId}-member-${currentMemberId ?? "shared"}`}
           label={strings.splitTaskAddHeading}
           placeholder={strings.splitTaskRowPlaceholder}
           submitLabel={strings.splitTaskCount(draftSteps.length)}

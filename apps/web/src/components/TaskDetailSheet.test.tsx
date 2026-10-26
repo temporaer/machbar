@@ -29,6 +29,9 @@ vi.mock("../lib/api", () => ({
   paperlessDocumentThumbnailUrl: (id: number) =>
     `/api/integrations/paperless/documents/${id}/thumbnail`,
   api: {
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),
@@ -1813,7 +1816,7 @@ describe("TaskDetailSheet", () => {
     );
   });
 
-  it("converts a captured item and opens the captured-project handoff", async () => {
+  it("converts a captured item through the focused workflow without an automatic task-entry continuation", async () => {
     const task = makeTask({
       id: 56,
       title: "Kinderzimmer renovieren",
@@ -1832,24 +1835,15 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open queue"));
     await waitForTaskTitle("Kinderzimmer renovieren");
     await userEvent.click(
-      screen.getByRole("button", { name: "Backlog" }),
+      screen.getByRole("button", { name: strings.classifyAsBacklog }),
     );
 
-    await waitFor(() =>
-      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(56, {
-        status: "backlog",
-        expectedRevision: 1,
-      }),
-    );
-    const handoff = await screen.findByRole("dialog", {
-      name: "Kinderzimmer renovieren",
-    });
-    expect(
-      within(handoff).getByRole("button", { name: strings.addNextAction }),
-    ).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectBacklog }));
+    await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(56, expect.objectContaining({ status: "backlog", expectedRevision: 1 })));
+    expect(screen.queryByRole("dialog", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
   });
 
-  it("navigates to Projects with the new backlog project highlighted once the handoff finishes outside a review queue", async () => {
+  it("opens the converted project document with a creation confirmation", async () => {
     const task = makeTask({
       id: 65,
       title: "Garage aufräumen",
@@ -1879,14 +1873,13 @@ describe("TaskDetailSheet", () => {
     );
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Garage aufräumen");
-    await userEvent.click(screen.getByRole("button", { name: "Backlog" }));
+    await userEvent.click(screen.getByRole("button", { name: strings.classifyAsBacklog }));
 
-    const handoff = await screen.findByRole("dialog", { name: "Garage aufräumen" });
-    await userEvent.click(within(handoff).getByRole("button", { name: strings.done }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectBacklog }));
 
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
-        `/projects{"highlightProjectId":81}`,
+        `/projects/81{"createdProjectId":81}`,
       ),
     );
   });

@@ -20,6 +20,7 @@ function renderQuickAddInStory(storyId: number, ui = <QuickAdd />) {
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     createTask: vi.fn(),
     createProject: vi.fn(),
