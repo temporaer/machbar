@@ -39,4 +39,17 @@ describe("creation receipt transaction and authorization", () => {
     expect(response.statusCode).toBe(404);
     expect(ctx.handle.sqlite.prepare("SELECT count(*) AS n FROM creation_receipts").get()).toEqual({ n: 0 });
   });
+  it("rejects a project receipt after the work item becomes a task", async () => {
+    const request = { method: "POST" as const, url: "/api/projects", headers: { "idempotency-key": "converted_project_0001" }, payload: { title: "Converted project" } };
+    const created = await ctx.app.inject(request);
+    const converted = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${created.json().id}/convert-to-task`,
+      payload: { expectedRevision: created.json().revision },
+    });
+    expect(converted.statusCode).toBe(201);
+    const replay = await ctx.app.inject(request);
+    expect(replay.statusCode).toBe(404);
+    expect(replay.json().error.code).toBe("project_not_found");
+  });
 });

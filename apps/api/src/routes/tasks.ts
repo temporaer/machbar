@@ -202,7 +202,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
           ? { createdByMemberId: request.authMember.id }
           : {}),
       },
-      { actorMemberId: request.activityActor?.id ?? null },
+      { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
     );
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
@@ -228,7 +228,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
             ? { createdByMemberId: request.authMember.id }
             : {}),
         },
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
       );
       reply.status(201);
       return taskOrThrow(db, task.id, viewerMemberId(request));
@@ -241,7 +241,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const mutate = () => createTaskStepBatchForTask(db, parentId, {
       ...body,
       ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
-    }, { actorMemberId: request.activityActor?.id ?? null });
+    }, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
       return previewActivation(db, mutate, viewerMemberId(request), [parentId]);
@@ -278,7 +278,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
             ? { createdByMemberId: request.authMember.id }
             : {}),
         },
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
       );
       reply.status(201);
       return taskOrThrow(db, task.id, viewerMemberId(request));
@@ -290,6 +290,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const body = parseOrThrow(updateTaskSchema, request.body);
     const mutate = () => updateTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
+      viewerMemberId: viewerMemberId(request) ?? null,
     });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
@@ -334,7 +335,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
           completedOn: body.completedOn,
           expectedRevision: body.expectedRevision,
         },
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
       );
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -348,6 +349,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(convertTaskToStorySchema, request.body);
       const mutate = () => convertTaskToStory(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       if (request.headers["x-machbar-preview"] === "activation") {
         reply.header("x-machbar-preview", "activation");
@@ -454,6 +456,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const body = parseOrThrow(moveTaskSchema, request.body);
     moveTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
+      viewerMemberId: viewerMemberId(request) ?? null,
     });
     return taskOrThrow(db, id, viewerMemberId(request));
   });

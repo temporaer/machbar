@@ -5,14 +5,16 @@ import { ChangeNotifier } from "../../apps/api/src/changeNotifier";
 
 describe("ordinary creation after a lost response", () => {
   let ctx: TestContext;
-  let loseResponse: boolean;
+  let responsesToLose: number;
+  let requestKeys: string[];
   const notified = vi.fn();
   beforeEach(() => {
     const notifier = new ChangeNotifier(); notifier.subscribe(notified);
-    ctx = createTestContext({ changeNotifier: notifier }); loseResponse = true; notified.mockClear();
+    ctx = createTestContext({ changeNotifier: notifier }); responsesToLose = 1; requestKeys = []; notified.mockClear();
     vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      requestKeys.push(new Headers(init.headers).get("Idempotency-Key") ?? "");
       const result = await ctx.app.inject({ method: init.method as "POST", url, headers: Object.fromEntries(new Headers(init.headers)), payload: init.body as string });
-      if (loseResponse && result.statusCode < 300) { loseResponse = false; throw new TypeError("Connection lost after commit"); }
+      if (responsesToLose > 0 && result.statusCode < 300) { responsesToLose -= 1; throw new TypeError("Connection lost after commit"); }
       return new Response(result.body, { status: result.statusCode });
     });
   });
@@ -28,13 +30,31 @@ describe("ordinary creation after a lost response", () => {
     expect(intentional.id).not.toBe(saved.id);
     expect(ctx.handle.sqlite.prepare("SELECT count(*) AS n FROM work_items WHERE title = ?").get("Retry fixture")).toEqual({ n: 2 });
   });
-  it("does not merge independent simultaneous creations with identical content", async () => {
-    loseResponse = false;
+  it("recovers independent simultaneous creations after both responses are lost", async () => {
+    responsesToLose = 2;
+    const [firstAttempt, secondAttempt] = await Promise.allSettled([
+      api.createTask({ title: "Two independent intents" }),
+      api.createTask({ title: "Two independent intents" }),
+    ]);
+    expect(firstAttempt.status).toBe("rejected");
+    expect(secondAttempt.status).toBe("rejected");
+    expect(requestKeys[0]).not.toBe(requestKeys[1]);
+    const createdForKey = (key: string) => (
+      ctx.handle.sqlite
+        .prepare("SELECT work_item_id AS id FROM creation_receipts WHERE request_key = ?")
+        .get(key) as { id: number }
+    ).id;
+    const firstIntentId = createdForKey(requestKeys[0]!);
+    const secondIntentId = createdForKey(requestKeys[1]!);
     const [first, second] = await Promise.all([
       api.createTask({ title: "Two independent intents" }),
       api.createTask({ title: "Two independent intents" }),
     ]);
-    expect(first.id).not.toBe(second.id);
+    expect(requestKeys[2]).toBe(requestKeys[0]);
+    expect(requestKeys[3]).toBe(requestKeys[1]);
+    expect(first.id).toBe(firstIntentId);
+    expect(second.id).toBe(secondIntentId);
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE title = ? ORDER BY id").all("Two independent intents")).toHaveLength(2);
     expect(notified).toHaveBeenCalledTimes(2);
   });
 

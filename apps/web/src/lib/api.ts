@@ -172,19 +172,27 @@ export async function request<T>(
 // A failed response leaves the outcome unknown. Keep its key for an identical
 // retry in this client; success/definitive 4xx ends the attempt. Payload text is
 // kept in memory only, never persisted in browser storage.
-const uncertainCreations = new Map<string, string>();
+const uncertainCreations = new Map<string, Array<{ order: number; key: string }>>();
+let nextCreationOrder = 0;
 async function requestCreation<T>(path: string, input: unknown): Promise<T> {
   const body = JSON.stringify(input);
   const identity = JSON.stringify([readRequestActorMemberId(), path, body]);
-  const key = uncertainCreations.get(identity) ?? (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`);
+  const retries = uncertainCreations.get(identity);
+  const intent = retries?.shift() ?? {
+    order: nextCreationOrder++,
+    key: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`,
+  };
+  if (retries?.length === 0) uncertainCreations.delete(identity);
   try {
-    const result = await request<T>(path, { method: "POST", body, headers: { "Idempotency-Key": key } });
-    if (uncertainCreations.get(identity) === key) uncertainCreations.delete(identity);
+    const result = await request<T>(path, { method: "POST", body, headers: { "Idempotency-Key": intent.key } });
     return result;
   } catch (error) {
-    if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-      if (uncertainCreations.get(identity) === key) uncertainCreations.delete(identity);
-    } else uncertainCreations.set(identity, key);
+    if (!(error instanceof ApiError && error.status >= 400 && error.status < 500)) {
+      const pending = uncertainCreations.get(identity) ?? [];
+      const index = pending.findIndex(({ order }) => order > intent.order);
+      pending.splice(index < 0 ? pending.length : index, 0, intent);
+      uncertainCreations.set(identity, pending);
+    }
     throw error;
   }
 }

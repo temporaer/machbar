@@ -10,7 +10,7 @@ import { AppError } from "../errors.js";
 import { recordActivity, recordContribution } from "../repo/index.js";
 import { getProjectActivationReadiness } from "./projectReadiness.js";
 import { insertTaskRow } from "./taskRowInsert.js";
-import { type MutationContext, actor, nowIso } from "./workItemShared.js";
+import { type MutationContext, actor, assertWorkItemAccessible, nowIso } from "./workItemShared.js";
 import {
   evaluateCommitmentTransition,
   type CommitmentTransitionSnapshot,
@@ -231,6 +231,15 @@ export function activateCommittedProjectChain(
     );
   }
 
+  if (context && "viewerMemberId" in context) {
+    const affectedProjectIds = new Set([
+      ...result.plan.projectActivations.map((activation) => activation.projectId),
+      ...(result.plan.nextAction ? [result.plan.nextAction.projectId] : []),
+    ]);
+    for (const affectedProjectId of affectedProjectIds) {
+      assertWorkItemAccessible(db, affectedProjectId, context.viewerMemberId ?? undefined);
+    }
+  }
   applyTransitionPlan(db, projectId, result.plan, context);
 }
 

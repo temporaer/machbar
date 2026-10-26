@@ -17,6 +17,7 @@ import { getTaskIdsForStory } from "../repo/treeRepo.js";
 
 export interface MutationContext {
   actorMemberId?: number | null;
+  viewerMemberId?: number | null;
 }
 
 export function actor(context?: MutationContext): number | null {

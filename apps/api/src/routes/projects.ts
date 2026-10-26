@@ -132,7 +132,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const mutate = () => createTaskStepBatchForProject(db, id, {
       ...body,
       ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
-    }, { actorMemberId: request.activityActor?.id ?? null });
+    }, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
       return previewActivation(db, mutate, viewerMemberId(request), [id]);
@@ -151,11 +151,14 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const body = parseOrThrow(createProjectSchema, request.body);
     const project = createWithReceipt(db, { key: request.headers["idempotency-key"], route: "/api/projects", viewer: viewerMemberId(request), body }, () => createProject(db, body, {
       actorMemberId: request.activityActor?.id ?? null,
+      viewerMemberId: viewerMemberId(request) ?? null,
     }));
     if (project.replayed) reply.header("x-machbar-replay", "true");
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(project.replayed ? 200 : 201);
-    return projectWithIssues(graph, project.id);
+    const created = projectWithIssues(graph, project.id);
+    if (!created) throw AppError.notFound("project_not_found", "The project was not found.", { projectId: project.id });
+    return created;
   });
 
   app.patch<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
@@ -163,6 +166,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const body = parseOrThrow(updateProjectSchema, request.body);
     updateProject(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
+      viewerMemberId: viewerMemberId(request) ?? null,
     });
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     return projectWithIssues(graph, id);
@@ -295,6 +299,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(convertStoryToTaskSchema, request.body ?? {});
       const task = convertStoryToTask(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       reply.status(201);
@@ -309,7 +314,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     if (!visible.projectsById.has(id) || (body.parentId !== null && !visible.projectsById.has(body.parentId))) {
       throw AppError.notFound("project_not_found", "The project destination was not found.");
     }
-    moveProject(db, id, body, { actorMemberId: request.activityActor?.id ?? null });
+    moveProject(db, id, body, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     return projectWithIssues(Graph.load(db, undefined, viewerMemberId(request)), id);
   });
 
