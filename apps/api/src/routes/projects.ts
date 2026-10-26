@@ -1,5 +1,6 @@
+import { createWithReceipt } from "../domain/creationReceipt.js";
 import { previewActivation } from "../domain/activationPreview.js";
-import { assertPrivateWorkItemAccessible } from "../domain/workItemShared.js";
+import { assertWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -91,11 +92,11 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     if (!path.startsWith("/api/projects")) return;
     const viewer = viewerMemberId(request);
     const rawId = (request.params as { id?: string }).id;
-    if (rawId !== undefined) assertPrivateWorkItemAccessible(db, parseId(rawId), viewer);
+    if (rawId !== undefined) assertWorkItemAccessible(db, parseId(rawId), viewer);
     const body = request.body as Record<string, unknown> | undefined;
     for (const field of ["parentTaskId", "projectId", "parentId", "dependsOnTaskId"]) {
       const id = body?.[field];
-      if (typeof id === "number") assertPrivateWorkItemAccessible(db, id, viewer);
+      if (typeof id === "number") assertWorkItemAccessible(db, id, viewer);
     }
   });
 
@@ -148,11 +149,12 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
 
   app.post("/api/projects", async (request, reply) => {
     const body = parseOrThrow(createProjectSchema, request.body);
-    const project = createProject(db, body, {
+    const project = createWithReceipt(db, { key: request.headers["idempotency-key"], route: "/api/projects", viewer: viewerMemberId(request), body }, () => createProject(db, body, {
       actorMemberId: request.activityActor?.id ?? null,
-    });
+    }));
+    if (project.replayed) reply.header("x-machbar-replay", "true");
     const graph = Graph.load(db, undefined, viewerMemberId(request));
-    reply.status(201);
+    reply.status(project.replayed ? 200 : 201);
     return projectWithIssues(graph, project.id);
   });
 

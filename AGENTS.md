@@ -37,7 +37,7 @@ This repository is set up for an autonomous verify-until-green agent loop.
 
 - Verify everything with a single command: `bash scripts/verify.sh`. It runs the
   Node checks (`npm run verify`: architecture, shared build, typecheck, tests,
-  build) followed by `python -m pytest`. None of these need a running server.
+  build) followed by `python -m pytest`. No external server is needed; cross-runtime tests start their own isolated API.
 - Dependencies are installed once by `scripts/codex-setup.sh` during the
   network-enabled setup phase; the loop itself runs offline.
 - Network/loopback tests are skipped under `CODEX_SANDBOX_NETWORK_DISABLED` and
@@ -58,6 +58,10 @@ This repository is set up for an autonomous verify-until-green agent loop.
   orderings, uniqueness, authoritative values/membership and eventual release.
   Keep browser-only visibility/focus checks separate; API/jsdom success is not
   evidence of CSS layout or a physical keyboard working.
+- Browser-visible changes also require `npm run build && npm run test:e2e`
+  (desktop/mobile Chromium). Do not rely solely on provider-rich component test
+  wrappers to prove the real app mount tree works. The browser CI job runs in
+  parallel and saves failure traces.
 - Always run the verifier before finishing. Do not declare work complete on an
   unverified or red tree.
 - Iteration cap: if the verifier is still failing after a few focused attempts

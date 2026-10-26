@@ -1,3 +1,4 @@
+import { InteractionScopeProvider } from "../lib/interactionScope";
 import { flattenTasks } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useProjectActions } from "../lib/useProjectActions";
@@ -23,6 +24,7 @@ export function DiscussionPage() {
   const empty = data !== null && tasks.length === 0 && projects.length === 0;
 
   return (
+    <InteractionScopeProvider>
     <div className="discussion-page">
       <PageHeader title={strings.discussionTitle} />
       {loading ? <LoadingState /> : null}
@@ -43,5 +45,6 @@ export function DiscussionPage() {
         </section>
       ) : null}
     </div>
+    </InteractionScopeProvider>
   );
 }

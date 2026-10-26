@@ -1,7 +1,7 @@
 {
   "name": "machbar",
   "private": true,
-  "version": "0.34.2",
+  "version": "0.35.0",
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -20,7 +20,7 @@
     "build": "npm run build -w @machbar/shared && npm run build:apps",
     "build:apps": "npm run build -w @machbar/web && npm run build -w @machbar/api",
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @machbar/api\" \"npm run dev -w @machbar/web\"",
-    "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:contracts",
+    "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:contracts && npm run typecheck:e2e",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "pr:track": "node scripts/machbar-pr-tracker.mjs",
@@ -28,7 +28,8 @@
     "db:seed": "npm run db:seed -w @machbar/api",
     "start": "npm run start -w @machbar/api",
     "typecheck:contracts": "tsc -p tests/contracts/tsconfig.json",
-    "test:contracts": "npm test -w @machbar/web -- --project contracts"
+    "test:contracts": "npm test -w @machbar/web -- --project contracts",
+    "typecheck:e2e": "tsc -p tests/e2e/tsconfig.json"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

@@ -2263,3 +2263,28 @@ activation output and decision snapshot IDs. Non-snapshot conflicts retain their
 canonical status. Conversion snapshot refreshes retain authored decisions for
 reconciliation with new requirements; split composers remount per task/member
 to isolate session drafts.
+
+### Verification-driven production fixes
+
+The write-visibility regression compares reads, previews and final writes for
+household/work/durable-private items, and checks database snapshots and absence
+of notifications on rejected operations. Destructive/move/dependency cases and
+real session-vs-spoofed-actor tests complement that matrix. Reads and HTTP write
+guards now share workItemVisibleToViewer; authorization is not deferred to the
+response projection. Root creations that cannot be returned to their creator
+also roll back atomically.
+
+Migration 0031 adds creation_receipts. It stores only the opaque operation key,
+route, viewer scope, normalized-body digest and result ID, not captured text or
+serialized responses. The result FK becomes null on deletion so an old retry
+cannot resurrect it. A receipt and the canonical creation commit in one SQLite
+transaction; replays read the current authorized result. Back up using SQLite's
+online backup API (including the receipts), not an uncoordinated copy of a live
+WAL database file. Receipt tests cover changed content, changed visibility,
+deleted results, failed writes and restart/backup recovery.
+
+Browser verification uses the actual built app, isolated temporary data, desktop
+Chromium and Pixel emulation. It caught the missing InteractionScopeProvider in
+DiscussionPage: ordinary populated rows crashed despite component fixtures
+supplying the provider. The page now owns the same scope as other list pages.
+The browser suite tests the real mount tree, not the convenient test wrapper.

@@ -1,5 +1,6 @@
+import { createWithReceipt } from "../domain/creationReceipt.js";
 import { previewActivation } from "../domain/activationPreview.js";
-import { assertPrivateWorkItemAccessible } from "../domain/workItemShared.js";
+import { assertWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -115,11 +116,11 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     if (!path.startsWith("/api/tasks")) return;
     const viewer = viewerMemberId(request);
     const rawId = (request.params as { id?: string }).id;
-    if (rawId !== undefined) assertPrivateWorkItemAccessible(db, parseId(rawId), viewer);
+    if (rawId !== undefined) assertWorkItemAccessible(db, parseId(rawId), viewer);
     const body = request.body as Record<string, unknown> | undefined;
     for (const field of ["parentTaskId", "projectId", "parentId", "dependsOnTaskId"]) {
       const id = body?.[field];
-      if (typeof id === "number") assertPrivateWorkItemAccessible(db, id, viewer);
+      if (typeof id === "number") assertWorkItemAccessible(db, id, viewer);
     }
   });
 
@@ -207,8 +208,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       reply.header("x-machbar-preview", "activation");
       return previewActivation(db, mutate, viewerMemberId(request), [body.projectId, body.parentTaskId]);
     }
-    const task = mutate();
-    reply.status(201);
+    const task = createWithReceipt(db, { key: request.headers["idempotency-key"], route: "/api/tasks", viewer: viewerMemberId(request), body }, mutate);
+    if (task.replayed) reply.header("x-machbar-replay", "true");
+    reply.status(task.replayed ? 200 : 201);
     return taskOrThrow(db, task.id, viewerMemberId(request));
   });
 

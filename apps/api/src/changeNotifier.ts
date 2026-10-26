@@ -69,6 +69,7 @@ export function registerChangeNotifications(
 
   app.addHook("onResponse", async (request, reply) => {
     if (
+      reply.getHeader("x-machbar-replay") === "true" ||
       reply.getHeader("x-machbar-preview") === "activation" ||
       !["POST", "PATCH", "PUT", "DELETE"].includes(request.method) ||
       reply.statusCode < 200 ||

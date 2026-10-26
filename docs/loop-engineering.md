@@ -10,10 +10,11 @@ Two halves make it work: a local/CI verifier that the project owns, and an
   `@machbar/shared` build, typecheck, tests, and the production build.
 - `bash scripts/verify.sh` (also `npm run verify:all`) runs `npm run verify`
   followed by `python -m pytest` for the Home Assistant integration.
-- None of these need a running server: vitest is in-process, the API uses an
+- No externally running server is needed: vitest is in-process, the API uses an
   embedded `better-sqlite3` file, and the Python tests use the in-process
-  `pytest-homeassistant-custom-component` harness. Playwright e2e self-starts a
-  server via `playwright.config.ts` and is deliberately kept out of this loop.
+  `pytest-homeassistant-custom-component` harness. The Python cross-runtime tests additionally self-start a disposable built Node
+  API over loopback. Playwright self-starts a separate disposable API using
+  `playwright.config.ts` and runs in its own parallel CI job.
 - `scripts/codex-setup.sh` installs everything the offline loop needs
   (`npm ci`, then the Python test requirements). It is idempotent.
 - Tests that need a real loopback socket (e.g. the MCP OAuth JWKS server) are
@@ -118,3 +119,43 @@ own. PR validation should name the affected invariant, tested identities/error
 variants/event orders and remaining browser-only limitations. Mobile CSS,
 browser focus/layout and physical on-screen keyboards remain outside this fast
 suite and need a separate browser/device check.
+
+## Production-boundary gap closure
+
+- API write matrices now include final mutations, destructive operations,
+  destinations/dependencies, actual authenticated sessions and spoofed actors.
+  Rejected writes must return an error before changing database state or
+  publishing events. The original code failed eight final-write matrix cases
+  and fifteen destructive/session cases; these were real behavioral failures.
+- `tests/contracts/retries.test.ts` drops real successful API responses after
+  commit. Both ordinary task/project retries duplicated work before the receipt
+  fix. The test also protects deliberate subsequent and simultaneous creations.
+- `apps/api/tests/recovery.test.ts` uses persistent SQLite: pre-receipt upgrade,
+  repeated migration, reopen, online backup/restore and a real killed writer
+  process. `representative-load.test.ts` exercises 1000 tasks through reads and
+  a write with a bounded graph-load budget. This is a functional scale check,
+  not a production capacity or tail-latency benchmark.
+- `tests/e2e/core.spec.ts` runs ten real-browser cases (five scenarios × desktop
+  and mobile Chromium): visible/tappable completion, dialog focus restoration,
+  two live sessions with stale writes and offline reconnection, Discussion live
+  contents and actual service-worker activation/control. Any page exception
+  fails its test. Discussion failed with a real missing-provider exception before
+  the fix. Run `npm run build && npm run test:e2e`. The server uses a disposable
+  temporary database and never reuses a developer server. CI installs Chromium
+  dependencies and retains failure traces.
+- `tests/test_live_api_contract.py` exercises the packaged Python HTTP client
+  against the built Node API on an ephemeral loopback port, with real pairing,
+  context snapshots, request leasing/completion and invalid credentials. Run
+  after `npm run build`; the full verifier already builds before pytest. These
+  tests skip in the offline sandbox and run in normal CI. No cloud AI or actual
+  household account is contacted.
+
+Boundaries that still need a staging/device exercise: real Pocket ID redirects,
+real push-provider/device receipt and OS notification clicks, live Home Assistant
+AI/calendar services, Paperless credentials, physical keyboards and non-Chromium
+browsers. Mocked/provider-specific existing tests plus the loopback/browser
+contracts do not prove those deployed services are healthy. Cross-runtime tests
+use the real HTTP client but supply a fixture analysis result; they do not grade
+AI output quality. Ordinary creation replay covers task/project root POSTs and
+retry within the current client runtime; batch endpoints and capture recovery
+across a page reload are not claimed as covered retry contracts.
