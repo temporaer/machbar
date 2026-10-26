@@ -19,4 +19,7 @@
 
 ## Validation
 
--
+- Failure class / invariant:
+- Relevant identities, error variants or event orders tested:
+- Regression rejected the faulty revision/equivalent mutation (or new-behavior negative case):
+- Browser-only checks / remaining limitations:
