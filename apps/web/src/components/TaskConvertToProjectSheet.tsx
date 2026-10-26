@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectActivationResolution, Task } from "@machbar/shared";
 import { api, type TaskDetail } from "../lib/api";
 import { useStrings } from "../lib/strings";
@@ -71,6 +71,8 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
     ? projectActivationResolutionFromPrompt(activationPrompt)
     : null;
 
+  const decisionDraft = useRef<ProjectActivationPrompt | null>(null);
+  useEffect(() => { if (activationPrompt) decisionDraft.current = activationPrompt; }, [activationPrompt]);
   useEffect(() => { setActivationPrompt(null); setPreviewIntent(null); }, [preservedStepTitle, dependencyTargets, currentTask.revision]);
 
   const hierarchyPending = (currentTask.parentTaskId !== null || currentTask.projectId !== null) && !currentTask.hierarchyRevisions;
@@ -102,7 +104,7 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
         const preview = await api.previewTaskConversion(task.id, input);
         if (preview.activatingProjects.length) {
           setPreviewIntent(status);
-          setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision));
+          setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision, decisionDraft.current));
           return;
         }
       }

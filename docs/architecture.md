@@ -2256,3 +2256,10 @@ Enter advanced the row, and closing/reopening restored both draft rows. A real
 on-screen keyboard remains a manual device check; BottomSheet owns viewport
 bounds as documented above. Verify creation/conversion opens the project with
 confirmation, and check ready/unready starts plus stale-state draft recovery.
+
+Review hardening for #248: activation previews authorize source/destination IDs
+against the viewer-aware graph before evaluating mutations, and guard both
+activation output and decision snapshot IDs. Non-snapshot conflicts retain their
+canonical status. Conversion snapshot refreshes retain authored decisions for
+reconciliation with new requirements; split composers remount per task/member
+to isolate session drafts.

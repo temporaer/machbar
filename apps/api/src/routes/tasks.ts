@@ -205,7 +205,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     );
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate);
+      return previewActivation(db, mutate, viewerMemberId(request), [body.projectId, body.parentTaskId]);
     }
     const task = mutate();
     reply.status(201);
@@ -242,7 +242,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     }, { actorMemberId: request.activityActor?.id ?? null });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate);
+      return previewActivation(db, mutate, viewerMemberId(request), [parentId]);
     }
     const result = mutate();
     const graph = Graph.load(db, undefined, viewerMemberId(request));
@@ -291,7 +291,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate);
+      return previewActivation(db, mutate, viewerMemberId(request), [id]);
     }
     mutate();
     return taskOrThrow(db, id, viewerMemberId(request));
@@ -349,7 +349,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       });
       if (request.headers["x-machbar-preview"] === "activation") {
         reply.header("x-machbar-preview", "activation");
-        return previewActivation(db, mutate);
+        return previewActivation(db, mutate, viewerMemberId(request), [id]);
       }
       const project = mutate();
       const graph = Graph.load(db, undefined, viewerMemberId(request));

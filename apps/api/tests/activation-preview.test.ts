@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createProject } from "../src/domain/storyCrud.js";
+import { createTask } from "../src/domain/taskCrud.js";
+import { previewActivation } from "../src/domain/activationPreview.js";
+import { AppError } from "../src/errors.js";
 import { ChangeNotifier } from "../src/changeNotifier.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -65,4 +69,51 @@ describe("canonical activation previews", () => {
     expect(result.json().decision.projects[0].required).toEqual(["driver"]);
     expect(snapshot()).toEqual(before);
   });
+  it("rejects hidden preview destinations and sources without leaking titles or writing", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Owner" } })).json();
+    const hidden = createProject(ctx.handle.db, { title: "Private work secret", scope: "work", ownerMemberId: member.id });
+    const child = createTask(ctx.handle.db, { title: "Private child", projectId: hidden.id });
+    const before = snapshot();
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${hidden.id}` })).statusCode).toBe(404);
+    for (const [url, payload, method] of [
+      ["/api/tasks", { title: "New", projectId: hidden.id, scheduledDate: "2027-01-15" }, "POST"],
+      [`/api/tasks/${child.id}`, { scheduledDate: "2027-01-15", expectedRevision: child.revision }, "PATCH"],
+      [`/api/tasks/${child.id}/children/batch`, { steps: [{ title: "New" }], expectedProjectRevisions: [], expectedRevision: child.revision }, "POST"],
+      [`/api/projects/${hidden.id}/tasks/batch`, { steps: [{ title: "New" }], expectedProjectRevisions: [], expectedRevision: hidden.revision }, "POST"],
+      [`/api/tasks/${child.id}/convert-to-story`, { status: "active", expectedRevision: child.revision }, "POST"],
+    ] as const) {
+      const response = await preview(url, payload, method);
+      expect(response.statusCode, response.body).toBe(404);
+      expect(response.body).not.toContain("Private");
+      expect(snapshot()).toEqual(before);
+    }
+    // Both successful activation output and canonical decision snapshots are guarded,
+    // even if a caller omitted an affected ancestor from its source list.
+    for (const ownerMemberId of [member.id, undefined]) {
+      const target = createProject(ctx.handle.db, { title: "Another secret", scope: "work", ...(ownerMemberId ? { ownerMemberId } : {}) });
+      expect(() => previewActivation(ctx.handle.db, () => createTask(ctx.handle.db, {
+        title: "Dated", projectId: target.id, scheduledDate: "2027-01-15",
+      }), undefined, [])).toThrow(AppError);
+    }
+  });
+  it("returns the same canonical 409 for an unnecessary driver assignment", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const target = await project(member.id);
+    const input = { title: "Dated", projectId: target.id, scheduledDate: "2027-01-15", activationResolution: {
+      expectedProjects: [{ projectId: target.id, revision: target.revision }],
+      drivers: [{ projectId: target.id, ownerMemberId: member.id }],
+    } };
+    const before = snapshot();
+    const response = await preview("/api/tasks", input);
+    const canonical = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: input });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual(canonical.json());
+    expect(response.json().error.details).toEqual({ reason: "invalid_project_decision" });
+    expect(snapshot()).toEqual(before);
+  });
+  it("preserves canonical conflicts without decision snapshot arrays", () => {
+    const error = AppError.conflict("project_commitment_resolution_required", "Invalid decision", { reason: "invalid_project_decision" });
+    expect(() => previewActivation(ctx.handle.db, () => { throw error; }, undefined, [])).toThrow(error);
+  });
+
 });

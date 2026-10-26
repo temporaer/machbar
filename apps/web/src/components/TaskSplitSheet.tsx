@@ -182,6 +182,7 @@ export function TaskSplitSheet({
             setActivationState({ fingerprint: requestFingerprint, prompt })} />
         ) : null}
         <StepComposer
+          key={`task-${parentId}-member-${currentMemberId ?? "shared"}`}
           inputIdPrefix={`task-step-${parentId}`}
           draftKey={`task-${parentId}-member-${currentMemberId ?? "shared"}`}
           label={strings.splitTaskAddHeading}

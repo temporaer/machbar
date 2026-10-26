@@ -529,7 +529,9 @@ and successor callers keep their own terminology.
 The existing mutation routes accept the activation preview header only on the
 supported task create/update/conversion/batch operations. `activationPreview.ts`
 executes that same canonical mutation in an always-rolled-back transaction,
-returning its authoritative activation decisions and affected projects. This
+returning its authoritative activation decisions and affected projects. Sources,
+destinations and result/decision IDs must pass the viewer-aware graph boundary;
+conflicts without a decision snapshot retain their canonical error. This
 is not an alternative readiness evaluator or write path. Preview replies do
 not publish change events. Server revision/validation remains authoritative on
 final confirmation, and stale recovery retains drafts.

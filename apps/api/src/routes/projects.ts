@@ -134,7 +134,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     }, { actorMemberId: request.activityActor?.id ?? null });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate);
+      return previewActivation(db, mutate, viewerMemberId(request), [id]);
     }
     const result = mutate();
     const graph = Graph.load(db, undefined, viewerMemberId(request));
