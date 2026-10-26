@@ -469,6 +469,21 @@ describe("TaskDetailSheet", () => {
     expect(screen.queryByRole("dialog", { name: "Anhang" })).not.toBeInTheDocument();
   });
 
+  it("returns focus to Actions after opening and cancelling an attachment", async () => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "Attachment focus" }));
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Attachment focus");
+    const trigger = screen.getByRole("button", { name: "Aktionen" });
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    const attachment = await screen.findByRole("dialog", { name: "Anhang" });
+    expect(screen.queryByRole("dialog", { name: "Aktionen" })).not.toBeInTheDocument();
+    await userEvent.click(within(attachment).getByRole("button", { name: "Schließen" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
   it("inserts a header attachment at the active notes cursor without saving", async () => {
     const task = makeTask({ id: 42, title: "Beleg prüfen", notes: "Vorher Nachher" });
     mockedApi.getTask.mockResolvedValue(task);

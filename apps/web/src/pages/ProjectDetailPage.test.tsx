@@ -1147,6 +1147,20 @@ describe("ProjectDetailPage task explanations", () => {
     expect(shareButton.closest(".native-share-control")?.querySelector("[role='status']")).toBeVisible();
   });
 
+  it("returns focus to Actions after opening and cancelling an attachment", async () => {
+    mockedApi.getProject.mockResolvedValue({ ...makeProject({ id: 42, title: "Attachment focus" }), tasks: [] });
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: "Attachment focus" });
+    const trigger = screen.getByRole("button", { name: "Aktionen" });
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    const attachment = await screen.findByRole("dialog", { name: "Anhang" });
+    expect(screen.queryByRole("dialog", { name: "Aktionen" })).not.toBeInTheDocument();
+    await userEvent.click(within(attachment).getByRole("button", { name: "Schließen" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
   it("inserts a header attachment at the active notes cursor without saving", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({

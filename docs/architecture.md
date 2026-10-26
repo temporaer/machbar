@@ -2226,3 +2226,10 @@ execution date. Outcome guidance/edit access and next-step guidance/actions rema
 prominent for empty projects; completed/archived projects retain their existing
 next-step eligibility guards. Task captured/reference/recurrence/terminal guards
 remain independent.
+
+Detail action selection commits menu dismissal with `flushSync` before invoking
+its existing command. This lets BottomSheet restore the stable trigger before
+a synchronously opened sheet captures its focus-return target. Detail completion
+glyphs explicitly stay visible for coarse pointers; outline checkbox hiding
+retains its existing touch behavior. Regression coverage checks attachment
+open/cancel focus return for both task and project details.
