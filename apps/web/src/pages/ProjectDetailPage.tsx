@@ -16,7 +16,7 @@ import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { QuickAdd } from "../components/QuickAdd";
 import { countTasks, flattenTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
-import { formatDate } from "../lib/format";
+import { formatDate, formatDateTime } from "../lib/format";
 import { formatRevisitAt } from "../lib/relativeDate";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
@@ -29,8 +29,8 @@ import { buildProjectShareUrl } from "../lib/shareUrls";
 import { PageHeader } from "../components/PageHeader";
 import { MemberLabel } from "../components/MemberAvatar";
 import { IconActionButton } from "../components/IconActionButton";
-import { TaskCardTags } from "../components/TaskCardTags";
 import { ProjectStatusBadge } from "../components/StatusBadge";
+import { DetailActionMenu } from "../components/DetailActionMenu";
 import { DetailPropertyPill } from "../components/DetailPropertyPill";
 import { WorkItemBreadcrumbs } from "../components/WorkItemBreadcrumbs";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -47,7 +47,6 @@ import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
 import { MarkdownEditor, type MarkdownEditorHandle } from "../components/MarkdownEditor";
 import { AcceptanceCriteriaChecklist } from "../components/AcceptanceCriteriaChecklist";
-import { WorkItemDetailDisclosure } from "../components/WorkItemDetailSection";
 import { appendTextBlock } from "../lib/shareTarget";
 import {
   containsPaperlessReference,
@@ -94,7 +93,6 @@ export function ProjectDetailPage() {
     useState<ProjectWithActions | null>(null);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const [shareStatus, setShareStatus] = useState<string | null>(null);
   const planningTaskRef = useRef<number | null>(null);
   const storyFocusDispatchedRef = useRef<string | null>(null);
   const storyFocusSheetOpenedRef = useRef(false);
@@ -451,14 +449,27 @@ export function ProjectDetailPage() {
                     disabled={projectMutationPending || projectWorkflowOpen}
                     onClick={() => dispatch({ type: "story.refine", story: project })}
                   />
-                  <NativeShareButton
+                  <DetailActionMenu label={strings.detailActions} resetKey={project.id} disabled={projectMutationPending}
+                    items={[
+                      ...project.availableActions.map((action) => ({
+                        key: `lifecycle-${action}`, icon: "project" as const,
+                        label: projectWorkflowLabel(action, strings, project.status),
+                        onClick: () => dispatch(storyWorkflowCommand(project, action)),
+                      })),
+                      { key: "discussion", icon: "followUp", label: project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
+                        onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.then((confirmed) => {
+                          if (confirmed && "availableActions" in confirmed) setConfirmedProject(confirmed);
+                        })?.catch(() => {}); } },
+                      { key: "structure", icon: "split", label: strings.actionTileLabels["task.structure"], onClick: () => dispatch({ type: "story.structure", story: project }) },
+                      { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => { setAttachmentError(null); setAttachmentOpen(true); } },
+                    ]}>
+                  <NativeShareButton showLabel
                     title={project.title}
                     text={serializeProjectForShare(project, locale)}
                     url={buildProjectShareUrl(project.id)}
-                    showStatus={false}
-                    onStatusChange={setShareStatus}
-                  />
-                  <CalendarExportButton
+                    showStatus
+                        />
+                  <CalendarExportButton showLabel
                     item={{
                       kind: "project",
                       id: project.id,
@@ -466,27 +477,13 @@ export function ProjectDetailPage() {
                       notes: project.notes,
                       dueDate: project.dueDate,
                     }}
-                    showStatus={false}
-                    onStatusChange={setShareStatus}
-                  />
-                  <IconActionButton
-                    kind="attachment"
-                    label={strings.attach}
-                    disabled={projectMutationPending}
-                    onClick={() => {
-                      setAttachmentError(null);
-                      setAttachmentOpen(true);
-                    }}
-                  />
+                    showStatus
+                        />
+
+                    <button type="button" className="btn btn-danger detail-menu-danger" disabled={projectMutationPending} onClick={() => setConfirmingDelete(true)}>{strings.deleteProject}</button>
+                  </DetailActionMenu>
                 </div>
               </div>
-              {shareStatus ? (
-                <div className="sheet-header-status project-page-header-status">
-                  <span className="text-muted native-share-status" role="status">
-                    {shareStatus}
-                  </span>
-                </div>
-              ) : null}
               <div
                 className="project-detail-overview"
                 aria-label={strings.projectOverview}
@@ -535,23 +532,8 @@ export function ProjectDetailPage() {
                     ))}
                   </div>
                 ) : null}
-                <div className="detail-meta-row">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={projectMutationPending}
-                    aria-pressed={project.discussionRequested}
-                    onClick={async () => {
-                      try {
-                        const confirmed = await dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested });
-                        if (confirmed && "availableActions" in confirmed) setConfirmedProject(confirmed);
-                      } catch {
-                        // The shared action provider renders the mutation error below.
-                      }
-                    }}
-                  >
-                    {project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion}
-                  </button>
+                <div className="detail-summary">
+                  <div className="detail-summary-group detail-meta-row" aria-label={strings.driver}>
                   {owner ? (
                     <DetailPropertyPill
                       label={strings.driver}
@@ -571,7 +553,7 @@ export function ProjectDetailPage() {
                   )}
                   {project.parentId === null ? (
                     <DetailPropertyPill
-                      label={strings.scope}
+                      label={strings.detailScope}
                       disabled={projectMutationPending}
                       onClick={async () => {
                         setContentError(null);
@@ -596,86 +578,26 @@ export function ProjectDetailPage() {
                       </span>
                     </DetailPropertyPill>
                   ) : null}
-                  {dueDate ? (
-                    <DetailPropertyPill
-                      label={strings.due}
-                      disabled={projectMutationPending}
-                      onClick={() =>
-                        dispatch({ type: "story.deadline", story: project })
-                      }
-                    >
-                      <span>{dueDate}</span>
+
+                  </div>
+                  <div className="detail-summary-group detail-meta-row" aria-label={strings.planning}>
+                    <DetailPropertyPill label={dueDate ? strings.due : undefined} variant={dueDate ? "set" : "unset"} disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.deadline", story: project })}>{dueDate || strings.addDeadline}</DetailPropertyPill>
+                    {showProjectRevisit ? <DetailPropertyPill label={revisitDate ? strings.projectReviewOn : undefined}
+                      variant={revisitDate ? "set" : "unset"} disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.defer", story: project })}>{revisitDate || strings.projectAddReviewOn}</DetailPropertyPill> : null}
+                  </div>
+                  <div className="detail-summary-group detail-shortcuts detail-meta-row">
+                    <DetailPropertyPill ariaLabel={project.tags.length ? `${strings.tags}: ${project.tags.map((tag) => tag.name).join(", ")}` : undefined} variant={project.tags.length ? "set" : "unset"} disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.tags", story: project })}>
+                      {project.tags.length ? <>{strings.tags}: {project.tags.map((tag) => <span key={tag.id}>{tag.name}</span>)}</> : strings.addTags}
                     </DetailPropertyPill>
-                  ) : null}
-                  {revisitDate ? (
-                    <DetailPropertyPill
-                      label={strings.projectRevisitDate}
-                      disabled={projectMutationPending}
-                      onClick={() =>
-                        dispatch({ type: "story.defer", story: project })
-                      }
-                    >
-                      <span>{revisitDate}</span>
+                    <DetailPropertyPill ariaLabel={project.contexts.length ? `${strings.physicalContexts}: ${project.contexts.map((context) => context.name).join(", ")}` : undefined} variant={project.contexts.length ? "set" : "unset"} disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.contexts", story: project })}>
+                      {project.contexts.length ? <>{strings.physicalContexts}: {project.contexts.map((context) => <span key={context.id}>{context.name}</span>)}</> : strings.addContexts}
                     </DetailPropertyPill>
-                  ) : null}
-                  {!dueDate ? (
-                    <DetailPropertyPill
-                      variant="unset"
-                      disabled={projectMutationPending}
-                      onClick={() =>
-                        dispatch({ type: "story.deadline", story: project })
-                      }
-                    >
-                      {strings.addDeadline}
-                    </DetailPropertyPill>
-                  ) : null}
-                  {showProjectRevisit && !revisitDate ? (
-                    <DetailPropertyPill
-                      variant="unset"
-                      disabled={projectMutationPending}
-                      onClick={() =>
-                        dispatch({ type: "story.defer", story: project })
-                      }
-                    >
-                      {strings.projectRevisitDate}
-                    </DetailPropertyPill>
-                  ) : null}
-                  {project.tags.length > 0 ? (
-                    <DetailPropertyPill
-                      ariaLabel={strings.tags}
-                      extraClassName="project-detail-label-button"
-                      disabled={projectMutationPending}
-                      onClick={() => dispatch({ type: "story.tags", story: project })}
-                    >
-                      <TaskCardTags tags={project.tags} />
-                    </DetailPropertyPill>
-                  ) : (
-                    <DetailPropertyPill
-                      variant="unset"
-                      disabled={projectMutationPending}
-                      onClick={() => dispatch({ type: "story.tags", story: project })}
-                    >
-                      {strings.addTags}
-                    </DetailPropertyPill>
-                  )}
-                  {project.contexts.length > 0 ? (
-                    <DetailPropertyPill
-                      ariaLabel={strings.physicalContexts}
-                      extraClassName="project-detail-label-button"
-                      disabled={projectMutationPending}
-                      onClick={() => dispatch({ type: "story.contexts", story: project })}
-                    >
-                      <TaskCardTags tags={[]} contexts={project.contexts} />
-                    </DetailPropertyPill>
-                  ) : (
-                    <DetailPropertyPill
-                      variant="unset"
-                      disabled={projectMutationPending}
-                      onClick={() => dispatch({ type: "story.contexts", story: project })}
-                    >
-                      {strings.addContexts}
-                    </DetailPropertyPill>
-                  )}
+
+                  </div>
                 </div>
               </div>
             </div>
@@ -692,7 +614,7 @@ export function ProjectDetailPage() {
               />
             ) : null}
             <ExternalRefBadge refs={project.externalRefs ?? []} />
-            <section className="section project-notes-section">
+            <section className={`section project-notes-section${!project.notes && !notesEditing ? " detail-empty-content" : ""}`}>
               <div className="row-between">
                 <h2 className="section-title" id="project-notes-label">
                   {strings.notes}
@@ -767,12 +689,13 @@ export function ProjectDetailPage() {
                     </span>
                   ) : null}
                 </h2>
-                <IconActionButton
+                {criteriaTotal > 0 ? <IconActionButton
                   kind="criteria"
                   label={strings.structureEditOutcome}
                   disabled={projectMutationPending}
                   onClick={() => dispatch({ type: "story.editOutcome", story: project })}
-                />
+                /> : <button type="button" className="btn btn-sm" disabled={projectMutationPending}
+                  onClick={() => dispatch({ type: "story.editOutcome", story: project })}>{strings.structureEditOutcome}</button>}
               </div>
               {criteriaTotal > 0 ? (
                 <span className="criteria-progress" aria-hidden="true">
@@ -785,7 +708,7 @@ export function ProjectDetailPage() {
                 criteria={project.acceptanceCriteria}
               />
             </section>
-            <section className="section">
+            <section className="section project-content-tasks">
               <PageHeader
                 title={strings.taskSummary}
                 headingLevel={2}
@@ -818,6 +741,7 @@ export function ProjectDetailPage() {
                   ) : null
                 }
               />
+              {!project.tasks.length && !project.childStories?.length ? <p className="text-muted">{strings.projectEmptyStepsHint}</p> : null}
               {project.childStories?.length ? (
                 <ul className="project-story-list">
                   {project.childStories.map((story) => (
@@ -825,7 +749,7 @@ export function ProjectDetailPage() {
                   ))}
                 </ul>
               ) : null}
-              <TaskOutline
+              {project.tasks.length > 0 ? <TaskOutline
                 key={project.id}
                 tasks={project.tasks}
                 emptyMessage={strings.noTasks}
@@ -837,27 +761,16 @@ export function ProjectDetailPage() {
                     (project.additionalNextActions ?? []).map((t) => t.id),
                   ),
                 }}
-              />
+              /> : null}
             </section>
             <RecentActivity
               key={`project-activity-${project.id}`}
               filters={{ projectId: project.id }}
               idPrefix={`project-${project.id}-activity`}
-            />
-            <WorkItemDetailDisclosure
-              title={strings.projectDangerSection}
-              resetKey={project.id}
-              className="detail-danger-section"
             >
-              <button
-                type="button"
-                className="btn btn-danger btn-block"
-                disabled={projectMutationPending}
-                onClick={() => setConfirmingDelete(true)}
-              >
-                {strings.deleteProject}
-              </button>
-            </WorkItemDetailDisclosure>
+              <p className="text-muted task-detail-metadata">{strings.created}: {formatDateTime(project.createdAt, locale)} · {strings.updated}: {formatDateTime(project.updatedAt, locale)}</p>
+            </RecentActivity>
+
           </>
         ) : null}
         {confirmingDelete && project ? (

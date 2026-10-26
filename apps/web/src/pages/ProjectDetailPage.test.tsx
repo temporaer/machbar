@@ -5,6 +5,7 @@ import { markdownValue, selectMarkdown, setMarkdownValue } from "../test/markdow
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import type { Task } from "@machbar/shared";
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
@@ -45,6 +46,8 @@ vi.mock("../lib/api", () => ({
     checkCriterion: vi.fn(),
     updateProject: vi.fn(),
     completeProject: vi.fn(),
+    returnProjectToBacklog: vi.fn(),
+    activateProject: vi.fn(),
     acknowledgeProjectReview: vi.fn(),
     startWorkRefinement: vi.fn(),
     getActivity: vi.fn(),
@@ -54,6 +57,11 @@ vi.mock("../lib/api", () => ({
 }));
 
 const mockedApi = vi.mocked(api, true);
+
+async function openDetailActions() {
+  await userEvent.click(await screen.findByRole("button", { name: "Aktionen" }));
+}
+
 
 function ProjectRouteLocation() {
   const location = useLocation();
@@ -334,13 +342,15 @@ describe("ProjectDetailPage task explanations", () => {
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
     mockedApi.updateProject.mockResolvedValue({ ...project, revision: 2, discussionRequested: true });
     renderProjectRoute("/projects/5");
+    await openDetailActions();
     const button = await screen.findByRole("button", { name: strings.addDiscussion });
-    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveTextContent(strings.addDiscussion);
     await userEvent.click(button);
     await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(5, {
       discussionRequested: true, expectedRevision: 1,
     }));
-    expect(await screen.findByRole("button", { name: strings.removeDiscussion })).toHaveAttribute("aria-pressed", "true");
+    await openDetailActions();
+    expect(await screen.findByRole("button", { name: strings.removeDiscussion })).toBeVisible();
   });
 
   it("launches AI from the header action group and keeps controls together while editing", async () => {
@@ -355,7 +365,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(sparkles).toHaveAttribute("title", strings.workRefinement);
     await userEvent.click(within(actions).getByRole("button", { name: strings.edit }));
     expect(within(actions).getByRole("button", { name: strings.edit })).toBeDisabled();
-    expect(within(actions).getByRole("button", { name: strings.attach })).toBeEnabled();
+    expect(within(actions).getByRole("button", { name: "Aktionen" })).toBeEnabled();
     await userEvent.click(within(header).getByRole("button", { name: strings.cancel }));
     await userEvent.click(sparkles);
     const launcher = await screen.findByRole("dialog", { name: `${strings.workRefinement}: ${project.title}` });
@@ -451,7 +461,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
     expect(
       within(overview).queryByRole("button", {
-        name: /Wiedervorlage.*10\.09\.2026/,
+        name: /Wieder ansehen am.*10\.09\.2026/,
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -556,6 +566,77 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each(["active", "backlog", "completed", "archived"] as const)("keeps %s projects role-specific, including empty outcome and next steps", async (status) => {
+    const project = { ...makeProject({ id: 42, title: `Empty ${status}`, status, revisitAt: "2026-09-20T06:00:00Z" }), tasks: [], ...(status === "active" ? { stuckReason: "blocked_without_clear_path" as const } : {}) };
+    mockedApi.getProject.mockResolvedValue(project);
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: project.title });
+    expect(screen.getByRole("button", { name: strings.addDriver })).toBeVisible();
+    expect(screen.getByRole("button", { name: strings.addDeadline })).toBeVisible();
+    expect(screen.getByRole("button", { name: strings.addTags })).toBeVisible();
+    expect(screen.getByRole("button", { name: strings.addContexts })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Weitere Optionen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Erst wieder anzeigen ab|Wartet auf|Erinnern am|Wiederholen alle|Priorität setzen|Kann erst beginnen nach|Geplant/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Wieder ansehen am/ }) !== null).toBe(status === "backlog");
+    const outcome = screen.getByRole("heading", { name: strings.outcomeSectionTitle }).closest("section")!;
+    expect(outcome).not.toHaveClass("detail-empty-content");
+    expect(within(outcome).getByText(strings.outcomeSectionEmpty)).toBeVisible();
+    expect(within(outcome).getByRole("button", { name: strings.structureEditOutcome })).toBeVisible();
+    expect(screen.getByText(strings.projectEmptyStepsHint)).toBeVisible();
+    if (status === "active") expect(screen.getByRole("heading", { name: strings.stuckProjectHeading })).toBeVisible();
+    expect(screen.getByText(/Aufgaben: 0 offen/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: strings.addNextAction }) !== null).toBe(status === "active" || status === "backlog");
+    await openDetailActions();
+    const menu = screen.getByRole("dialog", { name: "Aktionen" });
+    for (const action of project.availableActions) {
+      expect(within(menu).getByRole("button", { name: projectWorkflowLabel(action, strings, status) })).toBeVisible();
+    }
+    expect(within(menu).queryByRole("button", { name: /Priorität|Wiederholen|Erinnern|Jetzt klären|weitere nächste Aktion/ })).not.toBeInTheDocument();
+  });
+
+  it("does not show a backlog revisit when the project is archived via archivedAt", async () => {
+    mockedApi.getProject.mockResolvedValue({ ...makeProject({ id: 42, status: "backlog", archivedAt: "2026-10-20T06:00:00Z", revisitAt: "2026-10-30T06:00:00Z" }), tasks: [] });
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByRole("button", { name: /Wieder ansehen am/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: strings.addNextAction })).not.toBeInTheDocument();
+  });
+
+  it.each(["active", "archived"] as const)("defers a %s project through the atomic lifecycle command with explicit withdrawal", async (status) => {
+    const child = makeTask({ id: 73, revision: 4, projectId: 42, scheduledDate: "2026-10-27" });
+    const project = { ...makeProject({ id: 42, title: "Commitments", status, ownerMemberId: 1, revision: 3 }), tasks: [child] };
+    mockedApi.getProject.mockResolvedValue(project);
+    mockedApi.returnProjectToBacklog.mockResolvedValue({ ...project, status: "backlog", revision: 4, archivedAt: null });
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: project.title });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: status === "active" ? strings.returnToBacklogStory : strings.restoreProjectToBacklog }));
+    const dialog = await screen.findByRole("dialog", { name: status === "active" ? strings.deferProject : strings.restoreProjectToBacklog });
+    expect(within(dialog).getByText(strings.projectDeferQuestion)).toBeVisible();
+    const withdraw = within(dialog).getByRole("checkbox", { name: strings.withdrawProjectCommitments });
+    expect(withdraw).not.toBeChecked();
+    expect(mockedApi.returnProjectToBacklog).not.toHaveBeenCalled();
+    await userEvent.click(withdraw);
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.projectDeferWithoutRevisit }));
+    await waitFor(() => expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(42, {
+      expectedRevision: 3, revisitAt: null, withdrawCommitments: true, expectedTaskRevisions: [{ taskId: 73, revision: 4 }],
+    }));
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("keeps driver decisions in the project activation workflow", async () => {
+    const project = { ...makeProject({ id: 42, title: "Needs driver", status: "backlog", ownerMemberId: null }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: project.title });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.activateStory }));
+    const dialog = await screen.findByRole("dialog", { name: strings.activateStory });
+    expect(within(dialog).getByRole("combobox", { name: strings.commitmentDriverFor(project.title) })).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: strings.activateStory })).toBeDisabled();
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+  });
+
   it("opens the canonical defer workflow from a backlog project's Wiedervorlage property", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({
@@ -572,7 +653,7 @@ describe("ProjectDetailPage task explanations", () => {
     const overview = await screen.findByLabelText(strings.projectOverview);
     await userEvent.click(
       within(overview).getByRole("button", {
-        name: /Wiedervorlage.*20\.09\.2026/,
+        name: /Wieder ansehen am.*20\.09\.2026/,
       }),
     );
 
@@ -754,7 +835,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
     const projectHeader = screen
-      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/, hidden: true })
       .closest<HTMLElement>(".page-header")!;
     const notesSection = screen
       .getByRole("heading", { name: "Notizen" })
@@ -811,7 +892,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     const projectHeader = screen
-      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/, hidden: true })
       .closest<HTMLElement>(".page-header")!;
     await userEvent.click(
       within(projectHeader).getByRole("button", { name: "Bearbeiten" }),
@@ -960,7 +1041,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     await userEvent.click(
-      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
     const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
     await userEvent.click(deleteButton);
@@ -984,7 +1065,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     await userEvent.click(
-      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
     await userEvent.click(screen.getByRole("button", { name: strings.deleteProject }));
 
@@ -1001,20 +1082,12 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("styles the danger-zone disclosure and delete button like Task's", async () => {
+  it("separates destructive deletion inside the shared header action menu", async () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
-
-    const dangerSection = screen
-      .getByRole("heading", { name: strings.projectDangerSection, level: 3 })
-      .closest("details")!;
-    expect(dangerSection).toHaveClass("detail-danger-section");
-
-    await userEvent.click(
-      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
-    );
-    const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
-    expect(deleteButton).toHaveClass("btn-danger", "btn-block");
+    await openDetailActions();
+    expect(screen.getByRole("button", { name: strings.deleteProject })).toHaveClass("btn-danger", "detail-menu-danger");
+    expect(screen.queryByRole("heading", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
   it("shows Calendar export beside Share only for a dated Project", async () => {
@@ -1029,6 +1102,7 @@ describe("ProjectDetailPage task explanations", () => {
     });
     renderWithProviders(<ProjectDetailPage />);
 
+    await openDetailActions();
     expect(
       await screen.findByRole("button", { name: "Teilen" }),
     ).toBeInTheDocument();
@@ -1036,17 +1110,18 @@ describe("ProjectDetailPage task explanations", () => {
       screen.getByRole("button", { name: "In Kalender" }),
     ).toBeInTheDocument();
     const titleRow = screen
-      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/, hidden: true })
       .closest(".project-page-title-row");
     const actions = titleRow?.querySelector(".project-page-actions");
     expect(titleRow).toHaveClass("project-page-title-row");
     expect(actions).toHaveClass("project-page-actions");
-    expect(within(actions as HTMLElement).getAllByRole("button")).toHaveLength(5);
+    expect(within(actions as HTMLElement).getAllByRole("button", { hidden: true })).toHaveLength(3);
   });
 
   it("does not show Calendar export for a Project without a deadline", async () => {
     renderWithProviders(<ProjectDetailPage />);
 
+    await openDetailActions();
     expect(
       await screen.findByRole("button", { name: "Teilen" }),
     ).toBeInTheDocument();
@@ -1055,7 +1130,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("surfaces share/calendar feedback in one shared header status slot, not per-button", async () => {
+  it("keeps sharing feedback visible in the header action menu", async () => {
     Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -1064,20 +1139,26 @@ describe("ProjectDetailPage task explanations", () => {
     });
     renderWithProviders(<ProjectDetailPage />);
 
+    await openDetailActions();
     const shareButton = await screen.findByRole("button", { name: "Teilen" });
     await userEvent.click(shareButton);
 
-    const slot = await waitFor(() => {
-      const element = document.querySelector(".sheet-header-status");
-      expect(element).not.toBeNull();
-      return element as HTMLElement;
-    });
-    expect(within(slot).getByRole("status")).toHaveTextContent(
-      "In die Zwischenablage kopiert",
-    );
-    expect(
-      shareButton.closest(".native-share-control")?.querySelector("[role='status']"),
-    ).not.toBeInTheDocument();
+    expect(within(screen.getByRole("dialog", { name: "Aktionen" })).getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");
+    expect(shareButton.closest(".native-share-control")?.querySelector("[role='status']")).toBeVisible();
+  });
+
+  it("returns focus to Actions after opening and cancelling an attachment", async () => {
+    mockedApi.getProject.mockResolvedValue({ ...makeProject({ id: 42, title: "Attachment focus" }), tasks: [] });
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: "Attachment focus" });
+    const trigger = screen.getByRole("button", { name: "Aktionen" });
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    const attachment = await screen.findByRole("dialog", { name: "Anhang" });
+    expect(screen.queryByRole("dialog", { name: "Aktionen" })).not.toBeInTheDocument();
+    await userEvent.click(within(attachment).getByRole("button", { name: "Schließen" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
 
   it("inserts a header attachment at the active notes cursor without saving", async () => {
@@ -1102,6 +1183,7 @@ describe("ProjectDetailPage task explanations", () => {
     const notes = within(notesSection).getByRole("textbox") as HTMLElement;
     selectMarkdown(notes, 7);
 
+    await openDetailActions();
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),
@@ -1136,6 +1218,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Sommerfest planen");
 
+    await openDetailActions();
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),

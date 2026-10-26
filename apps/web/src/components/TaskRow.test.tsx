@@ -540,7 +540,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
       await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "In einer Weile" })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "+ Wiedervorlage" }));
+    await userEvent.click(screen.getByRole("button", { name: "+ Erst wieder anzeigen ab" }));
     expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
   });
 

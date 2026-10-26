@@ -60,6 +60,14 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
+async function openDetailActions() {
+  await userEvent.click(await screen.findByRole("button", { name: "Aktionen" }));
+}
+async function openDetailOptions() {
+  await userEvent.click(screen.getByRole("button", { name: "Weitere Optionen" }));
+}
+
+
 function OpenerHarness({
   taskId,
   focusField,
@@ -350,6 +358,7 @@ describe("TaskDetailSheet", () => {
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
 
+    await openDetailActions();
     expect(
       await screen.findByRole("button", { name: "Teilen" }),
     ).toBeInTheDocument();
@@ -383,6 +392,7 @@ describe("TaskDetailSheet", () => {
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
 
+    await openDetailActions();
     expect(
       await screen.findByRole("button", { name: "Teilen" }),
     ).toBeInTheDocument();
@@ -443,6 +453,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Beleg prüfen");
 
+    await openDetailActions();
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),
@@ -458,6 +469,21 @@ describe("TaskDetailSheet", () => {
     expect(screen.queryByRole("dialog", { name: "Anhang" })).not.toBeInTheDocument();
   });
 
+  it("returns focus to Actions after opening and cancelling an attachment", async () => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "Attachment focus" }));
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Attachment focus");
+    const trigger = screen.getByRole("button", { name: "Aktionen" });
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    const attachment = await screen.findByRole("dialog", { name: "Anhang" });
+    expect(screen.queryByRole("dialog", { name: "Aktionen" })).not.toBeInTheDocument();
+    await userEvent.click(within(attachment).getByRole("button", { name: "Schließen" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
   it("inserts a header attachment at the active notes cursor without saving", async () => {
     const task = makeTask({ id: 42, title: "Beleg prüfen", notes: "Vorher Nachher" });
     mockedApi.getTask.mockResolvedValue(task);
@@ -467,6 +493,7 @@ describe("TaskDetailSheet", () => {
     const notes = await openNotesEditor();
     selectMarkdown(notes, 7);
 
+    await openDetailActions();
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),
@@ -479,91 +506,22 @@ describe("TaskDetailSheet", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("reads as a document: no scalar-property editors, no empty-state prose", async () => {
-    mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 42, title: "Strukturierte Aufgabe" }),
-    );
+  it("groups a simple document compactly with direct shortcuts and timestamps in history", async () => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "DB Familienticket" }));
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
-    await waitForTaskTitle("Strukturierte Aufgabe");
-
-    // Authored content and the two real collections stay; title and notes
-    // read as document headings, not embedded form fields, and every scalar
-    // property is a command, not an editor.
-    expect(
-      screen.getByRole("heading", { name: /Strukturierte Aufgabe/, level: 1 }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { name: "Notizen", level: 2 }),
-    ).toBeVisible();
-    for (const heading of ["Teilaufgaben", "Abhängigkeiten"]) {
-      expect(
-        screen.getByRole("heading", { name: heading, level: 3 }),
-      ).toBeVisible();
+    await waitForTaskTitle("DB Familienticket");
+    const summary = document.querySelector<HTMLElement>(".detail-summary")!;
+    for (const name of ["+ Planen", "+ Deadline hinzufügen", "+ Zuweisen", "+ Tags", "+ Orte", "Weitere Optionen"]) {
+      expect(within(summary).getByRole("button", { name })).toBeVisible();
     }
-
-    for (const label of [
-      "Status",
-      "Priorität",
-      "Fällig",
-      "Eingeplant für",
-      "Worauf wartet die Aufgabe?",
-      "Wiederholen nach Tagen",
-    ]) {
-      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
-    }
-    expect(
-      screen.queryByRole("group", { name: "Zuständig" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("group", { name: "Schnell planen" }),
-    ).not.toBeInTheDocument();
-
-    // The old inspector's empty-state prose is gone with its sections.
-    for (const prose of [
-      "Keine Termine oder Priorität",
-      "Keine Notizen oder Tags",
-      "Nicht blockiert",
-    ]) {
-      expect(screen.queryByText(prose)).not.toBeInTheDocument();
-    }
-
-    // Unset rare properties show nothing at all; unset common ones offer a
-    // lightweight affordance that dispatches the same command.
-    const meta = document.querySelector<HTMLElement>(".detail-meta-row")!;
-    expect(
-      within(meta).queryByRole("button", { name: /Priorität/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(meta).queryByRole("button", { name: /Wiederholung/ }),
-    ).not.toBeInTheDocument();
-    for (const affordance of ["+ Planen", "+ Wiedervorlage", "+ Warten auf", "+ Zuweisen"]) {
-      expect(within(meta).getByRole("button", { name: affordance })).toBeVisible();
-    }
-
-    // Created/updated timestamps are always visible near the top, not
-    // buried inside a collapsed disclosure.
+    expect(screen.queryByRole("button", { name: "Erinnerung" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Erstellt:/)).not.toBeVisible();
+    await userEvent.click(screen.getByText("Letzte Aktivitäten"));
     expect(screen.getByText(/Erstellt:/)).toBeVisible();
-
-    const activity = screen
-      .getByRole("heading", { name: "Letzte Aktivitäten", level: 2 })
-      .closest("details");
-    const danger = screen
-      .getByRole("heading", { name: "Gefahrenbereich", level: 3 })
-      .closest("details");
-    expect(activity).not.toHaveAttribute("open");
-    expect(danger).not.toHaveAttribute("open");
-
-    // There is no separate "Organisation" disclosure duplicating
-    // change-project/change-parent — those live once, in "Weitere Aktionen".
-    expect(
-      screen.queryByRole("heading", { name: "Organisation", level: 3 }),
-    ).not.toBeInTheDocument();
-
-    await userEvent.click(
-      screen.getByRole("heading", { name: "Gefahrenbereich", level: 3 }),
-    );
-    expect(screen.getByRole("button", { name: "Löschen" })).toBeVisible();
+    await openDetailActions();
+    expect(screen.getByRole("button", { name: "Löschen" })).toHaveClass("detail-menu-danger");
   });
 
   it("deletes a task only after an in-app confirm, not window.confirm", async () => {
@@ -577,7 +535,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Nutzloses Ding");
 
     await userEvent.click(
-      screen.getByRole("heading", { name: "Gefahrenbereich", level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Löschen" }));
     expect(confirmSpy).not.toHaveBeenCalled();
@@ -602,35 +560,22 @@ describe("TaskDetailSheet", () => {
     confirmSpy.mockRestore();
   });
 
-  it("keeps Weitere Aktionen trimmed to priority/recurrence/additional-next-action, not movement or lifecycle", async () => {
-    mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 42, title: "Vollständige Aufgabe", projectId: 7 }),
-    );
+  it("offers unset optional properties in one labelled menu without duplicating tag/place access", async () => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "Vollständige Aufgabe", projectId: 7 }));
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Vollständige Aufgabe");
-
-    await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
-    );
-    for (const label of ["Priorität setzen", "Wiederholung einrichten"]) {
-      expect(screen.getByRole("button", { name: label })).toBeVisible();
+    await openDetailOptions();
+    const menu = screen.getByRole("dialog", { name: "Weitere Optionen" });
+    for (const name of ["Erst wieder anzeigen ab …", "Erinnern am …", "Wartet auf …", "Wiederholen alle …", "Priorität setzen …", "Kann erst beginnen nach …"]) {
+      expect(within(menu).getByRole("button", { name })).toBeVisible();
     }
-    // Movement (split/move/convert/successor) now lives in the row rail's
-    // Struktur sheet, and lifecycle in the status rail — neither reappears
-    // as an action tile here.
-    for (const label of [
-      "In Projekt verschieben",
-      "Übergeordnete Aufgabe ändern",
-      "Nächsten Schritt hinzufügen",
-      "Zum Projekt machen",
-      "Verwerfen",
-    ]) {
-      expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
-    }
+    expect(within(menu).queryByRole("button", { name: /Tags|Orte/ })).not.toBeInTheDocument();
+    await userEvent.click(within(menu).getByRole("button", { name: "Schließen" }));
+    expect(screen.getByRole("button", { name: "Weitere Optionen" })).toHaveFocus();
   });
 
-  it("exposes Split only from the Teilaufgaben section, not duplicated in Weitere Aktionen", async () => {
+  it("keeps the contextual Split action and routes header structure through the existing workflow", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
         id: 42,
@@ -649,11 +594,10 @@ describe("TaskDetailSheet", () => {
     ).toBeVisible();
 
     await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
-    expect(
-      screen.getAllByRole("button", { name: "Aufgabe aufteilen" }),
-    ).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Aufgabe aufteilen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Struktur ändern" })).toBeVisible();
   });
 
   it("offers to mark or unmark a project task as an additional Next Action, but only when it has a project", async () => {
@@ -668,7 +612,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Menü abstimmen");
 
     await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
     await userEvent.click(
       screen.getByRole("button", { name: "Als weitere nächste Aktion markieren" }),
@@ -680,6 +624,7 @@ describe("TaskDetailSheet", () => {
         expectedRevision: 1,
       }),
     );
+    await openDetailActions();
     await screen.findByRole("button", {
       name: "Nicht mehr als weitere nächste Aktion markieren",
     });
@@ -694,7 +639,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Vollständige Aufgabe");
 
     await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+      screen.getByRole("button", { name: "Aktionen" }),
     );
     expect(
       screen.queryByRole("button", { name: "Als weitere nächste Aktion markieren" }),
@@ -907,7 +852,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Rechnung prüfen");
 
-    await userEvent.click(screen.getByRole("button", { name: "+ Warten auf" }));
+    await openDetailOptions();
+    await userEvent.click(screen.getByRole("button", { name: "Wartet auf …" }));
 
     // A task with no external wait resolves to the shared planning workflow.
     expect(await screen.findByLabelText("Wartet auf")).toBeInTheDocument();
@@ -1057,7 +1003,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Ohne Erinnerung");
 
-    const addButton = screen.getByRole("button", { name: "+ Erinnerung" });
+    await openDetailOptions();
+    const addButton = screen.getByRole("button", { name: "Erinnern am …" });
     await userEvent.click(addButton);
     expect(
       await screen.findByRole("heading", { name: /Erinnerungen/ }),
@@ -1078,7 +1025,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Erfassung");
 
-    await userEvent.click(screen.getByRole("button", { name: "+ Erinnerung" }));
+    await openDetailOptions();
+    await userEvent.click(screen.getByRole("button", { name: "Erinnern am …" }));
     expect(
       await screen.findByRole("heading", { name: /Erinnerungen/ }),
     ).toBeInTheDocument();
@@ -1100,7 +1048,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Mehrere Erinnerungen");
 
-    const remindersButton = screen.getByRole("button", { name: /Erinnerungen/ });
+    const remindersButton = screen.getByRole("button", { name: /Erinnerung/ });
     expect(remindersButton).toHaveTextContent("+2");
 
     await userEvent.click(remindersButton);
@@ -1176,7 +1124,7 @@ describe("TaskDetailSheet", () => {
     const heading = screen.getByRole("heading", { name: "Details" });
     const header = heading.closest<HTMLElement>(".sheet-header");
     expect(header).not.toBeNull();
-    expect(within(header!).getByRole("button", { name: "Teilen" })).toBeInTheDocument();
+    expect(within(header!).getByRole("button", { name: "Aktionen" })).toBeInTheDocument();
     expect(within(header!).getByRole("button", { name: "Schließen" })).toHaveClass(
       "icon-action-button",
     );
@@ -1282,7 +1230,7 @@ describe("TaskDetailSheet", () => {
     // command that reaches the same sheet as the rail and keyboard.
     expect(screen.queryByLabelText("Eingeplant für")).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: /Geplant für.*04\.09\.2026/ }),
+      screen.getByRole("button", { name: new RegExp(`${field === "dueDate" ? "Fällig" : "Geplant"}.*04\\.09\\.2026`) }),
     );
 
     const planning = await screen.findByRole("dialog", { name: "Planung" });
@@ -1309,7 +1257,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Noch nicht verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: "+ Wiedervorlage" }));
+    await openDetailOptions();
+    await userEvent.click(screen.getByRole("button", { name: "Erst wieder anzeigen ab …" }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung" }),
@@ -1328,7 +1277,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Abends verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: /Wiedervorlage.*18:00/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Erst wieder anzeigen ab.*18:00/ }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung" }),
@@ -1350,7 +1299,7 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(
       screen.getByRole("button", {
-        name: /Geplant für.*10\.09\.2026.*Fällig 20\.09\.2026/,
+        name: /Fällig.*20\.09\.2026/,
       }),
     );
 
@@ -1376,7 +1325,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Priorisierte Aufgabe");
 
     expect(screen.queryByLabelText("Priorität")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Priorität.*3/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Priorität.*Normal/ }));
 
     const choices = await screen.findByRole("group", { name: "Priorität" });
     expect(within(choices).getByRole("button", { name: "2" })).toBeInTheDocument();
@@ -1390,7 +1339,7 @@ describe("TaskDetailSheet", () => {
     );
   });
 
-  it("omits rare unset properties entirely and keeps them reachable as commands", async () => {
+  it("opens an unset priority from More options through the canonical command", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 62, title: "Schlichte Aufgabe" }),
     );
@@ -1406,12 +1355,37 @@ describe("TaskDetailSheet", () => {
     ).not.toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+      screen.getByRole("button", { name: "Weitere Optionen" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Priorität setzen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Priorität setzen …" }));
     expect(
       await screen.findByRole("group", { name: "Priorität" }),
     ).toBeInTheDocument();
+  });
+
+  it("moves an optional priority between add and direct-edit access when set and cleared", async () => {
+    let current = makeTask({ id: 62, title: "DB Familienticket", priority: null });
+    mockedApi.getTask.mockImplementation(async () => current);
+    mockedApi.updateTask.mockImplementation(async (_id, patch) => {
+      current = { ...current, priority: patch.priority ?? null, revision: current.revision + 1 };
+      return current;
+    });
+    renderSheet(62);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle(current.title);
+    await openDetailOptions();
+    await userEvent.click(screen.getByRole("button", { name: "Priorität setzen …" }));
+    await userEvent.click(await screen.findByRole("button", { name: "2" }));
+    const priority = await screen.findByRole("button", { name: "Priorität Hoch" });
+    await openDetailOptions();
+    expect(screen.queryByRole("button", { name: "Priorität setzen …" })).not.toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Weitere Optionen" })).getByRole("button", { name: "Schließen" }));
+    await userEvent.click(priority);
+    await userEvent.click(await screen.findByRole("button", { name: strings.none }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Priorität Hoch" })).not.toBeInTheDocument());
+    await openDetailOptions();
+    expect(screen.getByRole("button", { name: "Priorität setzen …" })).toBeVisible();
+    expect(mockedApi.updateTask).toHaveBeenLastCalledWith(62, { priority: null, expectedRevision: 2 });
   });
 
   it("shows an active recurrence as a value that opens task planning", async () => {
@@ -1430,7 +1404,7 @@ describe("TaskDetailSheet", () => {
 
     expect(screen.queryByLabelText("Wiederholen nach Tagen")).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: /Wiederholung.*Alle 7 Tage/ }),
+      screen.getByRole("button", { name: /Wiederholt sich alle 7 Tage/ }),
     );
 
     expect(await screen.findByLabelText("Wiederholen nach Tagen")).toHaveValue(7);
@@ -1508,8 +1482,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Angebot prüfen");
 
-    const metaRow = document.querySelector<HTMLElement>(".detail-meta-row")!;
-    await userEvent.click(within(metaRow).getByRole("button", { name: "Tags" }));
+    const metaRow = document.querySelector<HTMLElement>(".detail-summary")!;
+    await userEvent.click(within(metaRow).getByRole("button", { name: /^Tags:/ }));
     await userEvent.click(
       await screen.findByRole("button", { name: "Ausschließen" }),
     );
@@ -1747,9 +1721,9 @@ describe("TaskDetailSheet", () => {
 
     // Trigger an unrelated patch (priority change) which reloads this same task.
     await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+      screen.getByRole("button", { name: "Weitere Optionen" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Priorität setzen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Priorität setzen …" }));
     const choices = await screen.findByRole("group", { name: "Priorität" });
     await userEvent.click(within(choices).getByRole("button", { name: "2" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(49, {
@@ -1928,11 +1902,13 @@ describe("TaskDetailSheet", () => {
     renderSheet(209);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle(task.title);
+    await openDetailActions();
     await userEvent.click(screen.getByRole("button", { name: "Für Besprechung vormerken" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(209, {
       discussionRequested: true, expectedRevision: 1,
     }));
-    expect(screen.getByRole("button", { name: strings.removeDiscussion })).toHaveAttribute("aria-pressed", "true");
+    await openDetailActions();
+    expect(screen.getByRole("button", { name: strings.removeDiscussion })).toBeVisible();
   });
 
   describe("reference variant", () => {
@@ -1992,6 +1968,7 @@ describe("TaskDetailSheet", () => {
       await userEvent.click(screen.getByText("open"));
       await waitForTaskTitle("Geplante Aufgabe erneut klären");
 
+      await openDetailActions();
       expect(screen.getByRole("button", { name: "Später klären" })).toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Jetzt klären" }));
       await waitFor(() => expect(mockedApi.clarifyTask).toHaveBeenCalledWith(72, 1));
@@ -2017,6 +1994,7 @@ describe("TaskDetailSheet", () => {
       renderSheet(73);
       await userEvent.click(screen.getByText("open"));
       await waitForTaskTitle("Geplante Aufgabe später klären");
+      await openDetailActions();
       await userEvent.click(screen.getByRole("button", { name: "Später klären" }));
 
       const dialog = screen.getByRole("dialog", { name: "Klärung zurückstellen" });
@@ -2027,6 +2005,7 @@ describe("TaskDetailSheet", () => {
       await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
       expect(mockedApi.deferTaskClarification).not.toHaveBeenCalled();
 
+      await openDetailActions();
       await userEvent.click(screen.getByRole("button", { name: "Später klären" }));
       const reopenedDialog = screen.getByRole("dialog", { name: "Klärung zurückstellen" });
       const reopenedDateInput = within(reopenedDialog).getByLabelText("Erneut in den Eingang aufnehmen am");

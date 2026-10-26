@@ -152,7 +152,8 @@ describe("compact planning", () => {
       await user.click(screen.getByRole("button", { name: title }));
       await screen.findByRole("heading", { name: title, level: 1 });
       expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "+ Erinnerung" }));
+      await user.click(screen.getByRole("button", { name: "Weitere Optionen" }));
+      await user.click(screen.getByRole("button", { name: "Erinnern am …" }));
       const inspectedPlanning = await screen.findByRole("dialog", { name: "Planung" });
       expect(within(inspectedPlanning).getByText(title, { selector: "p" })).toBeInTheDocument();
       await user.click(within(inspectedPlanning).getByRole("button", { name: "Benutzerdefiniert …" }));
@@ -195,7 +196,7 @@ describe("compact planning", () => {
     await user.click(screen.getByRole("button", { name: "Open planning" }));
     if (fromDetail) {
       await screen.findByRole("heading", { name: "Nested task 1", level: 1 });
-      await user.click(screen.getByRole("button", { name: /Geplant für.*19\.10\.2026/ }));
+      await user.click(screen.getByRole("button", { name: /Geplant.*19\.10\.2026/ }));
     }
     const genericLink = screen.getByRole("button", { name: "Generic linked task", hidden: true });
     const reminders: HTMLElement[] = [];
@@ -224,7 +225,7 @@ describe("compact planning", () => {
       else await user.click(within(planner).getByRole("button", { name: `Nested task ${id + 1}` }));
       await screen.findByRole("heading", { name: `Nested task ${id + 1}`, level: 1 });
       expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
-      if (id === 1) await user.click(screen.getByRole("button", { name: /Geplant für.*19\.10\.2026/ }));
+      if (id === 1) await user.click(screen.getByRole("button", { name: /Geplant.*19\.10\.2026/ }));
     }
     for (const id of [2, 1]) {
       if (id === 2) await user.keyboard("{Escape}");
