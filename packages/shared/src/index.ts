@@ -1647,3 +1647,9 @@ export interface AssessmentProposal {
 }
 
 export * from "./interventionObservation.js";
+
+/** Non-persisting evaluation of the exact proposed canonical mutation. */
+export interface ActivationPreview {
+  decision: ProjectActivationDecisionSnapshot | null;
+  activatingProjects: Array<{ id: number; title: string }>;
+}

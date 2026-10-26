@@ -1,3 +1,4 @@
+import { previewActivation } from "../domain/activationPreview.js";
 import { assertPrivateWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
@@ -127,10 +128,15 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   app.post<{ Params: { id: string } }>("/api/projects/:id/tasks/batch", async (request, reply) => {
     const id = parseId(request.params.id);
     const body = parseOrThrow(taskStepBatchSchema, request.body);
-    const result = createTaskStepBatchForProject(db, id, {
+    const mutate = () => createTaskStepBatchForProject(db, id, {
       ...body,
       ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
     }, { actorMemberId: request.activityActor?.id ?? null });
+    if (request.headers["x-machbar-preview"] === "activation") {
+      reply.header("x-machbar-preview", "activation");
+      return previewActivation(db, mutate);
+    }
+    const result = mutate();
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(201);
     return { tasks: result.tasks.map((task) => task.id).map((taskId) => {

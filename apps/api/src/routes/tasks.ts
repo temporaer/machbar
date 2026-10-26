@@ -1,3 +1,4 @@
+import { previewActivation } from "../domain/activationPreview.js";
 import { assertPrivateWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
@@ -192,7 +193,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
 
   app.post("/api/tasks", async (request, reply) => {
     const body = parseOrThrow(createTaskSchema, request.body);
-    const task = createTask(
+    const mutate = () => createTask(
       db,
       {
         ...body,
@@ -202,6 +203,11 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       },
       { actorMemberId: request.activityActor?.id ?? null },
     );
+    if (request.headers["x-machbar-preview"] === "activation") {
+      reply.header("x-machbar-preview", "activation");
+      return previewActivation(db, mutate);
+    }
+    const task = mutate();
     reply.status(201);
     return taskOrThrow(db, task.id, viewerMemberId(request));
   });
@@ -230,10 +236,15 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
   app.post<{ Params: { id: string } }>("/api/tasks/:id/children/batch", async (request, reply) => {
     const parentId = parseId(request.params.id);
     const body = parseOrThrow(taskStepBatchSchema, request.body);
-    const result = createTaskStepBatchForTask(db, parentId, {
+    const mutate = () => createTaskStepBatchForTask(db, parentId, {
       ...body,
       ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
     }, { actorMemberId: request.activityActor?.id ?? null });
+    if (request.headers["x-machbar-preview"] === "activation") {
+      reply.header("x-machbar-preview", "activation");
+      return previewActivation(db, mutate);
+    }
+    const result = mutate();
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(201);
     const parent = result.convertedProjectId === null
@@ -272,12 +283,17 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     },
   );
 
-  app.patch<{ Params: { id: string } }>("/api/tasks/:id", async (request) => {
+  app.patch<{ Params: { id: string } }>("/api/tasks/:id", async (request, reply) => {
     const id = parseId(request.params.id);
     const body = parseOrThrow(updateTaskSchema, request.body);
-    updateTask(db, id, body, {
+    const mutate = () => updateTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
     });
+    if (request.headers["x-machbar-preview"] === "activation") {
+      reply.header("x-machbar-preview", "activation");
+      return previewActivation(db, mutate);
+    }
+    mutate();
     return taskOrThrow(db, id, viewerMemberId(request));
   });
 
@@ -328,9 +344,14 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const id = parseId(request.params.id);
       taskOrThrow(db, id, viewerMemberId(request));
       const body = parseOrThrow(convertTaskToStorySchema, request.body);
-      const project = convertTaskToStory(db, id, body, {
+      const mutate = () => convertTaskToStory(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
+      if (request.headers["x-machbar-preview"] === "activation") {
+        reply.header("x-machbar-preview", "activation");
+        return previewActivation(db, mutate);
+      }
+      const project = mutate();
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       reply.status(201);
       return graph.projectWithComputed(project.id);

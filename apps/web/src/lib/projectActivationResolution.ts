@@ -136,3 +136,18 @@ export function projectActivationResolutionFromPrompt(
     ...(requiresPath ? { nextActionTitle: prompt.nextActionTitle.trim() } : {}),
   };
 }
+
+export function projectActivationPromptFromSnapshot(
+  snapshot: ProjectActivationDecisionSnapshot | null,
+  previous?: ProjectActivationPrompt | null,
+): ProjectActivationPrompt {
+  const projects = snapshot?.projects ?? [];
+  const requiredDrivers = new Set(projects.filter(project => project.required.includes("driver")).map(project => project.projectId));
+  return {
+    projects,
+    expectedProjects: snapshot?.expectedProjects ?? [],
+    ...(snapshot ? { targetRevision: snapshot.targetRevision } : {}),
+    selectedDrivers: Object.fromEntries(Object.entries(previous?.selectedDrivers ?? {}).filter(([id]) => requiredDrivers.has(Number(id)))),
+    nextActionTitle: previous?.nextActionTitle ?? "",
+  };
+}

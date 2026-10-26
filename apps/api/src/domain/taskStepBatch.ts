@@ -194,7 +194,7 @@ export function createTaskStepBatchForTask(
   return db.transaction((tx) => createSteps(tx as unknown as Db, input, context, { type: "task", id: parentTaskId }));
 }
 
-/** Create project-root steps atomically for the post-conversion handoff. */
+/** Create project-root steps atomically for explicit project task entry. */
 export function createTaskStepBatchForProject(
   db: Db,
   projectId: number,

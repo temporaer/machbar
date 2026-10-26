@@ -5,11 +5,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 import { taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
-import type { ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
@@ -30,7 +29,6 @@ import { DetailPropertyPill } from "./DetailPropertyPill";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { ConfirmDeleteSheet } from "./ConfirmDeleteSheet";
 import { WorkItemInlineError } from "./WorkItemInlineError";
-import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MemberLabel } from "./MemberAvatar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
@@ -97,7 +95,6 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
-  const navigate = useNavigate();
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
@@ -119,8 +116,6 @@ export function TaskDetailSheet() {
   const [makeActionBusy, setMakeActionBusy] = useState(false);
   const [makeActionError, setMakeActionError] = useState<string | null>(null);
   const [classificationBusy, setClassificationBusy] = useState(false);
-  const [convertedProject, setConvertedProject] =
-    useState<ProjectWithActions | null>(null);
   const titleFieldRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<MarkdownEditorHandle>(null);
@@ -190,7 +185,6 @@ export function TaskDetailSheet() {
       setAttachmentOpen(false);
       setLifecycleOpen(false);
       setDeleting(false);
-      setConvertedProject(null);
     }
     const hasUnsavedEdits =
       !isNewTask &&
@@ -356,24 +350,7 @@ export function TaskDetailSheet() {
 
   const convertTaskToProject = async () => {
     if (!task || classificationBusy || contentDirty) return;
-    setClassificationBusy(true);
-    setSaveError(null);
-    try {
-      const project = await api.convertTaskToStory(task.id, {
-        status: "backlog",
-        expectedRevision: revisionRef.current ?? task.revision,
-      });
-      bump();
-      setConvertedProject(project);
-    } catch (err) {
-      if (isStaleWriteConflict(err)) {
-        bump();
-        reload();
-      }
-      setSaveError(localizedErrorMessage(err, strings));
-    } finally {
-      setClassificationBusy(false);
-    }
+    dispatch({ type: "task.convertToProject", taskId: task.id });
   };
 
   const isReference = task?.kind === "reference";
@@ -1140,28 +1117,7 @@ export function TaskDetailSheet() {
         }}
       />
     ) : null}
-    {convertedProject ? (
-      <CapturedProjectHandoff
-        project={convertedProject}
-        onDone={(options) => {
-          const finishedProjectId = convertedProject.id;
-          setConvertedProject(null);
-          if (queueActive) {
-            // Stay in the review queue so triage of the remaining Inbox
-            // items isn't interrupted by a page change.
-            finishClassification();
-            return;
-          }
-          close();
-          if (options?.openedProjectDirectly) return;
-          // Land on Projects with the new backlog project auto-expanded and
-          // highlighted instead of just closing back to wherever the sheet
-          // was opened from, which is what made a converted item feel like
-          // it had silently vanished.
-          navigate("/projects", { state: { highlightProjectId: finishedProjectId } });
-        }}
-      />
-    ) : null}
+
     </>
   );
 }

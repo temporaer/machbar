@@ -179,7 +179,7 @@ const base = {
     planTask: "Planung öffnen …",
     deferProject: "Wiedervorlage öffnen …",
     admin: "Verwaltungsschritt konkretisieren …",
-    convertToProject: "Zum Projekt machen …",
+    convertToProject: "In Projekt umwandeln …",
     checkReference: "Öffnen und als Information prüfen",
     structure: "Öffnen und strukturieren",
   },
@@ -679,12 +679,12 @@ const extra = {
   saveNotes: "Notizen speichern",
   clarifyNow: "Jetzt klären",
   classifyAsAction: "Machbar",
-  classifyAsBacklog: "Backlog",
+  classifyAsBacklog: "In Projekt umwandeln",
   classifyAsSomeday: "Irgendwann",
   workItemRole: "Typ",
-  convertToProject: "Als Projekt behandeln",
-  convertToProjectBacklog: "Ins Backlog",
-  convertToProjectActive: "Aktivieren",
+  convertToProject: "In Projekt umwandeln",
+  convertToProjectBacklog: "In Projekt umwandeln",
+  convertToProjectActive: "Umwandeln und starten",
   convertToProjectPreservedStep: "Bisherige Aufgabe als Arbeitsschritt fortführen",
   convertToProjectDependencyTarget: "Abhängigkeit zuordnen",
   convertToProjectOutgoingDependency: "Diese Aufgabe hängt ab von",
@@ -1048,7 +1048,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   intakeMoveDown: "Nach unten",
   taskBreakdownApply: "Geprüfte Änderungen übernehmen",
   structureMove: "Verschieben …",
-  structureConvertToProject: "Zum Projekt machen",
+  structureConvertToProject: "In Projekt umwandeln",
   structurePlanWork: "Nächste Aufgabe erfassen",
   structureEditOutcome: "Ergebnis bearbeiten",
   insertSuccessorLabel: "Aufgabe danach hinzufügen",
@@ -1194,7 +1194,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   allEmpty: "Keine passenden Projekte oder Aufgaben.",
 
   // --- Project clarification -------------------------------------------
-  activateStory: "Aktiv machen",
+  activateStory: "Projekt starten",
   activationProgressRequired:
     "Füge zuerst einen ausführbaren nächsten Schritt hinzu oder plane bewusst einen gesunden Wartepfad.",
   activationReadyHint: "Das Projekt ist startklar. Starte es mit einer eigenen Entscheidung.",
@@ -2072,6 +2072,13 @@ const assessmentBandLabels: Record<AssessmentBand, string> = {
 };
 
 export const de = {
+  createProjectAction: "Projekt anlegen",
+  projectCreated: "Projekt angelegt",
+  projectTasksTitle: "Aufgaben hinzufügen",
+  oneTaskPerLine: "Eine Aufgabe pro Zeile",
+  projectTaskDraftHint: "Nicht gespeicherte Zeilen bleiben beim Schließen als Entwurf erhalten.",
+  activationWillStart: "Mit dem Bestätigen werden die betroffenen Projekte gestartet.",
+  addProjectTaskCount: (count: number) => count <= 1 ? "Aufgabe hinzufügen" : `${count} Aufgaben hinzufügen`,
   projectReviewOn: "Wieder ansehen am",
   projectAddReviewOn: "Wieder ansehen am …",
   projectEmptyStepsHint: "Plane einen nächsten Schritt, um das Projekt voranzubringen.",

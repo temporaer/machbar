@@ -24,6 +24,9 @@ import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     createTaskStepBatchForTask: vi.fn(),

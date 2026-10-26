@@ -105,6 +105,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
     case "split":
       return (
         <TaskSplitSheet
+          key={task.id}
           parentId={task.id}
           parentTitle={task.title}
           parentRevision={task.revision}
@@ -160,7 +161,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
     case "contexts":
       return <TaskContextsSheet task={task} onClose={close} />;
     case "convertToProject":
-      return <TaskConvertToProjectSheet task={task} onClose={close} />;
+      return <TaskConvertToProjectSheet key={task.id} task={task} onClose={close} />;
     case "completeWithCriteria":
       return (
         <CompleteWithCriteriaSheet

@@ -16,6 +16,7 @@ import { TaskTagsSheet } from "./TaskTagsSheet";
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getHomeAssistantStatus: vi.fn(),

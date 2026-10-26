@@ -169,7 +169,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, 100);
     const lifecycle = screen.getByRole("group", { name: "Status" });
     expect(within(lifecycle).getByRole("button", { name: "Später / noch nicht aktiv" })).toHaveAttribute("aria-current", "true");
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Projekt starten" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -197,12 +197,12 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Homeoffice-Ecke einrichten");
 
     swipe(container, 100);
-    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Projekt starten" }));
 
     const dialog = await screen.findByRole("dialog");
     const driver = within(dialog).getByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
     await userEvent.selectOptions(driver, "2");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Aktiv machen" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
     await waitFor(() =>
       expect(mockedApi.activateProject).toHaveBeenCalledWith(13, {
@@ -319,7 +319,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Fehlerfall Aktivierung");
 
     swipe(container, 100);
-    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Aktiv machen" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Projekt starten" }));
     await screen.findByText("Netzwerkfehler");
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
 

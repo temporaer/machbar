@@ -34,6 +34,11 @@ vi.mock("../lib/api", () => ({
   paperlessDocumentThumbnailUrl: (id: number) =>
     `/api/integrations/paperless/documents/${id}/thumbnail`,
   api: {
+    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    previewProjectSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getProject: vi.fn(),
     deleteProject: vi.fn(),
@@ -749,7 +754,7 @@ describe("ProjectDetailPage task explanations", () => {
     );
 
     expect(
-      await screen.findByPlaceholderText(strings.quickAddPlaceholder),
+      await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("project-route")).toHaveTextContent(
       "/projects/42?focus=next-action",
@@ -1328,7 +1333,7 @@ describe("ProjectDetailPage task explanations", () => {
   it("opens the project-scoped task capture sheet for a next-action repair link", async () => {
     renderProjectRoute("/projects/42?focus=next-action");
 
-    const input = await screen.findByPlaceholderText(strings.quickAddPlaceholder);
+    const input = await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder);
     await waitFor(() => expect(input).toHaveFocus());
     expect(screen.getByLabelText("project-route")).toHaveTextContent(
       "/projects/42?focus=next-action",

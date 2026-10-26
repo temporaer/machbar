@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CreateTaskStepBatchInput } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
@@ -7,7 +7,7 @@ import { IconActionButton } from "./IconActionButton";
 export type StepDraft = CreateTaskStepBatchInput["steps"][number];
 
 /** Shared authored step entry for task splitting, inline successors, and the
- * post-conversion project handoff. The caller owns the canonical mutation. */
+ * project task entry. The caller owns the canonical mutation. */
 export function StepComposer({
   inputIdPrefix,
   label,
@@ -19,12 +19,14 @@ export function StepComposer({
   onPendingChange,
   singleStep = false,
   submitDisabled = false,
+  draftKey,
 }: {
   inputIdPrefix: string;
   label: string;
   placeholder: string;
-  submitLabel: string;
-  onSubmit: (steps: StepDraft[]) => Promise<void>;
+  submitLabel: string | ((count: number) => string);
+  draftKey?: string;
+  onSubmit: (steps: StepDraft[]) => Promise<void | boolean>;
   onCancel?: () => void;
   onDraftChange?: (steps: StepDraft[]) => void;
   onPendingChange?: (pending: boolean) => void;
@@ -32,7 +34,14 @@ export function StepComposer({
   submitDisabled?: boolean;
 }) {
   const strings = useStrings();
-  const [rows, setRows] = useState<StepDraft[]>([blankStep()]);
+  const [rows, setRows] = useState<StepDraft[]>(() => {
+    if (draftKey) {
+      try { const rows: unknown = JSON.parse(sessionStorage.getItem(`machbar:steps:${draftKey}`) ?? "null");
+        if (Array.isArray(rows) && rows.length && rows.every(row => typeof row.title === "string" && (row.dueDate === undefined || typeof row.dueDate === "string") && (row.scheduledDate === undefined || typeof row.scheduledDate === "string"))) return rows;
+      } catch { /* Empty draft when browser storage is unavailable. */ }
+    }
+    return [blankStep()];
+  });
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +57,12 @@ export function StepComposer({
   }
 
   const changeRows = (next: StepDraft[]) => {
+    if (draftKey) {
+      try {
+        if (next.some(row => row.title.trim() || row.dueDate || row.scheduledDate)) sessionStorage.setItem(`machbar:steps:${draftKey}`, JSON.stringify(next));
+        else sessionStorage.removeItem(`machbar:steps:${draftKey}`);
+      } catch { /* The live draft remains available during this session. */ }
+    }
     setRows(next);
     onDraftChange?.(next.filter((row) => row.title.trim() !== "").map((row) => ({
       title: row.title.trim(),
@@ -55,6 +70,8 @@ export function StepComposer({
       ...(row.scheduledDate ? { scheduledDate: row.scheduledDate } : {}),
     })));
   };
+
+  useEffect(() => { onDraftChange?.(steps); }, []);
 
   const changeField = (index: number, field: keyof StepDraft, value: string) => {
     const next = rows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row);
@@ -75,8 +92,8 @@ export function StepComposer({
     onPendingChange?.(true);
     setError(null);
     try {
-      await onSubmit(steps);
-      changeRows([blankStep()]);
+      const saved = await onSubmit(steps);
+      if (saved !== false) changeRows([blankStep()]);
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {
@@ -148,7 +165,7 @@ export function StepComposer({
       <div className="row">
         {onCancel ? <button type="button" className="btn" disabled={saving} onClick={onCancel}>{strings.cancel}</button> : null}
         <button type="submit" className="btn btn-primary" disabled={saving || steps.length === 0 || submitDisabled}>
-          {saving ? strings.saving : submitLabel}
+          {saving ? strings.saving : typeof submitLabel === "function" ? submitLabel(steps.length) : submitLabel}
         </button>
       </div>
     </form>

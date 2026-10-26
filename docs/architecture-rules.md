@@ -225,6 +225,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project metadata and lifecycle actions | `apps/web/src/lib/useProjectActions.ts` |
 | Task hierarchy planning | `apps/web/src/lib/taskTreeMove.ts` |
 | Task hierarchy execution | `apps/web/src/lib/useOutlineOrganize.tsx` and `api.moveTask` |
+| Proposed activation decisions | `activationPreview.ts` evaluates the exact canonical mutation in a rollback-only transaction; the existing routes carry the preview header, and `projectActivationResolution.ts` adapts server snapshots. No preview writes or change notifications persist. |
 | Shared task-step entry and atomic batches | `apps/web/src/components/StepComposer.tsx` for authored rows; `POST /api/tasks/:id/children/batch` and `POST /api/projects/:id/tasks/batch` call the shared transactional task-step operation in `apps/api/src/domain/taskStepBatch.ts`. Inbox parent classification and commitment activation are part of that transaction. Inline successors still use the canonical successor mutation. |
 | Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |
 | Household member selection | `apps/web/src/components/MemberSelectionSheet.tsx` |
@@ -266,7 +267,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task/project `scope` ("household" \| "work") read/derivation and owner-only visibility | `apps/api/src/domain/graph.ts` (`Graph.load`'s viewer-restriction parameter; see below) |
 | Household/work agenda-scope filtering shared by Today/Week/Waiting | `apps/api/src/domain/agendaSelection.ts` (`matchesScope`) |
 | Work-item exclusion from points/gamification | `apps/api/src/repo/contributionRepo.ts` (`entityScope` gate in `recordContribution`) |
-| Contextual successor creation ("+" in organizable outlines only) | `apps/web/src/components/InlineSuccessorComposer.tsx` reuses `StepComposer` and calls the canonical successor mutation; the composer is also shared by `TaskSplitSheet` and the captured-project handoff |
+| Contextual successor creation ("+" in organizable outlines only) | `apps/web/src/components/InlineSuccessorComposer.tsx` reuses `StepComposer` and calls the canonical successor mutation; the composer is also shared by `TaskSplitSheet` and project task entry |
 | Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
@@ -518,3 +519,17 @@ Callers must pass asynchronous save/mutation state explicitly through
 Task/project notes and Capture lock input during submission; quick append
 combines its own pending state with the caller lock. Intake content edits are
 synchronous draft edits inside a modal, with no asynchronous field save.
+
+### Project entry and proposed activation (#248)
+
+Creation and conversion finish by opening the project; no automatic task-entry
+continuation remains. `ProjectTaskEntrySheet` is explicit project batch entry,
+using StepComposer's count-aware labels and per-member session drafts. Split
+and successor callers keep their own terminology.
+The existing mutation routes accept the activation preview header only on the
+supported task create/update/conversion/batch operations. `activationPreview.ts`
+executes that same canonical mutation in an always-rolled-back transaction,
+returning its authoritative activation decisions and affected projects. This
+is not an alternative readiness evaluator or write path. Preview replies do
+not publish change events. Server revision/validation remains authoritative on
+final confirmation, and stale recovery retains drafts.

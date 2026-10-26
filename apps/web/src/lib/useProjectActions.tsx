@@ -288,7 +288,7 @@ const ProjectActionsContext = createContext<ProjectActionsValue | null>(null);
 /**
  * Mounts the single shared `useProjectActionsState()` instance for the
  * whole app (see `App.tsx`) so every consumer (Projekte tab, project
- * detail, Review, captured-project handoff, All) reads and mutates the
+ * detail, Review, All) reads and mutates the
  * same pending/retained/error state. Test files use `renderWithProviders`,
  * which mounts this too.
  */

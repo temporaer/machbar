@@ -14,6 +14,7 @@ import {
 
 vi.mock("../lib/api", () => ({
   api: {
+    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getProjects: vi.fn(),
     getTags: vi.fn(),
     getHomeAssistantStatus: vi.fn(),

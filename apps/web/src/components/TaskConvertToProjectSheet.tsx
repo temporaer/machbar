@@ -4,9 +4,10 @@ import { api, type TaskDetail } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
-import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
+import { projectActivationPromptFromSnapshot, projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { BottomSheet } from "./BottomSheet";
-import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
+import { useNavigate } from "react-router-dom";
+import { useTaskDetail } from "../lib/taskDetailContext";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 function descendantRevisions(tasks: Task[]): Array<{ taskId: number; revision: number }> {
@@ -26,6 +27,8 @@ function openActionDescendants(tasks: Task[]): Task[] {
 /** Focused `task.convertToProject` workflow — the canonical destination regardless of rail/keyboard/detail invocation. */
 export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
+  const navigate = useNavigate();
+  const detail = useTaskDetail();
   const { bump } = useRefresh();
   const [currentTask, setCurrentTask] = useState<TaskDetail>(task);
   const [busy, setBusy] = useState(false);
@@ -33,8 +36,9 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
   const [preservedStepTitle, setPreservedStepTitle] = useState(task.title);
   const [preservedStepTitleEdited, setPreservedStepTitleEdited] = useState(false);
   const [dependencyTargets, setDependencyTargets] = useState<Record<number, number>>({});
+  const [previewIntent, setPreviewIntent] = useState<"active" | "backlog" | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
-  const [project, setProject] = useState<Awaited<ReturnType<typeof api.convertTaskToStory>> | null>(null);
+
   useEffect(() => {
     setCurrentTask((previous) => previous.id === task.id && previous.revision === task.revision ? previous : task);
   }, [task]);
@@ -67,6 +71,8 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
     ? projectActivationResolutionFromPrompt(activationPrompt)
     : null;
 
+  useEffect(() => { setActivationPrompt(null); setPreviewIntent(null); }, [preservedStepTitle, dependencyTargets, currentTask.revision]);
+
   const hierarchyPending = (currentTask.parentTaskId !== null || currentTask.projectId !== null) && !currentTask.hierarchyRevisions;
 
   const convert = async (status: "active" | "backlog") => {
@@ -74,7 +80,7 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
     setBusy(true);
     setError(null);
     try {
-      const converted = await api.convertTaskToStory(task.id, {
+      const input = {
         status,
         ...(preserveStepRequired ? { preservedStepTitle: preservedStepTitle.trim() } : {}),
         dependencyMappings: Object.entries(dependencyTargets).map(([dependencyId, targetTaskId]) => {
@@ -89,15 +95,26 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
         expectedDescendantRevisions: currentTask.hierarchyRevisions
           ? currentTask.hierarchyRevisions.filter((entry) => entry.id !== currentTask.id && !currentTask.ancestors?.some((parent) => parent.id === entry.id)).map(({ id, revision }) => ({ taskId: id, revision }))
           : descendantRevisions(currentTask.children),
-        ...(activationResolution ? { activationResolution } : {}),
+        ...(previewIntent === status && activationPrompt?.projects.length && activationResolution ? { activationResolution } : {}),
         expectedRevision: currentTask.revision,
-      });
+      };
+      if (!activationPrompt || previewIntent !== status) {
+        const preview = await api.previewTaskConversion(task.id, input);
+        if (preview.activatingProjects.length) {
+          setPreviewIntent(status);
+          setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision));
+          return;
+        }
+      }
+      const converted = await api.convertTaskToStory(task.id, input);
       bump();
-      setProject(converted);
+      onClose();
+      detail.close();
+      navigate(`/projects/${converted.id}`, { state: { createdProjectId: converted.id } });
 
     } catch (cause) {
       const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (refreshedPrompt) setActivationPrompt(refreshedPrompt);
+      if (refreshedPrompt) { setPreviewIntent(status); setActivationPrompt(refreshedPrompt); }
       if (isStaleWriteConflict(cause)) {
         bump();
         try {
@@ -113,9 +130,6 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
     }
   };
 
-  if (project) {
-    return <CapturedProjectHandoff project={project} onDone={onClose} />;
-  }
 
   return (
     <BottomSheet
@@ -158,8 +172,8 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
             ))}
             {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
             <div className="capture-shape-actions">
-              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
-              <button type="button" className="btn capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (activationPrompt !== null && activationResolution === null)} onClick={() => void convert("active")}>{strings.convertToProjectActive}</button>
+              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "backlog" && activationPrompt !== null && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
+              <button type="button" className="btn capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "active" && activationPrompt !== null && activationResolution === null)} onClick={() => void convert("active")}>{previewIntent === "active" && activationPrompt ? strings.activateStory : strings.convertToProjectActive}</button>
             </div>
           </>
         )}

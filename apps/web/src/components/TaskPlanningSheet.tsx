@@ -45,6 +45,7 @@ import { TaskRemindersEditor, type TaskRemindersEditorHandle } from "./TaskRemin
 import { sortDependencyCandidates } from "../lib/sortOrder";
 import { recencyRankLookup } from "../lib/recentlyViewed";
 import {
+  projectActivationPromptFromSnapshot,
   refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
@@ -831,7 +832,14 @@ export function TaskPlanningSheet({
         setError(strings.commitmentResolutionHint);
         return;
       }
-      const apiPatch = activationResolution ? { ...patch, activationResolution } : patch;
+      if (!activationPrompt && baselineTask.projectId !== null) {
+        const preview = await api.previewTaskUpdate(baselineTask.id, { ...patch, expectedRevision: expectedTaskRevision });
+        if (preview.activatingProjects.length) {
+          setActivationState({ fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision) });
+          return;
+        }
+      }
+      const apiPatch = activationPrompt?.projects.length && activationResolution ? { ...patch, activationResolution } : patch;
       const { reminders: _draftReminders, ...optimisticPatchBase } = patch;
       const optimisticPatch = {
         ...optimisticPatchBase,
