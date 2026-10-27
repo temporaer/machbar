@@ -2263,3 +2263,57 @@ activation output and decision snapshot IDs. Non-snapshot conflicts retain their
 canonical status. Conversion snapshot refreshes retain authored decisions for
 reconciliation with new requirements; split composers remount per task/member
 to isolate session drafts.
+
+### Verification-driven production fixes
+
+The write-visibility regression compares reads, previews and final writes for
+household/work/durable-private items, and checks database snapshots and absence
+of notifications on rejected operations. Destructive/move/dependency cases and
+real session-vs-spoofed-actor tests complement that matrix. Reads and HTTP write
+guards now share workItemVisibleToViewer; authorization is not deferred to the
+response projection. Root creations that cannot be returned to their creator
+also roll back atomically.
+
+Migration 0031 adds creation_receipts. It stores only the opaque operation key,
+route, viewer scope, normalized-body digest and result ID, not captured text or
+serialized responses. The result FK becomes null on deletion so an old retry
+cannot resurrect it. A receipt and the canonical creation commit in one SQLite
+transaction; replays read the current authorized result. Back up using SQLite's
+online backup API (including the receipts), not an uncoordinated copy of a live
+WAL database file. Receipt tests cover changed content, changed visibility,
+deleted results, failed writes and restart/backup recovery.
+
+Browser verification uses the actual built app, isolated temporary data, desktop
+Chromium and Pixel emulation. It caught the missing InteractionScopeProvider in
+DiscussionPage: ordinary populated rows crashed despite component fixtures
+supplying the provider. The page now owns the same scope as other list pages.
+The browser suite tests the real mount tree, not the convenient test wrapper.
+
+Review hardening for creation/activation boundaries: CaptureForm, ProjectsPage
+and SharePage own an explicit CreationIntent passed to the API transport. The
+transport holds only that caller's key/fingerprint, rotates it when the draft
+or actor changes, and clears it after success or a definitive client error.
+Independent forms with identical payloads can fail together and retry in any
+order without exchanging created entities. Cancel/remount and a new guided
+thought own a new intent; CaptureForm retains failed intents by thought draft
+key so navigating back restores the same operation. No global payload-keyed retry
+queue remains.
+
+Public task/project mutation contexts carry a viewer separately from the activity
+actor. The canonical activation evaluator supplies affected write/decision IDs;
+those IDs are authorized inside the source transaction before plan application
+or decision-error serialization. Internal domain callers without viewer context
+retain their existing unrestricted contract. Project creation replay also checks
+the project projection after role conversion and returns project_not_found
+instead of 200/null. Migration 0031 includes its chained schema snapshot; the
+schema-drift regression invokes the installed generator against a temporary copy
+and requires that it produces no additional SQL migration.
+
+The early stale project-deadline branch also passes viewer context to
+projectActivationDecisionSnapshot. That builder authorizes every project in
+both its requirements and revision arrays before returning an error snapshot.
+GET project independently checks all commitment-snapshot references against its
+viewer-aware graph and omits that optional snapshot if an ancestor is hidden,
+while preserving the readable child document and authorized direct activation.
+The regression matrix exercises reads, stale/fresh deadline writes and visible/
+hidden ancestors, including unchanged database and notification state.

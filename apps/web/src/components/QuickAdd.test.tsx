@@ -155,7 +155,7 @@ describe("QuickAdd", () => {
         scheduledDate: null,
         ownerMemberId: 1,
         ownerInheritanceMode: "explicit",
-      }),
+      }, expect.any(Object)),
     );
     expect(await screen.findByRole("status")).toHaveTextContent("Erfasst: Milch kaufen");
     expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveValue("");
@@ -181,7 +181,7 @@ describe("QuickAdd", () => {
         expect.objectContaining({
           projectId: 7,
           status: "actionable",
-        }),
+        }), expect.any(Object),
       ),
     );
   });
@@ -199,7 +199,7 @@ describe("QuickAdd", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ projectId: null, status: "captured" }),
+        expect.objectContaining({ projectId: null, status: "captured" }), expect.any(Object),
       ),
     );
   });
@@ -398,7 +398,7 @@ describe("QuickAdd", () => {
             tagIds: [9],
             contextIds: [10],
             contextInheritanceMode: "explicit",
-          }),
+          }), expect.any(Object),
         ),
       );
     } finally {
@@ -450,7 +450,7 @@ describe("QuickAdd", () => {
     expect(mockedApi.createTask).toHaveBeenLastCalledWith(
       expect.objectContaining({
         notes: "![receipt.jpg](paperless:88)",
-      }),
+      }), expect.any(Object),
     );
   });
 
@@ -661,7 +661,7 @@ describe("QuickAdd", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ projectId: 7 }),
+        expect.objectContaining({ projectId: 7 }), expect.any(Object),
       ),
     );
   });

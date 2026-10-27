@@ -1,3 +1,4 @@
+import { workItemVisibleToViewer } from "./workItemVisibility.js";
 /**
  * Shared write-path primitives used by both task and story mutations: actor/context
  * extraction, revision-guard helpers (`assertExpectedRevision`/`touchTask`/
@@ -16,6 +17,7 @@ import { getTaskIdsForStory } from "../repo/treeRepo.js";
 
 export interface MutationContext {
   actorMemberId?: number | null;
+  viewerMemberId?: number | null;
 }
 
 export function actor(context?: MutationContext): number | null {
@@ -163,11 +165,11 @@ export function appendNoteContent(existing: string, incoming: string): string {
   return `${existing}\n\n${appended}`;
 }
 
-/** Public route boundary for internal durable privacy, including destination references. */
-export function assertPrivateWorkItemAccessible(db: Db, id: number, viewerMemberId: number | undefined): void {
+/** Public read/write boundary for work scope and durable privacy, including destinations. */
+export function assertWorkItemAccessible(db: Db, id: number, viewerMemberId: number | undefined): void {
   if (!Number.isSafeInteger(id)) return;
-  const row = db.select({ role: schema.workItems.role, privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId }).from(schema.workItems).where(eq(schema.workItems.id, id)).get();
-  if (row?.privacyOwnerMemberId != null && row.privacyOwnerMemberId !== viewerMemberId) {
+  const row = db.select().from(schema.workItems).where(eq(schema.workItems.id, id)).get();
+  if (row && !workItemVisibleToViewer(row, viewerMemberId, row.role === "task" && row.scope === "work" ? getEffectiveOwners(db).get(id)?.ownerId ?? null : null)) {
     throw AppError.notFound(row.role === "task" ? "task_not_found" : "project_not_found", "The requested work item was not found.");
   }
 }

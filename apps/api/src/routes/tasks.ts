@@ -1,5 +1,6 @@
+import { createWithReceipt } from "../domain/creationReceipt.js";
 import { previewActivation } from "../domain/activationPreview.js";
-import { assertPrivateWorkItemAccessible } from "../domain/workItemShared.js";
+import { assertWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
@@ -115,11 +116,11 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     if (!path.startsWith("/api/tasks")) return;
     const viewer = viewerMemberId(request);
     const rawId = (request.params as { id?: string }).id;
-    if (rawId !== undefined) assertPrivateWorkItemAccessible(db, parseId(rawId), viewer);
+    if (rawId !== undefined) assertWorkItemAccessible(db, parseId(rawId), viewer);
     const body = request.body as Record<string, unknown> | undefined;
     for (const field of ["parentTaskId", "projectId", "parentId", "dependsOnTaskId"]) {
       const id = body?.[field];
-      if (typeof id === "number") assertPrivateWorkItemAccessible(db, id, viewer);
+      if (typeof id === "number") assertWorkItemAccessible(db, id, viewer);
     }
   });
 
@@ -135,7 +136,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const id = parseId(request.params.id);
     taskOrThrow(db, id, viewerMemberId(request));
     const body = parseOrThrow(addCriterionSchema, request.body);
-    addCriterion(db, id, body.text, { actorMemberId: request.activityActor?.id ?? null });
+    addCriterion(db, id, body.text, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     reply.status(201);
     return taskOrThrow(db, id, viewerMemberId(request));
   });
@@ -151,7 +152,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     taskOrThrow(db, id, viewerMemberId(request));
     const criterionId = parseId(request.params.criterionId);
     const body = parseOrThrow(updateCriterionSchema, request.body);
-    updateCriterionText(db, id, criterionId, body.text, { actorMemberId: request.activityActor?.id ?? null });
+    updateCriterionText(db, id, criterionId, body.text, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     return taskOrThrow(db, id, viewerMemberId(request));
   });
   app.post<{ Params: { id: string; criterionId: string } }>("/api/tasks/:id/criteria/:criterionId/check", async (request) => {
@@ -159,14 +160,14 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     taskOrThrow(db, id, viewerMemberId(request));
     const criterionId = parseId(request.params.criterionId);
     const body = parseOrThrow(checkCriterionSchema, request.body);
-    setCriterionChecked(db, id, criterionId, body.checked, { actorMemberId: request.activityActor?.id ?? null });
+    setCriterionChecked(db, id, criterionId, body.checked, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     return taskOrThrow(db, id, viewerMemberId(request));
   });
   app.delete<{ Params: { id: string; criterionId: string } }>("/api/tasks/:id/criteria/:criterionId", async (request) => {
     const id = parseId(request.params.id);
     taskOrThrow(db, id, viewerMemberId(request));
     const criterionId = parseId(request.params.criterionId);
-    removeCriterion(db, id, criterionId, { actorMemberId: request.activityActor?.id ?? null });
+    removeCriterion(db, id, criterionId, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     return taskOrThrow(db, id, viewerMemberId(request));
   });
 
@@ -177,6 +178,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(acknowledgeReviewSchema, request.body ?? {});
       acknowledgeTaskReview(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -201,14 +203,15 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
           ? { createdByMemberId: request.authMember.id }
           : {}),
       },
-      { actorMemberId: request.activityActor?.id ?? null },
+      { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
     );
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
       return previewActivation(db, mutate, viewerMemberId(request), [body.projectId, body.parentTaskId]);
     }
-    const task = mutate();
-    reply.status(201);
+    const task = createWithReceipt(db, { key: request.headers["idempotency-key"], route: "/api/tasks", viewer: viewerMemberId(request), body }, mutate);
+    if (task.replayed) reply.header("x-machbar-replay", "true");
+    reply.status(task.replayed ? 200 : 201);
     return taskOrThrow(db, task.id, viewerMemberId(request));
   });
 
@@ -226,7 +229,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
             ? { createdByMemberId: request.authMember.id }
             : {}),
         },
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
       );
       reply.status(201);
       return taskOrThrow(db, task.id, viewerMemberId(request));
@@ -239,7 +242,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const mutate = () => createTaskStepBatchForTask(db, parentId, {
       ...body,
       ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
-    }, { actorMemberId: request.activityActor?.id ?? null });
+    }, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
       return previewActivation(db, mutate, viewerMemberId(request), [parentId]);
@@ -276,7 +279,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
             ? { createdByMemberId: request.authMember.id }
             : {}),
         },
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
       );
       reply.status(201);
       return taskOrThrow(db, task.id, viewerMemberId(request));
@@ -288,6 +291,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const body = parseOrThrow(updateTaskSchema, request.body);
     const mutate = () => updateTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
+      viewerMemberId: viewerMemberId(request) ?? null,
     });
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
@@ -304,6 +308,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(appendNotesSchema, request.body);
       appendTaskNotes(db, id, body.content, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -313,7 +318,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     "/api/tasks/:id",
     async (request, reply) => {
       const id = parseId(request.params.id);
-      deleteTask(db, id, { actorMemberId: request.activityActor?.id ?? null });
+      deleteTask(db, id, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
       reply.status(204);
       return null;
     },
@@ -332,7 +337,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
           completedOn: body.completedOn,
           expectedRevision: body.expectedRevision,
         },
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
       );
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -346,6 +351,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(convertTaskToStorySchema, request.body);
       const mutate = () => convertTaskToStory(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       if (request.headers["x-machbar-preview"] === "activation") {
         reply.header("x-machbar-preview", "activation");
@@ -365,6 +371,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(taskLifecycleSchema, request.body ?? {});
       makeTaskAction(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -379,7 +386,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         db,
         id,
         body.descendantsPolicy,
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
         body.completedOn,
         body.expectedRevision,
         body.criteriaToCheck,
@@ -397,7 +404,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         db,
         id,
         body.descendantsPolicy,
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
         body.expectedRevision,
       );
       return taskOrThrow(db, id, viewerMemberId(request));
@@ -412,7 +419,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       reopenTask(
         db,
         id,
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
         body.expectedRevision,
       );
       return taskOrThrow(db, id, viewerMemberId(request));
@@ -426,6 +433,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(taskLifecycleSchema, request.body ?? {});
       clarifyTask(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -441,7 +449,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         id,
         body.clarificationRevisitDate,
         body.expectedRevision,
-        { actorMemberId: request.activityActor?.id ?? null },
+        { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
       );
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -452,6 +460,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const body = parseOrThrow(moveTaskSchema, request.body);
     moveTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
+      viewerMemberId: viewerMemberId(request) ?? null,
     });
     return taskOrThrow(db, id, viewerMemberId(request));
   });
@@ -463,6 +472,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(dependencySchema, request.body);
       addDependency(db, id, body.dependsOnTaskId, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       }, body.expectedRevision);
       reply.status(201);
       return taskOrThrow(db, id, viewerMemberId(request));
@@ -486,6 +496,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
               : undefined,
       }, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -498,6 +509,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(resolveExternalWaitSchema, request.body ?? {});
       resolveExternalWait(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -524,6 +536,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
           : {}),
       }, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -537,6 +550,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(taskLifecycleSchema, request.body ?? {});
       removeDependency(db, id, dependsOnTaskId, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       }, body.expectedRevision);
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -549,6 +563,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(tagRefSchema, request.body);
       addTaskTag(db, id, body.tagId, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       reply.status(201);
       return taskOrThrow(db, id, viewerMemberId(request));
@@ -562,6 +577,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const tagId = parseId(request.params.tagId);
       removeTaskTag(db, id, tagId, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },
@@ -574,6 +590,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(tagRefSchema, request.body);
       addExcludedTag(db, id, body.tagId, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       reply.status(201);
       return taskOrThrow(db, id, viewerMemberId(request));
@@ -587,6 +604,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const tagId = parseId(request.params.tagId);
       removeExcludedTag(db, id, tagId, {
         actorMemberId: request.activityActor?.id ?? null,
+        viewerMemberId: viewerMemberId(request) ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
     },

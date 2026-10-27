@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CreateTaskInput } from "../lib/api";
+import type { CreateTaskInput, CreationIntent } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
@@ -94,6 +94,7 @@ export function CaptureForm({
   const strings = useStrings();
   const isThought = mode === "thought";
   const { locale } = useLocale();
+  const creationIntents = useRef(new Map<number | undefined, CreationIntent>());
   const [localTitle, setTitle] = useState(initialTitle);
   const title = thoughtDraft?.title ?? localTitle;
   const activeDraftKey = useRef(thoughtDraft?.key);
@@ -207,6 +208,9 @@ export function CaptureForm({
 
   const createTask = async () => {
     if (!capturedTitle || saving) return;
+    const intentKey = thoughtDraft?.key;
+    const intent = creationIntents.current.get(intentKey) ?? {};
+    creationIntents.current.set(intentKey, intent);
     setSaving(true);
     onSavingChange?.(true);
     setError(null);
@@ -226,7 +230,8 @@ export function CaptureForm({
           return;
         }
       }
-      const task = await api.createTask(input);
+      const task = await api.createTask(input, intent);
+      creationIntents.current.delete(intentKey);
       onCaptured({ kind: "task", task, needsClarification });
       if (isThought && activeDraftKey.current === thoughtDraft?.key) {
         focusAfterSave.current = thoughtDraft?.key;

@@ -1196,3 +1196,12 @@ export const interventionTasks = sqliteTable("intervention_tasks", {
   input: text("input", { mode: "json" }).$type<import("@machbar/shared").InterventionTaskPlan>().notNull(),
   createdAt: text("created_at").notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 }, (t) => [uniqueIndex("intervention_task_key_idx").on(t.interventionId, t.key)]);
+
+/** Durable, actor-scoped receipts for ordinary task/project creation retries. */
+export const creationReceipts = sqliteTable("creation_receipts", {
+  requestKey: text("request_key").notNull(),
+  route: text("route").notNull(),
+  viewerKey: text("viewer_key").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "set null" }),
+}, table => [primaryKey({ columns: [table.requestKey, table.route, table.viewerKey] })]);

@@ -10,7 +10,8 @@ import { closeTestContext, createTestContext, type TestContext } from "./helpers
 const operations = ["create", "plan", "split", "project-batch", "convert"] as const;
 const scopes = ["household", "work", "private"] as const;
 const viewers = ["owner", "other", "unknown"] as const;
-const cases = scopes.flatMap(scope => viewers.flatMap(viewer => operations.map(operation => ({ scope, viewer, operation }))));
+const modes = ["preview", "commit"] as const;
+const cases = modes.flatMap(mode => scopes.flatMap(scope => viewers.flatMap(viewer => operations.map(operation => ({ mode, scope, viewer, operation })))));
 
 describe("activation preview authorization contract", () => {
   let ctx: TestContext;
@@ -22,7 +23,7 @@ describe("activation preview authorization contract", () => {
   });
   afterEach(async () => closeTestContext(ctx));
 
-  it.each(cases)("$operation: $scope / $viewer has read-equivalent visibility and no side effects", async ({ scope, viewer, operation }) => {
+  it.each(cases)("$mode $operation: $scope / $viewer enforces visibility before any side effects", async ({ mode, scope, viewer, operation }) => {
     const owner = ctx.handle.db.insert(schema.members).values({ name: "Owner", color: "#111111" }).returning().get();
     const other = ctx.handle.db.insert(schema.members).values({ name: "Other", color: "#222222" }).returning().get();
     const project = createProject(ctx.handle.db, {
@@ -47,10 +48,12 @@ describe("activation preview authorization contract", () => {
     }[operation] as { method: "POST" | "PATCH"; url: string; payload: object };
     const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
     notified.mockClear();
-    const response = await ctx.app.inject({ ...request, headers: { ...headers, "x-machbar-preview": "activation" } });
-    expect(response.statusCode, response.body).toBe(allowed ? 200 : 404);
+    const response = await ctx.app.inject({ ...request, headers: { ...headers, ...(mode === "preview" ? { "x-machbar-preview": "activation" } : {}) } });
+    expect(response.statusCode, response.body).toBe(allowed ? mode === "preview" || operation === "plan" ? 200 : 201 : 404);
     if (!allowed) expect(response.body).not.toContain("Confidential");
-    expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toEqual(before);
-    expect(notified).not.toHaveBeenCalled();
+    if (mode === "preview" || !allowed) {
+      expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toEqual(before);
+      expect(notified).not.toHaveBeenCalled();
+    } else expect(notified).toHaveBeenCalledTimes(1);
   });
 });

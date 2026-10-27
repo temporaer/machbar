@@ -31,13 +31,47 @@ Prefer behavioral, invariant, and concurrency tests over tests that freeze an
 internal call graph. Run `npm run architecture` before the normal typecheck,
 tests, and build.
 
+## Design verification before implementation
+
+For behavioral changes, establish the verification contract before editing
+production code. Keep it proportional: a short working note or the PR validation
+section is enough; no separate plan document is required.
+
+- State observable invariants from the product rules and canonical operation,
+  independently of the proposed implementation. Describe what must remain true
+  for the user, stored state, visibility and side effects.
+- Map the relevant entry/exit paths and counterexamples first. Include early
+  validation/stale errors, read/preview/commit/replay paths, and affected callers
+  or representations. A guard on the normal write path does not protect another
+  error builder or read projection automatically.
+- Choose risk-relevant combinations using the scenario guide in
+  [`docs/loop-engineering.md`](docs/loop-engineering.md#contract-first-verification).
+  Test alternate event/retry orders and logical identities, not only the order
+  or data shape used by the implementation. Avoid unrelated Cartesian products.
+- For regressions and high-risk behavior, add the counterexample before the fix
+  and demonstrate its failure against the faulty code. For new behavior, use
+  explicit positive/negative invariants. Restore any temporary mutations before
+  running final checks. Do not weaken expectations to make the chosen design pass.
+- Use the lowest layer that can observe the invariant, with real persistence or
+  serialized API/error contracts where the boundary matters. Audit what mocks
+  and test wrappers supply that the production caller must supply itself;
+  provider-rich component fixtures cannot validate the real app mount tree.
+- After implementation, compare the tests with the original contract and inspect
+  sibling callers/early returns for the same failure class. On review feedback,
+  add the missing dimension to the relevant matrix rather than patching only the
+  reported line. Record relevant remaining gaps explicitly.
+- Report evidence at its actual scope: one reproduced regression passing proves
+  that scenario. A green suite/test count or a coverage percentage does not prove
+  that the whole failure class is covered. Distinguish pre-existing application
+  defects from defects introduced by the proposed fix and from test-only changes.
+
 ## Running the loop
 
 This repository is set up for an autonomous verify-until-green agent loop.
 
 - Verify everything with a single command: `bash scripts/verify.sh`. It runs the
   Node checks (`npm run verify`: architecture, shared build, typecheck, tests,
-  build) followed by `python -m pytest`. None of these need a running server.
+  build) followed by `python -m pytest`. No external server is needed; cross-runtime tests start their own isolated API.
 - Dependencies are installed once by `scripts/codex-setup.sh` during the
   network-enabled setup phase; the loop itself runs offline.
 - Network/loopback tests are skipped under `CODEX_SANDBOX_NETWORK_DISABLED` and
@@ -58,6 +92,10 @@ This repository is set up for an autonomous verify-until-green agent loop.
   orderings, uniqueness, authoritative values/membership and eventual release.
   Keep browser-only visibility/focus checks separate; API/jsdom success is not
   evidence of CSS layout or a physical keyboard working.
+- Browser-visible changes also require `npm run build && npm run test:e2e`
+  (desktop/mobile Chromium). Do not rely solely on provider-rich component test
+  wrappers to prove the real app mount tree works. The browser CI job runs in
+  parallel and saves failure traces.
 - Always run the verifier before finishing. Do not declare work complete on an
   unverified or red tree.
 - Iteration cap: if the verifier is still failing after a few focused attempts
@@ -79,4 +117,7 @@ For the Codex PR reviewer:
 - Flag speculative abstractions with only a single real consumer.
 - Prefer behavioral and invariant tests over tests that freeze an internal
   call graph.
+- Challenge the scenario selection as well as the code. Compare tests with the
+  stated invariants, look for omitted entry/error paths and identity/order/lifecycle
+  combinations, and flag fixtures that supply production prerequisites silently.
 

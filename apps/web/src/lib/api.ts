@@ -169,6 +169,35 @@ export async function request<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/** One caller-owned creation operation. Keep this object through retries;
+ * use a new object for another form/intent, even when its content is identical. */
+export interface CreationIntent {
+  requestKey?: string;
+  fingerprint?: string;
+}
+
+async function requestCreation<T>(path: string, input: unknown, intent: CreationIntent): Promise<T> {
+  const body = JSON.stringify(input);
+  const fingerprint = JSON.stringify([readRequestActorMemberId(), path, body]);
+  if (intent.fingerprint !== fingerprint || !intent.requestKey) {
+    intent.fingerprint = fingerprint;
+    intent.requestKey = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+  }
+  const key = intent.requestKey;
+  const finish = () => {
+    // A later draft may already have started another request on this form.
+    if (intent.requestKey === key) { delete intent.requestKey; delete intent.fingerprint; }
+  };
+  try {
+    const result = await request<T>(path, { method: "POST", body, headers: { "Idempotency-Key": key } });
+    finish();
+    return result;
+  } catch (error) {
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500) finish();
+    throw error;
+  }
+}
+
 function query(
   params: Record<string, string | number | boolean | undefined | null | number[]>,
 ) {
@@ -728,8 +757,8 @@ export const api = {
 
   getProjects: () => request<ProjectWithActions[]>("/projects"),
   getProject: (id: number) => request<ProjectDetail>(`/projects/${id}`),
-  createProject: (input: CreateProjectInput) =>
-    request<ProjectWithActions>("/projects", { method: "POST", body: JSON.stringify(input) }),
+  createProject: (input: CreateProjectInput, intent: CreationIntent) =>
+    requestCreation<ProjectWithActions>("/projects", input, intent),
   updateProject: (id: number, patch: UpdateProjectInput) =>
     request<ProjectWithActions>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   appendProjectNotes: (id: number, content: string) =>
@@ -975,8 +1004,8 @@ export const api = {
     }),
   getTaskRecurrenceHistory: (id: number) =>
     request<TaskRecurrenceHistory>(`/tasks/${id}/recurrence-history`),
-  createTask: (input: CreateTaskInput) =>
-    request<Task>("/tasks", { method: "POST", body: JSON.stringify(input) }),
+  createTask: (input: CreateTaskInput, intent: CreationIntent) =>
+    requestCreation<Task>("/tasks", input, intent),
   createChildTask: (parentId: number, input: CreateChildTaskInput) =>
     request<Task>(`/tasks/${parentId}/children`, {
       method: "POST",

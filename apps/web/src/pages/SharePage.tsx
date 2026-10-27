@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Project, Task } from "@machbar/shared";
 import { useNavigate } from "react-router-dom";
-import { api, type ProjectWithActions } from "../lib/api";
+import { api, type ProjectWithActions, type CreationIntent } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
@@ -373,6 +373,7 @@ function SharePageContent({
     option.kind === "project" ||
     (option.kind === "task" && option.taskKind === "reference");
 
+  const creationIntent = useRef<CreationIntent>({});
   const applyTo = async (
     option: ShareOption,
     deadlineAction: "append" | "calendar",
@@ -397,7 +398,7 @@ function SharePageContent({
           notes: resolvedBlock,
           projectId: option.kind === "project" ? option.id : option.projectId,
           parentTaskId: option.kind === "task" ? option.id : null,
-        });
+        }, creationIntent.current);
       } else if (deadlineAction === "calendar" && calendarDueDate) {
         const resolvedBlock = await resolveAppendBlock(appendBlock);
         await api.updateTask(option.id, {

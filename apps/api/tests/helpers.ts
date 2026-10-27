@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import type { DbHandle } from "../src/db/client.js";
+import { openDb } from "../src/db/client.js";
+import { runMigrations } from "../src/db/migrate.js";
 import { createTestDatabase } from "./database.js";
 import { seedDatabase } from "../src/db/seed.js";
 import type { Env, McpOAuthConfig, OidcConfig } from "../src/env.js";
@@ -25,6 +27,7 @@ export interface TestContext {
 
 /** Builds a fresh in-memory database + Fastify app for a single fixture. */
 export function createTestContext(options?: {
+  databasePath?: string;
   seed?: boolean;
   oidc?: OidcConfig;
   mcpOAuth?: McpOAuthConfig | null;
@@ -38,7 +41,8 @@ export function createTestContext(options?: {
   paperlessClient?: PaperlessClient;
   dataDir?: string;
 }): TestContext {
-  const handle = createTestDatabase();
+  const handle = options?.databasePath ? openDb(options.databasePath) : createTestDatabase();
+  if (options?.databasePath) runMigrations(handle.db);
   if (options?.seed) {
     seedDatabase(handle.db);
   }
@@ -48,7 +52,7 @@ export function createTestContext(options?: {
     host: "127.0.0.1",
     dataDir,
     databaseFile: "unused.db",
-    databasePath: ":memory:",
+    databasePath: options?.databasePath ?? ":memory:",
     basePath: options?.basePath ?? "/",
     seedDatabase: false,
     webDistDir: path.join(__dirname, "__no_web_dist__"),

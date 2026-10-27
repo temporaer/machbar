@@ -1,3 +1,4 @@
+import { workItemVisibleToViewer } from "./workItemVisibility.js";
 import type {
   AvailabilityRule,
   AcceptanceCriterion,
@@ -320,13 +321,7 @@ export class Graph {
       .all()
       .filter((row) => {
         if (!restrictToViewer) return true;
-        if (row.privacyOwnerMemberId !== null && row.privacyOwnerMemberId !== viewerMemberId) return false;
-        if (row.scope !== "work") return true;
-        const ownerId =
-          row.role === "task"
-            ? (effectiveOwners.get(row.id)?.ownerId ?? null)
-            : row.ownerMemberId;
-        return ownerId === viewerMemberId;
+        return workItemVisibleToViewer(row, viewerMemberId, effectiveOwners.get(row.id)?.ownerId ?? null);
       });
     const reminderRows = db.select().from(schema.taskReminders).all();
     const remindersByTask = new Map<number, TaskReminder[]>();
