@@ -43,6 +43,21 @@ This repository is set up for an autonomous verify-until-green agent loop.
 - Network/loopback tests are skipped under `CODEX_SANDBOX_NETWORK_DISABLED` and
   are covered by CI instead; do not try to make them pass in the sandbox.
 - Definition of Done: all of `scripts/verify.sh` passes AND a PR is open.
+- Before calling a behavioral change verified, identify the failure class and
+  cover it at the lowest suitable level. Extend the existing authorization,
+  transport-contract or event-sequence matrix when the changed behavior fits
+  one. Do not substitute a happy-path mock for a server contract test.
+- For a regression, demonstrate that the test rejects the old bug (on the
+  faulty revision or with a small, temporary equivalent mutation), then restore
+  the production code and verify green. Record the evidence in the PR. For new
+  behavior without a faulty revision, state the invariant and negative case.
+- Changes to work-item preview routes require owner/other/unknown viewer cases,
+  the relevant household/work/durable-private scopes, and no-write/no-notify
+  assertions. New error shapes must reach the real web client/decision adapter.
+- Changes to retention or reconciliation require relevant save/refresh/interaction
+  orderings, uniqueness, authoritative values/membership and eventual release.
+  Keep browser-only visibility/focus checks separate; API/jsdom success is not
+  evidence of CSS layout or a physical keyboard working.
 - Always run the verifier before finishing. Do not declare work complete on an
   unverified or red tree.
 - Iteration cap: if the verifier is still failing after a few focused attempts

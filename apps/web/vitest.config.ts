@@ -48,6 +48,15 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "contracts",
+          environment: "node",
+          include: ["../../tests/contracts/**/*.test.ts"],
+          globalSetup: ["../api/tests/globalSetup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "node",
           environment: "node",
           include: nodeTests,

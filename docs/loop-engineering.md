@@ -72,3 +72,49 @@ Pick one of the following, in rough order of least to most setup:
 Whichever path you choose, the **inner loop still gates everything**: a fix is
 only good once `bash scripts/verify.sh` is green (see `AGENTS.md` ->
 "Running the loop" for the Definition of Done and iteration cap).
+
+## Failure-class verification
+
+The fast loop now includes three complementary contracts:
+
+- `apps/api/tests/activation-preview.permissions.test.ts` is the preview route
+  matrix: task create, planning, task batch, project batch and conversion ×
+  household/work/durable-private scope × owner/other/unknown viewer. Fixtures
+  separate durable privacy ownership from the project driver. This matrix uses
+  activity-actor identity with OIDC disabled; session/OAuth authentication remains
+  covered by its own existing suites. Each case compares
+  source GET visibility with preview visibility, checks hidden-title suppression,
+  hashes the entire SQLite snapshot to prove rollback, and checks notifications.
+  Extend the operation table when adding a supported preview operation.
+- `tests/contracts/activation.test.ts` exercises the real web API transport and
+  decision/error adapters against the full Fastify app with migrated, isolated
+  SQLite databases. Only `fetch` is bridged to `app.inject`; there are no canned
+  HTTP responses or mocked domain functions. It covers ready and missing-driver
+  previews, direct conflict/snapshot parity, conversion requiring a progress path,
+  non-snapshot conflicts, stale refresh/retry and actor headers. Run it with
+  `npm run test:contracts`. The existing web Vitest run includes a Node contract
+  project using the API's shared migration template setup. Cross-package tests
+  live outside production sources and have `tests/contracts/tsconfig.json`,
+  included in the root typecheck command; application tsconfigs remain unchanged.
+- `apps/web/src/lib/useTaskActions.sequences.test.tsx` runs every ordering of
+  save response, refresh and interaction start for existing/new descendants.
+  The actual task controller and placement hook must preserve unique rows,
+  optimistic values, fresh equal-revision derived fields, authoritative child
+  membership, interaction protection and eventual destination placement. Network
+  and stale failures must roll back without discarding a newer refresh. Virtual
+  time and deferred promises replace wall-clock sleeps.
+
+These tests run in the existing `npm test` and CI jobs, without a browser or a
+listening server. Database equality compares SHA-256 digests of the complete
+serialized database, avoiding expensive assertion diffs over every byte.
+The matrices cover these operations and sequences, not every authorization or
+concurrency behavior in the application. Add a dimension when domain behavior
+requires it; do not multiply unrelated combinations for coverage counts.
+
+For bug fixes, show that the regression fails against the original bug or a
+small equivalent mutation before recording its green result. A manually chosen
+fixture that passes only the new implementation is insufficient evidence on its
+own. PR validation should name the affected invariant, tested identities/error
+variants/event orders and remaining browser-only limitations. Mobile CSS,
+browser focus/layout and physical on-screen keyboards remain outside this fast
+suite and need a separate browser/device check.
