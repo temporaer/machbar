@@ -2308,3 +2308,12 @@ the project projection after role conversion and returns project_not_found
 instead of 200/null. Migration 0031 includes its chained schema snapshot; the
 schema-drift regression invokes the installed generator against a temporary copy
 and requires that it produces no additional SQL migration.
+
+The early stale project-deadline branch also passes viewer context to
+projectActivationDecisionSnapshot. That builder authorizes every project in
+both its requirements and revision arrays before returning an error snapshot.
+GET project independently checks all commitment-snapshot references against its
+viewer-aware graph and omits that optional snapshot if an ancestor is hidden,
+while preserving the readable child document and authorized direct activation.
+The regression matrix exercises reads, stale/fresh deadline writes and visible/
+hidden ancestors, including unchanged database and notification state.

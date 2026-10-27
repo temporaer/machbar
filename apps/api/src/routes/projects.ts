@@ -117,10 +117,15 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         ...(task.children ? { children: task.children.map(attachRefs) } : {}),
       };
     }
+    const activationDecisionSnapshot = projectActivationDecisionSnapshot(db, id);
+    // A readable child may have a hidden ancestor. Keep its own document
+    // readable, but do not expose a partial/misleading commitment snapshot.
+    const snapshotVisible = [...activationDecisionSnapshot.expectedProjects, ...activationDecisionSnapshot.projects]
+      .every(entry => graph.projectsById.has(entry.projectId));
     return {
       ...project,
-      activationDecisionSnapshot: projectActivationDecisionSnapshot(db, id),
-      directActivationDecisionSnapshot: projectActivationDecisionSnapshot(db, id, "explicit_activation"),
+      ...(snapshotVisible ? { activationDecisionSnapshot } : {}),
+      directActivationDecisionSnapshot: projectActivationDecisionSnapshot(db, id, "explicit_activation", { viewerMemberId: viewerMemberId(request) ?? null }),
       externalRefs: listExternalWorkItemRefs(db, project.id),
       tasks: (graph.rootsByProject.get(id) ?? []).map(attachRefs),
     };

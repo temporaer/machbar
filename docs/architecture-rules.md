@@ -559,3 +559,10 @@ a failed caller's key. HTTP task/project mutations carry viewer identity into
 canonical activation, authorizing both the evaluated write plan and decision/error
 snapshots before changing projects or returning hidden metadata. Reload-persistent capture intents and batch
 creation replay are separate contracts and are not implied by this mechanism.
+
+Project activation snapshots assembled for an early stale-source conflict must
+receive the public mutation's viewer context before any snapshot is returned.
+A project read may still return a viewer-owned child beneath a hidden ancestor,
+but must omit the entire optional commitment snapshot if any referenced project
+is invisible; never expose a partial decision as if it were complete. Its scoped
+direct-activation snapshot remains available after authorization.

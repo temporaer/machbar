@@ -242,7 +242,7 @@ export function updateProject(
       throw AppError.conflict(
         "project_commitment_resolution_required",
         "The project changed while its deadline was being planned. Refresh the project decisions and retry.",
-        { reason: "project_snapshot_stale", ...projectActivationDecisionSnapshot(txDb, id) },
+        { reason: "project_snapshot_stale", ...projectActivationDecisionSnapshot(txDb, id, "commitment", context) },
       );
     }
     assertExpectedRevision("project", id, project.revision, input.expectedRevision);

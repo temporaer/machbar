@@ -97,6 +97,7 @@ export function projectActivationDecisionSnapshot(
   db: Db,
   projectId: number,
   intent: "commitment" | "explicit_activation" = "commitment",
+  context?: MutationContext,
   today = isoToday(),
 ): ProjectActivationDecisionSnapshot {
   const project = projectChain(db, projectId)[0];
@@ -116,16 +117,21 @@ export function projectActivationDecisionSnapshot(
     ? { ...snapshot, projects: [snapshot.projects[0]!] }
     : snapshot;
   const result = evaluateCommitmentTransition(decisionSnapshot, intent);
-  if (result.kind === "needs_decisions" || result.kind === "conflict") {
-    if (result.decisionSnapshot) return result.decisionSnapshot;
+  const decision: ProjectActivationDecisionSnapshot = result.kind !== "ready" && result.decisionSnapshot
+    ? result.decisionSnapshot
+    : {
+        projects: [],
+        expectedProjects: decisionSnapshot.projects
+          .filter((entry) => entry.status === "backlog" || (intent === "explicit_activation" && entry.status === "completed"))
+          .map(({ projectId: id, revision }) => ({ projectId: id, revision })),
+        targetRevision: project.revision,
+      };
+  if (context && "viewerMemberId" in context) {
+    for (const id of new Set([...decision.expectedProjects, ...decision.projects].map(entry => entry.projectId))) {
+      assertWorkItemAccessible(db, id, context.viewerMemberId ?? undefined);
+    }
   }
-  return {
-    projects: [],
-    expectedProjects: decisionSnapshot.projects
-      .filter((entry) => entry.status === "backlog" || (intent === "explicit_activation" && entry.status === "completed"))
-      .map(({ projectId: id, revision }) => ({ projectId: id, revision })),
-    targetRevision: project.revision,
-  };
+  return decision;
 }
 
 /** The single low-level activation write used by explicit and commitment-driven activation. */
