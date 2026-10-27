@@ -127,7 +127,7 @@ describe("SharePage reference destinations", () => {
         notes: "https://camping-wang.ch/",
         projectId: 4,
         parentTaskId: null,
-      }),
+      }, expect.any(Object)),
     );
     expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe("SharePage reference destinations", () => {
         notes: "https://booking.example/fw",
         projectId: 4,
         parentTaskId: 12,
-      }),
+      }, expect.any(Object)),
     );
   });
 
@@ -233,7 +233,7 @@ describe("SharePage reference destinations", () => {
           "https://camping-wang.ch/\n\nDirekt am See, scheint gut für die Kinder",
         projectId: 4,
         parentTaskId: null,
-      }),
+      }, expect.any(Object)),
     );
   });
 
@@ -267,7 +267,7 @@ describe("SharePage reference destinations", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "reference", parentTaskId: 12 }),
+        expect.objectContaining({ kind: "reference", parentTaskId: 12 }), expect.any(Object),
       ),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();

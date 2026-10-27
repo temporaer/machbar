@@ -73,7 +73,7 @@ describe("CaptureForm", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ dueDate: null }),
+        expect.objectContaining({ dueDate: null }), expect.any(Object),
       ),
     );
   });
@@ -94,7 +94,7 @@ describe("CaptureForm", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ dueDate: "2026-09-15" }),
+        expect.objectContaining({ dueDate: "2026-09-15" }), expect.any(Object),
       ),
     );
   });
@@ -151,7 +151,7 @@ describe("CaptureForm", () => {
         drivers: [{ projectId: 42, ownerMemberId: 2 }],
         nextActionTitle: "Maße prüfen",
       },
-    }));
+    }), expect.any(Object));
     expect(onCaptured).toHaveBeenCalledTimes(1);
   });
 
@@ -247,7 +247,7 @@ describe("CaptureForm", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ projectId: 42, status: "actionable" }),
+        expect.objectContaining({ projectId: 42, status: "actionable" }), expect.any(Object),
       ),
     );
   });
@@ -273,7 +273,7 @@ describe("CaptureForm", () => {
         expect.objectContaining({
           ownerMemberId: 2,
           ownerInheritanceMode: "explicit",
-        }),
+        }), expect.any(Object),
       ),
     );
   });
@@ -298,7 +298,7 @@ describe("CaptureForm", () => {
       expect(mockedApi.createTask).toHaveBeenCalledWith(
         expect.objectContaining({
           scheduledDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        }),
+        }), expect.any(Object),
       ),
     );
   });
@@ -321,8 +321,30 @@ describe("CaptureForm", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ dueDate: null }),
+        expect.objectContaining({ dueDate: null }), expect.any(Object),
       ),
     );
   });
+  it("keeps a failed guided thought's intent when returning from another thought", async () => {
+    mockedApi.createTask.mockRejectedValue(new TypeError("Unknown creation outcome"));
+    const onCaptured = vi.fn();
+    const thought = (key: number) => <CaptureForm mode="thought" thoughtDraft={{ key, title: "Identical thoughts", onChange: vi.fn() }} onCaptured={onCaptured} />;
+    const { rerender } = render(thought(1));
+    const save = () => screen.getByRole("button", { name: "Festhalten" });
+    await userEvent.click(save());
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(save()).toBeEnabled());
+    const firstIntent = mockedApi.createTask.mock.calls[0]![1];
+    rerender(thought(2));
+    await userEvent.click(save());
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(save()).toBeEnabled());
+    expect(mockedApi.createTask.mock.calls[1]![1]).not.toBe(firstIntent);
+    rerender(thought(1));
+    await userEvent.click(save());
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(3));
+    expect(mockedApi.createTask.mock.calls[2]![1]).toBe(firstIntent);
+    expect(onCaptured).not.toHaveBeenCalled();
+  });
+
 });

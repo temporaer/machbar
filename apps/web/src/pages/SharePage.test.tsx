@@ -229,7 +229,7 @@ describe("SharePage", () => {
         notes: "",
         projectId: 4,
         parentTaskId: null,
-      }),
+      }, expect.any(Object)),
     );
     expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
   });
@@ -302,7 +302,7 @@ describe("SharePage", () => {
         notes: "21. September 2026 • 15:00\nhttps://calendar.app.google/birthday",
         projectId: 4,
         parentTaskId: null,
-      }),
+      }, expect.any(Object)),
     );
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
     expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
@@ -478,7 +478,7 @@ describe("SharePage", () => {
         expect.objectContaining({
           title: "Beleg",
           notes: "[receipt.pdf](paperless:51)",
-        }),
+        }), expect.any(Object),
       ),
     );
     expect(mockedDeletePendingShareTarget).toHaveBeenCalledWith("pending-2");
@@ -516,7 +516,7 @@ describe("SharePage", () => {
           title: "Beleg",
           notes:
             "Bitte ablegen\n\n[receipt.pdf](paperless:52)\n\nFür die Steuer",
-        }),
+        }), expect.any(Object),
       ),
     );
   });

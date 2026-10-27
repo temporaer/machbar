@@ -111,7 +111,7 @@ describe("guided capture", () => {
       await waitFor(() => expect(screen.getByLabelText(de.guidedCaptureInput)).toHaveValue(""));
       expect(createTask).toHaveBeenLastCalledWith({
         title, status: "captured", createdByMemberId: 1, ownerMemberId: null, ownerInheritanceMode: "none",
-      });
+      }, expect.any(Object));
       expect(screen.getByRole("heading", { level: 2, name: de.guidedCaptureAreas.home.title })).toBeInTheDocument();
     }
     expect(createTask).toHaveBeenCalledTimes(2);
@@ -576,7 +576,7 @@ describe("guided capture", () => {
     expect(api.getTags).not.toHaveBeenCalled();
     expect(api.getProjects).not.toHaveBeenCalled();
     expect(api.getHomeAssistantStatus).not.toHaveBeenCalled();
-    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ title: "Morgen @Mira #Idee" }));
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ title: "Morgen @Mira #Idee" }), expect.any(Object));
   });
 
   it("still requests metadata for standard capture", async () => {

@@ -101,3 +101,37 @@ test("a real service worker activates and controls a reloaded app", async ({ pag
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
   await expect(page.getByRole("main")).toBeVisible();
 });
+
+for (const kind of ["task", "project"] as const) {
+  test(`${kind} form retries its own lost creation response`, async ({ page }) => {
+    const path = kind === "task" ? "/api/tasks" : "/api/projects";
+    let dropped = false;
+    let committedId: number | undefined;
+    await page.route(`**${path}`, async route => {
+      if (route.request().method() !== "POST" || dropped) { await route.continue(); return; }
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committedId = (await response.json()).id;
+      dropped = true;
+      await route.abort("failed");
+    });
+    await page.goto(kind === "task" ? "/#/inbox" : "/#/projects");
+    await page.getByRole("button", { name: kind === "task" ? "Schnell hinzufügen" : "Projekt anlegen", exact: true }).click();
+    const dialog = page.getByRole("dialog").last();
+    const title = `Lost ${kind} response ${randomUUID()}`;
+    await (kind === "task" ? dialog.locator("#capture-title") : dialog.getByLabel("Projekttitel")).fill(title);
+    const save = dialog.getByRole("button", { name: kind === "task" ? "Erstellen" : "Projekt anlegen", exact: true });
+    await save.click();
+    await expect.poll(() => dropped).toBe(true);
+    await expect(save).toBeEnabled();
+    const retried = page.waitForResponse(response => response.url().endsWith(path) && response.request().method() === "POST");
+    await save.click();
+    const response = await retried;
+    expect(response.status()).toBe(200);
+    expect((await response.json()).id).toBe(committedId);
+    if (kind === "project") await expect(page).toHaveURL(new RegExp(`#/projects/${committedId}$`));
+    else await expect(dialog.locator("#capture-title")).toHaveValue("");
+    const rows = await (await page.request.get(kind === "task" ? "/api/inbox?scope=all" : "/api/projects")).json();
+    expect(rows.filter((row: { title: string }) => row.title === title)).toHaveLength(1);
+  });
+}

@@ -61,39 +61,58 @@ describe("authenticated viewer wins over a spoofed actor", () => {
     expect(allowed.json().title).toBe("Owner edit");
   });
 
-  describe("task commitments authorize every project they activate", () => {
-    let ctx: TestContext;
-    afterEach(async () => closeTestContext(ctx));
-    it.each([
-      { projectOwner: "viewer", ancestorOwner: "viewer", expectedStatus: 200 },
-      { projectOwner: "other", ancestorOwner: "viewer", expectedStatus: 404 },
-      { projectOwner: "viewer", ancestorOwner: "other", expectedStatus: 404 },
-    ])("checks project owner $projectOwner and ancestor owner $ancestorOwner", async ({ projectOwner, ancestorOwner, expectedStatus }) => {
-      ctx = createTestContext();
-      const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
-      const viewer = member("Viewer"), other = member("Other");
-      const ownerId = (owner: string) => owner === "viewer" ? viewer.id : other.id;
-      const ancestor = createProject(ctx.handle.db, { title: "Ancestor", scope: "work", ownerMemberId: ownerId(ancestorOwner) });
-      const project = createProject(ctx.handle.db, { title: "Project", parentId: ancestor.id, ownerMemberId: ownerId(projectOwner) });
-      const task = createTask(ctx.handle.db, {
-        title: "Task owned by viewer",
-        projectId: project.id,
-        ownerMemberId: viewer.id,
-        ownerInheritanceMode: "explicit",
-      });
-      const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
-      const response = await ctx.app.inject({
-        method: "PATCH",
-        url: `/api/tasks/${task.id}`,
-        headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id) },
-        payload: { scheduledDate: "2026-10-27", expectedRevision: task.revision },
-      });
-      expect(response.statusCode, response.body).toBe(expectedStatus);
-      if (expectedStatus === 404) {
-        expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
-      } else {
-        expect(response.json().scheduledDate).toBe("2026-10-27");
-      }
+});
+
+describe("task commitments authorize every project they activate", () => {
+  let ctx: TestContext;
+  afterEach(async () => closeTestContext(ctx));
+  it.each([
+    { projectOwner: "viewer", ancestorOwner: "viewer", expectedStatus: 200 },
+    { projectOwner: "other", ancestorOwner: "viewer", expectedStatus: 404 },
+    { projectOwner: "viewer", ancestorOwner: "other", expectedStatus: 404 },
+  ])("checks project owner $projectOwner and ancestor owner $ancestorOwner", async ({ projectOwner, ancestorOwner, expectedStatus }) => {
+    ctx = createTestContext();
+    const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
+    const viewer = member("Viewer"), other = member("Other");
+    const ownerId = (owner: string) => owner === "viewer" ? viewer.id : other.id;
+    const ancestor = createProject(ctx.handle.db, { title: "Ancestor", scope: "work", ownerMemberId: ownerId(ancestorOwner) });
+    const project = createProject(ctx.handle.db, { title: "Project", parentId: ancestor.id, ownerMemberId: ownerId(projectOwner) });
+    const task = createTask(ctx.handle.db, {
+      title: "Task owned by viewer",
+      projectId: project.id,
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
     });
+    const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id) },
+      payload: { scheduledDate: "2026-10-27", expectedRevision: task.revision },
+    });
+    expect(response.statusCode, response.body).toBe(expectedStatus);
+    if (expectedStatus === 404) {
+      expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
+    } else {
+      expect(response.json().scheduledDate).toBe("2026-10-27");
+    }
   });
+});
+
+describe("hidden activation decision snapshots", () => {
+  let ctx: TestContext;
+  afterEach(async () => closeTestContext(ctx));
+  it.each([false, true])("rejects hidden project requirements before serializing them, preview %s", async preview => {
+    ctx = createTestContext();
+    const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
+    const viewer = member("Viewer"), other = member("Other");
+    const hidden = createProject(ctx.handle.db, { title: "Hidden project title", scope: "work", ownerMemberId: other.id });
+    const task = createTask(ctx.handle.db, { title: "Visible task", projectId: hidden.id, ownerMemberId: viewer.id, ownerInheritanceMode: "explicit" });
+    const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
+    const response = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id), ...(preview ? { "x-machbar-preview": "activation" } : {}) }, payload: { scheduledDate: "2027-01-15", expectedRevision: task.revision, activationResolution: { expectedProjects: [{ projectId: hidden.id, revision: hidden.revision + 1 }], drivers: [] } } });
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.body).not.toContain(hidden.title);
+    expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
+  });
+
 });

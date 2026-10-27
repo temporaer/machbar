@@ -135,10 +135,11 @@ suite and need a separate browser/device check.
   process. `representative-load.test.ts` exercises 1000 tasks through reads and
   a write with a bounded graph-load budget. This is a functional scale check,
   not a production capacity or tail-latency benchmark.
-- `tests/e2e/core.spec.ts` runs ten real-browser cases (five scenarios × desktop
+- `tests/e2e/core.spec.ts` runs fourteen real-browser cases (seven scenarios × desktop
   and mobile Chromium): visible/tappable completion, dialog focus restoration,
   two live sessions with stale writes and offline reconnection, Discussion live
-  contents and actual service-worker activation/control. Any page exception
+  contents actual service-worker activation/control, and both creation forms retrying a
+  committed response lost by the browser. Any page exception
   fails its test. Discussion failed with a real missing-provider exception before
   the fix. Run `npm run build && npm run test:e2e`. The server uses a disposable
   temporary database and never reuses a developer server. CI installs Chromium
@@ -159,3 +160,11 @@ use the real HTTP client but supply a fixture analysis result; they do not grade
 AI output quality. Ordinary creation replay covers task/project root POSTs and
 retry within the current client runtime; batch endpoints and capture recovery
 across a page reload are not claimed as covered retry contracts.
+
+Review follow-up contracts also cover caller-owned retry identity (including
+reverse-order retries and a new identical form while another result is unknown),
+hidden project activation snapshots on final writes, role-converted receipt
+results, and migration snapshot drift. The creation APIs require an explicit
+CreationIntent at compile time, so new production callers must choose their
+operation lifetime rather than inheriting an implicit payload queue. Activation
+fixtures deliberately give task, project and ancestor different owners.

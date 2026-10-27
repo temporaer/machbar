@@ -202,6 +202,14 @@ export function activateCommittedProjectChain(
   };
   const snapshot = loadCommitmentTransitionSnapshot(db, projectId, effectiveSubject);
   const result = evaluateCommitmentTransition(snapshot, "commitment", { resolution });
+  // Guard both planned writes and any decision/error snapshot before exposing
+  // hidden project metadata. The canonical evaluator owns the affected set.
+  if (context && "viewerMemberId" in context) {
+    const affectedIds = result.kind === "ready"
+      ? [...result.plan.projectActivations.map(entry => entry.projectId), ...(result.plan.nextAction ? [result.plan.nextAction.projectId] : [])]
+      : (result.decisionSnapshot?.expectedProjects ?? []).map(entry => entry.projectId);
+    for (const id of new Set(affectedIds)) assertWorkItemAccessible(db, id, context.viewerMemberId ?? undefined);
+  }
   if (result.kind === "needs_decisions") {
     throw AppError.conflict(
       "project_commitment_resolution_required",
@@ -231,15 +239,6 @@ export function activateCommittedProjectChain(
     );
   }
 
-  if (context && "viewerMemberId" in context) {
-    const affectedProjectIds = new Set([
-      ...result.plan.projectActivations.map((activation) => activation.projectId),
-      ...(result.plan.nextAction ? [result.plan.nextAction.projectId] : []),
-    ]);
-    for (const affectedProjectId of affectedProjectIds) {
-      assertWorkItemAccessible(db, affectedProjectId, context.viewerMemberId ?? undefined);
-    }
-  }
   applyTransitionPlan(db, projectId, result.plan, context);
 }
 

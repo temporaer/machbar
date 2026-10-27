@@ -195,7 +195,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(within(dialog).getByDisplayValue("Only a title")).toBeVisible();
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt anlegen" }));
     await waitFor(() => expect(screen.getByLabelText("location")).toHaveTextContent('/projects/87{"createdProjectId":87}'));
-    expect(mockedApi.createProject).toHaveBeenLastCalledWith({ title: "Only a title" });
+    expect(mockedApi.createProject).toHaveBeenLastCalledWith({ title: "Only a title" }, expect.any(Object));
     expect(screen.queryByRole("dialog", { name: "Aufgaben hinzufügen" })).not.toBeInTheDocument();
   });
 

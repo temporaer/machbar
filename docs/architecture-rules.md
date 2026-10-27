@@ -197,7 +197,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Home Assistant reverse request bridge | `apps/api/src/integrations/homeAssistantRequests.ts` and `custom_components/machbar/worker.py`; exactly `intake_analyze`, `cleanup_round_analyze`, `goal_suggest`, `goal_assess`, and `calendar_create`, not an RPC mechanism |
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py`, `custom_components/machbar/cleanup_round.py`, `custom_components/machbar/goal_coach.py`, and `custom_components/machbar/calendar_bridge.py` |
 | Work-item read/write visibility | `workItemVisibility.ts::workItemVisibleToViewer` is shared by viewer-aware `Graph.load` and `workItemShared.ts::assertWorkItemAccessible`; task/project route guards authorize existing source and destination IDs before any mutation. |
-| Ordinary creation replay | `creationReceipt.ts::createWithReceipt` wraps the existing task/project creation in one SQLite transaction with an actor/route/key-scoped receipt. `api.ts::requestCreation` reuses a key only after an uncertain response; independent simultaneous intents and successful subsequent creations get distinct keys. |
+| Ordinary creation replay | `creationReceipt.ts::createWithReceipt` wraps the existing task/project creation in one SQLite transaction with an actor/route/key-scoped receipt. `api.ts::requestCreation` requires a caller-owned `CreationIntent`; retries reuse that intent, while independent forms/intents and successful subsequent creations get distinct keys. |
 | Owner-only generated task privacy | `work_items.privacy_owner_member_id`, migration 0026 inheritance constraints, viewer-aware `Graph.load`, task/project HTTP pre-handler guards, activity snapshots and existing reflection/notification readers |
 | Intervention observation plans and records | `interventionObservation.ts` shared contracts, `domain/interventionObservations.ts` canonical history, plan and report mutations; existing goals routes and MCP tools |
 | Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` (method-aware facts and citation selection), `ObservationPlanSummary` in `ObservationPlanEditor.tsx`, and `InterventionAssessSheet`; existing reflection evidence is reused |
@@ -551,6 +551,11 @@ Receipt insertion, canonical creation and authorization of the created item are
 atomic. Replays authorize the current result, reject changed payloads and never
 resurrect deleted work; successful replays do not publish mutation notifications.
 No separate creation command or domain readiness logic is introduced. The web
-transport retains keys in memory only for unknown outcomes (network/5xx); normal
-new intents remain new operations. Reload-persistent capture intents and batch
+transport requires an explicit `CreationIntent`, owned by the capture/project/share
+form for its operation lifetime. Unknown outcomes (network/5xx) keep that intent
+through retry; success/definitive client errors clear it. No payload-keyed global
+cache or FIFO guessing is allowed: another form or a new intent must never consume
+a failed caller's key. HTTP task/project mutations carry viewer identity into
+canonical activation, authorizing both the evaluated write plan and decision/error
+snapshots before changing projects or returning hidden metadata. Reload-persistent capture intents and batch
 creation replay are separate contracts and are not implied by this mechanism.

@@ -1,8 +1,8 @@
 import { localizedErrorMessage } from "../lib/errorMessage";
 import type { Tag } from "@machbar/shared";
-import type { ProjectWithActions } from "../lib/api";
+import type { ProjectWithActions, CreationIntent } from "../lib/api";
 import { useRetainedPlacement } from "../lib/useRetainedPlacement";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -73,6 +73,8 @@ function ProjectsPageContent() {
   const [groupingOpen, setGroupingOpen] = useState(false);
   const groupingTriggerRef = useRef<HTMLButtonElement>(null);
 
+  const creationIntent = useRef<CreationIntent>({});
+  useEffect(() => { if (!creating) creationIntent.current = {}; }, [creating]);
   const submit = async () => {
     const trimmed = title.trim();
     if (!trimmed || saving) return;
@@ -82,7 +84,7 @@ function ProjectsPageContent() {
       const created = await api.createProject({
         title: trimmed,
         ...(scope === "work" ? { scope: "work" } : {}),
-      });
+      }, creationIntent.current);
       setTitle("");
       setCreating(false);
       bump();
