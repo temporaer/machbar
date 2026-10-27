@@ -17,7 +17,10 @@ describe("creation receipt transaction and authorization", () => {
     expect(changed.statusCode).toBe(409); expect(digest()).toBe(before);
     expect((await ctx.app.inject({ method: "DELETE", url: `/api/${route}/${created.json().id}` })).statusCode).toBe(204);
     const deleted = digest();
-    const retry = await ctx.app.inject(request); expect(retry.statusCode).toBe(404); expect(digest()).toBe(deleted);
+    const retry = await ctx.app.inject(request);
+    expect(retry.statusCode).toBe(404);
+    expect(retry.json().error.code).toBe(route === "projects" ? "project_not_found" : "task_not_found");
+    expect(digest()).toBe(deleted);
   });
   it.each(["tasks", "projects"])("does not commit an invisible root %s creation or a receipt", async route => {
     const owner = ctx.handle.db.insert(schema.members).values({ name: "Owner", color: "#111111" }).returning().get();

@@ -9,7 +9,7 @@ import { assertWorkItemAccessible } from "./workItemShared.js";
  * authorize the current item; deleted or newly hidden work is never recreated. */
 export function createWithReceipt(
   db: Db,
-  input: { key: string | string[] | undefined; route: string; viewer: number | undefined; body: unknown },
+  input: { key: string | string[] | undefined; route: "/api/tasks" | "/api/projects"; viewer: number | undefined; body: unknown },
   create: () => { id: number },
 ): { id: number; replayed: boolean } {
   if (input.key === undefined) return db.transaction(() => {
@@ -29,7 +29,7 @@ export function createWithReceipt(
     )).get();
     if (prior) {
       if (prior.fingerprint !== fingerprint) throw AppError.conflict("stale_write_conflict", "Creation request key was reused with different content", { reason: "creation_request_mismatch" });
-      if (prior.workItemId === null) throw AppError.notFound("task_not_found", "The original creation was deleted");
+      if (prior.workItemId === null) throw AppError.notFound(input.route === "/api/projects" ? "project_not_found" : "task_not_found", "The original creation was deleted");
       assertWorkItemAccessible(db, prior.workItemId, input.viewer);
       return { id: prior.workItemId, replayed: true };
     }
