@@ -74,6 +74,45 @@ Whichever path you choose, the **inner loop still gates everything**: a fix is
 only good once `bash scripts/verify.sh` is green (see `AGENTS.md` ->
 "Running the loop" for the Definition of Done and iteration cap).
 
+## Contract-first verification
+
+Before changing behavior, write a small scenario matrix derived from the domain
+contract. Record the invariant, relevant inputs/identities/states/event orders,
+public entry and error paths, expected visible/persisted effects, and test layer.
+Use working notes or PR validation; this is reasoning evidence, not a new artifact
+or a demand for every possible combination. Simple changes need only a few lines.
+
+Select dimensions according to the actual risk:
+
+| Failure class | Counterexamples and assertions to consider |
+| --- | --- |
+| Authorization / data exposure | Read, preview, commit, replay and early stale/validation errors; owner, other and unknown viewer; task/project/ancestor owners differing; both work scope and durable privacy. Assert sensitive response fields are absent and rejected writes leave data, activity/outbox and notifications unchanged. A status code alone is insufficient. |
+| Retry / operation identity | Two identical intents, both responses lost after commit, reversed retry order, a new identical caller, navigation away/back, and success followed by a deliberate new creation. Assert each caller recovers its own result and emits effects once. Identity follows the logical operation, not payload equality or FIFO position. |
+| State / concurrency | Save versus refresh versus open interaction in relevant orders; removed/promoted/new descendants; equal-revision derived changes; stale/network failures and eventual release. Assert uniqueness, current values and membership, preserved drafts/focus/placement as applicable, and recovery. |
+| Lifecycle / representation | Active, deferred, completed, archived, converted and deleted states relevant to the change. Existing IDs can change roles. Test the public projection/response a caller consumes, not merely row existence. |
+| Persistence / migration | Upgrade with existing data, rollback, restart/restore as relevant; SQL plus snapshot/journal chain; generation of the next migration. Applying today's SQL alone does not validate future schema generation. |
+| UI / environment | Actual production providers/routing, touch CSS and focus transitions. Identify extra capabilities supplied by wrappers/mocks. Use real app/browser checks for boundaries those fixtures cannot establish. |
+
+Add the highest-risk counterexamples before implementing the fix. Demonstrate
+that a regression rejects the faulty revision or a small equivalent mutation;
+this establishes that scenario's sensitivity, not completeness of the matrix.
+For new behavior, state positive and negative invariants independently of the new
+code. A mocked API response must be backed by a real serialized contract test
+when its shape/meaning is what the change relies on, including error variants.
+
+After the code is green, revisit the matrix and inspect adjacent callers and
+all early exits. Ask which plausible input/state/order the current tests still
+assume away. Add relevant missing cases, or state the remaining limitation and
+its consequence. Do not change an invariant merely to accommodate the proposed
+implementation without a domain reason. Keep external review as an independent
+check; this pass does not replace it.
+
+In PR validation, name the invariant and counterexamples, the evidence that the
+regression was sensitive, and what remains untested. Classify findings honestly:
+pre-existing app bug, bug introduced by this implementation, or verification-only
+change. Report test counts/coverage as measurements; do not infer absence of
+production bugs or complete failure-class coverage from them.
+
 ## Failure-class verification
 
 The fast loop now includes three complementary contracts:

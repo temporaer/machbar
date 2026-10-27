@@ -19,7 +19,10 @@
 
 ## Validation
 
-- Failure class / invariant:
-- Relevant identities, error variants or event orders tested:
+- Observable invariant and counterexamples identified before implementation:
+- Relevant entry/early-error paths, identities, lifecycle states and event orders tested:
+- Production prerequisites supplied by mocks/wrappers and how the real boundary was checked:
 - Regression rejected the faulty revision/equivalent mutation (or new-behavior negative case):
-- Browser-only checks / remaining limitations:
+- Post-implementation check against the original matrix and sibling paths:
+- Finding origin (existing app defect / defect introduced by this fix / verification-only):
+- Remaining gaps and limits of the evidence (including browser-only checks):

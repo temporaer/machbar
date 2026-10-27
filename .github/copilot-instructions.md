@@ -134,6 +134,23 @@ the existing primitive cannot express required semantics, and explain why.
 - Multi-table writes are explicit transactions. Domain errors use `AppError`
   and stable `ApiErrorCode` values from `@machbar/shared`.
 
+## Verification before implementation
+
+Follow `AGENTS.md` → "Design verification before implementation" and the
+contract-first scenario guide in `docs/loop-engineering.md`. Before editing
+behavior, state observable invariants and a proportional counterexample matrix
+independently of the proposed code. Inventory early error/read/preview/commit/
+replay exits and affected callers. Select relevant identity, event-order and
+lifecycle combinations; do not derive tests solely from implementation branches.
+
+Reproduce regressions before fixing them. Validate real persistence/serialized
+error contracts where they matter, and audit production prerequisites supplied
+only by mocks or test wrappers. After green checks, revisit the original matrix
+and sibling paths. Review feedback should expand coverage of the failure class,
+not only patch the reported line. A passing regression proves that scenario;
+test counts/coverage alone establish no broader guarantee. Distinguish existing
+app defects from defects introduced by the fix and document remaining gaps.
+
 ## Web, tests, and migrations
 
 - Keep built asset URLs relative for ingress, keep browser API requests at
