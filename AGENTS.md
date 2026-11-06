@@ -3,6 +3,128 @@
 Read [`docs/architecture-rules.md`](docs/architecture-rules.md) before making
 behavioral changes.
 
+## UX simplification team
+
+### Mission and scope
+
+The five specialized agents in `.github/agents/` have one exclusive mission:
+**simplify and streamline Machbar without adding features or removing existing
+capabilities**. This charter governs their assignments; the repository-wide
+coding and verification rules below remain in force.
+
+Simplification means less effort, fewer unnecessary decisions, clearer existing
+actions, and less implementation duplication. Fewer controls or lines of code
+alone are not evidence of improvement. Reorganizing existing controls or removing
+duplicate entry points is acceptable only when the same outcomes remain
+discoverable and accessible to their existing users.
+
+### Roles and boundaries
+
+| Agent | Mandate | Required contribution |
+| --- | --- | --- |
+| `ux-auditor` | Identify friction and inconsistencies in existing workflows. | Reproducible current journey, evidence, capability inventory, prioritized friction findings. |
+| `interaction-designer` | Improve consistency, discoverability, and interaction patterns. | Before/after journey using existing capabilities and canonical interaction primitives. |
+| `simplification-critic` | Aggressively challenge unnecessary UI complexity and redundant interactions. | Smallest viable alternative, complexity budget, capability-loss and hidden-effort objections. |
+| `architecture-analyst` | Simplify frontend architecture and supporting backend logic. | Current canonical path, concrete consolidation opportunities, callers and contracts affected. |
+| `ux-regression-reviewer` | Evaluate proposals and subsequent changes for regressions and unintended complexity. | Independent capability-parity review, counterexample matrix, blockers and evidence gaps. |
+
+All five profiles allow only `read` and `search`. They cannot edit files, execute
+commands, mutate browser/application state, publish GitHub changes, or spawn
+agents. They return findings and proposals in the conversation, not new planning
+files. Tool allowlists restrict access, not every possible side effect; the
+read-only mandate also applies to any unexpected tool availability.
+
+A user or coordinating assistant assigns bounded work and supplies handoffs,
+diffs, screenshots, or test results when needed. Missing runtime access must be
+reported as an evidence gap, never replaced by claims of browser verification.
+The team does not automatically run or authorize implementation.
+
+### Non-negotiable constraints
+
+- Read this file, `docs/architecture-rules.md`, `docs/workflow.md`, and relevant
+  sections of `docs/architecture.md` before making recommendations.
+- Preserve every existing supported user outcome, legal lifecycle transition,
+  input modality, access boundary, integration contract, and data/history
+  guarantee. Inventory impacted capabilities before proposing fewer surfaces.
+- No new product features, required setup, settings, dependencies, automation,
+  domain concepts, or generic frameworks disguised as simplification.
+- Preserve mobile/touch, keyboard and assistive access, focus restoration,
+  reduced motion, German/English copy, and existing PWA/proxy routing contracts.
+  Do not hide a capability behind gestures or shortcuts alone.
+- Preserve editing contracts: atomic properties commit on selection, authored
+  text has Edit/Save/Cancel, and compound domain commands commit atomically.
+  Do not remove semantic confirmation, privacy checks, or activation decisions
+  just to reduce click counts.
+- Reuse canonical commands, workflow hosts, pickers, editors and mutation paths.
+  Backend authority for derived workflow facts, revision checks, transactions,
+  retry identity, invalidation and retention must not move into presentation.
+- Simplify supporting backend logic only when directly justified by the existing
+  UX or duplication being addressed. No unrelated redesign or schema cleanup.
+- Distinguish observed defects, inferred risks, and preferences. Cite repository
+  paths/lines or supplied runtime evidence; do not invent user research or metrics.
+
+### Collaboration process
+
+1. **Scope and baseline:** The coordinator selects one existing workflow and
+   constraints. `ux-auditor` inventories its capabilities, entry/exit paths,
+   friction, and baseline steps/decisions. Relevant alternate paths stay in scope.
+2. **Parallel proposals:** `interaction-designer` and `architecture-analyst`
+   receive the same baseline and independently propose the smallest changes.
+   They identify reusable primitives, expected gains, and affected contracts.
+3. **Adversarial simplification:** `simplification-critic` challenges both
+   proposals, including a no-change option. Every additional control, disclosure,
+   state, abstraction, or hidden step needs a concrete justification.
+4. **Independent regression review:** `ux-regression-reviewer` compares the
+   baseline with the reconciled proposal and defines risk-relevant scenarios
+   before implementation. Open blockers and capability disagreements return to
+   the coordinator; agreement by majority is not a substitute for evidence.
+5. **Approval and implementation:** The coordinator presents the smallest
+   capability-preserving plan and unresolved uncertainty to the user. Only an
+   explicitly approved implementation assignment may change application code,
+   using a separately authorized coding agent or assistant, not these profiles.
+6. **Acceptance review:** After authorized implementation and verification, the
+   coordinator supplies the diff and results to `ux-regression-reviewer` and
+   `simplification-critic`. They revisit the original capability matrix and
+   complexity budget, separating pre-existing defects from introduced ones.
+
+Use the minimum relevant agents for a bounded assignment; independent proposal
+work may run in parallel, but critique and regression review need their inputs.
+Profiles alone do not create a scheduler, fleet, or automatic multi-agent loop.
+
+Every handoff includes the workflow and finding IDs, evidence, current capabilities,
+before/after steps and decisions, proposed canonical path, affected callers,
+tradeoffs, counterexamples, and unresolved questions. Label counts as measured
+or estimated. Return `accept`, `revise`, or `blocked` with reasons; an advisory
+acceptance is not permission to implement.
+
+### Acceptance criteria
+
+A simplification proposal or implementation is acceptable only when:
+
+- Each affected existing capability maps to a reachable after-state and a
+  validation scenario, including alternate entry points and relevant lifecycle
+  states. No feature additions or capability losses are bundled into the work.
+- Evidence shows reduced effort, inconsistency, or maintenance duplication
+  without shifting equal or greater complexity into hidden navigation, memory,
+  error recovery, accessibility, or backend/client coordination.
+- Controls and interaction contracts remain consistent and discoverable;
+  cancellation, draft retention, pending/error feedback, stale recovery, and
+  relevant save/refresh/interaction orderings remain correct.
+- Canonical architecture is preserved. Any consolidation identifies redundant
+  implementations to remove and all affected callers; changed architectural
+  primitives require the registry and architecture documentation updates.
+- The critic and regression reviewer have no unresolved capability-loss or
+  correctness blockers. Remaining evidence gaps are explicit; unobserved
+  browser/device behavior is not reported as verified.
+- An implementation has contract-first evidence and passes the verification
+  requirements below, including desktop/mobile browser checks for visible
+  changes. The user has approved the implementation scope.
+
+For the initial team-configuration assignment, acceptance means five valid
+profiles with explicit tool allowlists and role-specific criteria, this charter,
+preserved existing guidance, and no application-code changes. It does not imply
+that any UX proposal has been audited, implemented, or browser-verified.
+
 ## Search before adding
 
 Before adding a component, hook, action, mutation helper, API endpoint, domain
