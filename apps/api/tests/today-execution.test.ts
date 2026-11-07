@@ -26,8 +26,8 @@ describe("Today execution eligibility across task and project containers", () =>
   let ctx: TestContext;
   beforeEach(() => { ctx = createTestContext(); });
   afterEach(async () => { await closeTestContext(ctx); });
-  const graph = (instant = now, viewer?: number) => Graph.load(ctx.handle.db, instant, viewer);
-  const compile = (options: BuildAgendaOptions = {}) => buildAgenda(graph(options.now ?? now, options.memberId), {
+  const graph = (instant = now, viewer?: number, date = today) => Graph.load(ctx.handle.db, date, viewer, instant);
+  const compile = (options: BuildAgendaOptions = {}) => buildAgenda(graph(options.now ?? now, options.memberId, options.today ?? today), {
     now, today, householdTimezone: "Europe/Berlin", ...options,
   });
   const task = (values: Parameters<typeof insertTestTask>[1]) => insertTestTask(ctx.handle.db, values);

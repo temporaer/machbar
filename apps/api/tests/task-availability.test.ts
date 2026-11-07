@@ -39,7 +39,7 @@ describe("availability persistence and Today compilation", () => {
   afterEach(async () => { await closeTestContext(ctx); });
   const today = "2026-07-13";
   const now = "2026-07-13T16:00:00Z";
-  const compile = (instant = now) => buildAgenda(Graph.load(ctx.handle.db, instant), {
+  const compile = (instant = now) => buildAgenda(Graph.load(ctx.handle.db, today, undefined, instant), {
     now: instant, today, householdTimezone: "Europe/Berlin",
   });
   const rowIds = (agenda: ReturnType<typeof compile>) =>
@@ -120,7 +120,7 @@ describe("availability persistence and Today compilation", () => {
     expect(rowIds(agenda)).not.toContain(first.id);
     expect(rowIds(agenda)).not.toContain(nested.id);
     expect(agenda.dueToday.find(t => t.id === container.id)?.children).toEqual([]);
-    const graph = Graph.load(db, now);
+    const graph = Graph.load(db, today, undefined, now);
     expect(graph.nextActionFor(project.id)?.id).toBe(first.id);
     expect(graph.stuckReasonFor(project.id)).toBeNull();
     expect(graph.tasksById.get(nested.id)).toBeDefined();
@@ -135,7 +135,7 @@ describe("availability persistence and Today compilation", () => {
     expect(entry.project.nextAction).toBeNull();
     expect(entry.additionalNextActions).toEqual([]);
     expect(entry.stuck).toBeNull();
-    expect(Graph.load(db, now).stuckReasonFor(project.id)).toBeNull();
+    expect(Graph.load(db, today, undefined, now).stuckReasonFor(project.id)).toBeNull();
   });
 
   it("combines future one-time deferral with the weekly window", () => {
@@ -146,7 +146,7 @@ describe("availability persistence and Today compilation", () => {
     expect(rowIds(compile("2026-07-13T07:00:00Z"))).not.toContain(task.id);
     expect(rowIds(compile("2026-07-13T10:00:00Z"))).toContain(task.id);
     expect(rowIds(compile("2026-07-13T15:00:00Z"))).not.toContain(task.id);
-    expect(Graph.load(db, now).tasksById.get(task.id)?.revisitAt).toBe("2026-07-13T10:00:00Z");
+    expect(Graph.load(db, today, undefined, now).tasksById.get(task.id)?.revisitAt).toBe("2026-07-13T10:00:00Z");
   });
 
   it("evaluates refresh boundaries without writes, and keeps Week accessible", () => {
@@ -158,7 +158,7 @@ describe("availability persistence and Today compilation", () => {
     expect(rowIds(compile("2026-07-13T15:00:00Z"))).not.toContain(task.id);
     expect(db.select().from(schema.workItems).all()).toEqual(before);
     expect(db.select().from(schema.activityEvents).all()).toEqual(activityBefore);
-    const week = buildWeekAgenda(Graph.load(db, now), { start: today, today });
+    const week = buildWeekAgenda(Graph.load(db, today, undefined, now), { start: today, today });
     expect(JSON.stringify(week)).toContain('"Call"');
   });
 });
