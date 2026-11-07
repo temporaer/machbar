@@ -302,3 +302,44 @@ The corrected complete acceptance gate passed architecture, builds/typechecks,
 1946-web/65-browser gate with seven direct cases and four browser executions;
 the separate new-work CaptureForm preview lifetime is not certified by this
 bounded existing-target matrix.
+
+The sixth Copilot review exposed three more introduced boundaries: stored move
+requirements lacked destination/ancestor read provenance, project conversion
+advanced authority without reconciling authored title/notes, and conversion
+requirements could describe containing projects absent from its source-only
+continuation. Six corrected direct counterexamples failed before production
+changes. Two entry/split ancestor-preview siblings and two first-request
+post-denial revalidation cases also failed before their corrections. The task
+move continuation case is an additional positive contract, not a claimed
+pre-fix reproduction. A pure selector case verifies revisionless story ancestry
+and excludes task parents even when they carry revisions.
+
+Original source/destination/story-ancestor epochs now bind the request and its
+requirements; no response-time target stamping or revision-based ID inference
+is used. Task inputs without containing-project ancestry learn it through the
+existing canonical reader before the command. Existing prompt merging preserves
+applicable decisions for deliberate regeneration, and existing conversion
+field merging reconciles selected qualified authority with explicit divergent
+choices. This extends only the transitional correctness baseline, not a fetched
+state framework, CaptureForm scope, backend policy or Query migration.
+
+The focused gate passed web typecheck and 134 tests. Initial new-browser failures
+were fixture mistakes: unplanned task creation does not activate its containing
+projects, explicit child activation leaves its ancestor in backlog, textarea
+labels need role-based lookup, relative conflict controls need relative locators,
+and a ready project's action rail deliberately contains no Structure action.
+The corrected browser journey uses the existing project-detail action menu and
+holds the ancestor reader across navigation, so a matching transport denial
+still reaches the shared generation without an abandoned query publishing data.
+Browser recovery uses GET-only retry, retains exact authored/search nodes, and
+holds deliberate regenerated requirements after a qualified affected GET to
+check that restoration alone does not recertify the old prompt.
+The sixth-review complete gate passed:
+`PATH=/home/hannes/miniforge3/envs/machbar-pytest/bin:$PATH npm exec --yes --package=node@22 -- bash -c 'bash scripts/verify.sh && npm run test:e2e'`.
+Architecture (369 source files), shared/production builds and all typechecks
+passed; 1379 API, 1965 web and 159 Python tests passed, with one existing Python
+skip. Chromium passed 75 desktop/mobile cases with one existing skip, including
+all six new executions. This extends the historical 1953-web/69-browser gate
+with twelve direct cases and six browser executions; original browser assertions
+remain unchanged. Synthetic HTTP denials exercise real frontend transport and
+generation handling, not live identity-provider or production authorization.

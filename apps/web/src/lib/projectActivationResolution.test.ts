@@ -8,9 +8,19 @@ import {
   refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
   projectActivationPromptFromSnapshot,
+  projectActivationTargetIds,
 } from "./projectActivationResolution";
 
 describe("project activation decisions from the server", () => {
+  it("uses actual story ancestors, including revisionless projects, rather than task parents or revision heuristics", () => {
+    expect(projectActivationTargetIds(42, [
+      { id: 89, role: "story", title: "Higher project" },
+      { id: 17, role: "task", title: "Task parent", revision: 900 },
+      { id: 88, role: "story", title: "Containing project", revision: 1 },
+      { id: 42, role: "story", title: "Duplicate source" },
+    ])).toEqual([42, 89, 88]);
+    expect(projectActivationTargetIds(null)).toEqual([]);
+  });
   it("uses an explicit target baseline when only backlog ancestors occur in expectedProjects", () => {
     const projects = [{ projectId: 9, title: "Current ancestor", revision: 12, ownerMemberId: null,
       required: ["driver"] as Array<"driver"> }];

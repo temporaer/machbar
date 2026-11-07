@@ -760,6 +760,36 @@ The existing API authentication event also checks an opaque request-identity
 generation before dispatch: an old 401 cannot log out a newer selected or
 cookie-bound identity, including ABA transitions.
 
+Compound move/conversion and containing-project previews retain the original
+source, destination and story-ancestor generations before the request.
+`projectActivationResolution.ts::projectActivationTargetIds` uses explicit
+project IDs and `WorkItemAncestor.role`, including revisionless story ancestors;
+task parents and revision-bearing task descendants are not projects. Task inputs
+missing this ancestry learn it through the existing canonical containing-project
+reader before the command. Response requirement/expected IDs cannot add newly
+stamped targets. A denied affected read is revalidated before requirements are
+requested. Stored labels stay hidden after restoration until deliberate fresh
+requirements merge applicable choices; recovery itself never executes a command.
+Project conversion runs its existing title/notes three-way merge for each
+selected actual detail, rather than advancing only the command revision.
+Equivalent reads retain divergent conflicts and choices use current authority.
+Its pre-existing local stale-refresh slot remains opening-bound; new query data
+releases that slot without letting an older baseline replace newer authority.
+Equal-revision qualified host detail takes precedence for derived ancestry and
+prerequisites; ordinary selected host/query data is not copied into that slot.
+The canonical reader's optional current-error callback runs before matching
+access denial invalidates its original epoch, allowing the affected operation to
+show a recoverable read error. Obsolete reads never invoke it. The existing
+sheets retain only the failed target/error for explicit GET-only retry, not a
+new fetched-state cache; drafts and selections stay mounted throughout.
+That local feedback is inactive when a qualified current affected chain excludes
+its target, without clearing the canonical denial. Entry/split containing-target
+recovery reloads their existing stamped runner; accepted full target data updates
+the baseline and releases its latch, while obsolete/lower reads cannot restore
+it and ancestor-only recovery does not replace the full target input.
+Task conversion's preserved-step title is new authored work, not an override of
+the source task's title/notes, so it does not add a parallel source-text editor.
+
 Planning reconciles raw/command authority independently of pending display
 props. The same task-ID editor survives newer/equal actual reads, updates its
 revision and untouched waiting/dependency fields, and preserves authored text,

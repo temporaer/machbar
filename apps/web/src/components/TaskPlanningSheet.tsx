@@ -12,7 +12,7 @@ import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useProjectActions } from "../lib/useProjectActions";
-import { api } from "../lib/api";
+import { api, type TaskDetail } from "../lib/api";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { hasApiErrorCode } from "../lib/errorMessage";
@@ -38,6 +38,7 @@ import { refreshTaskAfterConflict } from "../lib/taskMutations";
 import { DetailPropertyPill } from "./DetailPropertyPill";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
+import { ErrorState } from "./AsyncStates";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
@@ -47,6 +48,7 @@ import { sortDependencyCandidates } from "../lib/sortOrder";
 import { recencyRankLookup } from "../lib/recentlyViewed";
 import {
   projectActivationPromptFromSnapshot,
+  projectActivationTargetIds,
   refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
@@ -92,8 +94,8 @@ export function TaskPlanningSheet({
   suspended = false,
   ...presentation
 }: {
-  task: Task;
-  authoritativeTask?: Task | null;
+  task: TaskDetail;
+  authoritativeTask?: TaskDetail | null;
   onClose: () => void;
   initialTarget?: TaskPlanningTarget;
   suspended?: boolean;
@@ -189,6 +191,7 @@ export function TaskPlanningSheet({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedProjectRead, setFailedProjectRead] = useState<{ id: number; error: string } | null>(null);
   const [scheduledNotice, setScheduledNotice] = useState<string | null>(null);
   const [availabilityNotice, setAvailabilityNotice] = useState<string | null>(null);
   const [waitingError, setWaitingError] = useState<string | null>(null);
@@ -829,12 +832,26 @@ export function TaskPlanningSheet({
     setValidity((current) => ({ ...current, deadline: true }));
   };
 
+  const retryProjectRead = async () => {
+    if (!failedProjectRead || saving || !authoritativeTask) return;
+    const continuation = taskActions.captureTargetRead(task.id);
+    setSaving(true);
+    try {
+      const latest = await projectActions.getProject(failedProjectRead.id, cause => {
+        if (taskActions.isCurrentTargetRead(continuation)) setFailedProjectRead({ id: failedProjectRead.id, error: localizedErrorMessage(cause, strings) });
+      });
+      if (taskActions.isCurrentTargetRead(continuation) && projectActions.isCurrentProjectRead(latest)) setFailedProjectRead(null);
+    } catch { /* Preserve the planning draft and the matching read failure. */ }
+    finally { setSaving(false); }
+  };
+
   const commit = async () => {
-    if (!authoritativeTask || !taskActions.isTargetReadable(task.id) || revisionRevalidationRequired || planningConflicts.length > 0) return;
+    if (!authoritativeTask || !taskActions.isTargetReadable(task.id) || failedProjectRead !== null || revisionRevalidationRequired || planningConflicts.length > 0) return;
     const continuation = taskActions.captureTargetRead(baselineTask.id);
-    const projectContinuation = baselineTask.projectId === null ? null : projectActions.captureTargetRead(baselineTask.projectId);
+    const affectedIds = new Set(projectActivationTargetIds(baselineTask.projectId, baselineTask.ancestors));
+    const projectContinuations = [...affectedIds].map(projectActions.captureTargetRead);
     const isCurrent = () => taskActions.isCurrentTargetRead(continuation) &&
-      (!projectContinuation || projectActions.isCurrentTargetRead(projectContinuation));
+      projectContinuations.every(projectActions.isCurrentTargetRead);
     if (hasExistingWait && (followUpOutcome.trim().length > 0 || followUpChoice !== "continue")) {
       await saveWaitFollowUp();
       return;
@@ -861,6 +878,15 @@ export function TaskPlanningSheet({
     setSaving(true);
     setError(null);
     try {
+      if (baselineTask.projectId !== null && !baselineTask.ancestors?.some(ancestor => ancestor.role === "story" && ancestor.id === baselineTask.projectId)) {
+        const containing = await projectActions.getProject(baselineTask.projectId, cause => {
+          if (isCurrent()) setFailedProjectRead({ id: baselineTask.projectId!, error: localizedErrorMessage(cause, strings) });
+        });
+        if (!isCurrent() || !projectActions.isCurrentProjectRead(containing)) return;
+        for (const id of projectActivationTargetIds(containing.id, containing.ancestors)) {
+          if (!affectedIds.has(id)) { affectedIds.add(id); projectContinuations.push(projectActions.captureTargetRead(id)); }
+        }
+      }
       const externalWait = waitingEnded
         ? null
         : waitingChangedFromBaseline
@@ -885,16 +911,22 @@ export function TaskPlanningSheet({
         setError(strings.commitmentResolutionHint);
         return;
       }
-      if (activationUnavailable && baselineTask.projectId !== null && !projectActions.isTargetReadable(baselineTask.projectId)) {
-        const project = await projectActions.getProject(baselineTask.projectId);
-        if (!isCurrent() || !projectActions.isCurrentProjectRead(project)) return;
+      for (const id of affectedIds) {
+        if (!projectActions.isTargetReadable(id)) {
+          const project = await projectActions.getProject(id, cause => {
+            if (isCurrent()) setFailedProjectRead({ id, error: localizedErrorMessage(cause, strings) });
+          });
+          if (!isCurrent() || !projectActions.isCurrentProjectRead(project)) return;
+        }
       }
       if ((!activationPrompt || activationUnavailable) && baselineTask.projectId !== null) {
         const preview = await api.previewTaskUpdate(baselineTask.id, { ...patch, expectedRevision: expectedTaskRevision });
         if (!isCurrent()) return;
         if (preview.activatingProjects.length) {
           setActivationState({ fingerprint: draftFingerprint, prompt: {
-            ...projectActivationPromptFromSnapshot(preview.decision, activationPrompt), isCurrentRead: isCurrent,
+            ...projectActivationPromptFromSnapshot(preview.decision, activationPrompt), isCurrentRead: () => isCurrent() &&
+              (preview.decision?.projects ?? []).every(project => affectedIds.has(project.projectId)) &&
+              (preview.decision?.expectedProjects ?? []).every(project => affectedIds.has(project.projectId)),
           } });
           return;
         }
@@ -937,7 +969,9 @@ export function TaskPlanningSheet({
         : await refreshProjectActivationPrompt(cause, baselineTask.projectId, activationPrompt, "commitment", projectActions.getProject,
           () => projectRead !== null && projectActions.isCurrentTargetRead(projectRead));
       if (!isCurrent()) return;
-      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt: { ...prompt, isCurrentRead: isCurrent } });
+      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt: { ...prompt, isCurrentRead: () => isCurrent() &&
+        prompt.projects.every(project => affectedIds.has(project.projectId)) &&
+        prompt.expectedProjects.every(project => affectedIds.has(project.projectId)) } });
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -1697,6 +1731,7 @@ export function TaskPlanningSheet({
             <span className="text-muted">{error}</span>
           </div>
         ) : null}
+        {failedProjectRead ? <ErrorState message={failedProjectRead.error} onRetry={() => void retryProjectRead()} pending={saving} /> : null}
 
         <div className="task-planning-actions">
           <button type="button" className="btn" disabled={saving || followUpSaving || dependencyBusy !== null} onClick={onClose}>
@@ -1706,7 +1741,7 @@ export function TaskPlanningSheet({
             type="submit"
             className="btn btn-primary"
             disabled={
-              !authoritativeTask || revisionRevalidationRequired || saving || followUpSaving || dependencyBusy !== null ||
+              !authoritativeTask || failedProjectRead !== null || revisionRevalidationRequired || saving || followUpSaving || dependencyBusy !== null ||
               !allValid ||
               invalidRevisitSelection ||
               dateConflict ||

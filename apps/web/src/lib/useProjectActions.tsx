@@ -84,7 +84,7 @@ function useProjectActionsState() {
   const observeConfirmedStory = useCallback((project: ProjectWithActions & Partial<ProjectDetail>, read?: TargetReadToken) => {
     mutations.observeConfirmed(project.id, { story: projectMetadata(project) }, project, read);
   }, [mutations.observeConfirmed]);
-  const readProject = useCallback(async (id: number): Promise<TargetRead<ProjectDetail>> => {
+  const readProject = useCallback(async (id: number, onCurrentError?: (cause: unknown) => void): Promise<TargetRead<ProjectDetail>> => {
     const read = mutations.captureTargetRead(id);
     try {
       const value = await api.getProject(id);
@@ -92,12 +92,14 @@ function useProjectActionsState() {
       return { read, value };
     } catch (cause) {
       if (!mutations.isCurrentTargetRead(read)) throw new Error(strings.workflowTargetUnavailable);
+      // Report this operation's failure while its original generation is current.
+      onCurrentError?.(cause);
       if (isWorkItemAccessError(cause)) mutations.invalidateConfirmed(id, read);
       throw cause;
     }
   }, [mutations.captureTargetRead, mutations.invalidateConfirmed, mutations.trackTargetRead, mutations.isCurrentTargetRead, strings]);
-  const getProject = useCallback(async (id: number) => {
-    const result = await readProject(id);
+  const getProject = useCallback(async (id: number, onCurrentError?: (cause: unknown) => void) => {
+    const result = await readProject(id, onCurrentError);
     if (!mutations.isCurrentTargetRead(result.read)) throw new Error(strings.workflowTargetUnavailable);
     return result.value;
   }, [readProject, mutations.isCurrentTargetRead, strings]);

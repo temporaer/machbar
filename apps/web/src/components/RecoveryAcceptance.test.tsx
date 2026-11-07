@@ -18,6 +18,7 @@ import { ProjectActivationSheet } from "./ProjectActivationSheet";
 import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
+import { ProjectConvertToTaskSheet } from "./ProjectConvertToTaskSheet";
 import { useState } from "react";
 
 vi.mock("../lib/api", async importOriginal => ({
@@ -30,7 +31,7 @@ vi.mock("../lib/api", async importOriginal => ({
     previewProjectSteps: vi.fn(), previewTaskSteps: vi.fn(),
     createTaskStepBatchForProject: vi.fn(), createTaskStepBatchForTask: vi.fn(),
     moveTask: vi.fn(), moveProject: vi.fn(),
-    previewTaskConversion: vi.fn(), convertTaskToStory: vi.fn(),
+    previewTaskConversion: vi.fn(), convertTaskToStory: vi.fn(), convertStoryToTask: vi.fn(),
   },
 }));
 
@@ -54,13 +55,15 @@ vi.mock("../lib/useProjectActions", async importOriginal => {
       };
       return {
         ...actions,
-        getProject: async (id: number) => {
-          const value = await actions.getProject(id);
+        getProject: async (...args: Parameters<typeof actions.getProject>) => {
+          const [id] = args;
+          const value = await actions.getProject(...args);
           await intervene(id);
           return value;
         },
-        readProject: async (id: number) => {
-          const result = await actions.readProject(id);
+        readProject: async (...args: Parameters<typeof actions.readProject>) => {
+          const [id] = args;
+          const result = await actions.readProject(...args);
           await intervene(id);
           return result;
         },
@@ -120,6 +123,533 @@ beforeEach(() => {
 });
 
 describe("recovery actual-diff acceptance", () => {
+  it("a held destination retry cannot clear a newer destination's matching failure", async () => {
+    const source = { ...detail(), ancestors: [] };
+    const first = { ...makeProject({ id: 43, title: "Destination A" }), tasks: [],
+      ancestors: [{ id: 88, role: "story" as const, title: "Ancestor X" }] };
+    const second = { ...makeProject({ id: 44, title: "Destination B" }), tasks: [],
+      ancestors: [{ id: 89, role: "story" as const, title: "Ancestor Y" }] };
+    const oldRetry = deferred<ProjectDetail>();
+    let xReads = 0;
+    mocked.getProjects.mockResolvedValue([source, first, second]);
+    mocked.getProject.mockImplementation(async id => {
+      if (id === 88) {
+        if (++xReads === 3) return oldRetry.promise;
+        throw new ApiError(403, "Ancestor X denied");
+      }
+      if (id === 89) throw new ApiError(403, "Ancestor Y denied");
+      return id === 42 ? source : id === 43 ? first : second;
+    });
+    function Reader() {
+      const actions = useProjectActions();
+      const [denied, setDenied] = useState<number | null>(null);
+      return <>
+        <button onClick={() => void actions.getProject(88).catch(() => setDenied(88))}>Deny X</button>
+        <button onClick={() => void actions.getProject(89).catch(() => setDenied(89))}>Deny Y</button>
+        <output data-testid="retry-race-denied">{denied}</output>
+        <MoveProjectSheet story={source} onClose={vi.fn()} />
+      </>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    await userEvent.click(await screen.findByRole("button", { name: "Destination A" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move here" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Deny X", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("retry-race-denied")).toHaveTextContent("88"));
+    await userEvent.click(screen.getByRole("button", { name: "Move here" }));
+    await screen.findByRole("alert");
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(xReads).toBe(3));
+    await userEvent.click(screen.getByRole("button", { name: "Destination B" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move here" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Deny Y", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("retry-race-denied")).toHaveTextContent("89"));
+    await userEvent.click(screen.getByRole("button", { name: "Move here" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "Move here" })).toBeDisabled();
+    await act(async () => oldRetry.resolve({ ...makeProject({ id: 88 }), tasks: [] }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move here" })).toBeDisabled();
+    expect(mocked.moveProject).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("eighth review: move scopes a failed destination ancestor to the current source/destination chain (source still affected: %s)", async sourceAffected => {
+    const ancestor = { id: 88, role: "story" as const, title: "Denied ancestor" };
+    const source = { ...detail(), ancestors: sourceAffected ? [ancestor] : [] };
+    const first = { ...makeProject({ id: 43, title: "Destination A" }), tasks: [], ancestors: [ancestor] };
+    const second = { ...makeProject({ id: 44, title: "Destination B" }), tasks: [], ancestors: [] };
+    mocked.getProjects.mockResolvedValue([source, first, second]);
+    mocked.getProject.mockImplementation(async id => {
+      if (id === 88) throw new ApiError(403, "Affected project remains denied");
+      return id === 42 ? source : id === 43 ? first : second;
+    });
+    function Reader() {
+      const actions = useProjectActions();
+      const [denied, setDenied] = useState(false);
+      return <><button onClick={() => void actions.getProject(88).catch(() => setDenied(true))}>Deny ancestor</button>
+        <output data-testid="move-denied">{String(denied)}</output>
+        <output data-testid="move-canonical-readable">{String(actions.isTargetReadable(88))}</output>
+        <MoveProjectSheet story={source} onClose={vi.fn()} /></>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    await userEvent.click(await screen.findByRole("button", { name: "Destination A" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move here" })).toBeEnabled());
+    const editor = screen.getByRole("searchbox");
+    await userEvent.type(editor, "Destination");
+    fireEvent.click(screen.getByRole("button", { name: "Deny ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("move-denied")).toHaveTextContent("true"));
+    await userEvent.click(screen.getByRole("button", { name: "Move here" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "Move here" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(mocked.getProject.mock.calls.filter(([id]) => id === 88)).toHaveLength(3));
+    expect(screen.getByRole("button", { name: "Move here" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Destination B" }));
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledWith(44));
+    await waitFor(() => {
+      if (sourceAffected) expect(screen.getByRole("button", { name: "Move here" })).toBeDisabled();
+      else expect(screen.getByRole("button", { name: "Move here" })).toBeEnabled();
+    });
+    expect(editor).toBeInTheDocument();
+    expect(editor).toHaveValue("Destination");
+    expect(screen.getByTestId("move-canonical-readable")).toHaveTextContent("false");
+    expect(mocked.moveProject).not.toHaveBeenCalled();
+    if (sourceAffected) {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Move here" }));
+      await waitFor(() => expect(mocked.moveProject).toHaveBeenCalledWith(42, expect.objectContaining({ parentId: 44 })));
+      expect(mocked.getProject.mock.calls.filter(([id]) => id === 88)).toHaveLength(3);
+    }
+  });
+
+  it.each([["split", 403], ["entry", 404]] as const)("eighth review: %s installs a fresh containing-project baseline after its own %s revalidation denial", async (kind, status) => {
+    const id = kind === "split" ? 88 : 42;
+    const actual = { ...makeProject({ id }), tasks: [], ancestors: [] };
+    const obsolete = deferred<ProjectDetail>();
+    let reads = 0;
+    mocked.getProject.mockImplementation(async target => {
+      if (target !== id) return { ...makeProject({ id: target }), tasks: [] };
+      reads++;
+      if (reads === 1 || reads === 3 || reads === 4 || reads === 6) throw new ApiError(status, "Containing project denied");
+      if (reads === 5) return obsolete.promise;
+      return { ...actual, revision: reads >= 5 ? 2 : 1 };
+    });
+    mocked.createTaskStepBatchForProject.mockResolvedValue({ project: { ...actual, revision: 3 }, tasks: [] });
+    mocked.createTaskStepBatchForTask.mockResolvedValue({ parent: task, tasks: [] });
+    function Reader() {
+      const actions = useProjectActions();
+      const [open, setOpen] = useState(false);
+      const [otherDenied, setOtherDenied] = useState(false);
+      return <><button onClick={() => void actions.getProject(id).catch(() => setOpen(true))}>Prepare denied target</button>
+        <button onClick={() => void actions.getProject(id).catch(() => setOtherDenied(true))}>Other target denial</button>
+        <output data-testid="containing-other-denied">{String(otherDenied)}</output>
+        {open ? kind === "split"
+          ? <TaskSplitSheet parentId={task.id} parentRevision={1} projectId={id} onClose={vi.fn()} />
+          : <ProjectTaskEntrySheet project={actual} onClose={vi.fn()} /> : null}</>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare denied target" }));
+    const editor = await screen.findByPlaceholderText("Step …");
+    await userEvent.type(editor, "Exact retained step");
+    const name = kind === "split" ? "Create 1 subtask" : "Add task";
+    await waitFor(() => expect(screen.getByRole("button", { name })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name }));
+    await waitFor(() => expect(reads).toBe(3));
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(reads).toBe(4));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled());
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(reads).toBe(5));
+    fireEvent.click(screen.getByRole("button", { name: "Other target denial", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("containing-other-denied")).toHaveTextContent("true"));
+    await act(async () => obsolete.resolve({ ...actual, revision: 99, title: "Obsolete recovery title" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled());
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+    expect(screen.queryByText("Obsolete recovery title")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(reads).toBe(7));
+    await waitFor(() => expect(screen.getByRole("button", { name })).toBeEnabled());
+    expect(editor).toBeInTheDocument();
+    expect(editor).toHaveValue("Exact retained step");
+    expect(mocked.previewProjectSteps).not.toHaveBeenCalled();
+    expect(mocked.previewTaskSteps).not.toHaveBeenCalled();
+    expect(mocked.createTaskStepBatchForProject).not.toHaveBeenCalled();
+    expect(mocked.createTaskStepBatchForTask).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name }));
+    const command = kind === "split" ? mocked.createTaskStepBatchForTask : mocked.createTaskStepBatchForProject;
+    await waitFor(() => expect(command).toHaveBeenCalledWith(kind === "split" ? task.id : id,
+      expect.objectContaining({ expectedProjectRevisions: [{ projectId: id, revision: 2 }] })));
+  });
+
+  it.each([
+    ["move", 403], ["move", 404], ["convert", 403], ["convert", 404],
+  ] as const)("seventh review: %s exposes its matching %s revalidation denial and recovers by GET only", async (kind, status) => {
+    let denied = true;
+    const actual = { ...detail(), parentId: 88, ancestors: [{ id: 88, role: "story" as const, title: "Unavailable ancestor" }] };
+    mocked.getProject.mockImplementation(async id => {
+      if (id === 88 && denied) throw new ApiError(status, "Ancestor remains denied");
+      return id === 42 ? actual : { ...makeProject({ id }), tasks: [] };
+    });
+    function Reader() {
+      const actions = useProjectActions();
+      const [denied, setDenied] = useState(false);
+      return <><button onClick={() => void actions.getProject(88).catch(() => setDenied(true))}>Deny ancestor</button>
+        <output data-testid="preexisting-denial">{String(denied)}</output>
+        {kind === "move" ? <MoveProjectSheet story={{ ...actual, parentId: null }} onClose={vi.fn()} />
+          : <ProjectConvertToTaskSheet story={actual} onClose={vi.fn()} />}</>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    const name = kind === "move" ? "Move here" : "Make task";
+    await waitFor(() => expect(screen.getByRole("button", { name })).toBeEnabled());
+    const editor = kind === "move" ? screen.getByRole("searchbox") : screen.getByLabelText("Title");
+    await userEvent.type(editor, kind === "move" ? "Acceptance" : " authored");
+    fireEvent.click(screen.getByRole("button", { name: "Deny ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("preexisting-denial")).toHaveTextContent("true"));
+    await userEvent.click(screen.getByRole("button", { name }));
+    await waitFor(() => expect(mocked.getProject.mock.calls.filter(([id]) => id === 88)).toHaveLength(2));
+    expect(kind === "move" ? mocked.moveProject : mocked.convertStoryToTask).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThan(0));
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(mocked.getProject.mock.calls.filter(([id]) => id === 88)).toHaveLength(3));
+    expect(editor).toBeInTheDocument();
+    expect(editor).toHaveValue(kind === "move" ? "Acceptance" : `${actual.title} authored`);
+    expect(kind === "move" ? mocked.moveProject : mocked.convertStoryToTask).not.toHaveBeenCalled();
+    denied = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(mocked.getProject.mock.calls.filter(([id]) => id === 88)).toHaveLength(4));
+    await waitFor(() => expect(screen.getByRole("button", { name })).toBeEnabled());
+    expect(kind === "move" ? mocked.moveProject : mocked.convertStoryToTask).not.toHaveBeenCalled();
+    expect(editor).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name }));
+    await waitFor(() => expect(kind === "move" ? mocked.moveProject : mocked.convertStoryToTask).toHaveBeenCalledOnce());
+  });
+
+  it("seventh review: equal-revision host conversion authority refreshes the affected chain despite an older local GET", async () => {
+    let denied = true;
+    const old = { ...detail(), ancestors: [{ id: 88, role: "story" as const, title: "Old ancestor" }] };
+    const host = { ...old, revision: 2 };
+    const fresh = { ...host, ancestors: [{ id: 89, role: "story" as const, title: "New ancestor" }],
+      hierarchyRevisions: [{ id: 42, revision: 2 }, { id: 89, revision: 2 }] };
+    mocked.getProject.mockImplementation(async id => {
+      if (id === 89 && denied) throw new ApiError(403, "New ancestor denied");
+      return id === 42 ? old : { ...makeProject({ id }), tasks: [] };
+    });
+    function Reader() {
+      const actions = useProjectActions();
+      const [current, setCurrent] = useState<ProjectDetail | null>(null);
+      const [denied, setDenied] = useState(false);
+      return <>
+        <button onClick={() => {
+          mocked.getProject.mockResolvedValueOnce(host);
+          void actions.getProject(42).then(setCurrent);
+        }}>Host initial</button>
+        <button onClick={() => {
+          mocked.getProject.mockResolvedValueOnce(fresh);
+          void actions.getProject(42).then(setCurrent);
+        }}>Host equal</button>
+        <button onClick={() => void actions.getProject(89).catch(() => setDenied(true))}>Deny new ancestor</button>
+        <output data-testid="new-ancestor-denied">{String(denied)}</output>
+        <ProjectConvertToTaskSheet story={old} authoritativeProject={current} onClose={vi.fn()} />
+      </>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Make task" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Host initial", hidden: true }));
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(2));
+    const editor = screen.getByLabelText("Title");
+    await userEvent.type(editor, " authored");
+    fireEvent.click(screen.getByRole("button", { name: "Host equal", hidden: true }));
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(3));
+    fireEvent.click(screen.getByRole("button", { name: "Deny new ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("new-ancestor-denied")).toHaveTextContent("true"));
+    await userEvent.click(screen.getByRole("button", { name: "Make task" }));
+    await waitFor(() => expect(mocked.getProject.mock.calls.filter(([id]) => id === 89)).toHaveLength(2));
+    expect(mocked.convertStoryToTask).not.toHaveBeenCalled();
+    expect(editor).toHaveValue(`${old.title} authored`);
+    denied = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Make task" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "Make task" }));
+    await waitFor(() => expect(mocked.convertStoryToTask).toHaveBeenCalledWith(42, {
+      title: `${old.title} authored`, expectedRevision: 2, expectedHierarchyRevisions: fresh.hierarchyRevisions,
+    }));
+  });
+
+  it.each(["move", "convert"] as const)("seventh review: %s does not report an obsolete revalidation's late denial as its current operation", async kind => {
+    const late = deferred<ProjectDetail>();
+    let ancestorReads = 0;
+    const actual = { ...detail(), ancestors: [{ id: 88, role: "story" as const, title: "Containing project" }] };
+    mocked.getProject.mockImplementation(async id => {
+      if (id !== 88) return actual;
+      ancestorReads++;
+      if (ancestorReads === 2) return late.promise;
+      throw new ApiError(403, "Different reader denial");
+    });
+    function Reader() {
+      const actions = useProjectActions();
+      const [reads, setReads] = useState(0);
+      return <><button onClick={() => void actions.getProject(88).catch(() => {}).finally(() => setReads(value => value + 1))}>Other denial</button>
+        <output data-testid="other-denials">{reads}</output>
+        {kind === "move" ? <MoveProjectSheet story={actual} onClose={vi.fn()} />
+          : <ProjectConvertToTaskSheet story={actual} onClose={vi.fn()} />}</>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    const name = kind === "move" ? "Move here" : "Make task";
+    await waitFor(() => expect(screen.getByRole("button", { name })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Other denial", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("other-denials")).toHaveTextContent("1"));
+    await userEvent.click(screen.getByRole("button", { name }));
+    await waitFor(() => expect(ancestorReads).toBe(2));
+    fireEvent.click(screen.getByRole("button", { name: "Other denial", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("other-denials")).toHaveTextContent("2"));
+    await act(async () => late.reject(new ApiError(403, "Obsolete own denial")));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(kind === "move" ? mocked.moveProject : mocked.convertStoryToTask).not.toHaveBeenCalled();
+  });
+
+  it("seventh review: lower host authority does not discard a higher local conversion conflict refresh", async () => {
+    const old = detail();
+    const host = { ...old, revision: 2 };
+    const higher = { ...host, revision: 3, notes: "Higher local authority" };
+    mocked.getProject.mockResolvedValue(old);
+    mocked.convertStoryToTask.mockRejectedValueOnce(new ApiError(409, "Stale", "stale_write_conflict"));
+    function Reader() {
+      const actions = useProjectActions();
+      const [current, setCurrent] = useState<ProjectDetail | null>(null);
+      return <><button onClick={() => {
+        mocked.getProject.mockResolvedValueOnce({ ...host });
+        void actions.getProject(42).then(setCurrent);
+      }}>Host detail</button>
+        <ProjectConvertToTaskSheet story={old} authoritativeProject={current} onClose={vi.fn()} /></>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Make task" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Host detail", hidden: true }));
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(2));
+    mocked.getProject.mockResolvedValueOnce(higher);
+    await userEvent.click(screen.getByRole("button", { name: "Make task" }));
+    await waitFor(() => expect(screen.getByLabelText("Notes")).toHaveValue(higher.notes));
+    fireEvent.click(screen.getByRole("button", { name: "Host detail", hidden: true }));
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(4));
+    expect(screen.getByLabelText("Notes")).toHaveValue(higher.notes);
+    await userEvent.click(screen.getByRole("button", { name: "Make task" }));
+    await waitFor(() => expect(mocked.convertStoryToTask.mock.calls[1]?.[1]).toHaveProperty("expectedRevision", 3));
+  });
+
+  it.each(["planning", "entry", "split", "task conversion"] as const)("seventh review: %s keeps matching ancestor failure visible and offers GET-only draft recovery", async kind => {
+    let denied = true;
+    const ancestors = [{ id: 89, role: "story" as const, title: "Higher project" },
+      { id: 88, role: "story" as const, title: "Containing project", revision: 1 }];
+    const actualTask = { ...task, projectId: 88, ancestors, hierarchyRevisions: [{ id: task.id, revision: 1 }, { id: 88, revision: 1 }] };
+    const actual = { ...detail(), ancestors };
+    mocked.getTask.mockResolvedValue(actualTask);
+    mocked.getProject.mockImplementation(async id => {
+      if (id === 89 && denied) throw new ApiError(403, "Ancestor remains denied");
+      return id === 42 ? actual : { ...makeProject({ id }), tasks: [], ancestors: ancestors.filter(ancestor => ancestor.id !== id) };
+    });
+    function Reader() {
+      const actions = useProjectActions();
+      const [revoked, setRevoked] = useState(false);
+      return <><button onClick={() => void actions.getProject(89).catch(() => setRevoked(true))}>Deny ancestor</button>
+        <output data-testid="sibling-denied">{String(revoked)}</output>
+        {kind === "planning" ? <TaskPlanningSheet task={actualTask} onClose={vi.fn()} />
+          : kind === "entry" ? <ProjectTaskEntrySheet project={actual} onClose={vi.fn()} />
+          : kind === "split" ? <TaskSplitSheet parentId={task.id} parentRevision={1} projectId={88} onClose={vi.fn()} />
+          : <TaskConvertToProjectSheet task={actualTask} onClose={vi.fn()} />}</>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    const editor = kind === "planning" ? screen.getByLabelText("Planned for")
+      : kind === "task conversion" ? screen.getByRole("textbox")
+      : screen.getByPlaceholderText("Step …");
+    if (kind === "planning") {
+      fireEvent.change(editor, { target: { value: "2027-01-05" } });
+      fireEvent.blur(editor);
+    }
+    else await userEvent.type(editor, " preserved");
+    const name = kind === "planning" ? "Save" : kind === "entry" ? "Add task"
+      : kind === "split" ? "Create 1 subtask" : "Convert and start";
+    await waitFor(() => expect(screen.getByRole("button", { name })).toBeEnabled());
+    const draftValue = (editor as HTMLInputElement).value;
+    fireEvent.click(screen.getByRole("button", { name: "Deny ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("sibling-denied")).toHaveTextContent("true"));
+    await userEvent.click(screen.getByRole("button", { name }));
+    await waitFor(() => expect(mocked.getProject.mock.calls.filter(([id]) => id === 89)).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThan(0));
+    denied = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(mocked.getProject.mock.calls.filter(([id]) => id === 89)).toHaveLength(3));
+    expect(editor).toBeInTheDocument();
+    expect(editor).toHaveValue(draftValue);
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+    expect(mocked.createTaskStepBatchForProject).not.toHaveBeenCalled();
+    expect(mocked.createTaskStepBatchForTask).not.toHaveBeenCalled();
+    expect(mocked.previewTaskUpdate).not.toHaveBeenCalled();
+    expect(mocked.previewProjectSteps).not.toHaveBeenCalled();
+    expect(mocked.previewTaskSteps).not.toHaveBeenCalled();
+    expect(mocked.previewTaskConversion).not.toHaveBeenCalled();
+  });
+
+  it.each(["move", "convert"] as const)("sixth review: %s merges a fresh requirement only after deliberate regeneration and preserves the original affected-chain provenance", async kind => {
+    let denied = false;
+    const ancestor = makeProject({ id: 88, title: "Affected containing project", status: "backlog" });
+    const destination = makeProject({ id: 43, title: "Selected destination", parentId: 88 });
+    const source = { ...detail(), parentId: 88, status: "active" as const,
+      ancestors: [{ id: 88, role: "story" as const, title: ancestor.title, revision: 1 }] };
+    mocked.getProjects.mockResolvedValue([project, destination, ancestor]);
+    mocked.getProject.mockImplementation(async id => {
+      if (id === 88 && denied) throw new ApiError(403, "Affected project denied");
+      return id === 42 ? source : { ...(id === 43 ? destination : ancestor), tasks: [],
+        ...(id === 43 ? { ancestors: source.ancestors } : {}) };
+    });
+    const decisions = (title: string, revision: number) => ({ targetRevision: 1,
+      expectedProjects: [{ projectId: 88, revision }], projects: [{ projectId: 88, title, revision,
+        ownerMemberId: null, required: ["driver", "progressPath"] as Array<"driver" | "progressPath"> }] });
+    const write = kind === "move" ? mocked.moveProject : mocked.convertStoryToTask;
+    write.mockRejectedValueOnce(new ApiError(409, "Decisions", "project_commitment_resolution_required", decisions("Original private requirements", 1)))
+      .mockRejectedValueOnce(new ApiError(409, "Decisions", "project_commitment_resolution_required", decisions("Fresh private requirements", 2)))
+      .mockResolvedValue(undefined as never);
+    function Reader() {
+      const actions = useProjectActions();
+      const [reads, setReads] = useState(0);
+      return <><button onClick={() => void actions.getProject(88).catch(() => {}).finally(() => setReads(value => value + 1))}>Read affected ancestor</button>
+        <output data-testid="ancestor-reads">{reads}</output>
+        {kind === "move" ? <MoveProjectSheet story={source} onClose={vi.fn()} />
+          : <ProjectConvertToTaskSheet story={source} onClose={vi.fn()} />}</>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    if (kind === "move") await userEvent.click(await screen.findByRole("button", { name: destination.title }));
+    const submitName = kind === "move" ? "Move here" : "Make task";
+    await waitFor(() => expect(screen.getByRole("button", { name: submitName })).toBeEnabled());
+    const editor = kind === "move" ? screen.getByRole("searchbox") : screen.getByLabelText("Title");
+    if (kind === "move") await userEvent.type(editor, "Selected");
+    else { await userEvent.clear(editor); await userEvent.type(editor, "Preserved conversion draft"); }
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    await userEvent.selectOptions(await screen.findByLabelText("Lead for “Original private requirements”"), "1");
+    await userEvent.type(screen.getByLabelText(/concrete next/i), "Preserved chain decision");
+    denied = true;
+    fireEvent.click(screen.getByRole("button", { name: "Read affected ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("ancestor-reads")).toHaveTextContent("1"));
+    expect(screen.queryByLabelText("Lead for “Original private requirements”")).not.toBeInTheDocument();
+    denied = false;
+    fireEvent.click(screen.getByRole("button", { name: "Read affected ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("ancestor-reads")).toHaveTextContent("2"));
+    expect(screen.queryByLabelText("Lead for “Original private requirements”")).not.toBeInTheDocument();
+    expect(editor).toBeInTheDocument();
+    expect(editor).toHaveValue(kind === "move" ? "Selected" : "Preserved conversion draft");
+    expect(write).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    expect(await screen.findByLabelText("Lead for “Fresh private requirements”")).toHaveValue("1");
+    expect(screen.getByLabelText(/concrete next/i)).toHaveValue("Preserved chain decision");
+    expect(write.mock.calls[1]![1]).not.toHaveProperty("activationResolution");
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(3));
+    expect(write.mock.calls[2]![1]).toHaveProperty("activationResolution.expectedProjects", [{ projectId: 88, revision: 2 }]);
+  });
+
+  it.each(["move", "convert", "planning", "entry", "split", "task move"] as const)("sixth review: %s cannot publish an ancestor's requirements denied while its request was pending, even after restoration", async kind => {
+    const pending = deferred<never>();
+    const actualTask = { ...task, projectId: 88, ancestors: [{ id: 89, role: "story" as const, title: "Higher project" },
+      { id: 88, role: "story" as const, title: "Containing project", revision: 1 }] };
+    const actual = { ...detail(), parentId: kind === "move" ? 88 : 17, ancestors: kind === "move" ? actualTask.ancestors : [...actualTask.ancestors,
+      { id: 17, role: "task" as const, title: "Task parent", revision: 900 }] };
+    let denied = false;
+    mocked.getProject.mockImplementation(async id => {
+      if (id === 89 && denied) throw new ApiError(403, "Ancestor denied");
+      return id === 42 ? actual : { ...makeProject({ id, title: "Other project" }), tasks: [],
+        ancestors: id === 88 ? actualTask.ancestors.filter(ancestor => ancestor.id === 89) : [] };
+    });
+    mocked.getTask.mockResolvedValue(actualTask);
+    const request = kind === "move" ? mocked.moveProject : kind === "convert" ? mocked.convertStoryToTask
+      : kind === "entry" ? mocked.previewProjectSteps : kind === "split" ? mocked.previewTaskSteps
+      : kind === "task move" ? mocked.moveTask : mocked.previewTaskUpdate;
+    request.mockReturnValueOnce(pending.promise);
+    const close = vi.fn();
+    function Reader() {
+      const actions = useProjectActions();
+      const [reads, setReads] = useState(0);
+      return <><button onClick={() => void actions.getProject(89).catch(() => {}).finally(() => setReads(value => value + 1))}>Read higher ancestor</button>
+        <output data-testid="higher-reads">{reads}</output>
+        {kind === "move" ? <MoveProjectSheet story={actual} onClose={close} />
+          : kind === "convert" ? <ProjectConvertToTaskSheet story={actual} onClose={close} />
+          : kind === "entry" ? <ProjectTaskEntrySheet project={actual} onClose={close} />
+          : kind === "split" ? <TaskSplitSheet parentId={task.id} parentRevision={1} projectId={88} onClose={close} />
+          : kind === "task move" ? <MoveTaskSheet task={actualTask} onClose={close} />
+          : <TaskPlanningSheet task={actualTask} onClose={close} />}</>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    if (kind === "planning") {
+      fireEvent.change(screen.getByLabelText("Planned for"), { target: { value: "2027-01-05" } });
+      fireEvent.blur(screen.getByLabelText("Planned for"));
+    }
+    if (kind === "entry" || kind === "split") {
+      await userEvent.type(screen.getByPlaceholderText("Step …"), "Preserved ancestor step");
+      await userEvent.click(screen.getByText("Planning (optional)"));
+      fireEvent.change(screen.getByLabelText("Due"), { target: { value: "2027-03-01" } });
+    }
+    const submit = kind === "move" || kind === "task move" ? "Move here" : kind === "convert" ? "Make task"
+      : kind === "entry" ? "Add task" : kind === "split" ? "Create 1 subtask" : "Save";
+    await waitFor(() => expect(screen.getByRole("button", { name: submit })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: submit }));
+    await waitFor(() => expect(request).toHaveBeenCalledOnce());
+    denied = true;
+    fireEvent.click(screen.getByRole("button", { name: "Read higher ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("higher-reads")).toHaveTextContent("1"));
+    denied = false;
+    fireEvent.click(screen.getByRole("button", { name: "Read higher ancestor", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("higher-reads")).toHaveTextContent("2"));
+    const decision = { targetRevision: 1, expectedProjects: [{ projectId: 89, revision: 1 }],
+      projects: [{ projectId: 89, title: "Late sensitive requirements", revision: 1,
+        ownerMemberId: null, required: ["driver"] }] };
+    await act(async () => {
+      if (kind === "task move") pending.resolve({ ...actualTask, revision: 2 } as never);
+      else if (kind === "planning" || kind === "entry" || kind === "split") pending.resolve({ activatingProjects: [{ id: 89 }], decision } as never);
+      else pending.reject(new ApiError(409, "Decisions", "project_commitment_resolution_required", decision));
+    });
+    expect(screen.queryByLabelText("Lead for “Late sensitive requirements”")).not.toBeInTheDocument();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("sixth review: conversion merges every selected authority and conflict choices use the newest detail", async () => {
+    const old = { ...detail(), notes: "Initial notes" };
+    let received = { ...old, revision: 2, title: "Server title2", notes: "Server notes2" };
+    mocked.getProject.mockResolvedValue(old);
+    mocked.convertStoryToTask.mockResolvedValue(task);
+    function Authority() {
+      const actions = useProjectActions();
+      const [actual, setActual] = useState<ProjectDetail | null>(null);
+      return <><button onClick={() => void actions.getProject(42).then(setActual)}>Receive current detail</button>
+        <ProjectConvertToTaskSheet story={old} authoritativeProject={actual} onClose={vi.fn()} /></>;
+    }
+    renderWithProviders(<Authority />, { locale: "en" });
+    const title = await screen.findByLabelText("Title");
+    const notes = screen.getByLabelText("Notes");
+    await userEvent.clear(title); await userEvent.type(title, "Local title");
+    await userEvent.clear(notes); await userEvent.type(notes, "Local notes");
+    mocked.getProject.mockImplementation(async () => received);
+    fireEvent.click(screen.getByRole("button", { name: "Receive current detail", hidden: true }));
+    await screen.findAllByRole("button", { name: "Use server version" });
+    expect(title).toHaveValue("Local title"); expect(notes).toHaveValue("Local notes");
+    expect(screen.getByRole("button", { name: "Make task" })).toBeDisabled();
+    received = { ...received };
+    fireEvent.click(screen.getByRole("button", { name: "Receive current detail", hidden: true }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Use server version" })).toHaveLength(2));
+    received = { ...received, revision: 3, title: "Server title3", notes: "Server notes3" };
+    fireEvent.click(screen.getByRole("button", { name: "Receive current detail", hidden: true }));
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(4));
+    await userEvent.click(within(title.closest("label")!).getByRole("button", { name: "Use server version" }));
+    await userEvent.click(within(notes.closest("label")!).getByRole("button", { name: /Keep.*edit/i }));
+    expect(screen.getByLabelText("Title")).toBe(title);
+    expect(title).toHaveValue("Server title3");
+    expect(notes).toHaveValue("Local notes");
+    await userEvent.click(screen.getByRole("button", { name: "Make task" }));
+    await waitFor(() => expect(mocked.convertStoryToTask).toHaveBeenCalledWith(42,
+      expect.objectContaining({ expectedRevision: 3, notes: "Local notes" })));
+    expect(mocked.convertStoryToTask.mock.calls[0]![1]).not.toHaveProperty("title");
+  });
+
   it.each(["planning", "conversion"] as const)("final sibling: %s keeps a published preview obsolete after project denial and restoration", async kind => {
     const actualTask = { ...task, projectId: 42, hierarchyRevisions: [{ id: task.id, revision: 1 }, { id: 42, revision: 1 }] };
     mocked.getTask.mockResolvedValue(actualTask);

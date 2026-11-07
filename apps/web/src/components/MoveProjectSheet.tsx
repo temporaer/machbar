@@ -4,7 +4,7 @@ import { useStrings } from "../lib/strings";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useRefresh } from "../lib/refresh";
 import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
-import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
+import { projectActivationTargetIds, projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { rememberDestination } from "../lib/recentDestinations";
 import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { DestinationPicker } from "./DestinationPicker";
@@ -27,6 +27,7 @@ export function MoveProjectSheet({ story, onClose, ...presentation }: { story: P
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [projectReadFailure, setFailedProjectRead] = useState<{ id: number; error: string } | null>(null);
   const [retry, setRetry] = useState(0);
   const load = async () => {
     const [current, choices] = await Promise.all([projectActions.getProject(story.id), api.getProjects()]);
@@ -49,16 +50,47 @@ export function MoveProjectSheet({ story, onClose, ...presentation }: { story: P
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [story.id, parentId, strings, retry]);
+  const qualifiedAffectedIds = source && (parentId === null || destination)
+    ? new Set([...projectActivationTargetIds(source.id, source.ancestors),
+      ...projectActivationTargetIds(destination?.id, destination?.ancestors)])
+    : null;
+  const failedProjectRead = projectReadFailure &&
+    (!qualifiedAffectedIds || qualifiedAffectedIds.has(projectReadFailure.id)) ? projectReadFailure : null;
   const resolution = prompt ? projectActivationResolutionFromPrompt(prompt) : null;
+  const promptUnavailable = prompt?.readUnavailable || (prompt?.isCurrentRead && !prompt.isCurrentRead());
+  const retryProjectRead = async () => {
+    if (!failedProjectRead) { setRetry(value => value + 1); return; }
+    if (busy || loading || !source || (parentId !== null && !destination)) return;
+    const isCurrent = () => projectActions.isCurrentProjectRead(source) && (!destination || projectActions.isCurrentProjectRead(destination));
+    setLoading(true);
+    try {
+      const latest = await projectActions.getProject(failedProjectRead.id, cause => {
+        if (isCurrent()) setFailedProjectRead(current => current === failedProjectRead
+          ? { id: failedProjectRead.id, error: localizedErrorMessage(cause, strings) } : current);
+      });
+      if (isCurrent() && projectActions.isCurrentProjectRead(latest)) {
+        setFailedProjectRead(current => current === failedProjectRead ? null : current);
+      }
+    } catch { /* Keep the matching read failure and the selected destination. */ }
+    finally { setLoading(false); }
+  };
   const submit = async () => {
-    if (!source || busy || loading || loadError !== null || (parentId !== null && !destination)) return;
-    const sourceContinuation = projectActions.captureTargetRead(story.id);
-    const destinationContinuation = parentId === null ? null : projectActions.captureTargetRead(parentId);
-    const isCurrent = () => projectActions.isCurrentTargetRead(sourceContinuation) &&
-      (!destinationContinuation || projectActions.isCurrentTargetRead(destinationContinuation));
+    if (!source || busy || loading || loadError !== null || failedProjectRead !== null || (parentId !== null && !destination)) return;
+    const affectedIds = new Set([...projectActivationTargetIds(source.id, source.ancestors),
+      ...projectActivationTargetIds(destination?.id, destination?.ancestors)]);
+    const continuations = [...affectedIds].map(projectActions.captureTargetRead);
+    const isCurrent = () => continuations.every(projectActions.isCurrentTargetRead);
     setBusy(true);
     setError(null);
     try {
+      for (const id of affectedIds) {
+        if (!projectActions.isTargetReadable(id)) {
+          const current = await projectActions.getProject(id, cause => {
+            if (isCurrent()) setFailedProjectRead({ id, error: localizedErrorMessage(cause, strings) });
+          });
+          if (!isCurrent() || !projectActions.isCurrentProjectRead(current)) return;
+        }
+      }
       const revisions = new Map((source.hierarchyRevisions ?? []).map((entry) => [entry.id, entry.revision]));
       // Destination ancestors are affected by commitment activation; unrelated descendants are not.
       for (const entry of [destination, ...(destination?.ancestors ?? [])]) {
@@ -74,8 +106,11 @@ export function MoveProjectSheet({ story, onClose, ...presentation }: { story: P
     } catch (cause) {
       if (!isCurrent()) return;
       const nextPrompt = projectActivationPromptFromError(cause, prompt);
-      if (nextPrompt) setPrompt(nextPrompt);
+      if (nextPrompt) setPrompt({ ...nextPrompt, isCurrentRead: () => isCurrent() &&
+        nextPrompt.projects.every(project => affectedIds.has(project.projectId)) &&
+        nextPrompt.expectedProjects.every(project => affectedIds.has(project.projectId)) });
       if (isStaleWriteConflict(cause)) {
+        setPrompt(previous => previous ? { ...previous, readUnavailable: true } : previous);
         bump();
         try { await load(); if (parentId !== null) setDestination(await projectActions.getProject(parentId)); } catch { /* Retain the destination and decisions for retry. */ }
       }
@@ -94,10 +129,10 @@ export function MoveProjectSheet({ story, onClose, ...presentation }: { story: P
       {source?.status === "active" && destination?.status === "backlog" ? <p className="text-muted">{strings.projectMoveActivationHint}</p> : null}
       {prompt ? <ProjectActivationDecisionFields prompt={prompt} disabled={busy} onChange={setPrompt} /> : null}
       {error ? <p role="alert">{strings.moveFailed}: {error}</p> : null}
-      {loadError || (projects !== null && (!source || (parentId !== null && !destination))) ? <ReadErrorState resource={strings.project}
-        error={loadError ?? strings.workflowTargetUnavailable} refreshError={null} loading={loading} refreshing={false}
-        reload={() => setRetry(value => value + 1)} /> : null}
-      <button type="button" className="btn btn-primary" disabled={busy || loading || loadError !== null || !source || (parentId !== null && !destination) || (!!prompt && !resolution)} onClick={() => void submit()}>{strings.moveHere}</button>
+      {loadError || failedProjectRead || promptUnavailable || (projects !== null && (!source || (parentId !== null && !destination))) ? <ReadErrorState resource={strings.project}
+        error={loadError ?? failedProjectRead?.error ?? strings.workflowTargetUnavailable} refreshError={null} loading={loading} refreshing={false}
+        reload={() => void retryProjectRead()} /> : null}
+      <button type="button" className="btn btn-primary" disabled={busy || loading || loadError !== null || failedProjectRead !== null || !source || (parentId !== null && !destination) || (!!prompt && !promptUnavailable && !resolution)} onClick={() => void submit()}>{strings.moveHere}</button>
       <button type="button" className="btn" disabled={busy} onClick={onClose}>{strings.cancel}</button>
     </div>
   </BottomSheet>;

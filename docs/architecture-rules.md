@@ -260,6 +260,30 @@ before another deliberate Submit. Planning/conversion apply the same boundary
 to task/project continuations. Deadline/activation snapshot merges receive the
 actual same-target baseline explicitly when an active target is absent from
 `expectedProjects`; ancestor or different-task revisions are not its baseline.
+Move/conversion and containing-project previews bind the original source,
+destination and affected story-ancestor epochs before the request. Use
+`projectActivationTargetIds` with qualified detail's typed ancestry; task parents
+and revision-bearing descendants are not project targets. If a task input lacks
+its containing project's ancestry, its canonical GET learns that chain before
+the command, never from the response. Denied affected reads require a qualified
+GET before requesting requirements. Requirements and expected-project IDs
+outside the captured chain cannot acquire fresh provenance after the response.
+Restoration alone never recertifies a stored prompt; deliberate regeneration
+merges applicable authored decisions. Project conversion reconciles every newly
+selected actual detail through its existing title/notes three-way merge, retains
+divergent conflicts across equivalent reads, rejects lower baselines and uses
+current selected authority for explicit choices.
+The canonical project reader reports a matching operation's read failure before
+revoking its generation; obsolete failures cannot invoke that feedback path.
+Affected-read failures retain drafts and expose an explicit GET-only retry.
+Local failed-read feedback applies only to the currently qualified affected
+chain; changing to an unrelated qualified destination never clears shared read
+revocation. Entry/split recovery of their containing target uses the existing
+stamped read runner and installs its accepted full baseline, not the obsolete
+snapshot token. Ancestor-only retry does not replace that target baseline.
+Equal-revision qualified host detail wins derived hierarchy over local conversion
+reads; only the existing higher stale-refresh slot may retain local authority,
+not a mirror of every selected fetched snapshot.
 Invalidated
 move destinations disable Submit and offer visible read feedback and a GET-only
 retry for the same selection. Usable destination pickers/search nodes and read
@@ -320,7 +344,7 @@ failure causes alongside localized messages for these typed access decisions.
 | Project metadata and lifecycle actions | `apps/web/src/lib/useProjectActions.ts` |
 | Task hierarchy planning | `apps/web/src/lib/taskTreeMove.ts` |
 | Task hierarchy execution | `apps/web/src/lib/useOutlineOrganize.tsx` and `api.moveTask` |
-| Proposed activation decisions | `activationPreview.ts` evaluates the exact canonical mutation in a rollback-only transaction; the existing routes carry the preview header, and `projectActivationResolution.ts` adapts server snapshots. No preview writes or change notifications persist. |
+| Proposed activation decisions | `activationPreview.ts` evaluates the exact canonical mutation in a rollback-only transaction; the existing routes carry the preview header, and `projectActivationResolution.ts` adapts server snapshots. Its React-free `projectActivationTargetIds` selects explicit project IDs and typed story ancestors for original pre-request action-owned read continuations, never response-time stamps or revision heuristics. No preview writes or change notifications persist. |
 | Shared task-step entry and atomic batches | `apps/web/src/components/StepComposer.tsx` for authored rows; `POST /api/tasks/:id/children/batch` and `POST /api/projects/:id/tasks/batch` call the shared transactional task-step operation in `apps/api/src/domain/taskStepBatch.ts`. Inbox parent classification and commitment activation are part of that transaction. Inline successors still use the canonical successor mutation. |
 | Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |
 | Household member selection | `apps/web/src/components/MemberSelectionSheet.tsx` |
@@ -355,7 +379,7 @@ failure causes alongside localized messages for these typed access decisions.
 | Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome/convert to task) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
-| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria, while the canonical domain operation preserves a nested root's parent/position and rejects project descendants, archived-status, or incompatible recurrence/wait mappings atomically |
+| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria and applies its existing authored-field three-way merge to each selected qualified detail, with explicit divergent choices against current authority. Original source/containing-story epochs guard requirements and completion. The canonical domain operation preserves a nested root's parent/position and rejects project descendants, archived-status, or incompatible recurrence/wait mappings atomically. |
 | Project hierarchy execution | `apps/api/src/domain/structuralMoves.ts` (`moveProject`) and `POST /api/projects/:id/move`; `MoveProjectSheet` is the focused `story.move` workflow. `assertHierarchySnapshot` is reused by moves and role conversion. |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
 | View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, `InboxPage` |

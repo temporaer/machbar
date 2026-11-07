@@ -3,6 +3,7 @@ import { calendarDateForInstant } from "@machbar/shared";
 import { randomUUID } from "node:crypto";
 
 const pageErrors = new WeakMap<Page, string[]>();
+const pageMemberIds = new WeakMap<Page, number>();
 test.beforeEach(async ({ page, request }) => {
   const errors: string[] = [];
   pageErrors.set(page, errors);
@@ -10,6 +11,7 @@ test.beforeEach(async ({ page, request }) => {
   const response = await request.post("/api/members", { data: { name: `Recovery ${randomUUID()}` } });
   expect(response.status()).toBe(201);
   const member = await response.json();
+  pageMemberIds.set(page, member.id);
   await page.addInitScript(id => {
     localStorage.setItem("machbar:identity-member-id", String(id));
     localStorage.setItem("machbar:locale", "de");
@@ -32,6 +34,187 @@ async function weekDates(page: Page, start: string) {
   expect(agenda.days).toHaveLength(7);
   return agenda.days;
 }
+
+for (const kind of ["move", "convert"] as const) {
+  test(`sixth review ${kind} binds stored requirements to the original ancestor read and preserves drafts through GET-only recovery`, async ({ page }) => {
+    const parentResponse = await page.request.post("/api/projects", { data: {
+      title: `Private ancestor ${randomUUID()}`, ownerMemberId: pageMemberIds.get(page),
+    } });
+    expect(parentResponse.status()).toBe(201);
+    const parent = await parentResponse.json();
+    const sourceResponse = await page.request.post("/api/projects", { data: {
+      title: `Nested source ${randomUUID()}`, parentId: parent.id, ownerMemberId: pageMemberIds.get(page),
+    } });
+    expect(sourceResponse.status()).toBe(201);
+    const source = await sourceResponse.json();
+    await createTask(page, { projectId: source.id });
+    const currentSource = await (await page.request.get(`/api/projects/${source.id}`)).json();
+    const activated = await page.request.post(`/api/projects/${source.id}/activate`, {
+      data: { expectedRevision: currentSource.revision, ownerMemberId: pageMemberIds.get(page) },
+    });
+    expect(activated.ok()).toBeTruthy();
+    const activeSource = await activated.json();
+    expect(activeSource.status).toBe("active");
+    const parkedParent = await (await page.request.get(`/api/projects/${parent.id}`)).json();
+    expect(parkedParent.status).toBe("backlog");
+    const unassigned = await page.request.patch(`/api/projects/${parent.id}`, {
+      data: { expectedRevision: parkedParent.revision, ownerMemberId: null },
+    });
+    expect(unassigned.ok()).toBeTruthy();
+    const currentParent = await unassigned.json();
+    const destinationResponse = kind === "move" ? await page.request.post("/api/projects", {
+      data: { title: `Destination draft ${randomUUID()}`, parentId: parent.id },
+    }) : null;
+    const destination = destinationResponse ? await destinationResponse.json() : null;
+    await page.goto(`/#/projects/${parent.id}`);
+    await expect(page.getByRole("heading", { name: parent.title, exact: true })).toBeVisible();
+    let releaseDenial!: () => void;
+    const denial = new Promise<void>(resolve => { releaseDenial = resolve; });
+    let heldRead = false;
+    let qualifiedAffectedReads = 0;
+    await page.route(`**/api/projects/${parent.id}`, async route => {
+      if (!heldRead) {
+        heldRead = true;
+        await denial;
+        await route.fulfill({ status: 403, contentType: "application/json",
+          body: JSON.stringify({ error: { message: "Original ancestor reader denied" } }) });
+      } else {
+        const response = await route.fetch();
+        if (response.ok()) qualifiedAffectedReads += 1;
+        await route.fulfill({ response });
+      }
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => heldRead).toBe(true);
+    const row = page.locator(`[data-workitem-id="${source.id}"][data-workitem-role="story"]`).first();
+    await row.locator(".story-row-main").click();
+    await page.getByRole("button", { name: "Aktionen", exact: true }).click();
+    await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Struktur ändern", exact: true }).click();
+    await page.getByRole("dialog").last().getByRole("button", {
+      name: kind === "move" ? "Verschieben …" : "Zur Aufgabe machen", exact: true,
+    }).click();
+    const sheet = page.getByRole("dialog", {
+      name: kind === "move" ? "In anderes Projekt verschieben" : "Projekt zur Aufgabe machen", exact: true,
+    });
+    const editor = kind === "move" ? sheet.getByRole("searchbox") : sheet.getByLabel("Titel", { exact: true });
+    if (kind === "move") {
+      await sheet.getByRole("button", { name: destination.title, exact: true }).click();
+      await editor.fill("Destination draft");
+    } else await editor.fill("Preserved authored conversion title");
+    await editor.evaluate(element => element.setAttribute("data-sixth-node", "original"));
+    const submit = sheet.getByRole("button", { name: kind === "move" ? "Hierher verschieben" : "Zur Aufgabe machen", exact: true });
+    let commands = 0;
+    let releaseRequirements!: () => void;
+    const freshRequirements = new Promise<void>(resolve => { releaseRequirements = resolve; });
+    await page.route(`**/api/projects/${source.id}/${kind === "move" ? "move" : "convert-to-task"}`, async route => {
+      commands += 1;
+      if (commands === 2) await freshRequirements;
+      await route.continue();
+    });
+    await submit.click();
+    const originalDriver = sheet.getByLabel(`Verantwortlich für „${parent.title}“`);
+    await originalDriver.selectOption({ index: 1 });
+    const choice = await originalDriver.inputValue();
+    if (destination) await sheet.getByLabel(`Verantwortlich für „${destination.title}“`).selectOption({ index: 1 });
+    releaseDenial();
+    await expect(originalDriver).toHaveCount(0);
+    await expect(editor).toHaveAttribute("data-sixth-node", "original");
+    let sourceUnavailable = true;
+    await page.route(`**/api/projects/${source.id}`, async route => {
+      if (!sourceUnavailable) await route.continue();
+      else await route.fulfill({ status: 503, contentType: "application/json",
+        body: JSON.stringify({ error: { message: "Source recovery failed" } }) });
+    });
+    const failedRead = page.waitForResponse(response => response.url().endsWith(`/api/projects/${source.id}`) && response.status() === 503);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await failedRead;
+    await expect(originalDriver).toHaveCount(0);
+    const recoveredTitle = `Recovered private ancestor ${randomUUID()}`;
+    const changed = await page.request.patch(`/api/projects/${parent.id}`, {
+      data: { expectedRevision: currentParent.revision, title: recoveredTitle },
+    });
+    expect(changed.ok()).toBeTruthy();
+    const latestParent = await changed.json();
+    const changedSource = await page.request.patch(`/api/projects/${source.id}`, {
+      data: { expectedRevision: activeSource.revision, notes: "Accepted fresh source authority" },
+    });
+    expect(changedSource.ok()).toBeTruthy();
+    sourceUnavailable = false;
+    const recoveredRead = page.waitForResponse(response => response.url().endsWith(`/api/projects/${source.id}`) && response.status() === 200);
+    await sheet.getByRole("button", { name: "Erneut versuchen", exact: true }).first().click();
+    await recoveredRead;
+    await expect(originalDriver).toHaveCount(0);
+    await expect(sheet.getByLabel(`Verantwortlich für „${recoveredTitle}“`)).toHaveCount(0);
+    await expect(editor).toHaveAttribute("data-sixth-node", "original");
+    await expect(editor).toHaveValue(kind === "move" ? "Destination draft" : "Preserved authored conversion title");
+    expect(commands).toBe(1);
+    if (kind === "move") await sheet.getByRole("button", { name: "Erneut versuchen", exact: true }).last().click();
+    else await expect(sheet.getByRole("textbox", { name: /^Notizen/ })).toHaveValue("Accepted fresh source authority");
+    await expect(submit).toBeEnabled();
+    await submit.click();
+    await expect.poll(() => qualifiedAffectedReads).toBeGreaterThan(0);
+    await expect.poll(() => commands).toBe(2);
+    await expect(originalDriver).toHaveCount(0);
+    await expect(sheet.getByLabel(`Verantwortlich für „${recoveredTitle}“`)).toHaveCount(0);
+    releaseRequirements();
+    const driver = sheet.getByLabel(`Verantwortlich für „${recoveredTitle}“`);
+    await expect(driver).toHaveValue(choice);
+    expect(commands).toBe(2);
+    await expect(editor).toHaveAttribute("data-sixth-node", "original");
+    const finalCommand = page.waitForRequest(request => request.url().endsWith(`/api/projects/${source.id}/${kind === "move" ? "move" : "convert-to-task"}`));
+    await submit.click();
+    expect((await finalCommand).postDataJSON()).toMatchObject({
+      activationResolution: { expectedProjects: expect.arrayContaining([{ projectId: parent.id, revision: latestParent.revision }]) },
+    });
+  });
+}
+
+test("sixth review project conversion reconciles real newer details without overwriting authored title/notes or unresolved choices", async ({ page }) => {
+  const created = await page.request.post("/api/projects", { data: { title: `Conversion baseline ${randomUUID()}`, notes: "Initial notes" } });
+  expect(created.status()).toBe(201);
+  const project = await created.json();
+  await page.goto(`/#/projects/${project.id}`);
+  await page.getByRole("button", { name: "Aktionen", exact: true }).click();
+  await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Struktur ändern", exact: true }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Zur Aufgabe machen", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Projekt zur Aufgabe machen", exact: true });
+  const title = sheet.getByRole("textbox", { name: /^Titel/ });
+  const notes = sheet.getByRole("textbox", { name: /^Notizen/ });
+  await title.fill("My conversion title");
+  await notes.fill("My conversion notes");
+  await title.evaluate(element => element.setAttribute("data-sixth-node", "title"));
+  await notes.evaluate(element => element.setAttribute("data-sixth-node", "notes"));
+  const changed = await page.request.patch(`/api/projects/${project.id}`, {
+    data: { expectedRevision: project.revision, title: "Concurrent title2", notes: "Concurrent notes2" },
+  });
+  expect(changed.ok()).toBeTruthy();
+  const second = await changed.json();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(sheet.getByRole("button", { name: "Serverfassung verwenden", exact: true })).toHaveCount(2);
+  await expect(title).toHaveValue("My conversion title");
+  await expect(notes).toHaveValue("My conversion notes");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(sheet.getByRole("button", { name: "Serverfassung verwenden", exact: true })).toHaveCount(2);
+  await expect(sheet.getByRole("button", { name: "Zur Aufgabe machen", exact: true })).toBeDisabled();
+  const changedAgain = await page.request.patch(`/api/projects/${project.id}`, {
+    data: { expectedRevision: second.revision, title: "Concurrent title3", notes: "Concurrent notes3" },
+  });
+  expect(changedAgain.ok()).toBeTruthy();
+  const third = await changedAgain.json();
+  const latestRead = page.waitForResponse(response => response.url().endsWith(`/api/projects/${project.id}`) && response.status() === 200);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await latestRead;
+  await title.locator("..").getByRole("button", { name: "Serverfassung verwenden", exact: true }).click();
+  await expect(title).toHaveValue("Concurrent title3");
+  await notes.locator("..").getByRole("button", { name: "Meine Änderung beibehalten", exact: true }).click();
+  await expect(notes).toHaveValue("My conversion notes");
+  await expect(title).toHaveAttribute("data-sixth-node", "title");
+  await expect(notes).toHaveAttribute("data-sixth-node", "notes");
+  const command = page.waitForRequest(request => request.url().endsWith(`/api/projects/${project.id}/convert-to-task`));
+  await sheet.getByRole("button", { name: "Zur Aufgabe machen", exact: true }).click();
+  expect((await command).postDataJSON()).toMatchObject({ expectedRevision: third.revision, notes: "My conversion notes" });
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${project.id}`)).json()).title).toBe("Concurrent title3");
+});
 
 for (const oldStatus of [200, 503]) {
   test(`an obsolete dispatched Planning response ${oldStatus} cannot close its recovered same opening`, async ({ page }) => {

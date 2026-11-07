@@ -6,7 +6,7 @@ import type { AvailabilityRule } from "@machbar/shared";
 import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
-import { makeTask } from "../test/fixtures";
+import { makeProject, makeTask } from "../test/fixtures";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { resolveAbsolutePreset } from "../lib/reminderPresets";
 
@@ -247,6 +247,7 @@ describe("TaskPlanningSheet", () => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getProject.mockImplementation(async id => ({ ...makeProject({ id }), tasks: [], ancestors: [] }));
   });
 
   afterEach(() => {

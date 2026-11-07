@@ -11,7 +11,8 @@ import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
 import { LoadingState, ReadErrorState } from "./AsyncStates";
 import { useLocale } from "../lib/locale";
 import { useProjectActions } from "../lib/useProjectActions";
-import type { ProjectDetail } from "../lib/api";
+import type { ProjectDetail, TaskDetail } from "../lib/api";
+import { projectActivationTargetIds } from "../lib/projectActivationResolution";
 import { sortProjectDestinations } from "../lib/sortOrder";
 import { useTaskActions } from "../lib/useTaskActions";
 
@@ -112,12 +113,21 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   const submit = async () => {
     if (loading || error !== null || (selectedProjectId !== null && !currentDestination)) return;
     const sourceRead = taskActions.captureTargetRead(task.id);
-    const destinationRead = selectedProjectId === null ? null : projectActions.captureTargetRead(selectedProjectId);
+    const affectedIds = new Set([...projectActivationTargetIds(task.projectId, (task as TaskDetail).ancestors),
+      ...projectActivationTargetIds(currentDestination?.id, currentDestination?.ancestors)]);
+    const projectReads = [...affectedIds].map(projectActions.captureTargetRead);
     const isCurrent = () => taskActions.isCurrentTargetRead(sourceRead) &&
-      (!destinationRead || projectActions.isCurrentTargetRead(destinationRead));
+      projectReads.every(projectActions.isCurrentTargetRead);
     setSaving(true);
     setSubmitError(null);
     try {
+      if (task.projectId !== null && !(task as TaskDetail).ancestors?.some(ancestor => ancestor.role === "story" && ancestor.id === task.projectId)) {
+        const containing = await projectActions.getProject(task.projectId);
+        if (!isCurrent() || !projectActions.isCurrentProjectRead(containing)) return;
+        for (const id of projectActivationTargetIds(containing.id, containing.ancestors)) {
+          if (!affectedIds.has(id)) { affectedIds.add(id); projectReads.push(projectActions.captureTargetRead(id)); }
+        }
+      }
       await api.moveTask(task.id, {
         projectId: selectedProjectId,
         parentTaskId: selectedParentId,

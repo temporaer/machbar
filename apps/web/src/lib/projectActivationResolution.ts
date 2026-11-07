@@ -2,8 +2,16 @@ import type {
   ProjectActivationDecisionSnapshot,
   ProjectActivationRequirement,
   ProjectActivationResolution,
+  WorkItemAncestor,
 } from "@machbar/shared";
 import type { ProjectDetail } from "./api";
+
+export function projectActivationTargetIds(projectId: number | null | undefined, ancestors: readonly WorkItemAncestor[] = []): number[] {
+  return [...new Set([
+    ...(projectId == null ? [] : [projectId]),
+    ...ancestors.filter(ancestor => ancestor.role === "story").map(ancestor => ancestor.id),
+  ])];
+}
 
 export interface ProjectActivationPrompt {
   projects: ProjectActivationRequirement[];
