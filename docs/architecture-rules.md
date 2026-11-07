@@ -198,6 +198,29 @@ raw target reads, never a pending presentation snapshot. Task/project receipt
 lifetimes are independent of visual retention and scoped to effective identity
 generations, including A-to-B-to-A changes. Target GET HTTP 401/403/404 invalidates
 fallback input and older in-flight receipts; network/5xx failure preserves it.
+`TaskActions.readTask` and `ProjectActions.readProject` capture the existing
+per-target token immediately before transport and return `{ read, value }` to
+`useAsync`. Transport catches invalidate matching target GET denials before
+rethrowing their actual cause; obsolete denials cannot rotate the next epoch.
+Successful observation runs only on accepted query data with an active lease
+or command-touched lifetime. Every detail/workflow frame rechecks its captured
+token; a pre-denial payload stays obsolete even after another reader restores
+access. Only a successful GET started in the current epoch restores readability,
+not a new successful command. Conflict, conversion, split, destination and
+project-entry callers use action-owned readers and check their original envelope,
+weak read provenance or captured continuation before using results. A local
+projection must retain its original read token, never stamp received data with
+a newly captured epoch. Dispatched commands recheck their continuation before
+automatic Close/navigation or publishing errors; an unpublished mutation result
+is not success. Focused selection/completion callbacks can return `false` to
+suppress automatic Close, without changing explicit Cancel/Close.
+These readers do not schedule queries or create another cache/provider.
+This receipt/provenance/identity runtime is transitional correctness machinery,
+not an architecture to expand. The next fetched-state simplification must make
+TanStack Query the sole owner of fetched values, revisions and confirmed results,
+separate optimism from UI lifetime, preserve these recovery guarantees, and
+delete—not port—the superseded machinery and update enforcement documentation.
+That migration is outside this recovery fix.
 Access-related write failures request canonical revalidation; they do not prove
 that the source is unreadable. Existing workflow/detail providers reset opening,
 inspection and queue state on identity changes and guard expired methods, even
@@ -208,6 +231,18 @@ not strong references to raw detail responses. Confirmed task overlays preserve
 authoritative child membership and each child's revision precedence.
 The existing descendant-terminal helper remains the narrow lifecycle exception
 for parent completion/cancellation policies, including equal-revision children.
+Planning keeps pending presentation and draft composition separate from its
+`authoritativeTask` reconciliation input. New actual input runs the existing
+three-way merge once, refreshes untouched wait/dependency fields and revisions,
+and preserves save errors, divergent conflicts and unfinished reminder input.
+No real baseline means no Save; neither the planner nor its reminder editor is
+keyed by server revision. Planning previews capture the target continuation
+before the await and recheck it before publishing decisions or starting a write.
+Unavailable activation/deadline requirements recover through their existing
+snapshot merge from qualified host detail or a GET-only `useAsync` retry,
+preserving driver/next-action drafts and requiring deliberate Save. Invalidated
+move destinations disable Submit and offer visible read feedback and a GET-only
+retry for the same selection; a silent no-op is not recovery.
 `IdentityGate` waits for unresolved startup identity before mounting routes;
 known server-bound identities need not wait for the member catalog. Route-driven
 openings must not be started in a provisional identity and then silently reset.
@@ -239,7 +274,7 @@ failure causes alongside localized messages for these typed access decisions.
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
 | Resource-specific read recovery | `apps/web/src/components/AsyncStates.tsx::ReadErrorState` composes the existing `ErrorState` with sticky same-query errors and the failed query's GET-only retry. |
-| Retained optimistic mutation and confirmed command input | `apps/web/src/lib/useRetainedMutations.ts` owns independent visual retention and opt-in revisioned receipts, identity/target lifetime guards, and lease/timer ownership. `identity.tsx::useIdentityScope` supplies generations to existing action/workflow/detail providers; `IdentityGate` prevents provisional startup openings. Read-only inputs expire with their last lease; command-touched inputs remain scope-bound. Weak provenance does not retain raw project detail. Task/project action projectors prefer newer receipts but equal authoritative fields; confirmed lookups feed focused hosts and Week commands without granting collection membership. Only successful commands and raw target GETs populate receipts; presentation/hierarchy observations cannot certify optimistic values. Project receipts contain metadata, not detail/task collections. |
+| Retained optimistic mutation and confirmed command input | `apps/web/src/lib/useRetainedMutations.ts` owns independent visual retention and opt-in revisioned receipts, stable `TargetReadToken` identity/target epochs, weak read provenance and lease/timer ownership. Action-owned stamped target readers feed `useAsync` accepted query boundaries or guarded imperative callers; only current post-denial GETs restore readability. `identity.tsx::useIdentityScope` supplies action/workflow/detail generations, and `identityStorage.ts` supplies opaque request generations checked by `api.ts` before authentication-required events, including cookie-bound identities. `IdentityGate` prevents provisional startup openings. Read-only inputs expire with their last lease; command-touched inputs remain scope-bound. Project receipts strip full detail. Pending presentation never certifies Planning reconciliation, and project metadata cannot satisfy tree prerequisites. |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |

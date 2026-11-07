@@ -15,11 +15,13 @@ export function TaskPrioritySheet({ task, onClose, ...presentation }: { task: Ta
   const saving = taskActions.isPending(task.id);
 
   const choose = async (priority: number | null) => {
+    const continuation = taskActions.captureTargetRead(task.id);
     setSaveError(null);
     try {
-      await taskActions.update(task, { priority }, { priority }, true);
-      onClose();
+      const updated = await taskActions.update(task, { priority }, { priority }, true);
+      if (updated && taskActions.isCurrentTargetRead(continuation)) onClose();
     } catch (cause) {
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
       setSaveError(localizedErrorMessage(cause, strings));
     }
   };

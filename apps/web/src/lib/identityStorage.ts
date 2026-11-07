@@ -1,6 +1,15 @@
 export const SELECTED_MEMBER_STORAGE_KEY = "machbar:identity-member-id";
 
 let requestActorMemberId: number | null = null;
+let requestIdentityToken: object = {};
+
+export function resetRequestIdentity(): void {
+  requestIdentityToken = {};
+}
+
+export function readRequestIdentityToken(): object {
+  return requestIdentityToken;
+}
 
 export function parseSelectedMemberStorageValue(
   value: string | null,

@@ -890,11 +890,13 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it("edits title and notes inline as separate explicit transactions", async () => {
-    mockedApi.updateProject.mockImplementation(async (id, input) => ({
-      ...makeProject({ id, title: "Sommerfest planen", ownerMemberId: 1 }),
-      ...input,
-      revision: 2,
-    }));
+    let confirmed = makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 });
+    mockedApi.updateProject.mockImplementation(async (id, input) => {
+      const { expectedRevision, ...patch } = input;
+      if (expectedRevision === undefined) throw new Error("Expected a revision-bound command");
+      confirmed = { ...confirmed, ...patch, id, revision: expectedRevision + 1 };
+      return confirmed;
+    });
     renderWithProviders(<ProjectDetailPage />);
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
@@ -948,6 +950,7 @@ describe("ProjectDetailPage task explanations", () => {
       }),
     );
     expect(await screen.findByText("Neue Notiz")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Sommerfest 2027" })).toBeInTheDocument();
   });
 
   it("shows a title-save failure with the shared inline error treatment", async () => {

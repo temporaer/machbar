@@ -3,7 +3,7 @@ import type {
   ProjectActivationRequirement,
   ProjectActivationResolution,
 } from "@machbar/shared";
-import { api } from "./api";
+import type { ProjectDetail } from "./api";
 
 export interface ProjectActivationPrompt {
   projects: ProjectActivationRequirement[];
@@ -13,6 +13,8 @@ export interface ProjectActivationPrompt {
   requestFingerprint?: string;
   selectedDrivers: Record<number, number>;
   nextActionTitle: string;
+  readUnavailable?: boolean;
+  isCurrentRead?: () => boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,8 +87,10 @@ export function projectDriverRequirementFromError(
 export async function refreshProjectActivationPrompt(
   error: unknown,
   targetProjectId: number,
-  previous?: ProjectActivationPrompt | null,
-  intent: "commitment" | "explicit_activation" = "commitment",
+  previous: ProjectActivationPrompt | null | undefined,
+  intent: "commitment" | "explicit_activation",
+  readProject: (id: number) => Promise<ProjectDetail>,
+  isCurrentRead?: () => boolean,
 ): Promise<ProjectActivationPrompt | null> {
   const fromError = projectActivationPromptFromError(error, previous);
   if (fromError) return fromError;
@@ -94,14 +98,15 @@ export async function refreshProjectActivationPrompt(
 
   let snapshot: ProjectActivationDecisionSnapshot | undefined;
   try {
-    const project = await api.getProject(targetProjectId);
+    const project = await readProject(targetProjectId);
+    if (isCurrentRead && !isCurrentRead()) return previous ? { ...previous, readUnavailable: true } : null;
     snapshot = intent === "explicit_activation"
       ? project.directActivationDecisionSnapshot
       : project.activationDecisionSnapshot;
   } catch {
-    return previous ?? null;
+    return previous ? { ...previous, readUnavailable: true } : null;
   }
-  if (!snapshot) return previous ?? null;
+  if (!snapshot) return previous ? { ...previous, readUnavailable: true } : null;
   const requiredDriverIds = new Set(
     snapshot.projects.filter((project) => project.required.includes("driver")).map((project) => project.projectId),
   );
@@ -113,12 +118,14 @@ export async function refreshProjectActivationPrompt(
       Object.entries(previous?.selectedDrivers ?? {}).filter(([id]) => requiredDriverIds.has(Number(id))),
     ),
     nextActionTitle: previous?.nextActionTitle ?? "",
+    ...(isCurrentRead ? { isCurrentRead } : {}),
   };
 }
 
 export function projectActivationResolutionFromPrompt(
   prompt: ProjectActivationPrompt,
 ): ProjectActivationResolution | null {
+  if (prompt.readUnavailable || (prompt.isCurrentRead && !prompt.isCurrentRead())) return null;
   const requiresPath = prompt.projects.some((project) => project.required.includes("progressPath"));
   if (requiresPath && prompt.nextActionTitle.trim() === "") return null;
   const drivers = prompt.projects

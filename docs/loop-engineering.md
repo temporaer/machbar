@@ -207,3 +207,43 @@ results, and migration snapshot drift. The creation APIs require an explicit
 CreationIntent at compile time, so new production callers must choose their
 operation lifetime rather than inheriting an implicit payload queue. Activation
 fixtures deliberately give task, project and ancestor different owners.
+
+Recovery PR #256 review exposed introduced authorization-generation and draft
+reconciliation gaps: detail denials did not revoke shared fallback, pre-denial
+successes could restore it, and revision-advancing read retries left Planning's
+baseline stale. The expanded contracts cover task/project detail-to-offline
+workflow denial, concurrent/already-rendered readers, post-denial commands,
+selected/cookie identity ABA through the real transport 401 event, and Planning
+preview continuation invalidation. Direct Planning cases preserve unresolved
+conflicts, pending-only composition with a lower first real baseline, and the
+exact unfinished reminder editor across reads. Browser cases separately exercise
+real persisted revision/wait/dependency recovery and visible cross-reader task
+and project suppression on desktop/mobile Chromium. These are scenario claims,
+not complete authorization or physical-device coverage.
+
+The full browser gate also rejected an introduced equivalent-read regression
+that closed an explicitly opened empty waiting composer. A direct failing
+counterexample preceded the fix; the original browser assertions stayed intact.
+Final validation passed with
+`PATH=/home/hannes/miniforge3/envs/machbar-pytest/bin:$PATH npm exec --yes --package=node@22 -- bash -c 'bash scripts/verify.sh && npm run test:e2e'`:
+architecture, builds and typechecks; 1379 API and 1925 web tests; 159 Python
+tests with one existing skip; and 47 desktop/mobile Chromium cases with one
+existing skip. These results include the four new browser scenarios in both
+viewports and do not imply live OIDC or physical-device verification.
+
+Actual-diff acceptance then found four further introduced gaps: obsolete
+dispatched commands still closed recovered openings, local projections could
+retag old qualified reads with a newer epoch, unavailable activation/deadline
+requirements had no draft-preserving recovery, and invalidated move destinations
+offered a silent no-op. Twelve direct counterexamples failed before correction.
+The correction retains original read envelopes, guards command completions,
+reuses snapshot decision merges and GET-only runners, and makes destination
+recovery explicit. Additional desktop/mobile browser cases exercise delayed
+successful/failed responses, real persisted deadline revision recovery and
+same-selection destination retry. These extend—not replace—the earlier gate,
+original fault regressions or original browser assertions.
+The subsequent complete verifier/browser command above passed: architecture,
+shared/production builds and all typechecks; 1379 API tests, 1937 web tests,
+159 Python tests with one existing skip, and 55 desktop/mobile Chromium cases
+with one existing skip. Gate3's earlier counts remain historical evidence;
+the additional twelve direct cases and eight browser executions all pass.

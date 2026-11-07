@@ -6,10 +6,19 @@ vi.mock("./api", () => ({ api: { getProject } }));
 import {
   projectActivationPromptFromError,
   refreshProjectActivationPrompt,
+  projectActivationResolutionFromPrompt,
 } from "./projectActivationResolution";
 
 describe("project activation decisions from the server", () => {
-  beforeEach(() => getProject.mockReset());
+  it("retains draft decisions after a failed refresh without certifying the old activation snapshot", async () => {
+    const previous = { projects: [], expectedProjects: [{ projectId: 7, revision: 1 }], selectedDrivers: { 7: 9 }, nextActionTitle: "Draft" };
+    getProject.mockRejectedValue(new Error("Read denied"));
+    const prompt = await refreshProjectActivationPrompt(Object.assign(new Error("stale"), { code: "stale_write_conflict" }), 7, previous, "commitment", getProject);
+    expect(prompt).toMatchObject({ selectedDrivers: { 7: 9 }, nextActionTitle: "Draft", readUnavailable: true });
+    expect(projectActivationResolutionFromPrompt(prompt!)).toBeNull();
+  });
+
+  beforeEach(() => { getProject.mockReset(); });
 
   it("does not reconstruct the chain or requirements from local project state", async () => {
     const error = Object.assign(new Error("stale"), { code: "stale_write_conflict" });
@@ -31,7 +40,7 @@ describe("project activation decisions from the server", () => {
       expectedProjects: [],
       selectedDrivers: { 3: 9, 8: 2 },
       nextActionTitle: "Erste Aktion",
-    }, "explicit_activation")).resolves.toEqual({
+    }, "explicit_activation", getProject)).resolves.toEqual({
       ...serverSnapshot,
       selectedDrivers: { 3: 9 },
       nextActionTitle: "Erste Aktion",

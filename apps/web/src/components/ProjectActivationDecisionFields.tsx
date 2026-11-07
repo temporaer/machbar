@@ -1,6 +1,7 @@
 import type { ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
+import { ErrorState } from "./AsyncStates";
 
 export function ProjectActivationDecisionFields({
   prompt,
@@ -13,6 +14,9 @@ export function ProjectActivationDecisionFields({
 }) {
   const strings = useStrings();
   const { members } = useIdentity();
+  if (prompt.readUnavailable || (prompt.isCurrentRead && !prompt.isCurrentRead())) {
+    return <ErrorState message={strings.workflowTargetUnavailable} />;
+  }
   const needsPath = prompt.projects.some((project) => project.required.includes("progressPath"));
 
   return (

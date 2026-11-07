@@ -699,8 +699,17 @@ provisional identity and the later scope reset incorrectly navigates to Today.
 A known server-bound member may still mount while its catalog is loading.
 Typed HTTP 401/403/404 target GET
 failures suppress fetched/confirmed/retained fallback and invalidate older
-target results; successful authorized reads may restore it. Network/5xx
-failures keep usable inputs. Access-related write errors request authoritative
+target results. The action-owned target readers capture the retained primitive's
+stable `{ id, scopeToken, targetToken }` before GET, invalidate matching denials
+in the transport catch, and return `{ read, value }`. `useAsync` still owns
+dependency/unmount acceptance; only accepted, leased query data is observed.
+Detail pages and foreground/suspended hosts check the token on every render,
+before projection, text baselines, breadcrumbs or tree prerequisites. A stale
+success produces the existing unavailable/retry state, not silent success or
+endless loading. A successful GET started after denial can restore readability;
+a command receipt cannot. Both command and first-read capture initialize the
+same stable per-ID epoch, including a first read during a pending write.
+Network/5xx failures keep usable inputs. Access-related write errors request authoritative
 revalidation rather than equating a destination/write denial with source read
 revocation. Raw `useAsync` causes remain query-qualified and sticky through
 retries alongside existing localized feedback. Read-only snapshots expire when
@@ -713,6 +722,46 @@ values by revision, independently of the parent's revision.
 Recursive matching also reuses the existing descendant-terminal helper for
 parent policies; equal-revision children retain fresh non-lifecycle fields
 without losing completion/cancellation outcomes.
+
+Imperative conflict, conversion, split, destination, cleanup and project-entry
+readers use the same action-owned transport and weak provenance, without
+publishing abandoned reads into a snapshot cache. Local full-detail prerequisites
+remain epoch-qualified; the project page no longer has a parallel metadata
+receipt. Conflict helpers expose unavailable task refreshes explicitly and mark
+old activation requirements unusable while preserving decisions as drafts.
+Local split/project-entry projections carry the original stamped read envelope;
+qualification does not authorize retagging an old payload after a denial.
+Activation and deadline sheets rebuild unavailable requirements from newly
+qualified host detail or their existing GET-only runner, using the snapshot
+decision merge to retain relevant driver and next-action choices. Recovery never
+submits. Move sheets keep the destination selection, disable unavailable
+prerequisites and expose their own read-only retry rather than silently ignoring
+the user's command.
+The existing API authentication event also checks an opaque request-identity
+generation before dispatch: an old 401 cannot log out a newer selected or
+cookie-bound identity, including ABA transitions.
+
+Planning reconciles raw/command authority independently of pending display
+props. The same task-ID editor survives newer/equal actual reads, updates its
+revision and untouched waiting/dependency fields, and preserves authored text,
+save errors and unresolved divergent-field choices. Lower actual revisions are
+rejected, while a pending-only draft may accept its first lower real baseline;
+Save stays disabled until that baseline exists. Reminder rekeys occur only
+when a closed draft is deliberately replaced or a conflict choice replaces it,
+never merely because the task revision changed. Preview continuations capture
+the target epoch before awaiting and recheck before decisions or PATCH, so a
+denial followed by restoration cannot make an old preview current.
+That continuation also guards an already dispatched command's completion:
+obsolete success or failure cannot close/navigate away from a recovered opening.
+Canonical selection/completion callbacks distinguish unpublished results with
+`false`; explicit Close/Cancel remains independent of command acceptance.
+
+This retained snapshot/provenance/identity runtime is transitional. The intended
+next architecture makes TanStack Query the sole fetched-state, revision and
+confirmed-result owner, separates optimism from UI interaction lifetime, and
+replaces rather than ports this machinery. Preserve the recovery contracts,
+delete superseded code and revise architecture enforcement during that migration;
+this correctness PR does not begin the migration or establish another store.
 
 Week keeps an authoritative query base plus narrow task-date intents, rather
 than copied agendas or whole-snapshot rollback. Member/scope/window selection

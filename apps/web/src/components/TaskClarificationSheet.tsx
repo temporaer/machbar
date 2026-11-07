@@ -41,11 +41,13 @@ export function TaskClarificationSheet({
       return;
     }
     setSaving(true);
+    const continuation = taskActions.captureTargetRead(task.id);
     setError(null);
     try {
-      await taskActions.deferClarification(task, date, true);
-      onClose();
+      const updated = await taskActions.deferClarification(task, date, true);
+      if (updated && taskActions.isCurrentTargetRead(continuation)) onClose();
     } catch (cause) {
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);

@@ -23,7 +23,7 @@ export function CompleteWithCriteriaSheet({
   workItem: (Pick<Project, "id" | "title"> & { acceptanceCriteria: AcceptanceCriterion[] }) | Task;
   workItemType: "project" | "task";
   onClose: () => void;
-  onComplete: (criteriaToCheck: number[], childPolicy?: ChildPolicy) => Promise<void>;
+  onComplete: (criteriaToCheck: number[], childPolicy?: ChildPolicy) => Promise<void | boolean>;
   onRefresh?: () => void;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
@@ -90,11 +90,11 @@ export function CompleteWithCriteriaSheet({
             setBusy(true);
             setError(null);
             try {
-              await onComplete(
+              const accepted = await onComplete(
                 [...checkedIds].filter((id) => !criteria.find((criterion) => criterion.id === id)?.checked),
                 taskHasOpenDescendants ? childPolicy ?? undefined : undefined,
               );
-              onClose();
+              if (accepted !== false) onClose();
             } catch (cause) {
               setError(localizedErrorMessage(cause, strings));
               onRefresh?.();

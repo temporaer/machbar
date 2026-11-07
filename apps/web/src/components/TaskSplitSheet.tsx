@@ -19,6 +19,9 @@ import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFiel
 import { useNavigate } from "react-router-dom";
 import { useIdentity } from "../lib/identity";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useProjectActions } from "../lib/useProjectActions";
+import type { TargetReadToken } from "../lib/useRetainedMutations";
 
 function fingerprint(steps: StepDraft[], convert: boolean, projectId: number | null): string {
   return JSON.stringify({ steps, convert, projectId });
@@ -52,6 +55,8 @@ export function TaskSplitSheet({
   onClose: () => void;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
+  const taskActions = useTaskActions();
+  const projectActions = useProjectActions();
   const navigate = useNavigate();
   const detail = useTaskDetail();
   const { currentMemberId } = useIdentity();
@@ -60,7 +65,13 @@ export function TaskSplitSheet({
   const [convertParent, setConvertParent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
-  const [currentProject, setCurrentProject] = useState<ProjectRevisionSnapshot | null>(null);
+  const [projectSnapshot, setProjectSnapshot] = useState<{ value: ProjectRevisionSnapshot; read: TargetReadToken } | null>(null);
+  const currentProject = projectSnapshot && projectActions.isCurrentTargetRead(projectSnapshot.read) ? projectSnapshot.value : null;
+  const setCurrentProject = (value: ProjectRevisionSnapshot | null, read: TargetReadToken | null = null) => {
+    setProjectSnapshot(value && read ? { value, read } : null);
+  };
+  const [parentRead, setParentRead] = useState(() => taskActions.captureTargetRead(parentId));
+  const parentCurrent = taskActions.isCurrentTargetRead(parentRead);
   const [currentParentRevision, setCurrentParentRevision] = useState(parentRevision);
   const [currentParentStatus, setCurrentParentStatus] = useState(parentStatus);
   const [currentProjectId, setCurrentProjectId] = useState(projectId);
@@ -69,9 +80,9 @@ export function TaskSplitSheet({
   useEffect(() => {
     let current = true;
     if (currentProjectId !== null) {
-      void api.getProject(currentProjectId).then((project) => {
+      void projectActions.readProject(currentProjectId).then((project) => {
         if (current) {
-          setCurrentProject(project);
+          setCurrentProject(project.value, project.read);
           setSnapshotError(null);
         }
       }).catch((cause) => {
@@ -97,21 +108,28 @@ export function TaskSplitSheet({
   const refreshSnapshots = async () => {
     let nextProjectId = currentProjectId;
     if (parentId > 0) {
-      const task = await api.getTask(parentId);
-      setCurrentParentRevision(task.revision);
-      setCurrentParentStatus(task.status);
-      nextProjectId = task.projectId;
+      const task = await taskActions.readTask(parentId);
+      if (!taskActions.isCurrentTargetRead(task.read)) return;
+      setParentRead(task.read);
+      setCurrentParentRevision(task.value.revision);
+      setCurrentParentStatus(task.value.status);
+      nextProjectId = task.value.projectId;
       setCurrentProjectId(nextProjectId);
     }
     if (nextProjectId === null) {
       setCurrentProject(null);
     } else {
-      const project = await api.getProject(nextProjectId);
-      setCurrentProject(project);
+      const project = await projectActions.readProject(nextProjectId);
+      setCurrentProject(project.value, project.read);
     }
   };
 
   const submit = async (steps: StepDraft[]) => {
+    if (!parentCurrent) return false;
+    const taskContinuation = taskActions.captureTargetRead(parentId);
+    const projectContinuation = currentProjectId !== null ? projectActions.captureTargetRead(currentProjectId) : null;
+    const isCurrent = () => taskActions.isCurrentTargetRead(taskContinuation) &&
+      (!projectContinuation || projectActions.isCurrentTargetRead(projectContinuation));
     if (currentParentRevision === undefined) throw new Error(strings.stepParentRevisionMissing);
     if (expectedProjectRevisions === null) throw new Error(strings.loading);
     const input: CreateTaskStepBatchInput = {
@@ -124,17 +142,21 @@ export function TaskSplitSheet({
     try {
       if (!activationPrompt && (currentProjectId !== null || convertParent)) {
         const preview = await api.previewTaskSteps(parentId, input);
+        if (!isCurrent()) return false;
         if (preview.activatingProjects.length) {
           setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt: projectActivationPromptFromSnapshot(preview.decision) });
           return false;
         }
       }
+      if (!isCurrent()) return false;
       const result = await api.createTaskStepBatchForTask(parentId, input);
+      if (!isCurrent()) return false;
       if (result.parent) {
+        setParentRead(taskContinuation);
         setCurrentParentRevision(result.parent.revision);
         setCurrentParentStatus(result.parent.status);
         setCurrentProjectId(result.parent.projectId);
-        setCurrentProject(result.projectSnapshot ?? null);
+        setCurrentProject(result.projectSnapshot ?? null, projectContinuation);
       }
       bump();
       setActivationState(null);
@@ -144,6 +166,7 @@ export function TaskSplitSheet({
         navigate(`/projects/${result.convertedProject.id}`, { state: { createdProjectId: result.convertedProject.id } });
       }
     } catch (cause) {
+      if (!isCurrent()) return false;
       const prompt = projectActivationPromptFromError(cause, activationPrompt);
       if (prompt) setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt });
       else if ((cause as { code?: string })?.code === "stale_write_conflict") {
@@ -152,6 +175,7 @@ export function TaskSplitSheet({
           setSnapshotError(localizedErrorMessage(refreshCause, strings));
         }
       }
+      if (!isCurrent()) return false;
       throw cause;
     }
   };
@@ -193,7 +217,7 @@ export function TaskSplitSheet({
           onPendingChange={setBusy}
           onSubmit={submit}
           onCancel={onClose}
-          submitDisabled={expectedProjectRevisions === null || (activationPrompt !== null && activationResolution === null)}
+          submitDisabled={!parentCurrent || expectedProjectRevisions === null || (activationPrompt !== null && activationResolution === null)}
         />
       </div>
     </BottomSheet>

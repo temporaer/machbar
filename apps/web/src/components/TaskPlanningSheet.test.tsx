@@ -55,6 +55,91 @@ function stubScrollIntoView(
 }
 
 describe("TaskPlanningSheet", () => {
+  it("keeps the targeted new-wait composer open when an equivalent authoritative read arrives", async () => {
+    const task = makeTask({ revision: 1, externalWait: null });
+    const onClose = vi.fn();
+    const { rerender } = renderWithProviders(<TaskPlanningSheet task={task} authoritativeTask={task} initialTarget="waiting" onClose={onClose} />);
+    const editor = screen.getByLabelText("Wartet auf");
+    const fresh = { ...task };
+    rerender(<TaskPlanningSheet task={fresh} authoritativeTask={fresh} initialTarget="waiting" onClose={onClose} />);
+    await waitFor(() => expect(screen.getByLabelText("Wartet auf")).toBe(editor));
+    expect(editor).toHaveValue("");
+  });
+
+  it("refreshes equal-revision prerequisite-derived fields without certifying pending task props", async () => {
+    const raw = makeTask({ id: 72, revision: 1, scheduledDate: "2026-12-01",
+      dependencies: [{ id: 1, taskId: 72, dependsOnTaskId: 73, title: "Old prerequisite", resolved: false }] });
+    const pending = { ...raw, revision: 2, priority: 1 };
+    const onClose = vi.fn();
+    const { rerender } = renderWithProviders(<TaskPlanningSheet task={raw} authoritativeTask={raw} initialTarget="dependencies" onClose={onClose} />);
+    const editor = screen.getByLabelText("Geplant für");
+    fireEvent.change(editor, { target: { value: "05.12.2026" } });
+    fireEvent.blur(editor);
+    const fresh = { ...raw, dependencies: [{ ...raw.dependencies[0]!, title: "Fresh prerequisite", resolved: true }] };
+    rerender(<TaskPlanningSheet task={pending} authoritativeTask={fresh} initialTarget="dependencies" onClose={onClose} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Erledigt (1)" }));
+    await screen.findByRole("button", { name: "Fresh prerequisite" });
+    expect(screen.queryByRole("button", { name: "Old prerequisite" })).not.toBeInTheDocument();
+    mockedApi.updateTask.mockResolvedValue({ ...fresh, revision: 2 });
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(raw.id, { expectedRevision: 1, scheduledDate: "2026-12-05" }));
+  });
+
+  it("preserves divergent draft conflicts across equivalent recovered reads until an explicit choice", async () => {
+    const task = makeTask({ revision: 1, scheduledDate: "2026-12-01" });
+    const latest = { ...task, revision: 2, scheduledDate: "2026-12-03" };
+    const onClose = vi.fn();
+    const { rerender } = renderWithProviders(<TaskPlanningSheet task={task} authoritativeTask={task} initialTarget="scheduled" onClose={onClose} />);
+    const editor = screen.getByLabelText("Geplant für");
+    fireEvent.change(editor, { target: { value: "05.12.2026" } });
+    fireEvent.blur(editor);
+    rerender(<TaskPlanningSheet task={latest} authoritativeTask={latest} initialTarget="scheduled" onClose={onClose} />);
+    await screen.findByText("Aktuell gespeichert:");
+    rerender(<TaskPlanningSheet task={{ ...latest }} authoritativeTask={{ ...latest }} initialTarget="scheduled" onClose={onClose} />);
+    expect(screen.getByText("Aktuell gespeichert:")).toBeInTheDocument();
+    expect(screen.getByLabelText("Geplant für")).toBe(editor);
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Meine Änderung beibehalten" }));
+    mockedApi.updateTask.mockResolvedValue({ ...latest, revision: 3 });
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, expect.objectContaining({ expectedRevision: 2, scheduledDate: "2026-12-05" })));
+  });
+
+  it("keeps an unfinished invalid reminder's exact textbox and disclosure through an authoritative refresh", async () => {
+    const task = makeTask({ revision: 1 });
+    const onClose = vi.fn();
+    const { rerender } = renderWithProviders(<TaskPlanningSheet task={task} authoritativeTask={task} initialTarget="reminders" onClose={onClose} />);
+    await userEvent.click(screen.getByRole("button", { name: "Benutzerdefiniert …" }));
+    const editor = screen.getByLabelText("Fällig");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "noch kein Datum");
+    const latest = { ...task, revision: 2, dueDate: "2026-12-10" };
+    rerender(<TaskPlanningSheet task={latest} authoritativeTask={latest} initialTarget="reminders" onClose={onClose} />);
+    await waitFor(() => expect(screen.getByLabelText("Fällig")).toBe(editor));
+    expect(editor).toHaveValue("noch kein Datum");
+    expect(editor.closest(".task-planning-editor")).not.toHaveAttribute("hidden");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(editor).toHaveValue("noch kein Datum");
+  });
+
+  it("allows composing a pending-only draft but saves from the first lower real baseline, not the optimistic revision", async () => {
+    const raw = makeTask({ revision: 1, scheduledDate: "2026-12-01" });
+    const pending = { ...raw, revision: 2, title: "Pending title" };
+    const onClose = vi.fn();
+    const { rerender } = renderWithProviders(<TaskPlanningSheet task={pending} authoritativeTask={null} initialTarget="scheduled" onClose={onClose} />);
+    const editor = screen.getByLabelText("Geplant für");
+    fireEvent.change(editor, { target: { value: "05.12.2026" } });
+    fireEvent.blur(editor);
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    rerender(<TaskPlanningSheet task={pending} authoritativeTask={raw} initialTarget="scheduled" onClose={onClose} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Speichern" })).not.toBeDisabled());
+    mockedApi.updateTask.mockResolvedValue({ ...raw, revision: 2 });
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(raw.id, { expectedRevision: 1, scheduledDate: "2026-12-05" }));
+    expect(screen.getByLabelText("Geplant für")).toBe(editor);
+  });
+
   const businessHours: AvailabilityRule = {
     kind: "weekly", match: "inside",
     windows: [{ weekdays: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }],

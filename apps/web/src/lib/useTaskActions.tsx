@@ -4,6 +4,7 @@ import { api } from "./api";
 import type {
   ExternalWaitFollowUpInput,
   ExternalWaitInput,
+  TaskDetail,
   UpdateTaskInput,
 } from "./api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
@@ -19,7 +20,9 @@ import {
   setOwnerInheritance,
   updateTask,
 } from "./taskMutations";
-import { useRetainedMutations } from "./useRetainedMutations";
+import { useRetainedMutations, type TargetReadToken, type TargetRead } from "./useRetainedMutations";
+import { isWorkItemAccessError } from "./errorMessage";
+import { useStrings } from "./strings";
 import { useIdentityScope } from "./identity";
 export { RETENTION_MS } from "./useRetainedMutations";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
@@ -52,6 +55,7 @@ const taskReceiptRevision = (task: Task) => task.revision;
  * of each owning an independent copy. Call `useTaskActions()` to consume it.
  */
 function useTaskActionsState() {
+  const strings = useStrings();
   const identityKey = useIdentityScope();
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
@@ -86,8 +90,25 @@ function useTaskActionsState() {
     observedDescendants.current.clear();
     interactions.current.clear();
   }
-  const observeConfirmedTask = useCallback((task: Task, authorizedRead = false) =>
-    mutations.observeConfirmed(task.id, task, task, authorizedRead), [mutations.observeConfirmed]);
+  const observeConfirmedTask = useCallback((task: Task, read?: TargetReadToken) =>
+    mutations.observeConfirmed(task.id, task, task, read), [mutations.observeConfirmed]);
+  const readTask = useCallback(async (id: number): Promise<TargetRead<TaskDetail>> => {
+    const read = mutations.captureTargetRead(id);
+    try {
+      const value = await api.getTask(id);
+      mutations.trackTargetRead(read, value);
+      return { read, value };
+    } catch (cause) {
+      if (!mutations.isCurrentTargetRead(read)) throw new Error(strings.workflowTargetUnavailable);
+      if (isWorkItemAccessError(cause)) mutations.invalidateConfirmed(id, read);
+      throw cause;
+    }
+  }, [mutations.captureTargetRead, mutations.invalidateConfirmed, mutations.trackTargetRead, mutations.isCurrentTargetRead, strings]);
+  const getTask = useCallback(async (id: number) => {
+    const result = await readTask(id);
+    if (!mutations.isCurrentTargetRead(result.read)) throw new Error(strings.workflowTargetUnavailable);
+    return result.value;
+  }, [readTask, mutations.isCurrentTargetRead, strings]);
   const syncInteractions = useCallback(() => {
     if (!mutations.isCurrentScope(mutations.scopeToken)) return;
     for (const interaction of interactions.current) {
@@ -584,6 +605,12 @@ function useTaskActionsState() {
   return {
     observeTasks,
     observeConfirmedTask,
+    readTask,
+    getTask,
+    captureTargetRead: mutations.captureTargetRead,
+    isCurrentTargetRead: mutations.isCurrentTargetRead,
+    isCurrentTaskRead: mutations.isCurrentTargetValue,
+    isTargetReadable: mutations.isTargetReadable,
     getConfirmedTask: mutations.getConfirmed,
     invalidateConfirmedTask: mutations.invalidateConfirmed,
     scopeToken: mutations.scopeToken,

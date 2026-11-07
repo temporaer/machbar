@@ -6,6 +6,8 @@ import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { useAsync } from "../lib/useAsync";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useProjectActions } from "../lib/useProjectActions";
 import { ErrorState, LoadingState } from "./AsyncStates";
 import { BottomSheet } from "./BottomSheet";
 
@@ -36,6 +38,8 @@ export function CleanupRoundActionSheet({
   onApplied: (round: CleanupRoundRecord) => void;
 }) {
   const strings = useStrings();
+  const taskActions = useTaskActions();
+  const projectActions = useProjectActions();
   const labels = strings.cleanupFlow;
   const { bump } = useRefresh();
   const isProject = targetType === "project";
@@ -46,9 +50,9 @@ export function CleanupRoundActionSheet({
   >(
     async () =>
       isProject
-        ? { kind: "project", item: await api.getProject(targetId) }
-        : { kind: "task", item: await api.getTask(targetId) },
-    [isProject, targetId],
+        ? { kind: "project", item: await projectActions.getProject(targetId) }
+        : { kind: "task", item: await taskActions.getTask(targetId) },
+    [isProject, targetId, taskActions.scopeToken, projectActions.scopeToken],
   );
   const [title, setTitle] = useState(
     flow.kind === "rename" || flow.kind === "createTask" || flow.kind === "clarifyAdmin" ? flow.title : "",
@@ -61,7 +65,9 @@ export function CleanupRoundActionSheet({
   const titleId = useId();
   const textId = useId();
 
-  const current = target.data?.item ?? null;
+  const current = target.data && (target.data.kind === "project"
+    ? projectActions.isCurrentProjectRead(target.data.item)
+    : taskActions.isCurrentTaskRead(target.data.item)) ? target.data.item : null;
   const trimmedTitle = title.trim();
   const trimmedText = text.trim();
   const titleChanged = current !== null && trimmedTitle !== "" && trimmedTitle !== current.title;
@@ -96,14 +102,18 @@ export function CleanupRoundActionSheet({
 
   const apply = async () => {
     if (!ready || busy || !current) return;
+    const continuation = isProject ? projectActions.captureTargetRead(targetId) : taskActions.captureTargetRead(targetId);
+    const isCurrent = () => isProject ? projectActions.isCurrentTargetRead(continuation) : taskActions.isCurrentTargetRead(continuation);
     setBusy(true);
     setError(null);
     try {
       const round = await api.applyCleanupRoundAction(roundId, itemId, request(current.revision));
+      if (!isCurrent()) { setBusy(false); return; }
       bump();
       onClose();
       onApplied(round);
     } catch (cause) {
+      if (!isCurrent()) { setBusy(false); return; }
       // Nothing was applied: keep the sheet, the card, and the user's draft.
       // A stale target only refreshes the preview; the draft stays as typed.
       if (isStaleWriteConflict(cause)) target.reload();

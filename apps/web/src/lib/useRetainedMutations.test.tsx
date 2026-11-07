@@ -16,13 +16,57 @@ function deferredReceipt() {
 }
 
 describe("confirmed mutation receipts", () => {
+  it("keeps a post-denial command receipt unusable until a new target GET succeeds", async () => {
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    const receipt = { revision: 2, title: "Post-denial command" };
+    act(() => result.current.invalidateConfirmed(1));
+    await act(async () => {
+      await result.current.run({ id: 1, mutate: async () => receipt, confirmed: value => value, retain: false });
+    });
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    act(() => result.current.observeConfirmed(1, receipt, receipt, result.current.captureTargetRead(1)));
+    expect(result.current.getConfirmed(1)).toBe(receipt);
+  });
+
+  it("rejects pre-denial read success and obsolete denial after a new read restores access", () => {
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    const old = result.current.captureTargetRead(1);
+    const readable = { revision: 2, title: "Readable" };
+    act(() => {
+      result.current.pauseRetention(1);
+      result.current.invalidateConfirmed(1, old);
+      result.current.observeConfirmed(1, readable, readable, old);
+    });
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    const fresh = result.current.captureTargetRead(1);
+    act(() => result.current.observeConfirmed(1, readable, readable, fresh));
+    expect(result.current.getConfirmed(1)).toBe(readable);
+    act(() => result.current.invalidateConfirmed(1, old));
+    expect(result.current.getConfirmed(1)).toBe(readable);
+    expect(result.current.isCurrentTargetRead(old)).toBe(false);
+    expect(result.current.isCurrentTargetRead(fresh)).toBe(true);
+  });
+
+  it("shares the initial read generation with a pending first command", async () => {
+    const pending = deferredReceipt();
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    let run!: Promise<Receipt | undefined>;
+    act(() => {
+      run = result.current.run({ id: 1, mutate: () => pending.promise, confirmed: value => value });
+      result.current.captureTargetRead(1);
+    });
+    const receipt = { revision: 2, title: "Accepted" };
+    await act(async () => { pending.resolve(receipt); await run; });
+    expect(result.current.getConfirmed(1)).toBe(receipt);
+  });
+
   it("prunes read-only inputs after their last interaction but preserves command input needed by an offline consumer", async () => {
     const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
     const readOnly = { revision: 1, title: "Read-only visit" };
     let close!: () => void;
     act(() => {
       close = result.current.pauseRetention(1);
-      result.current.observeConfirmed(1, readOnly, readOnly, true);
+      result.current.observeConfirmed(1, readOnly, readOnly, result.current.captureTargetRead(1));
     });
     expect(result.current.getConfirmed(1)).toBe(readOnly);
     act(close);
@@ -33,7 +77,7 @@ describe("confirmed mutation receipts", () => {
     });
     act(() => {
       close = result.current.pauseRetention(2);
-      result.current.observeConfirmed(2, confirmed, confirmed, true);
+      result.current.observeConfirmed(2, confirmed, confirmed, result.current.captureTargetRead(2));
     });
     act(close);
     expect(result.current.getConfirmed(2)).toBe(confirmed);
@@ -55,7 +99,7 @@ describe("confirmed mutation receipts", () => {
     const mutate = vi.fn(async () => ({ revision: 9, title: "Obsolete command" }));
     await act(async () => {
       old.release(1);
-      old.observeConfirmed(1, { revision: 8, title: "Obsolete read" }, undefined, true);
+      old.observeConfirmed(1, { revision: 8, title: "Obsolete read" });
       old.invalidateConfirmed(1);
       await old.run({ id: 1, mutate, confirmed: value => value, retain: false });
     });
@@ -167,7 +211,7 @@ describe("confirmed mutation receipts", () => {
     const readable = { revision: 3, title: "Authorized again" };
     act(() => result.current.observeConfirmed(1, readable));
     expect(result.current.getConfirmed(1)).toBeUndefined();
-    act(() => result.current.observeConfirmed(1, readable, readable, true));
+    act(() => result.current.observeConfirmed(1, readable, readable, result.current.captureTargetRead(1)));
     expect(result.current.getConfirmed(1)).toBe(readable);
   });
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type ProjectDetail, type ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
+import { useProjectActions } from "../lib/useProjectActions";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
@@ -22,6 +23,7 @@ export function ProjectConvertToTaskSheet({
   onClose: () => void;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
+  const projectActions = useProjectActions();
   const { bump } = useRefresh();
   const [title, setTitle] = useState(story.title);
   const [notes, setNotes] = useState(story.notes ?? "");
@@ -39,9 +41,11 @@ export function ProjectConvertToTaskSheet({
     loading,
     error: loadError,
     reload,
-  } = useAsync<ProjectDetail>(() => api.getProject(story.id), [story.id]);
+  } = useAsync<ProjectDetail>(() => projectActions.getProject(story.id), [story.id, projectActions.scopeToken]);
 
-  const currentProject = freshProject ?? project;
+  const confirmedRead = freshProject && projectActions.isCurrentProjectRead(freshProject) ? freshProject : null;
+  const queryRead = project && projectActions.isCurrentProjectRead(project) ? project : null;
+  const currentProject = confirmedRead && (!queryRead || confirmedRead.revision > queryRead.revision) ? confirmedRead : queryRead;
 
   useEffect(() => {
     if (!currentProject) return;
@@ -67,6 +71,7 @@ export function ProjectConvertToTaskSheet({
 
   const convert = async () => {
     if (busy || !canConvert || !currentProject || conflicts.length > 0) return;
+    const continuation = projectActions.captureTargetRead(story.id);
     setBusy(true);
     setError(null);
     try {
@@ -77,14 +82,17 @@ export function ProjectConvertToTaskSheet({
         ...(activationResolution ? { activationResolution } : {}),
         ...(currentProject.hierarchyRevisions ? { expectedHierarchyRevisions: currentProject.hierarchyRevisions } : {}),
       });
+      if (!projectActions.isCurrentTargetRead(continuation)) return;
       bump();
       onClose();
     } catch (cause) {
+      if (!projectActions.isCurrentTargetRead(continuation)) return;
       const prompt = projectActivationPromptFromError(cause, activationPrompt);
       if (prompt) setActivationPrompt(prompt);
       if (isStaleWriteConflict(cause)) {
         try {
-          const latest = await api.getProject(story.id);
+          const latest = await projectActions.getProject(story.id);
+          if (!projectActions.isCurrentTargetRead(continuation) || !projectActions.isCurrentProjectRead(latest)) return;
           setFreshProject(latest);
           const nextConflicts: Array<"title" | "notes"> = [];
           if (!titleEdited || latest.title === title) {
@@ -94,6 +102,7 @@ export function ProjectConvertToTaskSheet({
           } else if (latest.title !== baseline.current.title) {
             nextConflicts.push("title");
           }
+          if (!projectActions.isCurrentTargetRead(continuation)) return;
           const latestNotes = latest.notes ?? "";
           if (!notesEdited || latestNotes === notes) {
             baseline.current.notes = latestNotes;

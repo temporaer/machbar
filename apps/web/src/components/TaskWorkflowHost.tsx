@@ -1,6 +1,5 @@
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useEffect, useRef } from "react";
-import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -69,26 +68,27 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
   const navigate = useNavigate();
   const dispatch = useWorkItemCommands();
   const taskId = state?.taskId ?? null;
+  const frameRead = taskId === null ? null : taskActions.captureTargetRead(taskId);
   const opening = useRef<{ state: TaskWorkflowState | null; opener: HTMLElement | null }>({ state: null, opener: null });
   if (opening.current.state !== state) {
     opening.current = { state, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null };
   }
   const taskRead = useAsync(
-    () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
+    () => (taskId !== null ? taskActions.readTask(taskId) : Promise.resolve(null)),
     [state, taskActions.scopeToken],
   );
-  const fetchedTask = taskRead.data;
+  const fetchedTask = taskRead.data && taskActions.isCurrentTargetRead(taskRead.data.read) ? taskRead.data.value : null;
   useRetentionInteraction(taskId, taskActions.pauseRetention, taskId !== null);
   const retained = taskId !== null ? taskActions.retained.get(taskId) : undefined;
   const accessLost = isWorkItemAccessError(taskRead.errorCause) || isWorkItemAccessError(taskRead.refreshErrorCause);
   const confirmed = taskId !== null ? taskActions.getConfirmedTask(taskId) : undefined;
-  const input = fetchedTask ?? confirmed;
-  const task = accessLost ? null : input ? taskActions.projectTask(input) : retained ?? null;
+  const input = confirmed && (!fetchedTask || confirmed.revision > fetchedTask.revision) ? confirmed : fetchedTask;
+  const task = accessLost ? null : input ? taskActions.projectTask(input)
+    : taskId !== null && taskActions.isTargetReadable(taskId) ? retained ?? null : null;
   useEffect(() => {
     if (taskId === null) return;
-    if (accessLost) taskActions.invalidateConfirmedTask(taskId);
-    else if (fetchedTask && taskRead.error === null && taskRead.refreshError === null) taskActions.observeConfirmedTask(fetchedTask, true);
-  }, [taskId, accessLost, fetchedTask, taskRead.error, taskRead.refreshError, taskActions.invalidateConfirmedTask, taskActions.observeConfirmedTask]);
+    if (fetchedTask && taskRead.data && taskRead.error === null && taskRead.refreshError === null) taskActions.observeConfirmedTask(fetchedTask, taskRead.data.read);
+  }, [taskId, fetchedTask, taskRead.data, taskRead.error, taskRead.refreshError, taskActions.observeConfirmedTask]);
 
   if (!state) return null;
   const close = () => workflow.close(state);
@@ -126,19 +126,20 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
           {...sheetProps}
           key={task.id}
           task={task}
+          authoritativeTask={input ?? null}
           {...(state.planningTarget
             ? { initialTarget: state.planningTarget }
             : {})}
         />
       );
     case "availability":
-      return <TaskPlanningSheet {...sheetProps} key={task.id} task={task} initialTarget="availability" />;
+      return <TaskPlanningSheet {...sheetProps} key={task.id} task={task} authoritativeTask={input ?? null} initialTarget="availability" />;
     case "deferClarification":
       return <TaskClarificationSheet {...sheetProps} task={task} />;
     case "structure":
       return <TaskStructureSheet {...sheetProps} task={task} />;
     case "waitingLifecycle":
-      return <TaskPlanningSheet {...sheetProps} key={task.id} task={task} initialTarget="waiting" />;
+      return <TaskPlanningSheet {...sheetProps} key={task.id} task={task} authoritativeTask={input ?? null} initialTarget="waiting" />;
     case "split":
       return (
         <TaskSplitSheet
@@ -154,7 +155,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
       );
     case "refinement":
       return <WorkClarificationSheet {...sheetProps} targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onStarted={(intakeId) => {
-        if (!workflow.isCurrent(state) || !taskActions.isCurrentScope(taskActions.scopeToken)) return;
+        if (!workflow.isCurrent(state) || !frameRead || !taskActions.isCurrentTargetRead(frameRead)) return;
         const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
         const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
         close();
@@ -179,7 +180,8 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
                 : "project"
           }
           onSelect={async ({ ownerMemberId, ownerInheritanceMode }, cleanedTitle) => {
-            await taskActions.assignOwner(
+            const continuation = taskActions.captureTargetRead(task.id);
+            const updated = await taskActions.assignOwner(
               task,
               ownerMemberId,
               ownerInheritanceMode,
@@ -187,6 +189,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
                 ? { title: cleanedTitle }
                 : {},
             );
+            return updated !== undefined && taskActions.isCurrentTargetRead(continuation);
           }}
         />
       );
@@ -208,7 +211,9 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
           workItemType="task"
           onRefresh={reload}
           onComplete={async (criteriaToCheck, childPolicy) => {
-            await taskActions.complete(task, childPolicy, criteriaToCheck, true);
+            const continuation = taskActions.captureTargetRead(task.id);
+            const updated = await taskActions.complete(task, childPolicy, criteriaToCheck, true);
+            return updated !== undefined && taskActions.isCurrentTargetRead(continuation);
           }}
         />
       );

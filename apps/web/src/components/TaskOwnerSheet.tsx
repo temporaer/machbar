@@ -49,7 +49,7 @@ export function TaskOwnerSheet({
   inheritedOwnerId: number | null;
   inheritanceSource: "parent" | "project" | null;
   onClose: () => void;
-  onSelect: (choice: TaskOwnerChoice, cleanedTitle?: string) => Promise<void>;
+  onSelect: (choice: TaskOwnerChoice, cleanedTitle?: string) => Promise<void | boolean>;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -76,13 +76,13 @@ export function TaskOwnerSheet({
     setSaving(true);
     setError(null);
     try {
-      await onSelect(
+      const accepted = await onSelect(
         choice,
         hint
           ? removeCaptionHintSpans(taskTitle, [hint.removalSpan])
           : undefined,
       );
-      onClose();
+      if (accepted !== false) onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {

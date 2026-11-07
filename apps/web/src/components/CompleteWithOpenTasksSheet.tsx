@@ -33,7 +33,7 @@ export function CompleteWithOpenTasksSheet({
 }: {
   story: ProjectDetail;
   onClose: () => void;
-  onComplete: (input: ProjectWorkflowInput) => Promise<void>;
+  onComplete: (input: ProjectWorkflowInput) => Promise<void | boolean>;
   onRefresh?: () => void;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
@@ -104,13 +104,13 @@ export function CompleteWithOpenTasksSheet({
             setBusy(true);
             setError(null);
             try {
-              await onComplete({
+              const accepted = await onComplete({
                 expectedRevision: story.revision,
                 criteriaToCheck: [...checkedIds].filter((id) => unchecked.some((criterion) => criterion.id === id)),
                 expectedTaskRevisions: taskSnapshot,
                 descendantResolutions: branches.map((task) => ({ taskId: task.id, action: resolutions[task.id]!, expectedRevision: task.revision })),
               });
-              onClose();
+              if (accepted !== false) onClose();
             } catch (cause) {
               setError(localizedErrorMessage(cause, strings));
               onRefresh?.();

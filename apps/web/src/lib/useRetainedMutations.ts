@@ -5,6 +5,17 @@ import { useStrings } from "./strings";
 
 export const RETENTION_MS = 4000;
 
+export interface TargetReadToken {
+  id: number;
+  scopeToken: object;
+  targetToken: object;
+}
+
+export interface TargetRead<T> {
+  read: TargetReadToken;
+  value: T;
+}
+
 interface RetainedMutation<TStored, TResult> {
   id: number;
   optimistic?: TStored;
@@ -52,6 +63,7 @@ export function useRetainedMutations<TStored>({
     targetTokens: new Map<number, object>(),
     invalidated: new Set<number>(),
     observed: new WeakMap<object, Set<number>>(),
+    readSources: new WeakMap<object, TargetReadToken>(),
     commandIds: new Set<number>(),
   }), [identityKey]);
   const currentRuntime = useRef(runtime);
@@ -82,6 +94,7 @@ export function useRetainedMutations<TStored>({
       runtime.targetTokens.clear();
       runtime.invalidated.clear();
       runtime.observed = new WeakMap();
+      runtime.readSources = new WeakMap();
       runtime.commandIds.clear();
       runtime.state = mutationState<TStored>();
     };
@@ -123,12 +136,34 @@ export function useRetainedMutations<TStored>({
   const getConfirmed = useCallback((id: number) =>
     isCurrentScope(scopeToken) && !runtime.invalidated.has(id)
       ? runtime.state.confirmed.get(id) : undefined, [isCurrentScope, runtime, scopeToken]);
-  const observeConfirmed = useCallback((id: number, value: TStored, source: unknown = value, authorizedRead = false) => {
+  const captureTargetRead = useCallback((id: number): TargetReadToken => {
+    let targetToken = runtime.targetTokens.get(id);
+    if (!targetToken) {
+      targetToken = {};
+      runtime.targetTokens.set(id, targetToken);
+    }
+    return { id, scopeToken, targetToken };
+  }, [runtime, scopeToken]);
+  const isCurrentTargetRead = useCallback((read: TargetReadToken) =>
+    isCurrentScope(read.scopeToken) && runtime.targetTokens.get(read.id) === read.targetToken,
+  [isCurrentScope, runtime]);
+  const trackTargetRead = useCallback((read: TargetReadToken, value: object) => {
+    runtime.readSources.set(value, read);
+  }, [runtime]);
+  const isCurrentTargetValue = useCallback((value: object) => {
+    const read = runtime.readSources.get(value);
+    return read !== undefined && isCurrentTargetRead(read);
+  }, [runtime, isCurrentTargetRead]);
+  const isTargetReadable = useCallback((id: number) =>
+    isCurrentScope(scopeToken) && !runtime.invalidated.has(id), [isCurrentScope, runtime, scopeToken]);
+  const observeConfirmed = useCallback((id: number, value: TStored, source: unknown = value, read?: TargetReadToken) => {
     if (!isCurrentScope(scopeToken) || !receiptRevision ||
-      (runtime.invalidated.has(id) && !authorizedRead)) return;
-    if (!authorizedRead && !runtime.state.confirmed.has(id) && !runtime.inFlight.has(id)) return;
+      (read && (read.id !== id || !isCurrentTargetRead(read))) ||
+      (runtime.invalidated.has(id) && !read)) return;
+    if (!read && !runtime.state.confirmed.has(id) && !runtime.inFlight.has(id)) return;
+    if (read && !runtime.leases.has(id) && !runtime.commandIds.has(id)) return;
     const restoring = runtime.invalidated.has(id);
-    if (authorizedRead) runtime.invalidated.delete(id);
+    if (read) runtime.invalidated.delete(id);
     if (typeof source === "object" && source !== null) {
       const observedIds = runtime.observed.get(source) ?? new Set<number>();
       if (observedIds.has(id) && !restoring && runtime.state.confirmed.has(id)) return;
@@ -136,9 +171,9 @@ export function useRetainedMutations<TStored>({
       runtime.observed.set(source, observedIds);
     }
     recordConfirmed(id, value, true);
-  }, [isCurrentScope, receiptRevision, recordConfirmed, runtime, scopeToken]);
-  const invalidateConfirmed = useCallback((id: number) => {
-    if (!isCurrentScope(scopeToken)) return;
+  }, [isCurrentScope, isCurrentTargetRead, receiptRevision, recordConfirmed, runtime, scopeToken]);
+  const invalidateConfirmed = useCallback((id: number, read?: TargetReadToken) => {
+    if (!isCurrentScope(scopeToken) || (read && (read.id !== id || !isCurrentTargetRead(read)))) return;
     runtime.targetTokens.set(id, {});
     runtime.invalidated.add(id);
     release(id);
@@ -147,7 +182,7 @@ export function useRetainedMutations<TStored>({
       confirmed.delete(id);
       return { ...current, confirmed };
     });
-  }, [change, isCurrentScope, release, runtime, scopeToken]);
+  }, [change, isCurrentScope, isCurrentTargetRead, release, runtime, scopeToken]);
 
   const schedule = useCallback(function scheduleExpiry(id: number) {
     if (!isCurrentScope(scopeToken)) return;
@@ -229,7 +264,7 @@ export function useRetainedMutations<TStored>({
     }: RetainedMutation<TStored, TResult>): Promise<TResult | undefined> => {
       const token = scopeToken;
       if (!isCurrentScope(token)) return undefined;
-      const targetToken = runtime.targetTokens.get(id);
+      const { targetToken } = captureTargetRead(id);
       const canPublish = () => isCurrentScope(token) && runtime.targetTokens.get(id) === targetToken;
       if (runtime.inFlight.has(id)) {
         const error = new Error("An update for this item is already in progress.");
@@ -262,7 +297,6 @@ export function useRetainedMutations<TStored>({
         }
         const value = confirmed?.(result);
         if (value !== undefined) {
-          runtime.invalidated.delete(id);
           recordConfirmed(id, value);
         }
         if (shouldRetain) {
@@ -299,7 +333,7 @@ export function useRetainedMutations<TStored>({
         }
       }
     },
-    [bump, change, clearError, release, retain, schedule, strings, immediateRefresh, isCurrentScope, receiptRevision, recordConfirmed, runtime, scopeToken],
+    [bump, change, clearError, release, retain, schedule, strings, immediateRefresh, isCurrentScope, captureTargetRead, receiptRevision, recordConfirmed, runtime, scopeToken],
   );
 
   const { pendingIds, holdingIds, retained, errors } = runtime.state;
@@ -318,6 +352,11 @@ export function useRetainedMutations<TStored>({
     getConfirmed,
     observeConfirmed,
     invalidateConfirmed,
+    captureTargetRead,
+    isCurrentTargetRead,
+    trackTargetRead,
+    isCurrentTargetValue,
+    isTargetReadable,
     scopeToken,
     isCurrentScope,
     confirmedSnapshots: runtime.state.confirmed,

@@ -1,6 +1,6 @@
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useEffect, useRef } from "react";
-import { api, type ProjectDetail } from "../lib/api";
+import { type ProjectDetail } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useProjectWorkflow, type ProjectWorkflowState } from "../lib/projectWorkflowContext";
@@ -49,22 +49,23 @@ export function ProjectWorkflowHost() {
     opening.current = { state, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null };
   }
   const projectId = state?.projectId ?? null;
+  const frameRead = projectId === null ? null : projectActions.captureTargetRead(projectId);
   const projectRead = useAsync(
-    () => (projectId !== null ? api.getProject(projectId) : Promise.resolve(null)),
+    () => (projectId !== null ? projectActions.readProject(projectId) : Promise.resolve(null)),
     [state, projectActions.scopeToken],
   );
-  const fetchedProject = projectRead.data;
+  const fetchedProject = projectRead.data && projectActions.isCurrentTargetRead(projectRead.data.read) ? projectRead.data.value : null;
   useRetentionInteraction(projectId, projectActions.pauseRetention, projectId !== null);
   const retained = projectId !== null ? projectActions.retained.get(projectId)?.story : undefined;
   const accessLost = isWorkItemAccessError(projectRead.errorCause) || isWorkItemAccessError(projectRead.refreshErrorCause);
   const confirmed = projectId !== null ? projectActions.getConfirmedStory(projectId) : undefined;
   const input = fetchedProject ?? confirmed;
-  const story = accessLost ? undefined : input ? projectActions.projectStory(input) : retained;
+  const story = accessLost ? undefined : input ? projectActions.projectStory(input)
+    : projectId !== null && projectActions.isTargetReadable(projectId) ? retained : undefined;
   useEffect(() => {
     if (projectId === null) return;
-    if (accessLost) projectActions.invalidateConfirmedStory(projectId);
-    else if (fetchedProject && projectRead.error === null && projectRead.refreshError === null) projectActions.observeConfirmedStory(fetchedProject, true);
-  }, [projectId, accessLost, fetchedProject, projectRead.error, projectRead.refreshError, projectActions.invalidateConfirmedStory, projectActions.observeConfirmedStory]);
+    if (fetchedProject && projectRead.data && projectRead.error === null && projectRead.refreshError === null) projectActions.observeConfirmedStory(fetchedProject, projectRead.data.read);
+  }, [projectId, fetchedProject, projectRead.data, projectRead.error, projectRead.refreshError, projectActions.observeConfirmedStory]);
 
   if (!state) return null;
   const close = () => workflow.close(state);
@@ -106,14 +107,15 @@ export function ProjectWorkflowHost() {
               throw new Error(strings.readLoadFailed(story.title));
             }
             if (story.status === "active" || story.status === "archived") {
-              await projectActions.returnToBacklog(
+              const updated = await projectActions.returnToBacklog(
                 fetchedProject ?? story,
                 patch.revisitAt,
                 patch.withdrawCommitments,
                 fetchedProject ? flattenTaskRevisions(fetchedProject.tasks) : [],
               );
+              return updated !== undefined;
             } else {
-              await projectActions.schedule(story, { revisitAt: patch.revisitAt });
+              return await projectActions.schedule(story, { revisitAt: patch.revisitAt }) !== undefined;
             }
           }}
         />
@@ -122,7 +124,7 @@ export function ProjectWorkflowHost() {
       return <ProjectStructureSheet {...sheetProps} story={story} />;
     case "refinement":
       return <WorkClarificationSheet {...sheetProps} targetType="project" targetId={story.id} revision={story.revision} title={story.title} onStarted={(intakeId) => {
-        if (!workflow.isCurrent(state) || !projectActions.isCurrentScope(projectActions.scopeToken)) return;
+        if (!workflow.isCurrent(state) || !frameRead || !projectActions.isCurrentTargetRead(frameRead)) return;
         const refinementOrigin: WorkRefinementOrigin = { targetType: "project", targetId: story.id, originPath: `${location.pathname}${location.search}`, entry: "page" };
         close();
         navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });
@@ -139,7 +141,9 @@ export function ProjectWorkflowHost() {
           unassignedLabel={canClearDriver(story) ? strings.noDriver : null}
           hint={canClearDriver(story) ? undefined : strings.driverLockedHint}
           onSelect={async (ownerMemberId) => {
-            await projectActions.assignDriver(story, ownerMemberId);
+            const continuation = projectActions.captureTargetRead(story.id);
+            const updated = await projectActions.assignDriver(story, ownerMemberId);
+            return updated !== undefined && projectActions.isCurrentTargetRead(continuation);
           }}
         />
       );
@@ -157,7 +161,9 @@ export function ProjectWorkflowHost() {
           story={fetchedProject}
           onRefresh={reload}
           onComplete={async (input) => {
-            await projectActions.runAction(fetchedProject, "complete", undefined, undefined, true, undefined, input);
+            const continuation = projectActions.captureTargetRead(story.id);
+            const updated = await projectActions.runAction(fetchedProject, "complete", undefined, undefined, true, undefined, input);
+            return updated !== undefined && projectActions.isCurrentTargetRead(continuation);
           }}
         />
       );
@@ -166,6 +172,7 @@ export function ProjectWorkflowHost() {
         <ProjectDeadlineSheet
           {...sheetProps}
           story={story}
+          authoritativeProject={fetchedProject}
           onSave={async (patch) => {
             await projectActions.schedule(story, patch);
           }}
@@ -191,8 +198,9 @@ export function ProjectWorkflowHost() {
           {...sheetProps}
           story={story}
           action={action}
+          authoritativeProject={fetchedProject}
           onActivate={(ownerMemberId, resolution, expectedRevision) =>
-            projectActions.runAction(story, action, ownerMemberId, resolution, true, expectedRevision).then(() => undefined)
+            projectActions.runAction(story, action, ownerMemberId, resolution, true, expectedRevision).then(result => result !== undefined)
           }
         />
       );

@@ -8,6 +8,7 @@ import { projectActivationPromptFromSnapshot, projectActivationPromptFromError, 
 import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { useNavigate } from "react-router-dom";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useTaskActions } from "../lib/useTaskActions";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 function descendantRevisions(tasks: Task[]): Array<{ taskId: number; revision: number }> {
@@ -27,10 +28,12 @@ function openActionDescendants(tasks: Task[]): Task[] {
 /** Focused `task.convertToProject` workflow — the canonical destination regardless of rail/keyboard/detail invocation. */
 export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
+  const taskActions = useTaskActions();
   const navigate = useNavigate();
   const detail = useTaskDetail();
   const { bump } = useRefresh();
-  const [currentTask, setCurrentTask] = useState<TaskDetail>(task);
+  const [taskRead, setCurrentTask] = useState<TaskDetail | null>(null);
+  const currentTask: TaskDetail = taskRead && taskActions.isCurrentTaskRead(taskRead) ? taskRead : task;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preservedStepTitle, setPreservedStepTitle] = useState(task.title);
@@ -40,14 +43,11 @@ export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { 
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
 
   useEffect(() => {
-    setCurrentTask((previous) => previous.id === task.id && previous.revision === task.revision ? previous : task);
-  }, [task]);
-  useEffect(() => {
     if (!preservedStepTitleEdited) setPreservedStepTitle(currentTask.title);
   }, [currentTask.title, preservedStepTitleEdited]);
   useEffect(() => {
     let cancelled = false;
-    api.getTask(task.id).then((latest) => { if (!cancelled) setCurrentTask(latest); }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); });
+    taskActions.getTask(task.id).then((latest) => { if (!cancelled) setCurrentTask(latest); }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); });
     return () => { cancelled = true; };
   }, [task.id, task.revision, strings]);
   const blockReason =
@@ -78,6 +78,7 @@ export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { 
   const hierarchyPending = (currentTask.parentTaskId !== null || currentTask.projectId !== null) && !currentTask.hierarchyRevisions;
 
   const convert = async (status: "active" | "backlog") => {
+    const continuation = taskActions.captureTargetRead(task.id);
     if (busy || blockReason || hierarchyPending) return;
     setBusy(true);
     setError(null);
@@ -102,29 +103,35 @@ export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { 
       };
       if (!activationPrompt || previewIntent !== status) {
         const preview = await api.previewTaskConversion(task.id, input);
+        if (!taskActions.isCurrentTargetRead(continuation)) return;
         if (preview.activatingProjects.length) {
           setPreviewIntent(status);
           setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision, decisionDraft.current));
           return;
         }
       }
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
       const converted = await api.convertTaskToStory(task.id, input);
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
       bump();
       onClose();
       detail.close();
       navigate(`/projects/${converted.id}`, { state: { createdProjectId: converted.id } });
 
     } catch (cause) {
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
       const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
       if (refreshedPrompt) { setPreviewIntent(status); setActivationPrompt(refreshedPrompt); }
       if (isStaleWriteConflict(cause)) {
         bump();
         try {
-          const latest = await api.getTask(task.id);
+          const latest = await taskActions.getTask(task.id);
+          if (!taskActions.isCurrentTargetRead(continuation) || !taskActions.isCurrentTaskRead(latest)) return;
           setCurrentTask(latest);
         } catch {
           // Keep the draft and let the next submission surface the current server error.
         }
+        if (!taskActions.isCurrentTargetRead(continuation)) return;
       }
       setError(localizedErrorMessage(cause, strings));
     } finally {

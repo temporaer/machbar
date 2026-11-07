@@ -29,7 +29,7 @@ export function MemberSelectionSheet({
   hint?: string | undefined;
   onClose: () => void;
   onCancel?: () => void;
-  onSelect: (memberId: number | null) => Promise<void>;
+  onSelect: (memberId: number | null) => Promise<void | boolean>;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
@@ -44,8 +44,8 @@ export function MemberSelectionSheet({
     setSaving(true);
     setError(null);
     try {
-      await onSelect(memberId);
-      onClose();
+      const accepted = await onSelect(memberId);
+      if (accepted !== false) onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {

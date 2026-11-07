@@ -1,7 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useRef } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useRef, useState } from "react";
+import { Route, Routes } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError, type ProjectDetail } from "../lib/api";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
@@ -15,6 +16,9 @@ import { renderWithProviders } from "../test/testUtils";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
 import { IdentityGate } from "./IdentityGate";
+import { TaskDetailSheet } from "./TaskDetailSheet";
+import { ProjectDetailPage } from "../pages/ProjectDetailPage";
+import { request } from "../lib/api";
 
 vi.mock("../lib/api", async (importOriginal) => ({ ...await importOriginal<typeof import("../lib/api")>(), api: {
   getMembers: vi.fn(), getTask: vi.fn(), getProject: vi.fn(), getAuthStatus: vi.fn(),
@@ -64,6 +68,20 @@ function PendingTaskControls() {
     <button onClick={() => void actions.update(task, { priority: 1 })}>Start task save</button>
     <button onClick={() => workflow.open("plan", task.id, "scheduled")}>Open pending task</button>
     <TaskWorkflowHost />
+  </>;
+}
+
+function CrossReaderControls({ role }: { role: "task" | "project" }) {
+  const detail = useTaskDetail();
+  const workflow = useTaskWorkflow();
+  const [page, setPage] = useState(false);
+  return <>
+    <button onClick={() => role === "task" ? detail.open(task.id) : setPage(true)}>Read detail</button>
+    <button onClick={() => { detail.close(); setPage(false); }}>Leave detail</button>
+    <button onClick={() => { workflow.suspendForDetail(null); detail.open(99); workflow.open("plan", task.id, "scheduled"); }}>Suspend and reopen</button>
+    <Controls />
+    <TaskDetailSheet />
+    {page ? <Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes> : null}
   </>;
 }
 
@@ -139,8 +157,148 @@ beforeEach(() => {
   mocked.updateTask.mockResolvedValue({ ...task, revision: 2, priority: 1 });
   mocked.updateProject.mockResolvedValue({ ...project, revision: 2, notes: "retained" });
 });
+afterEach(() => vi.unstubAllGlobals());
 
 describe("focused workflow read recovery", () => {
+  it("rejects an old suspended same-ID workflow success after the new foreground reader denies", async () => {
+    const old = deferred<typeof task>();
+    let targetReads = 0;
+    mocked.getTask.mockImplementation(async id => {
+      if (id === 99) return makeTask({ id: 99, title: "Inspected task" });
+      if (++targetReads === 1) return old.promise;
+      throw new ApiError(403, "Denied");
+    });
+    renderWithProviders(<CrossReaderControls role="task" />, { locale: "en" });
+    fireEvent.click(screen.getByRole("button", { name: "Open task" }));
+    await waitFor(() => expect(targetReads).toBe(1));
+    fireEvent.click(screen.getByRole("button", { name: "Suspend and reopen", hidden: true }));
+    await waitFor(() => expect(targetReads).toBe(2));
+    await screen.findAllByRole("alert", { hidden: true });
+    await act(async () => old.resolve(task));
+    expect(screen.queryByLabelText("Planned for")).not.toBeInTheDocument();
+  });
+
+  it.each(["selected", "cookie"] as const)("ignores a real old transport 401 after %s identity ABA, but honors a current 401", async (mode) => {
+    mocked.getMembers.mockResolvedValue([makeMember({ id: 1 }), makeMember({ id: 2 })]);
+    if (mode === "cookie") mocked.getAuthStatus.mockResolvedValue({ enabled: true, authenticated: true, member: makeMember({ id: 1 }) });
+    renderWithProviders(<><IdentityControls /><AuthControls /><Controls /></>, { locale: "en" });
+    await screen.findByText(mode === "cookie" ? "Member: 1" : "Member:");
+    if (mode === "selected") await userEvent.click(screen.getByRole("button", { name: "Member 1" }));
+    const old = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(old.promise));
+    const pending = request("/tasks/1").catch(cause => cause);
+    if (mode === "selected") {
+      await userEvent.click(screen.getByRole("button", { name: "Member 2" }));
+      await userEvent.click(screen.getByRole("button", { name: "Member 1" }));
+    } else {
+      mocked.getAuthStatus.mockResolvedValue({ enabled: true, authenticated: true, member: makeMember({ id: 2 }) });
+      await userEvent.click(screen.getByRole("button", { name: "Refresh authentication" }));
+      await screen.findByText("Member: 2");
+      mocked.getAuthStatus.mockResolvedValue({ enabled: true, authenticated: true, member: makeMember({ id: 1 }) });
+      await userEvent.click(screen.getByRole("button", { name: "Refresh authentication" }));
+      await screen.findByText("Member: 1");
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Open task" }));
+    const editor = await screen.findByRole("textbox", { name: "Planned for" });
+    await act(async () => { old.resolve(new Response("{}", { status: 401 })); await pending; });
+    expect(screen.getByRole("textbox", { name: "Planned for" })).toBe(editor);
+    expect(screen.getByText("Member: 1")).toBeInTheDocument();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 401 })));
+    await act(async () => { await request("/tasks/1").catch(() => {}); });
+    expect(screen.queryByRole("textbox", { name: "Planned for" })).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])("rejects a Planning preview continuation after denial (restored: %s)", async restored => {
+    const projectTask = { ...task, projectId: project.id };
+    mocked.getTask.mockResolvedValue(projectTask);
+    const preview = deferred<Awaited<ReturnType<typeof api.previewTaskUpdate>>>();
+    mocked.previewTaskUpdate.mockReturnValue(preview.promise);
+    renderWithProviders(<CrossReaderControls role="task" />, { locale: "en" });
+    await userEvent.click(screen.getByRole("button", { name: "Open task" }));
+    const editor = await screen.findByRole("textbox", { name: "Planned for" });
+    fireEvent.change(editor, { target: { value: "2026-12-05" } });
+    fireEvent.blur(editor);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocked.previewTaskUpdate).toHaveBeenCalledOnce());
+    mocked.getTask.mockRejectedValue(new ApiError(403, "Read denied"));
+    fireEvent.click(screen.getByRole("button", { name: "Read detail", hidden: true }));
+    await screen.findByRole("alert");
+    if (restored) {
+      mocked.getTask.mockResolvedValue({ ...projectTask, revision: 2 });
+      fireEvent.click(screen.getAllByRole("button", { name: "Try again", hidden: true }).at(-1)!);
+      await waitFor(() => expect(mocked.getTask).toHaveBeenCalledTimes(3));
+    }
+    await act(async () => preview.resolve({ activatingProjects: [], decision: null } as never));
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+  });
+
+  it.each([["task", 403], ["task", 404], ["project", 403], ["project", 404]] as const)(
+    "%s detail HTTP %s revokes the shared command receipt for subsequent offline workflows", async (role, status) => {
+      renderWithProviders(<CrossReaderControls role={role} />, { locale: "en", initialEntries: ["/projects/2"] });
+      await userEvent.click(screen.getByRole("button", { name: `Retain ${role}` }));
+      mocked[role === "task" ? "getTask" : "getProject"].mockRejectedValue(new ApiError(status, "Read denied"));
+      fireEvent.click(screen.getByRole("button", { name: "Read detail" }));
+      await screen.findByRole("alert");
+      fireEvent.click(screen.getByRole("button", { name: "Leave detail", hidden: true }));
+      mocked[role === "task" ? "getTask" : "getProject"].mockRejectedValue(new Error("read offline"));
+      fireEvent.click(screen.getByRole("button", { name: `Open ${role}` }));
+      await screen.findByText(/read offline/);
+      expect(screen.queryByRole("textbox", { name: "Planned for" })).not.toBeInTheDocument();
+      expect(screen.queryByText(project.title)).not.toBeInTheDocument();
+    });
+
+  it("hides an already rendered detail when another reader denies, and never reuses its old envelope after restoration", async () => {
+    renderWithProviders(<CrossReaderControls role="task" />, { locale: "en" });
+    fireEvent.click(screen.getByRole("button", { name: "Read detail" }));
+    await screen.findByText(task.title);
+    mocked.getTask.mockRejectedValue(new ApiError(403, "Read denied"));
+    fireEvent.click(screen.getByRole("button", { name: "Open task", hidden: true }));
+    await screen.findByRole("alert");
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+    mocked.getTask.mockResolvedValue({ ...task, title: "Restored task", revision: 2 });
+    await userEvent.click(screen.getAllByRole("button", { name: "Try again" }).at(-1)!);
+    await screen.findByRole("textbox", { name: "Planned for" });
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+  });
+
+  it("does not render a detail GET that resolves after a same-ID workflow denial", async () => {
+    const old = deferred<typeof task>();
+    mocked.getTask.mockReturnValueOnce(old.promise).mockRejectedValue(new ApiError(403, "Read denied"));
+    renderWithProviders(<CrossReaderControls role="task" />, { locale: "en" });
+    fireEvent.click(screen.getByRole("button", { name: "Read detail" }));
+    await waitFor(() => expect(mocked.getTask).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Open task", hidden: true }));
+    await screen.findByRole("alert");
+    await act(async () => old.resolve(task));
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Planned for" })).not.toBeInTheDocument();
+  });
+
+  it("reconciles a revision-advancing read retry without replacing the failed Planning draft", async () => {
+    renderWithProviders(<Controls />, { locale: "en" });
+    await userEvent.click(screen.getByRole("button", { name: "Open task" }));
+    const editor = await screen.findByRole("textbox", { name: "Planned for" });
+    fireEvent.change(editor, { target: { value: "2026-12-05" } });
+    fireEvent.blur(editor);
+    const draft = (editor as HTMLInputElement).value;
+    mocked.updateTask.mockRejectedValue(new Error("save offline"));
+    mocked.getTask.mockRejectedValue(new Error("read offline"));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("save offline");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh read" }));
+    await screen.findByText(/read offline/);
+    mocked.getTask.mockResolvedValue({ ...task, revision: 2, externalWait: { waitingFor: "Recovered wait", revisitDate: null } });
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByText(/read offline/)).not.toBeInTheDocument());
+    expect(screen.getByRole("textbox", { name: "Planned for" })).toBe(editor);
+    expect(editor).toHaveValue(draft);
+    expect(screen.getByText("save offline")).toBeInTheDocument();
+    expect(screen.getByText("Recovered wait")).toBeInTheDocument();
+    mocked.updateTask.mockResolvedValue({ ...task, revision: 3, scheduledDate: "2026-12-05" });
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocked.updateTask).toHaveBeenLastCalledWith(task.id, expect.objectContaining({ expectedRevision: 2, scheduledDate: "2026-12-05" })));
+  });
+
   it.each(["task", "project"] as const)("keeps the %s opener through delayed recovery into its editor", async (role) => {
     mocked.getTask.mockRejectedValue(new Error("read offline"));
     mocked.getProject.mockRejectedValue(new Error("read offline"));

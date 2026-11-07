@@ -4,10 +4,18 @@ import { describe, expect, it, vi } from "vitest";
 import { makeProject } from "../test/fixtures";
 import { ApiError } from "../lib/api";
 import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { RefreshProvider } from "../lib/refresh";
+import type { ReactNode } from "react";
 
-vi.mock("../lib/identity", () => ({
+vi.mock("../lib/identity", async importOriginal => ({
+  ...await importOriginal<typeof import("../lib/identity")>(),
   useIdentity: () => ({ members: [{ id: 1, name: "Mira" }, { id: 2, name: "Sarah" }] }),
 }));
+
+function Actions({ children }: { children: ReactNode }) {
+  return <RefreshProvider><ProjectActionsProvider>{children}</ProjectActionsProvider></RefreshProvider>;
+}
 
 describe("ProjectDeadlineSheet", () => {
   it("rejects an invalid date, saves valid input, and closes explicitly", async () => {
@@ -18,7 +26,7 @@ describe("ProjectDeadlineSheet", () => {
         story={makeProject({ id: 1, title: "Urlaub" })}
         onClose={onClose}
         onSave={onSave}
-      />,
+      />, { wrapper: Actions },
     );
 
     expect(
@@ -71,7 +79,7 @@ describe("ProjectDeadlineSheet", () => {
         story={makeProject({ id: 1, title: "Urlaub", status: "backlog", revision: 4 })}
         onClose={vi.fn()}
         onSave={onSave}
-      />,
+      />, { wrapper: Actions },
     );
 
     await userEvent.type(screen.getByLabelText("Fällig"), "2026-12-15{Enter}");

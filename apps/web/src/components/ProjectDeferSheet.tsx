@@ -7,6 +7,7 @@ import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { taskRevisitForLocalDate } from "../lib/taskAvailability";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
+import { useProjectActions } from "../lib/useProjectActions";
 
 function toRevisitAt(
   date: string,
@@ -32,11 +33,12 @@ export function ProjectDeferSheet({
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { revisitAt: string | null; withdrawCommitments: boolean }) => Promise<void>;
+  onSave: (patch: { revisitAt: string | null; withdrawCommitments: boolean }) => Promise<void | boolean>;
   onRefresh?: () => void;
   withdrawalReady?: boolean;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
+  const projectActions = useProjectActions();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
   const [customDate, setCustomDate] = useState(false);
@@ -65,12 +67,14 @@ export function ProjectDeferSheet({
 
   const commit = async (patch: { revisitAt: string | null }) => {
     if (saving) return;
+    const continuation = projectActions.captureTargetRead(story.id);
     setSaving(true);
     setError(null);
     try {
-      await onSave({ ...patch, withdrawCommitments });
-      onClose();
+      const accepted = await onSave({ ...patch, withdrawCommitments });
+      if (accepted !== false && projectActions.isCurrentTargetRead(continuation)) onClose();
     } catch (cause) {
+      if (!projectActions.isCurrentTargetRead(continuation)) return;
       setError(localizedErrorMessage(cause, strings));
       onRefresh?.();
     } finally {

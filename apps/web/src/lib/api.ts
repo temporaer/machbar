@@ -64,7 +64,7 @@ import type {
   WorkItemAncestor,
   WorkItemScope,
 } from "@machbar/shared";
-import { readRequestActorMemberId } from "./identityStorage";
+import { readRequestActorMemberId, readRequestIdentityToken } from "./identityStorage";
 import { getClientId } from "./clientId";
 
 /**
@@ -132,6 +132,7 @@ export async function request<T>(
   init?: RequestInit,
   responseType: ApiResponseType = "json",
 ): Promise<T> {
+  const identityToken = readRequestIdentityToken();
   const url = apiUrl(path);
   const isFormData =
     typeof FormData !== "undefined" && init?.body instanceof FormData;
@@ -147,7 +148,7 @@ export async function request<T>(
     },
   });
   if (!res.ok) {
-    if (res.status === 401 && typeof window !== "undefined") {
+    if (res.status === 401 && identityToken === readRequestIdentityToken() && typeof window !== "undefined") {
       window.dispatchEvent(new Event("machbar:authentication-required"));
     }
     let message = res.statusText;

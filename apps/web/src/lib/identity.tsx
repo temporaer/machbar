@@ -14,6 +14,7 @@ import {
   parseSelectedMemberStorageValue,
   SELECTED_MEMBER_STORAGE_KEY,
   setRequestActorMemberId,
+  resetRequestIdentity,
 } from "./identityStorage";
 import { useStrings } from "./strings";
 import type { Strings } from "./strings";
@@ -140,6 +141,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   }, [strings]);
 
   const loadAuth = useCallback(() => {
+    resetRequestIdentity();
     setAuthLoading(true);
     setAuthError(null);
     const getAuthStatus = api.getAuthStatus;
@@ -172,6 +174,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const requireAuthentication = () => {
+      resetRequestIdentity();
       setAuthStatus({ enabled: true, authenticated: false, member: null });
       setMembers([]);
       setMembersLoading(false);
@@ -194,6 +197,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         return;
       }
       const nextMemberId = parseSelectedMemberStorageValue(event.newValue);
+      if (nextMemberId !== currentMemberId) resetRequestIdentity();
       setCurrentMemberIdState(nextMemberId);
       if (
         nextMemberId !== null &&
@@ -204,10 +208,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("storage", synchronizeSelectedMember);
     return () => window.removeEventListener("storage", synchronizeSelectedMember);
-  }, [authStatus?.enabled, load, members]);
+  }, [authStatus?.enabled, load, members, currentMemberId]);
 
   const setCurrentMemberId = useCallback((id: number | null) => {
     if (authStatus?.enabled) return;
+    if (id !== currentMemberId) resetRequestIdentity();
     setCurrentMemberIdState(id);
     try {
       if (id === null) window.localStorage.removeItem(STORAGE_KEY);
@@ -215,7 +220,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     } catch {
       /* localStorage may be unavailable (private mode, tests) */
     }
-  }, [authStatus?.enabled]);
+  }, [authStatus?.enabled, currentMemberId]);
 
   // After a member is deleted (or otherwise disappears, e.g. server reseed),
   // don't let a stale id linger in state/storage once the fresh member list
@@ -240,11 +245,12 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   }, [authStatus, members, currentMemberId]);
 
   useLayoutEffect(() => {
+    resetRequestIdentity();
     setRequestActorMemberId(
       authStatus?.enabled ? null : (currentMember?.id ?? null),
     );
-    return () => setRequestActorMemberId(null);
-  }, [authStatus?.enabled, currentMember?.id]);
+    return () => { resetRequestIdentity(); setRequestActorMemberId(null); };
+  }, [authStatus?.enabled, authStatus?.authenticated, currentMember?.id]);
 
   const login = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash || "#/today"}`;

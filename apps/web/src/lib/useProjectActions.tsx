@@ -3,7 +3,9 @@ import { api } from "./api";
 import type { Project, ProjectActivationResolution } from "@machbar/shared";
 import type { ProjectDetail, ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
-import { useRetainedMutations } from "./useRetainedMutations";
+import { useRetainedMutations, type TargetReadToken, type TargetRead } from "./useRetainedMutations";
+import { isWorkItemAccessError } from "./errorMessage";
+import { useStrings } from "./strings";
 import { useIdentityScope } from "./identity";
 
 /**
@@ -50,6 +52,7 @@ function projectMetadata(project: ProjectWithActions & Partial<ProjectDetail>): 
  * catches up, independent of any other mounted view.
  */
 function useProjectActionsState() {
+  const strings = useStrings();
   const identityKey = useIdentityScope();
   const mutations = useRetainedMutations<RetainedStory>({ immediateRefresh: true, identityKey, receiptRevision: projectReceiptRevision });
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
@@ -78,9 +81,26 @@ function useProjectActionsState() {
       : baseline;
   }, [isPending, retained, mutations.getConfirmed, mutations.confirmedSnapshots]);
   const getConfirmedStory = useCallback((id: number) => mutations.getConfirmed(id)?.story, [mutations.getConfirmed]);
-  const observeConfirmedStory = useCallback((project: ProjectWithActions & Partial<ProjectDetail>, authorizedRead = false) => {
-    mutations.observeConfirmed(project.id, { story: projectMetadata(project) }, project, authorizedRead);
+  const observeConfirmedStory = useCallback((project: ProjectWithActions & Partial<ProjectDetail>, read?: TargetReadToken) => {
+    mutations.observeConfirmed(project.id, { story: projectMetadata(project) }, project, read);
   }, [mutations.observeConfirmed]);
+  const readProject = useCallback(async (id: number): Promise<TargetRead<ProjectDetail>> => {
+    const read = mutations.captureTargetRead(id);
+    try {
+      const value = await api.getProject(id);
+      mutations.trackTargetRead(read, value);
+      return { read, value };
+    } catch (cause) {
+      if (!mutations.isCurrentTargetRead(read)) throw new Error(strings.workflowTargetUnavailable);
+      if (isWorkItemAccessError(cause)) mutations.invalidateConfirmed(id, read);
+      throw cause;
+    }
+  }, [mutations.captureTargetRead, mutations.invalidateConfirmed, mutations.trackTargetRead, mutations.isCurrentTargetRead, strings]);
+  const getProject = useCallback(async (id: number) => {
+    const result = await readProject(id);
+    if (!mutations.isCurrentTargetRead(result.read)) throw new Error(strings.workflowTargetUnavailable);
+    return result.value;
+  }, [readProject, mutations.isCurrentTargetRead, strings]);
 
   useEffect(() => {
     setAcknowledgedReviewIds(current => {
@@ -284,6 +304,12 @@ function useProjectActionsState() {
     acknowledgedReviewIds,
     getConfirmedStory,
     observeConfirmedStory,
+    readProject,
+    getProject,
+    captureTargetRead: mutations.captureTargetRead,
+    isCurrentTargetRead: mutations.isCurrentTargetRead,
+    isCurrentProjectRead: mutations.isCurrentTargetValue,
+    isTargetReadable: mutations.isTargetReadable,
     invalidateConfirmedStory: mutations.invalidateConfirmed,
     scopeToken: mutations.scopeToken,
     isCurrentScope: mutations.isCurrentScope,

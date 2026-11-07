@@ -8,9 +8,12 @@ import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { rememberDestination } from "../lib/recentDestinations";
 import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
-import { LoadingState, ErrorState } from "./AsyncStates";
+import { LoadingState, ReadErrorState } from "./AsyncStates";
 import { useLocale } from "../lib/locale";
+import { useProjectActions } from "../lib/useProjectActions";
+import type { ProjectDetail } from "../lib/api";
 import { sortProjectDestinations } from "../lib/sortOrder";
+import { useTaskActions } from "../lib/useTaskActions";
 
 /**
  * Explicit picker for destinations that are nowhere near on screen: move a
@@ -30,16 +33,22 @@ import { sortProjectDestinations } from "../lib/sortOrder";
  */
 export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
+  const projectActions = useProjectActions();
+  const taskActions = useTaskActions();
   const { locale } = useLocale();
   const { bump } = useRefresh();
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [projectTasks, setProjectTasks] = useState<Task[] | null>(null);
-  const [parentProjectTitle, setParentProjectTitle] = useState<string | null>(null);
+  const [destination, setDestination] = useState<ProjectDetail | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(task.projectId);
+  const currentDestination = destination?.id === selectedProjectId && projectActions.isCurrentProjectRead(destination) ? destination : null;
+  const parentProjectTitle = currentDestination?.title ?? null;
+  const projectTasks = selectedProjectId === null ? [] : currentDestination?.tasks ?? null;
   const [selectedParentId, setSelectedParentId] = useState<number | null>(task.parentTaskId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const unavailable = selectedProjectId !== null && !currentDestination;
   // Separate from the load `error` above: a failed *submit* must not blank
   // out the picker (the user's selection and search state are still worth
   // keeping around to retry), so it renders inline instead of swapping the
@@ -47,27 +56,27 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
     const jobs: Promise<unknown>[] = [api.getProjects().then(setProjects)];
     if (selectedProjectId != null) {
       jobs.push(
-        api.getProject(selectedProjectId).then((p) => {
-          setProjectTasks(p.tasks);
-          setParentProjectTitle(p.title);
+        projectActions.getProject(selectedProjectId).then((p) => {
+          if (!cancelled) setDestination(p);
         }),
       );
     } else {
-      setProjectTasks([]);
-      setParentProjectTitle(null);
+      setDestination(null);
     }
     Promise.all(jobs)
       .catch((err: unknown) =>
-        setError(localizedErrorMessage(err, strings)),
+        !cancelled && setError(localizedErrorMessage(err, strings)),
       )
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProjectId]);
+  }, [selectedProjectId, retry]);
 
   const excludedIds = useMemo(() => {
     const ids = new Set<number>([task.id]);
@@ -102,6 +111,11 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   }, [selectableParents, projects, selectedProjectId, parentProjectTitle]);
 
   const submit = async () => {
+    if (selectedProjectId !== null && !currentDestination) return;
+    const sourceRead = taskActions.captureTargetRead(task.id);
+    const destinationRead = selectedProjectId === null ? null : projectActions.captureTargetRead(selectedProjectId);
+    const isCurrent = () => taskActions.isCurrentTargetRead(sourceRead) &&
+      (!destinationRead || projectActions.isCurrentTargetRead(destinationRead));
     setSaving(true);
     setSubmitError(null);
     try {
@@ -110,12 +124,14 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
         parentTaskId: selectedParentId,
         expectedRevision: task.revision,
       });
+      if (!isCurrent()) return;
       // Only a move the server accepted is worth offering as a shortcut.
       rememberDestination("project", selectedProjectId);
       rememberDestination("parent", selectedParentId);
       bump();
       onClose();
     } catch (err) {
+      if (!isCurrent()) return;
       if (isStaleWriteConflict(err)) bump();
       setSubmitError(localizedErrorMessage(err, strings));
     } finally {
@@ -129,10 +145,11 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
       <p className="text-muted">{strings.subtreeHint}</p>
       {loading ? (
         <LoadingState />
-      ) : error ? (
-        <ErrorState message={error} />
       ) : (
         <div className="stack">
+          {error || unavailable ? <ReadErrorState resource={strings.project}
+            error={error ?? strings.workflowTargetUnavailable} refreshError={null}
+            loading={loading} refreshing={false} reload={() => setRetry(value => value + 1)} /> : null}
           <DestinationPicker
             kind="project"
             label={strings.selectProject}
@@ -161,7 +178,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
             <button type="button" className="btn" onClick={onClose}>
               {strings.cancel}
             </button>
-            <button type="button" className="btn btn-primary btn-block" disabled={saving} onClick={() => void submit()}>
+            <button type="button" className="btn btn-primary btn-block" disabled={saving || unavailable || error !== null} onClick={() => void submit()}>
               {strings.moveHere}
             </button>
           </div>
