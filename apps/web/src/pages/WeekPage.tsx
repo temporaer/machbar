@@ -36,7 +36,6 @@ interface PlacementIntent {
   value: string | null;
   revision: number;
   acknowledgedAt: number | null;
-  receipt: Task | null;
 }
 interface MoveError {
   selection: symbol;
@@ -405,7 +404,13 @@ export function WeekPage() {
   selectionRef.current = selection;
   const acknowledgement = useRef(0);
   const nextToken = useRef(0);
-  const operations = useRef(new Map<number, { selection: symbol; token: number; pending: boolean }>());
+  const operations = useRef(new Map<number, {
+    selection: symbol;
+    token: number;
+    pending: boolean;
+    receipt: Task | null;
+    receiptAcknowledgedAt: number | null;
+  }>());
   const dragged = useRef<WeekDrag | null>(null);
   const [intents, setIntents] = useState<PlacementIntent[]>([]);
   const [moveErrors, setMoveErrors] = useState<MoveError[]>([]);
@@ -453,6 +458,13 @@ export function WeekPage() {
     setIntents(current => current.filter(intent =>
       intent.selection === selection &&
       (intent.acknowledgedAt === null || data.startedAtAcknowledgement < intent.acknowledgedAt)));
+    for (const operation of operations.current.values()) {
+      if (operation.selection === selection && operation.receiptAcknowledgedAt !== null &&
+          data.startedAtAcknowledgement >= operation.receiptAcknowledgedAt) {
+        operation.receipt = null;
+        operation.receiptAcknowledgedAt = null;
+      }
+    }
   }, [data, selection]);
 
   let currentAgenda = base;
@@ -469,30 +481,40 @@ export function WeekPage() {
 
   const applyMove = async (item: WeekTaskItem, date: string | null, field: PlacementIntent["field"]) => {
     const token = ++nextToken.current;
-    let commandTask = item.task;
-    for (const intent of intents) {
-      if (intent.selection === selection && intent.taskId === item.id &&
-          intent.receipt && intent.receipt.revision > commandTask.revision) commandTask = intent.receipt;
-    }
+    const previous = operations.current.get(item.id);
+    const previousReceipt = previous?.selection === selection ? previous.receipt : null;
+    const commandTask = previousReceipt && previousReceipt.revision > item.task.revision
+      ? previousReceipt : item.task;
     const commandItem = { ...item, task: taskActions.projectTask(commandTask) };
-    operations.current.set(item.id, { selection, token, pending: true });
+    const receipt = commandItem.task.revision > item.task.revision ? commandItem.task : null;
+    const receiptAcknowledgedAt = receipt
+      ? previous && previousReceipt?.revision === receipt.revision
+        ? previous.receiptAcknowledgedAt
+        : ++acknowledgement.current
+      : null;
+    operations.current.set(item.id, { selection, token, pending: true, receipt, receiptAcknowledgedAt });
     setMoveErrors(current => current.filter(error => error.selection !== selection || error.taskId !== item.id));
     try {
       const intent: PlacementIntent = {
         selection, token, taskId: item.id, field,
         value: field === "scheduledDate" ? date : revisitMoveValue(commandItem, date, householdTimezone),
-        revision: commandItem.task.revision, acknowledgedAt: null, receipt: null,
+        revision: commandItem.task.revision, acknowledgedAt: null,
       };
       setIntents(current => [...current, intent]);
       const result = field === "scheduledDate"
         ? await dispatch({ type: "workItem.schedule", item: commandItem, date })
         : await dispatch({ type: "workItem.setRevisitDate", item: commandItem, date, householdTimezone });
-      if (selectionRef.current !== selection || operations.current.get(item.id)?.token !== token) return;
+      const operation = operations.current.get(item.id);
+      if (selectionRef.current !== selection || operation?.token !== token) return;
       if (!result || !("kind" in result) || result.id !== item.id) throw new Error(strings.error);
       const acknowledgedAt = ++acknowledgement.current;
+      if (!operation.receipt || result.revision > operation.receipt.revision) {
+        operation.receipt = result;
+        operation.receiptAcknowledgedAt = acknowledgedAt;
+      }
       setIntents(current => current.flatMap(existing => {
         if (existing.selection !== selection || existing.taskId !== item.id || existing.field !== field) return [existing];
-        if (existing.token === token) return [{ ...intent, value: result[field], revision: result.revision, acknowledgedAt, receipt: result }];
+        if (existing.token === token) return [{ ...intent, value: result[field], revision: result.revision, acknowledgedAt }];
         return existing.acknowledgedAt !== null && existing.revision <= result.revision ? [] : [existing];
       }));
       setMoveErrors(current => current.filter(error => error.selection !== selection || error.taskId !== item.id || error.token !== token));

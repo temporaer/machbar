@@ -198,7 +198,10 @@ test("Week accepted moves stay draggable through refresh failure and a failed ne
   test.skip(testInfo.project.name === "mobile-chrome", "Native touch drag is not established by mouse emulation; mobile uses the tested Open/Planning path.");
   const { timezone } = await (await page.request.get("/api/settings/household")).json();
   const today = calendarDateForInstant(new Date().toISOString(), timezone)!;
-  const item = await createTask(page, { scheduledDate: today });
+  const item = await createTask(page, {
+    scheduledDate: today,
+    title: `Recovery zzz native drag ${randomUUID()}`,
+  });
   const dates = await weekDates(page, today);
   const selectedWeek = page.waitForResponse(response => {
     const url = new URL(response.url());
@@ -235,7 +238,11 @@ test("Week accepted moves stay draggable through refresh failure and a failed ne
   const dragToDay = async (index: number) => {
     const target = zones.nth(index);
     await card.hover({ position: { x: 6, y: 6 } });
+    const source = await card.boundingBox();
+    if (!source) throw new Error("Week drag source is not visible");
     await page.mouse.down();
+    // Begin dragging before target hover can scroll the source out of view.
+    await page.mouse.move(source.x + 16, source.y + 6, { steps: 5 });
     await target.hover({ position: { x: 12, y: 12 } });
     await target.hover({ position: { x: 12, y: 12 } });
     await page.mouse.up();

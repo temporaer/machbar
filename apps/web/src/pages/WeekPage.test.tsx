@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 import { useRefresh } from "../lib/refresh";
+import { useTaskActions } from "../lib/useTaskActions";
 import { WeekPage } from "./WeekPage";
 import { addIsoCalendarDays } from "../lib/naturalDate";
 import {
@@ -151,6 +152,11 @@ function deferred<T>() {
 function RefreshWeek() {
   const { bump } = useRefresh();
   return <button onClick={bump}>Refresh Week</button>;
+}
+
+function PlanningSave({ task }: { task: Task }) {
+  const actions = useTaskActions();
+  return <button onClick={() => void actions.update(task, { dueDate: "2026-09-12" })}>Save planning</button>;
 }
 
 function responseWith(...items: WeekPlanningItem[]): WeekAgendaResponse {
@@ -589,6 +595,81 @@ describe("WeekPage", () => {
     await waitFor(() => expect(stored.revision).toBe(3));
     expect(within(screen.getByLabelText("Fr., 11.")).getByRole("button", { name: /^Accepted receipt/ })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /^Accepted receipt/ })).toHaveLength(1);
+  });
+
+  it.each([
+    ["scheduled", true], ["scheduled", false], ["revisit", true], ["revisit", false],
+  ] as const)("retains an intervening Planning receipt for %s with prior Week move=%s", async (placement, priorMove) => {
+    const item = taskItem({
+      id: 126, title: "Planning baseline", placement, attentionDate: "2026-09-08",
+      scheduledDate: placement === "scheduled" ? "2026-09-08" : null,
+      externalWait: placement === "revisit" ? { waitingFor: "Supplier", revisitDate: "2026-09-08" } : null,
+    });
+    if (item.role !== "task") throw new Error("Expected task");
+    const afterFirst = {
+      ...item.task, revision: 2,
+      ...(placement === "scheduled"
+        ? { scheduledDate: "2026-09-09" }
+        : { revisitAt: householdCalendarDateToRevisitAt("2026-09-09", "Europe/Berlin") }),
+    };
+    let stored = item.task;
+    let attempts = 0;
+    const planningAttempt = priorMove ? 2 : 1;
+    const revisions: Array<number | undefined> = [];
+    const oldRead = deferred<WeekAgendaResponse>();
+    const readStarted = deferred<void>();
+    let holdRead = false;
+    mockedApi.getWeekAgenda.mockImplementation(async () => {
+      if (holdRead) {
+        readStarted.resolve();
+        return oldRead.promise;
+      }
+      if (stored.revision > 1) throw new Error("refresh offline");
+      return responseWith(item);
+    });
+    const mutate = async (_id: number, input: { expectedRevision?: number; dueDate?: string | null }) => {
+      attempts += 1;
+      revisions.push(input.expectedRevision);
+      if (attempts === planningAttempt + 1) throw new Error("next move offline");
+      if (input.expectedRevision !== stored.revision) throw new Error("stale_write_conflict");
+      const date = attempts === 1 ? "2026-09-09" : "2026-09-11";
+      stored = {
+        ...stored, revision: stored.revision + 1,
+        ...(attempts === planningAttempt ? { dueDate: input.dueDate ?? null }
+          : placement === "scheduled" ? { scheduledDate: date }
+            : { revisitAt: householdCalendarDateToRevisitAt(date, "Europe/Berlin") }),
+      };
+      return stored;
+    };
+    mockedApi.updateTask.mockImplementation(mutate);
+    mockedApi.setExternalWait.mockImplementation(mutate);
+    renderWithProviders(<><RefreshWeek /><PlanningSave task={priorMove ? afterFirst : item.task} /><WeekPage /></>);
+    await screen.findByRole("button", { name: /^Planning baseline/ });
+    const drag = (label: string) => {
+      const transfer = dataTransfer();
+      fireEvent.dragStart(card(item.title), { dataTransfer: transfer });
+      fireEvent.drop(screen.getByLabelText(label), { dataTransfer: transfer });
+    };
+    if (priorMove) {
+      drag("Mi., 9.");
+      await screen.findByText("Wochenplanung konnte nicht aktualisiert werden.");
+    }
+    const beforePlanning = taskVersion(item, stored, priorMove ? "2026-09-09" : "2026-09-08", placement);
+    holdRead = true;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh Week" }));
+    await act(async () => readStarted.promise);
+    await userEvent.click(screen.getByRole("button", { name: "Save planning" }));
+    await waitFor(() => expect(stored.revision).toBe(priorMove ? 3 : 2));
+    drag("Do., 10.");
+    await screen.findByText("next move offline");
+    holdRead = false;
+    await act(async () => oldRead.resolve(responseWith(beforePlanning)));
+    await screen.findByText("Wochenplanung konnte nicht aktualisiert werden.");
+    drag("Fr., 11.");
+    await waitFor(() => expect(attempts).toBe(planningAttempt + 2));
+    expect(revisions).toEqual(priorMove ? [1, 2, 3, 3] : [1, 2, 2]);
+    await waitFor(() => expect(stored.revision).toBe(priorMove ? 4 : 3));
+    expect(within(screen.getByLabelText("Fr., 11.")).getByRole("button", { name: /^Planning baseline/ })).toBeInTheDocument();
   });
 
   it("keeps unrelated failures attributable even after their rows disappear", async () => {

@@ -66,10 +66,18 @@ Copilot review expanded the accepted-move sequence: a failed later move clears
 shared value retention, and external-wait actions deliberately do not retain
 values. Both sequences initially reused revision 1 instead of the accepted
 revision 2. Two new regressions reject that source before the fix. Confirmed
-intents now retain the accepted task receipt for subsequent canonical command
+commands retain the accepted task receipt for subsequent canonical command
 input, preferring higher authoritative revisions without replacing read-owned
 membership or derived display fields. The real browser case also executes a
 successful third move after the failed second move while refreshes still fail.
+
+Re-review added an intervening successful Planning save, both with and without
+a previous Week move and for ordinary/waiting tasks. All four cases rejected the
+first receipt fix. Confirmed baselines now live in the existing operation ledger,
+not the disposable field intent; canonical projections are observed before a new
+move starts. A pre-observation read returning after the failed move must not
+release the newer baseline. All four expanded cases also reject a temporary
+mutation that removes that observation stamp; the mutation was restored.
 
 The full-suite browser drag initially failed without sending a PATCH; a read
 warning alone was therefore not evidence of an accepted move. Its fixture now
@@ -79,6 +87,10 @@ successful date/revision receipt before testing the failed next move. Temporary
 native-event tracing was removed. CI also rejected the single-movement drag;
 the fixture uses Playwright's documented two target hovers to reliably dispatch
 native `dragover`, without synthetic drag events or weakened receipt assertions.
+The downloaded CI trace then isolated scrolling between mouse-down and drag
+initiation. The fixture starts the native drag before target auto-scrolling and
+places its long-title source after the other cards, retaining the crowded layout
+instead of hiding the scrolling counterexample.
 The user also verified both requested normal
 drag starts and persistence after Ctrl+Shift+R; that manual observation does not
 establish injected-failure recovery.
