@@ -1,5 +1,5 @@
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { api, type ProjectDetail } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
@@ -23,6 +23,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { WorkRefinementOrigin } from "../lib/taskDetailContext";
 import { BottomSheet } from "./BottomSheet";
 import { ErrorState, LoadingState, ReadErrorState } from "./AsyncStates";
+import { isWorkItemAccessError } from "../lib/errorMessage";
 
 function flattenTaskRevisions(tasks: ProjectDetail["tasks"]): Array<{ taskId: number; revision: number }> {
   return tasks.flatMap((task) => [{ taskId: task.id, revision: task.revision }, ...flattenTaskRevisions(task.children)]);
@@ -50,17 +51,25 @@ export function ProjectWorkflowHost() {
   const projectId = state?.projectId ?? null;
   const projectRead = useAsync(
     () => (projectId !== null ? api.getProject(projectId) : Promise.resolve(null)),
-    [state],
+    [state, projectActions.scopeToken],
   );
   const fetchedProject = projectRead.data;
   useRetentionInteraction(projectId, projectActions.pauseRetention, projectId !== null);
   const retained = projectId !== null ? projectActions.retained.get(projectId)?.story : undefined;
-  const story = fetchedProject ? projectActions.projectStory(fetchedProject) : retained;
+  const accessLost = isWorkItemAccessError(projectRead.errorCause) || isWorkItemAccessError(projectRead.refreshErrorCause);
+  const confirmed = projectId !== null ? projectActions.getConfirmedStory(projectId) : undefined;
+  const input = fetchedProject ?? confirmed;
+  const story = accessLost ? undefined : input ? projectActions.projectStory(input) : retained;
+  useEffect(() => {
+    if (projectId === null) return;
+    if (accessLost) projectActions.invalidateConfirmedStory(projectId);
+    else if (fetchedProject && projectRead.error === null && projectRead.refreshError === null) projectActions.observeConfirmedStory(fetchedProject, true);
+  }, [projectId, accessLost, fetchedProject, projectRead.error, projectRead.refreshError, projectActions.invalidateConfirmedStory, projectActions.observeConfirmedStory]);
 
   if (!state) return null;
   const close = () => workflow.close(state);
   const reload = () => {
-    if (workflow.isCurrent(state)) projectRead.reload();
+    if (workflow.isCurrent(state) && projectActions.isCurrentScope(projectActions.scopeToken)) projectRead.reload();
   };
   const sheetProps = {
     onClose: close,
@@ -113,7 +122,7 @@ export function ProjectWorkflowHost() {
       return <ProjectStructureSheet {...sheetProps} story={story} />;
     case "refinement":
       return <WorkClarificationSheet {...sheetProps} targetType="project" targetId={story.id} revision={story.revision} title={story.title} onStarted={(intakeId) => {
-        if (!workflow.isCurrent(state)) return;
+        if (!workflow.isCurrent(state) || !projectActions.isCurrentScope(projectActions.scopeToken)) return;
         const refinementOrigin: WorkRefinementOrigin = { targetType: "project", targetId: story.id, originPath: `${location.pathname}${location.search}`, entry: "page" };
         close();
         navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });

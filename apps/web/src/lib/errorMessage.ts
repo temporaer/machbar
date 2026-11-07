@@ -25,6 +25,11 @@ export function isStaleWriteConflict(error: unknown): boolean {
   return isApiError(error) && error.code === "stale_write_conflict";
 }
 
+export function isWorkItemAccessError(error: unknown): boolean {
+  return isApiError(error) && "status" in error &&
+    (error.status === 401 || error.status === 403 || error.status === 404);
+}
+
 function stringDetail(
   details: Record<string, unknown> | undefined,
   key: string,

@@ -1,9 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import type { Project, ProjectActivationResolution } from "@machbar/shared";
-import type { ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
+import type { ProjectDetail, ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
 import { useRetainedMutations } from "./useRetainedMutations";
+import { useIdentityScope } from "./identity";
 
 /**
  * An optimistically transitioned story plus the transition that produced it,
@@ -14,6 +15,16 @@ import { useRetainedMutations } from "./useRetainedMutations";
 export interface RetainedStory {
   story: ProjectWithActions;
   action?: ProjectWorkflowAction;
+}
+
+const projectReceiptRevision = (entry: RetainedStory) => entry.story.revision;
+
+function projectMetadata(project: ProjectWithActions & Partial<ProjectDetail>): ProjectWithActions {
+  const {
+    tasks, childStories, ancestors, hierarchyRevisions, externalRefs,
+    activationDecisionSnapshot, directActivationDecisionSnapshot, ...story
+  } = project;
+  return story;
 }
 
 /**
@@ -39,8 +50,14 @@ export interface RetainedStory {
  * catches up, independent of any other mounted view.
  */
 function useProjectActionsState() {
-  const mutations = useRetainedMutations<RetainedStory>({ immediateRefresh: true });
+  const identityKey = useIdentityScope();
+  const mutations = useRetainedMutations<RetainedStory>({ immediateRefresh: true, identityKey, receiptRevision: projectReceiptRevision });
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
+  const scope = useRef(mutations.scopeToken);
+  if (scope.current !== mutations.scopeToken) {
+    scope.current = mutations.scopeToken;
+    if (acknowledgedReviewIds.size > 0) setAcknowledgedReviewIds(new Set());
+  }
   const {
     run,
     release,
@@ -51,13 +68,19 @@ function useProjectActionsState() {
     clearError,
   } = mutations;
   const projectStory = useCallback(<T extends Project,>(current: T): T => {
+    const confirmed = mutations.getConfirmed(current.id)?.story;
+    const baseline = confirmed && confirmed.revision > current.revision ? { ...current, ...confirmed } : current;
     const candidate = retained.get(current.id)?.story;
     return candidate &&
-      (candidate.revision > current.revision ||
-        (isPending(current.id) && candidate.revision === current.revision))
-      ? { ...current, ...candidate }
-      : current;
-  }, [isPending, retained]);
+      (candidate.revision > baseline.revision ||
+        (isPending(current.id) && candidate.revision === baseline.revision))
+      ? { ...baseline, ...candidate }
+      : baseline;
+  }, [isPending, retained, mutations.getConfirmed, mutations.confirmedSnapshots]);
+  const getConfirmedStory = useCallback((id: number) => mutations.getConfirmed(id)?.story, [mutations.getConfirmed]);
+  const observeConfirmedStory = useCallback((project: ProjectWithActions & Partial<ProjectDetail>, authorizedRead = false) => {
+    mutations.observeConfirmed(project.id, { story: projectMetadata(project) }, project, authorizedRead);
+  }, [mutations.observeConfirmed]);
 
   useEffect(() => {
     setAcknowledgedReviewIds(current => {
@@ -130,7 +153,7 @@ function useProjectActionsState() {
         id: story.id,
         optimistic: { story: optimistic, action },
         mutate: () => call(story, action, ownerMemberId, activationResolution, expectedRevision, workflowInput),
-        confirmed: (confirmed) => ({ story: confirmed, action }),
+        confirmed: (confirmed) => ({ story: projectMetadata(confirmed), action }),
         throwOnError,
       });
     },
@@ -170,7 +193,7 @@ function useProjectActionsState() {
             ...patch,
             expectedRevision: patch.expectedRevision ?? story.revision,
           }),
-        confirmed: (confirmed) => ({ story: confirmed }),
+        confirmed: (confirmed) => ({ story: projectMetadata(confirmed) }),
           retainUntilRefresh: true,
           refreshImmediately: true,
           throwOnError,
@@ -180,7 +203,7 @@ function useProjectActionsState() {
 
   const appendNotes = useCallback((story: ProjectWithActions, content: string) => run({
     id: story.id, optimistic: { story }, mutate: () => api.appendProjectNotes(story.id, content),
-    confirmed: confirmed => ({ story: confirmed }), retainUntilRefresh: true, refreshImmediately: true, throwOnError: true,
+    confirmed: confirmed => ({ story: projectMetadata(confirmed) }), retainUntilRefresh: true, refreshImmediately: true, throwOnError: true,
   }), [run]);
 
   const assignDriver = useCallback(
@@ -221,7 +244,7 @@ function useProjectActionsState() {
             withdrawCommitments,
             ...(expectedTaskRevisions !== undefined ? { expectedTaskRevisions } : {}),
           }),
-        confirmed: (confirmed) => ({ story: confirmed, action: "return_to_backlog" }),
+        confirmed: (confirmed) => ({ story: projectMetadata(confirmed), action: "return_to_backlog" }),
         throwOnError: true,
       }),
     [run],
@@ -248,7 +271,7 @@ function useProjectActionsState() {
           api.acknowledgeProjectReview(story.id, {
             expectedRevision: story.revision,
           }),
-        confirmed: (confirmed) => ({ story: confirmed }),
+        confirmed: (confirmed) => ({ story: projectMetadata(confirmed) }),
         refreshImmediately: true,
       });
       if (result) setAcknowledgedReviewIds(current => new Set(current).add(story.id));
@@ -259,6 +282,11 @@ function useProjectActionsState() {
 
   return {
     acknowledgedReviewIds,
+    getConfirmedStory,
+    observeConfirmedStory,
+    invalidateConfirmedStory: mutations.invalidateConfirmed,
+    scopeToken: mutations.scopeToken,
+    isCurrentScope: mutations.isCurrentScope,
     projectStory,
     pendingIds,
     holdingIds: mutations.holdingIds,

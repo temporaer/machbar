@@ -304,6 +304,11 @@ export function useIdentity(): IdentityContextValue {
   return ctx;
 }
 
-export function useOptionalIdentity(): Pick<IdentityContextValue, "currentMemberId"> {
-  return useContext(IdentityContext) ?? { currentMemberId: null };
+export function useOptionalIdentity(): Pick<IdentityContextValue, "currentMemberId" | "authEnabled" | "authenticated"> {
+  return useContext(IdentityContext) ?? { currentMemberId: null, authEnabled: false, authenticated: false };
+}
+
+export function useIdentityScope(): object {
+  const { currentMemberId, authEnabled, authenticated } = useOptionalIdentity();
+  return useMemo(() => ({}), [currentMemberId, authEnabled, authenticated]);
 }

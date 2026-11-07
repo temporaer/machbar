@@ -15,6 +15,8 @@ is excluded; #253 and #254 are separate, subsequent stacked fixes.
 | S03 opening/focus | Old callbacks cannot close a new same-target opening; only foreground sheets own focus. | Reopen before React renders, loading-to-editor handoff, absent/disabled opener, nested sheet, later opening versus queued restoration, disappearing retry control. |
 | S04 read recovery | Named failures stay visible through retry, without hiding populated or empty views. | Same-query delayed retries, query switches, All's independent tags/tasks/projects, Review's independent issue/project/task lookups. |
 | Shared boundary | Read retry performs only the failed query's GET; it never saves drafts, acknowledges Review, or changes dates/history. | Retained filters and drafts, unchanged serialized revisions/planning fields, no mutation calls on recovery. |
+| Confirmed input | Actual canonical server receipts survive failed saves and visual release without certifying optimistic input. | Non-retaining follow-up after a Week move, no prior Week move, stale in-flight read, changed wait description, failed next move, expired visual hold. |
+| Receipt lifetime | Identity/target ownership prevents stale or inaccessible snapshots from becoming fallback input. | A-to-B-to-A late success/failure, authentication host remount, nested inspection/queue expiry, old methods/lease disposal, StrictMode replay, target GET 401/403/404 versus network/503, write denial versus source read loss, real project detail versus metadata, authoritative child membership/revisions. |
 
 ## Implementation
 
@@ -78,6 +80,61 @@ not the disposable field intent; canonical projections are observed before a new
 move starts. A pre-observation read returning after the failed move must not
 release the newer baseline. All four expanded cases also reject a temporary
 mutation that removes that observation stamp; the mutation was restored.
+
+Third review identified three previously missed gaps. Both retained-only
+failed-Save regressions rejected the published source by losing the editor and
+save error. Two actual `followUpExternalWait` cases rejected it with stale
+revisions, with and without an earlier Week move. They also check that the
+updated waiting description feeds later commands. The real Shell focus
+regression failed on desktop/mobile Chromium when the last sheet's opener was
+disabled; the production main now supplies the existing fallback target.
+
+Canonical confirmed inputs now belong to the existing shared mutation
+primitive, not another Week-only cache or a host draft snapshot. Visual
+release, failure and expiry leave command inputs intact. Successful raw target
+reads may upgrade them; presentation/hierarchy observers do not certify
+pending values. Focused host regressions cover failed Save followed by read
+recovery, optimistic-only failure, effective identity changes, typed access
+denials and 503 outages. Project receipts strip task/detail collections.
+Primitive cases cover revision precedence, observation before late response,
+same-ID pending isolation, old lease disposal, explicit target invalidation
+and StrictMode lifetime replay. These are frontend contracts; existing API
+external-wait/authorization contracts and the real browser mount remain the
+production boundaries, not invented success responses.
+
+Independent review expanded the lifetime boundary. Both real authentication
+host-remount cases rejected host-local ownership maps; the existing providers
+now reset and guard openings, nested inspections, detail queues and handoffs.
+The nested identity case also rejects a temporary mutation preserving the old
+inspection stack: it resumed task 1 and private detail queue 7 in the new
+identity. The obsolete-method StrictMode case rejects omitting the captured
+render token by observing an actual obsolete command dispatch. Both mutations
+were restored. Two child cases rejected whole-receipt selection before the pure
+task projector preserved authoritative membership and higher child revisions.
+Read-only snapshots now expire with the last interaction lease; command-touched
+IDs retain one latest input per identity generation for offline consumers.
+Weak provenance no longer holds raw project detail strongly. Task/project cases
+separate write denial and source GET denial, preserve drafts through unsuccessful
+revalidation, and prove read retry does not retry Save. Failed-Save cases now
+continue through deliberate successful Save with recovered revision 2. Both
+optimistic-only task and project inputs remain uncertified.
+
+The final verifier exposed an introduced sibling-path regression: authoritative
+child merging dropped equal-revision descendant lifecycle outcomes from parent
+completion/cancellation receipts. The two existing recursive row cases rejected
+that projector. Matching children now reuse the existing narrow terminal-outcome
+helper rather than replacing membership or unrelated fields. Both existing
+cases and the 61-case lifecycle/placement/sequence matrix pass; final full
+verification is rerun after this correction.
+
+The subsequent real browser gate caught another introduced production seam:
+routes mounted with a provisional stored identity before the initial member
+catalog arrived. Scope reset closed task deep links and navigated them to Today;
+16 desktop/mobile journeys failed. A pending-catalog unit case rejected that
+mount behavior. The existing identity gate now waits only while identity is
+unresolved, retaining early rendering for a known server-bound member. All 16
+previously failing real-app journeys and 38 focused host/gate/route cases pass.
+Final full verification is rerun after this correction as well.
 
 The full-suite browser drag initially failed without sending a PATCH; a read
 warning alone was therefore not evidence of an accepted move. Its fixture now

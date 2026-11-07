@@ -193,6 +193,27 @@ own each opening's object identity synchronously: delayed callbacks check
 Carry the original opener through recovery; only foreground sheets register
 modal isolation and restore eligible focus.
 
+Confirmed workflow inputs come from canonical mutation receipts or successful
+raw target reads, never a pending presentation snapshot. Task/project receipt
+lifetimes are independent of visual retention and scoped to effective identity
+generations, including A-to-B-to-A changes. Target GET HTTP 401/403/404 invalidates
+fallback input and older in-flight receipts; network/5xx failure preserves it.
+Access-related write failures request canonical revalidation; they do not prove
+that the source is unreadable. Existing workflow/detail providers reset opening,
+inspection and queue state on identity changes and guard expired methods, even
+when authentication remounts the hosts. Read-only snapshots expire with the last
+interaction lease; command-touched IDs retain one latest input per identity
+generation for offline consumers. Observation provenance uses weak object keys,
+not strong references to raw detail responses. Confirmed task overlays preserve
+authoritative child membership and each child's revision precedence.
+The existing descendant-terminal helper remains the narrow lifecycle exception
+for parent completion/cancellation policies, including equal-revision children.
+`IdentityGate` waits for unresolved startup identity before mounting routes;
+known server-bound identities need not wait for the member catalog. Route-driven
+openings must not be started in a provisional identity and then silently reset.
+Opening ownership includes that identity lifetime. `useAsync` exposes raw
+failure causes alongside localized messages for these typed access decisions.
+
 ## Canonical primitive registry
 
 | Need | Canonical primitive or path |
@@ -218,7 +239,7 @@ modal isolation and restore eligible focus.
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
 | Resource-specific read recovery | `apps/web/src/components/AsyncStates.tsx::ReadErrorState` composes the existing `ErrorState` with sticky same-query errors and the failed query's GET-only retry. |
-| Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
+| Retained optimistic mutation and confirmed command input | `apps/web/src/lib/useRetainedMutations.ts` owns independent visual retention and opt-in revisioned receipts, identity/target lifetime guards, and lease/timer ownership. `identity.tsx::useIdentityScope` supplies generations to existing action/workflow/detail providers; `IdentityGate` prevents provisional startup openings. Read-only inputs expire with their last lease; command-touched inputs remain scope-bound. Weak provenance does not retain raw project detail. Task/project action projectors prefer newer receipts but equal authoritative fields; confirmed lookups feed focused hosts and Week commands without granting collection membership. Only successful commands and raw target GETs populate receipts; presentation/hierarchy observations cannot certify optimistic values. Project receipts contain metadata, not detail/task collections. |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |

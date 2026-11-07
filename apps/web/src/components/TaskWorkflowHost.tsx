@@ -23,6 +23,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
 import { BottomSheet } from "./BottomSheet";
 import { ErrorState, LoadingState, ReadErrorState } from "./AsyncStates";
+import { isWorkItemAccessError } from "../lib/errorMessage";
 
 /**
  * The single host for every focused task workflow reachable through a
@@ -74,17 +75,25 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
   }
   const taskRead = useAsync(
     () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
-    [state],
+    [state, taskActions.scopeToken],
   );
   const fetchedTask = taskRead.data;
   useRetentionInteraction(taskId, taskActions.pauseRetention, taskId !== null);
   const retained = taskId !== null ? taskActions.retained.get(taskId) : undefined;
-  const task = fetchedTask ? taskActions.projectTask(fetchedTask) : retained ?? null;
+  const accessLost = isWorkItemAccessError(taskRead.errorCause) || isWorkItemAccessError(taskRead.refreshErrorCause);
+  const confirmed = taskId !== null ? taskActions.getConfirmedTask(taskId) : undefined;
+  const input = fetchedTask ?? confirmed;
+  const task = accessLost ? null : input ? taskActions.projectTask(input) : retained ?? null;
+  useEffect(() => {
+    if (taskId === null) return;
+    if (accessLost) taskActions.invalidateConfirmedTask(taskId);
+    else if (fetchedTask && taskRead.error === null && taskRead.refreshError === null) taskActions.observeConfirmedTask(fetchedTask, true);
+  }, [taskId, accessLost, fetchedTask, taskRead.error, taskRead.refreshError, taskActions.invalidateConfirmedTask, taskActions.observeConfirmedTask]);
 
   if (!state) return null;
   const close = () => workflow.close(state);
   const reload = () => {
-    if (workflow.isCurrent(state)) taskRead.reload();
+    if (workflow.isCurrent(state) && taskActions.isCurrentScope(taskActions.scopeToken)) taskRead.reload();
   };
   const sheetProps = {
     onClose: close,
@@ -145,7 +154,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
       );
     case "refinement":
       return <WorkClarificationSheet {...sheetProps} targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onStarted={(intakeId) => {
-        if (!workflow.isCurrent(state)) return;
+        if (!workflow.isCurrent(state) || !taskActions.isCurrentScope(taskActions.scopeToken)) return;
         const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
         const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
         close();

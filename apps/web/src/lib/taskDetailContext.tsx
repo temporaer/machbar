@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useIdentityScope } from "./identity";
 
 /**
  * Hints which part of the detail sheet to focus once it opens. This is
@@ -66,13 +67,24 @@ interface TaskDetailContextValue {
 const TaskDetailContext = createContext<TaskDetailContextValue | null>(null);
 
 export function TaskDetailProvider({ children }: { children: ReactNode }) {
+  const scope = useIdentityScope();
+  const currentScope = useRef(scope);
   const [openTaskId, setOpenTaskId] = useState<number | null>(null);
   const [queue, setQueue] = useState<number[]>([]);
   const [queueActive, setQueueActive] = useState(false);
   const [focusField, setFocusField] = useState<TaskDetailFocusField | null>(null);
   const [suspended, setSuspended] = useState(false);
+  if (currentScope.current !== scope) {
+    currentScope.current = scope;
+    if (openTaskId !== null) setOpenTaskId(null);
+    if (queue.length > 0) setQueue([]);
+    if (queueActive) setQueueActive(false);
+    if (focusField !== null) setFocusField(null);
+    if (suspended) setSuspended(false);
+  }
 
   const open = (taskId: number, field?: TaskDetailFocusField) => {
+    if (currentScope.current !== scope) return;
     setQueueActive(false);
     setQueue([]);
     setOpenTaskId(taskId);
@@ -81,6 +93,7 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
   };
 
   const openQueue = (taskIds: number[], field?: TaskDetailFocusField) => {
+    if (currentScope.current !== scope) return;
     if (taskIds.length === 0) return;
     const [first, ...rest] = taskIds;
     setQueueActive(true);
@@ -91,6 +104,7 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
   };
 
   const advanceQueue = () => {
+    if (currentScope.current !== scope) return;
     setFocusField(null);
     setQueue((current) => {
       const [next, ...rest] = current;
@@ -105,6 +119,7 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
   };
 
   const close = () => {
+    if (currentScope.current !== scope) return;
     setOpenTaskId(null);
     setQueue([]);
     setQueueActive(false);
@@ -113,6 +128,7 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
   };
 
   const suspendForHandoff = (): TaskDetailHandoff | null => {
+    if (currentScope.current !== scope) return null;
     if (openTaskId === null) return null;
     const snapshot = { taskId: openTaskId, queueTaskIds: [...queue], queueActive, focusField };
     setSuspended(true);
@@ -120,6 +136,7 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
   };
 
   const resumeAfterHandoff = (snapshot?: TaskDetailHandoff) => {
+    if (currentScope.current !== scope) return;
     if (snapshot) {
       setOpenTaskId(snapshot.taskId);
       setQueue([...snapshot.queueTaskIds]);
@@ -129,11 +146,13 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
     setSuspended(false);
   };
 
-  const clearFocusField = () => setFocusField(null);
+  const clearFocusField = () => {
+    if (currentScope.current === scope) setFocusField(null);
+  };
 
   const value = useMemo<TaskDetailContextValue>(
     () => ({ openTaskId, queueActive, focusField, suspended, open, openQueue, advanceQueue, close, suspendForHandoff, resumeAfterHandoff, clearFocusField }),
-    [openTaskId, queueActive, focusField, suspended, queue],
+    [openTaskId, queueActive, focusField, suspended, queue, scope],
   );
   return <TaskDetailContext.Provider value={value}>{children}</TaskDetailContext.Provider>;
 }

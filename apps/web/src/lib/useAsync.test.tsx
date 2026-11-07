@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "./locale";
 import { RefreshProvider, useRefresh } from "./refresh";
 import { useAsync } from "./useAsync";
+import { ApiError } from "./api";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -24,6 +25,29 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("useAsync", () => {
+  it("keeps the typed failure cause through retry and removes it on success or query change", async () => {
+    const denied = new ApiError(403, "Not accessible");
+    const retry = deferred<string>();
+    const other = deferred<string>();
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockRejectedValueOnce(denied)
+      .mockReturnValueOnce(retry.promise)
+      .mockReturnValueOnce(other.promise);
+    const { result, rerender } = renderHook(({ id }) => useAsync(fetcher, [id]), { wrapper, initialProps: { id: 1 } });
+    await waitFor(() => expect(result.current.errorCause).toBe(denied));
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.loading).toBe(true));
+    expect(result.current.errorCause).toBe(denied);
+    await act(async () => retry.resolve("Readable"));
+    expect(result.current.errorCause).toBeNull();
+    expect(result.current.refreshErrorCause).toBeNull();
+    rerender({ id: 2 });
+    expect(result.current.data).toBeNull();
+    expect(result.current.errorCause).toBeNull();
+    await act(async () => other.resolve("Other query"));
+    expect(result.current.data).toBe("Other query");
+  });
+
   it("uses foreground loading for the initial request and exposes its result", async () => {
     const request = deferred<string>();
     const { result } = renderHook(() => useAsync(() => request.promise), {

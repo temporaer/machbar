@@ -74,7 +74,7 @@ function Shell() {
   const navigationHint = useGlobalNavigationKeys();
   return (
     <div className="app-shell">
-      <main className="app-main">
+      <main id="main-content" className="app-main" tabIndex={-1}>
         <IdentityGate>
           <Routes>
             <Route path="/" element={<Navigate to="/today" replace />} />

@@ -23,6 +23,7 @@ vi.mock("../lib/api", () => ({
     updateTask: vi.fn(),
     updateProject: vi.fn(),
     setExternalWait: vi.fn(),
+    followUpExternalWait: vi.fn(),
     getTags: vi.fn(),
     getProjects: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
@@ -154,9 +155,11 @@ function RefreshWeek() {
   return <button onClick={bump}>Refresh Week</button>;
 }
 
-function PlanningSave({ task }: { task: Task }) {
+function PlanningSave({ task, followUp = false }: { task: Task; followUp?: boolean }) {
   const actions = useTaskActions();
-  return <button onClick={() => void actions.update(task, { dueDate: "2026-09-12" })}>Save planning</button>;
+  return <button onClick={() => void (followUp
+    ? actions.followUpExternalWait(task, { action: "continue", content: "Called supplier", waitingFor: "Confirmed delivery", revisitAt: householdCalendarDateToRevisitAt("2026-09-12", "Europe/Berlin") })
+    : actions.update(task, { dueDate: "2026-09-12" }))}>Save planning</button>;
 }
 
 function responseWith(...items: WeekPlanningItem[]): WeekAgendaResponse {
@@ -598,8 +601,10 @@ describe("WeekPage", () => {
   });
 
   it.each([
-    ["scheduled", true], ["scheduled", false], ["revisit", true], ["revisit", false],
-  ] as const)("retains an intervening Planning receipt for %s with prior Week move=%s", async (placement, priorMove) => {
+    ["scheduled", true, false], ["scheduled", false, false],
+    ["revisit", true, false], ["revisit", false, false],
+    ["revisit", true, true], ["revisit", false, true],
+  ] as const)("retains an intervening Planning receipt for %s with prior Week move=%s and follow-up=%s", async (placement, priorMove, followUp) => {
     const item = taskItem({
       id: 126, title: "Planning baseline", placement, attentionDate: "2026-09-08",
       scheduledDate: placement === "scheduled" ? "2026-09-08" : null,
@@ -627,7 +632,8 @@ describe("WeekPage", () => {
       if (stored.revision > 1) throw new Error("refresh offline");
       return responseWith(item);
     });
-    const mutate = async (_id: number, input: { expectedRevision?: number; dueDate?: string | null }) => {
+    const waitNames: Array<string | null | undefined> = [];
+    const mutate = async (_id: number, input: { expectedRevision?: number; dueDate?: string | null; revisitAt?: string | null; waitingFor?: string | null }) => {
       attempts += 1;
       revisions.push(input.expectedRevision);
       if (attempts === planningAttempt + 1) throw new Error("next move offline");
@@ -635,15 +641,21 @@ describe("WeekPage", () => {
       const date = attempts === 1 ? "2026-09-09" : "2026-09-11";
       stored = {
         ...stored, revision: stored.revision + 1,
-        ...(attempts === planningAttempt ? { dueDate: input.dueDate ?? null }
+        ...(attempts === planningAttempt ? followUp
+          ? { revisitAt: input.revisitAt ?? null, externalWait: { waitingFor: input.waitingFor ?? null } }
+          : { dueDate: input.dueDate ?? null }
           : placement === "scheduled" ? { scheduledDate: date }
             : { revisitAt: householdCalendarDateToRevisitAt(date, "Europe/Berlin") }),
       };
       return stored;
     };
     mockedApi.updateTask.mockImplementation(mutate);
-    mockedApi.setExternalWait.mockImplementation(mutate);
-    renderWithProviders(<><RefreshWeek /><PlanningSave task={priorMove ? afterFirst : item.task} /><WeekPage /></>);
+    mockedApi.setExternalWait.mockImplementation((id, input) => {
+      waitNames.push(input.waitingFor);
+      return mutate(id, input);
+    });
+    mockedApi.followUpExternalWait.mockImplementation(mutate);
+    renderWithProviders(<><RefreshWeek /><PlanningSave task={priorMove ? afterFirst : item.task} followUp={followUp} /><WeekPage /></>);
     await screen.findByRole("button", { name: /^Planning baseline/ });
     const drag = (label: string) => {
       const transfer = dataTransfer();
@@ -668,6 +680,7 @@ describe("WeekPage", () => {
     drag("Fr., 11.");
     await waitFor(() => expect(attempts).toBe(planningAttempt + 2));
     expect(revisions).toEqual(priorMove ? [1, 2, 3, 3] : [1, 2, 2]);
+    if (followUp) expect(waitNames.slice(-2)).toEqual(["Confirmed delivery", "Confirmed delivery"]);
     await waitFor(() => expect(stored.revision).toBe(priorMove ? 4 : 3));
     expect(within(screen.getByLabelText("Fr., 11.")).getByRole("button", { name: /^Planning baseline/ })).toBeInTheDocument();
   });

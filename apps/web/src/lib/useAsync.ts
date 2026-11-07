@@ -9,6 +9,8 @@ export interface AsyncState<T> {
   refreshing: boolean;
   error: string | null;
   refreshError: string | null;
+  errorCause: unknown | null;
+  refreshErrorCause: unknown | null;
   reload: () => void;
 }
 
@@ -175,6 +177,8 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
         };
   return {
     data: current.data,
+    errorCause: current.errorCause,
+    refreshErrorCause: current.refreshErrorCause,
     loading: current.loading,
     refreshing: current.refreshing,
     error:

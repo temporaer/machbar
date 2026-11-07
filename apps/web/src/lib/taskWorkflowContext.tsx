@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { TaskDetailHandoff } from "./taskDetailContext";
 import type { TaskPlanningTarget } from "./commands";
+import { useIdentityScope } from "./identity";
 
 /**
  * Every focused task workflow reachable through a canonical `task.*`
@@ -61,9 +62,17 @@ interface TaskWorkflowContextValue {
 const TaskWorkflowContext = createContext<TaskWorkflowContextValue | null>(null);
 
 export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
+  const scope = useIdentityScope();
+  const currentScope = useRef(scope);
   const [current, setCurrent] = useState<TaskWorkflowState | null>(null);
   const currentRef = useRef<TaskWorkflowState | null>(null);
   const [detailInspections, setDetailInspections] = useState<PlanningDetailInspection[]>([]);
+  if (currentScope.current !== scope) {
+    currentScope.current = scope;
+    currentRef.current = null;
+    if (current !== null) setCurrent(null);
+    if (detailInspections.length > 0) setDetailInspections([]);
+  }
   const detailInspection = detailInspections.at(-1) ?? null;
   const value = useMemo<TaskWorkflowContextValue>(
     () => ({
@@ -71,11 +80,13 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       detailInspection,
       detailInspections,
       suspendForDetail: (previousDetail) => {
+        if (currentScope.current !== scope) return;
         if (current && current !== detailInspection?.planningWorkflow) {
           setDetailInspections((previous) => [...previous, { previousDetail, planningWorkflow: current }]);
         }
       },
       resumeFromDetail: () => {
+        if (currentScope.current !== scope) return;
         if (detailInspection) {
           currentRef.current = detailInspection.planningWorkflow;
           setCurrent(detailInspection.planningWorkflow);
@@ -83,6 +94,7 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
         setDetailInspections((previous) => previous.slice(0, -1));
       },
       open: (kind, taskId, planningTarget) => {
+        if (currentScope.current !== scope) return;
         const next = {
           kind,
           taskId,
@@ -91,15 +103,16 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
         currentRef.current = next;
         setCurrent(next);
       },
-      isCurrent: (opening) => currentRef.current === opening,
+      isCurrent: (opening) => currentScope.current === scope && currentRef.current === opening,
       close: (opening) => {
+        if (currentScope.current !== scope) return;
         if (opening && currentRef.current !== opening) return;
         const next = detailInspection?.planningWorkflow ?? null;
         currentRef.current = next;
         setCurrent(next);
       },
     }),
-    [current, detailInspection, detailInspections],
+    [current, detailInspection, detailInspections, scope],
   );
   return <TaskWorkflowContext.Provider value={value}>{children}</TaskWorkflowContext.Provider>;
 }

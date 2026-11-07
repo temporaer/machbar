@@ -33,6 +33,21 @@ async function weekDates(page: Page, start: string) {
   return agenda.days;
 }
 
+test("the real Shell receives focus when the last sheet closes with an unavailable opener", async ({ page }) => {
+  await page.goto("/#/inbox");
+  const opener = page.getByRole("button", { name: "Schnell hinzufügen", exact: true, includeHidden: true });
+  await opener.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator("#capture-title")).toBeVisible();
+  await opener.evaluate(element => {
+    if (!(element instanceof HTMLButtonElement)) throw new Error("Expected a button opener");
+    element.disabled = true;
+  });
+  await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("main")).toBeFocused();
+});
+
 test("ID-only planning recovers through a delayed GET and returns to its original opener", async ({ page }, testInfo) => {
   const item = await createTask(page);
   await page.goto(`/#/tasks/${item.id}`);

@@ -675,6 +675,45 @@ task tree. Context-owned opening identity guards stale close/retry/handoff
 callbacks before React renders; optional sheet presentation props retain the
 original opener and unregister suspended sheets without discarding drafts.
 
+The existing retained-mutation primitive also owns opt-in confirmed command
+snapshots independently of optimistic values, holding IDs and visual expiry.
+Task actions publish receipts from every successful canonical funnel, including
+non-retaining external-wait follow-up and reference promotion. Task/project
+projectors choose newer receipts while equal-revision authoritative input owns
+derived fields. Focused hosts use confirmed lookups through read outages and
+failed Save, preserving the same editor and its draft/save error. Raw successful
+target GETs can upgrade these snapshots, including during a pending command;
+arbitrary presentation/hierarchy observations cannot certify an optimistic
+input. Project snapshots strip detail collections and never satisfy completion
+or commitment-withdrawal prerequisites.
+
+Receipt, pending/error, holding and lease/timer ownership share an effective
+member/authentication generation. A-to-B-to-A changes and StrictMode effect
+replay invalidate older continuations without remounting all consumers.
+The existing workflow/detail providers own this lifetime, clearing openings,
+inspection stacks, queued detail IDs and focus/suspension state before expired
+callbacks can act. This also covers authentication-gate host remounts.
+The existing identity gate waits for a stored, unresolved member's initial
+catalog before mounting routes. Otherwise a task deep link opens in the
+provisional identity and the later scope reset incorrectly navigates to Today.
+A known server-bound member may still mount while its catalog is loading.
+Typed HTTP 401/403/404 target GET
+failures suppress fetched/confirmed/retained fallback and invalidate older
+target results; successful authorized reads may restore it. Network/5xx
+failures keep usable inputs. Access-related write errors request authoritative
+revalidation rather than equating a destination/write denial with source read
+revocation. Raw `useAsync` causes remain query-qualified and sticky through
+retries alongside existing localized feedback. Read-only snapshots expire when
+their last interaction lease closes; command-touched IDs retain one latest
+input for other consumers that may still be offline. Weak observation keys do
+not retain raw project detail. Snapshots never create list membership and are
+discarded on target invalidation, identity change or unmount. Confirmed task
+scalar overlays preserve current child membership and merge matching child
+values by revision, independently of the parent's revision.
+Recursive matching also reuses the existing descendant-terminal helper for
+parent policies; equal-revision children retain fresh non-lifecycle fields
+without losing completion/cancellation outcomes.
+
 Week keeps an authoritative query base plus narrow task-date intents, rather
 than copied agendas or whole-snapshot rollback. Member/scope/window selection
 has a unique lifetime even for A-to-B-to-A navigation. Reads own membership;

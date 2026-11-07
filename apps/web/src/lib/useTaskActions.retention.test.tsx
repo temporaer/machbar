@@ -8,7 +8,10 @@ import { useRetentionInteraction } from "./useRetentionInteraction";
 import { api } from "./api";
 import { makeTask } from "../test/fixtures";
 
-vi.mock("./api", () => ({ api: { completeTask: vi.fn(), updateTask: vi.fn() } }));
+vi.mock("./api", () => ({ api: {
+  completeTask: vi.fn(), updateTask: vi.fn(), makeTaskAction: vi.fn(),
+  setExternalWait: vi.fn(), resolveExternalWait: vi.fn(), followUpExternalWait: vi.fn(),
+} }));
 const mockedApi = vi.mocked(api, true);
 function wrapper({ children }: { children: ReactNode }) {
   return <LocaleProvider initialLocale="de"><RefreshProvider><TaskActionsProvider>{children}</TaskActionsProvider></RefreshProvider></LocaleProvider>;
@@ -16,6 +19,42 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe("task placement interaction ownership", () => {
   afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
+
+  it.each(["membership", "revision"] as const)("preserves authoritative child %s beneath a newer confirmed scalar receipt after visual release", async boundary => {
+    const oldChild = makeTask({ id: 90, revision: 2, status: "done" });
+    const parent = makeTask({ id: 1, children: [oldChild] });
+    const confirmed = { ...parent, priority: 1, revision: 2 };
+    mockedApi.updateTask.mockResolvedValue(confirmed);
+    const { result } = renderHook(() => useTaskActions(), { wrapper });
+    await act(async () => { await result.current.update(parent, { priority: 1 }); });
+    act(() => result.current.release(parent.id));
+    const child = boundary === "membership" ? makeTask({ id: 91 }) : { ...oldChild, revision: 3, status: "actionable" as const };
+    const projected = result.current.projectTask({ ...parent, children: [child] });
+    expect(projected.revision).toBe(2);
+    expect(projected.priority).toBe(1);
+    expect(projected.children).toEqual([child]);
+  });
+
+  it.each(["set", "resolve", "follow-up", "promote"] as const)("shares the accepted %s command receipt without visual retention", async command => {
+    const task = makeTask({ id: 1, kind: command === "promote" ? "reference" : "action", externalWait: { waitingFor: "Original supplier" } });
+    const confirmed = { ...task, kind: "action" as const, revision: 2, externalWait: command === "resolve" ? null : { waitingFor: "Confirmed supplier" } };
+    mockedApi.setExternalWait.mockResolvedValue(confirmed);
+    mockedApi.resolveExternalWait.mockResolvedValue(confirmed);
+    mockedApi.followUpExternalWait.mockResolvedValue(confirmed);
+    mockedApi.makeTaskAction.mockResolvedValue(confirmed);
+    const { result } = renderHook(() => useTaskActions([task]), { wrapper });
+    await act(async () => {
+      if (command === "set") await result.current.setExternalWait(task, { waitingFor: "Confirmed supplier" });
+      else if (command === "resolve") await result.current.resolveExternalWait(task);
+      else if (command === "follow-up") await result.current.followUpExternalWait(task, { action: "continue", content: "Called supplier", waitingFor: "Confirmed supplier" });
+      else await result.current.makeAction(task);
+    });
+    expect(result.current.projectTask(task)).toBe(confirmed);
+    expect(result.current.retained.has(task.id)).toBe(false);
+    expect(result.current.holdingIds.has(task.id)).toBe(false);
+    const fresh = { ...confirmed, blocked: true, executable: false };
+    expect(result.current.projectTask(fresh)).toBe(fresh);
+  });
 
   it.each([false, true])("protects the retained ancestor when descendant interaction starts before save: %s", async initiallyOpen => {
     vi.useFakeTimers();

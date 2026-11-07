@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useIdentityScope } from "./identity";
 
 /**
  * Project counterpart of `taskWorkflowContext.tsx`. Every `story.*`
@@ -61,11 +62,19 @@ interface ProjectWorkflowContextValue {
 const ProjectWorkflowContext = createContext<ProjectWorkflowContextValue | null>(null);
 
 export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
+  const scope = useIdentityScope();
+  const currentScope = useRef(scope);
   const [current, setCurrent] = useState<ProjectWorkflowState | null>(null);
   const currentRef = useRef<ProjectWorkflowState | null>(null);
+  if (currentScope.current !== scope) {
+    currentScope.current = scope;
+    currentRef.current = null;
+    if (current !== null) setCurrent(null);
+  }
   const value = useMemo<ProjectWorkflowContextValue>(
     () => {
       const close = (opening?: ProjectWorkflowState) => {
+        if (currentScope.current !== scope) return;
         if (opening && currentRef.current !== opening) return;
         currentRef.current = null;
         setCurrent(null);
@@ -73,16 +82,17 @@ export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
       return {
         current,
         open: (kind, projectId) => {
+          if (currentScope.current !== scope) return;
           const next = { kind, projectId };
           currentRef.current = next;
           setCurrent(next);
         },
-        isCurrent: (opening) => currentRef.current === opening,
+        isCurrent: (opening) => currentScope.current === scope && currentRef.current === opening,
         closeCurrent: close,
         close,
       };
     },
-    [current],
+    [current, scope],
   );
   return <ProjectWorkflowContext.Provider value={value}>{children}</ProjectWorkflowContext.Provider>;
 }
