@@ -91,9 +91,10 @@ export async function refreshProjectActivationPrompt(
   intent: "commitment" | "explicit_activation",
   readProject: (id: number) => Promise<ProjectDetail>,
   isCurrentRead?: () => boolean,
+  previousTargetRevision?: number,
 ): Promise<ProjectActivationPrompt | null> {
   const fromError = projectActivationPromptFromError(error, previous);
-  if (fromError) return fromError;
+  if (fromError) return { ...fromError, ...(isCurrentRead ? { isCurrentRead } : {}) };
   if (!isStructuredApiError(error) || error.code !== "stale_write_conflict") return null;
 
   let snapshot: ProjectActivationDecisionSnapshot | undefined;
@@ -107,19 +108,8 @@ export async function refreshProjectActivationPrompt(
     return previous ? { ...previous, readUnavailable: true } : null;
   }
   if (!snapshot) return previous ? { ...previous, readUnavailable: true } : null;
-  const requiredDriverIds = new Set(
-    snapshot.projects.filter((project) => project.required.includes("driver")).map((project) => project.projectId),
-  );
-  return {
-    projects: snapshot.projects,
-    expectedProjects: snapshot.expectedProjects,
-    targetRevision: snapshot.targetRevision,
-    selectedDrivers: Object.fromEntries(
-      Object.entries(previous?.selectedDrivers ?? {}).filter(([id]) => requiredDriverIds.has(Number(id))),
-    ),
-    nextActionTitle: previous?.nextActionTitle ?? "",
-    ...(isCurrentRead ? { isCurrentRead } : {}),
-  };
+  const merged = projectActivationPromptFromSnapshot(snapshot, previous, targetProjectId, previousTargetRevision);
+  return merged === previous ? merged : { ...merged, ...(isCurrentRead ? { isCurrentRead } : {}) };
 }
 
 export function projectActivationResolutionFromPrompt(
@@ -147,7 +137,12 @@ export function projectActivationResolutionFromPrompt(
 export function projectActivationPromptFromSnapshot(
   snapshot: ProjectActivationDecisionSnapshot | null,
   previous?: ProjectActivationPrompt | null,
+  targetProjectId?: number,
+  previousTargetRevision?: number,
 ): ProjectActivationPrompt {
+  const previousRevision = previousTargetRevision ??
+    previous?.expectedProjects.find(project => project.projectId === targetProjectId)?.revision;
+  if (snapshot && previous && previousRevision !== undefined && snapshot.targetRevision < previousRevision) return previous;
   const projects = snapshot?.projects ?? [];
   const requiredDrivers = new Set(projects.filter(project => project.required.includes("driver")).map(project => project.projectId));
   return {

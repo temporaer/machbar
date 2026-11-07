@@ -27,6 +27,7 @@ function activationPrompt(story: ProjectWithActions & Pick<ProjectDetail, "direc
       required,
     }] : [],
     expectedProjects: [{ projectId: story.id, revision: story.revision }],
+    targetRevision: story.revision,
     selectedDrivers: {},
     nextActionTitle: "",
   };
@@ -54,28 +55,28 @@ export function ProjectActivationSheet({
   const projectActions = useProjectActions();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState(() => activationPrompt(story));
+  const [prompt, setPrompt] = useState(() => activationPrompt(authoritativeProject ?? projectActions.getConfirmedStory(story.id) ?? story));
   const [recoveryRequested, setRecoveryRequested] = useState(false);
   const recovery = useAsync(() => recoveryRequested ? projectActions.readProject(story.id) : Promise.resolve(null),
     [story.id, projectActions.scopeToken, recoveryRequested]);
-  const consumedAuthority = useRef(authoritativeProject);
+  const consumedAuthority = useRef<ProjectDetail | null>(null);
   useEffect(() => {
     if (saving || !authoritativeProject || consumedAuthority.current === authoritativeProject) return;
     consumedAuthority.current = authoritativeProject;
-    if (!projectActions.isCurrentProjectRead(authoritativeProject) || !authoritativeProject.directActivationDecisionSnapshot) return;
-    setPrompt(previous => previous.readUnavailable || (previous.isCurrentRead && !previous.isCurrentRead())
-      ? { ...projectActivationPromptFromSnapshot(authoritativeProject.directActivationDecisionSnapshot!, previous),
-        isCurrentRead: () => projectActions.isCurrentProjectRead(authoritativeProject) }
-      : previous);
+    if (authoritativeProject.id !== story.id || !projectActions.isCurrentProjectRead(authoritativeProject) || !authoritativeProject.directActivationDecisionSnapshot) return;
+    setPrompt(previous => {
+      const merged = projectActivationPromptFromSnapshot(authoritativeProject.directActivationDecisionSnapshot!, previous, story.id, previous.targetRevision);
+      return merged === previous ? previous : { ...merged, isCurrentRead: () => projectActions.isCurrentProjectRead(authoritativeProject) };
+    });
   }, [authoritativeProject, saving]);
   useEffect(() => {
     const received = recovery.data;
     if (!received || !projectActions.isCurrentTargetRead(received.read) || !received.value.directActivationDecisionSnapshot) return;
     projectActions.observeConfirmedStory(received.value, received.read);
-    setPrompt(previous => ({
-      ...projectActivationPromptFromSnapshot(received.value.directActivationDecisionSnapshot!, previous),
-      isCurrentRead: () => projectActions.isCurrentTargetRead(received.read),
-    }));
+    setPrompt(previous => {
+      const merged = projectActivationPromptFromSnapshot(received.value.directActivationDecisionSnapshot!, previous, story.id, previous.targetRevision);
+      return merged === previous ? previous : { ...merged, isCurrentRead: () => projectActions.isCurrentTargetRead(received.read) };
+    });
   }, [recovery.data]);
   const unavailable = prompt.readUnavailable || (prompt.isCurrentRead && !prompt.isCurrentRead());
   const resolution = projectActivationResolutionFromPrompt(prompt);
@@ -97,7 +98,7 @@ export function ProjectActivationSheet({
       if (!projectActions.isCurrentTargetRead(continuation)) return;
       const read = projectActions.captureTargetRead(story.id);
       const refreshedPrompt = await refreshProjectActivationPrompt(cause, story.id, prompt, "explicit_activation", projectActions.getProject,
-        () => projectActions.isCurrentTargetRead(read));
+        () => projectActions.isCurrentTargetRead(read), prompt.targetRevision);
       if (!projectActions.isCurrentTargetRead(continuation)) return;
       if (refreshedPrompt) setPrompt(refreshedPrompt);
       setError(localizedErrorMessage(cause, strings));

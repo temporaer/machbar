@@ -159,6 +159,248 @@ test("Move keeps its destination selection and provides a GET-only retry after a
   await sheet.getByRole("button", { name: "Abbrechen", exact: true }).click();
 });
 
+test("fifth review Move retains both search nodes and its warning through a failed then successful read retry", async ({ page }) => {
+  const created = await page.request.post("/api/projects", { data: { title: `Sticky move ${randomUUID()}` } });
+  const project = await created.json();
+  const item = await createTask(page, { projectId: project.id });
+  await page.goto(`/#/projects/${project.id}`);
+  await page.getByRole("button", { name: item.title, exact: true }).click();
+  await page.getByRole("dialog", { name: "Details", exact: true }).getByRole("button", { name: "Aktionen", exact: true }).click();
+  await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Struktur ändern", exact: true }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Verschieben …", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "In anderes Projekt verschieben", exact: true });
+  const searches = sheet.getByRole("searchbox");
+  await expect(searches).toHaveCount(2);
+  await searches.nth(0).fill("Sticky");
+  await searches.nth(1).fill("Parent draft");
+  await searches.nth(0).evaluate(element => element.setAttribute("data-fifth-node", "project"));
+  await searches.nth(1).evaluate(element => element.setAttribute("data-fifth-node", "parent"));
+  let mode: "denied" | "failed" | "success" = "denied";
+  let release!: () => void;
+  let waiting = false;
+  await page.route(`**/api/projects/${project.id}`, async route => {
+    if (mode === "denied") await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { message: "Destination denied" } }) });
+    else if (mode === "failed") {
+      waiting = true;
+      await new Promise<void>(resolve => { release = resolve; });
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Retry failed" } }) });
+    } else await route.continue();
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  const retry = sheet.getByRole("button", { name: "Erneut versuchen", exact: true });
+  await expect(retry).toBeVisible();
+  mode = "failed";
+  await retry.click();
+  await expect.poll(() => waiting).toBe(true);
+  await expect(searches.nth(0)).toHaveAttribute("data-fifth-node", "project");
+  await expect(searches.nth(1)).toHaveAttribute("data-fifth-node", "parent");
+  await expect(searches.nth(0)).toHaveValue("Sticky");
+  await expect(searches.nth(1)).toHaveValue("Parent draft");
+  await expect(sheet.getByRole("alert")).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Hierher verschieben", exact: true })).toBeDisabled();
+  release();
+  await expect(retry).toBeEnabled();
+  mode = "success";
+  await retry.click();
+  await expect(retry).toHaveCount(0);
+  await expect(searches.nth(0)).toHaveAttribute("data-fifth-node", "project");
+  await expect(searches.nth(1)).toHaveAttribute("data-fifth-node", "parent");
+  await expect(searches.nth(0)).toHaveValue("Sticky");
+  await expect(searches.nth(1)).toHaveValue("Parent draft");
+  await expect(sheet.getByRole("button", { name: project.title, exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+for (const kind of ["entry", "split"]) {
+  test(`final acceptance ${kind} hides revoked preview titles and retains choices for a deliberate fresh preview`, async ({ page }) => {
+    const created = await page.request.post("/api/projects", { data: { title: `Private preview ${randomUUID()}` } });
+    const project = await created.json();
+    const item = await createTask(page, { projectId: project.id });
+    await page.goto(`/#/projects/${project.id}`);
+    if (kind === "entry") await page.getByRole("button", { name: "Aufgaben hinzufügen", exact: true }).click();
+    else {
+      await page.getByRole("button", { name: item.title, exact: true }).click();
+      await page.getByRole("dialog", { name: "Details", exact: true }).getByRole("button", { name: "Aktionen", exact: true }).click();
+      await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Struktur ändern", exact: true }).click();
+      await page.getByRole("dialog").last().getByRole("button", { name: /Teilaufgaben/ }).click();
+    }
+    const sheet = page.getByRole("dialog", { name: kind === "entry" ? "Aufgaben hinzufügen" : "Aufgabe aufteilen", exact: true });
+    const editor = sheet.getByPlaceholder("Schritt …").first();
+    await editor.fill("Retained preview step");
+    await editor.evaluate(element => element.setAttribute("data-acceptance-node", "preview"));
+    await sheet.getByText("Planung (optional)", { exact: true }).first().click();
+    await sheet.getByLabel("Fällig", { exact: true }).first().fill("2030-12-10");
+    await sheet.getByLabel("Fällig", { exact: true }).first().press("Tab");
+    const submit = sheet.getByRole("button", { name: kind === "entry" ? "Aufgabe hinzufügen" : "1 Teilaufgabe anlegen", exact: true });
+    await submit.click();
+    const driver = sheet.getByLabel(`Verantwortlich für „${project.title}“`);
+    await driver.selectOption({ index: 1 });
+    const choice = await driver.inputValue();
+    let mode: "denied" | "failed" | "success" = "denied";
+    let commands = 0;
+    let previews = 0;
+    await page.route(`**/api/projects/${project.id}`, async route => {
+      if (route.request().method() !== "GET" || mode === "success") await route.continue();
+      else await route.fulfill({ status: mode === "denied" ? 403 : 503, contentType: "application/json",
+        body: JSON.stringify({ error: { message: "Preview source unavailable" } }) });
+    });
+    const batchPath = kind === "entry" ? `**/api/projects/${project.id}/tasks/batch` : `**/api/tasks/${item.id}/children/batch`;
+    await page.route(batchPath, async route => {
+      if (route.request().headers()["x-machbar-preview"] === "activation") previews += 1;
+      else if (route.request().method() === "POST") commands += 1;
+      await route.continue();
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    const retry = sheet.getByRole("button", { name: "Erneut versuchen", exact: true });
+    await expect(retry).toBeVisible();
+    await expect(driver).toHaveCount(0);
+    await expect(sheet.getByText(project.title, { exact: false })).toHaveCount(0);
+    await expect(submit).toBeDisabled();
+    mode = "failed";
+    const failed = page.waitForResponse(response => response.url().endsWith(`/api/projects/${project.id}`) && response.status() === 503);
+    await retry.click();
+    await failed;
+    await expect(retry).toBeEnabled();
+    await expect(driver).toHaveCount(0);
+    const title = `Fresh preview ${randomUUID()}`;
+    const changed = await page.request.patch(`/api/projects/${project.id}`, { data: { expectedRevision: project.revision, title } });
+    expect(changed.ok()).toBeTruthy();
+    const latest = await changed.json();
+    mode = "success";
+    await retry.click();
+    await expect(retry).toHaveCount(0);
+    await expect(driver).toHaveCount(0);
+    await expect(sheet.getByLabel(`Verantwortlich für „${title}“`)).toHaveCount(0);
+    await expect(editor).toHaveAttribute("data-acceptance-node", "preview");
+    await expect(editor).toHaveValue("Retained preview step");
+    expect(commands).toBe(0);
+    expect(previews).toBe(0);
+    await submit.click();
+    await expect(sheet.getByLabel(`Verantwortlich für „${title}“`)).toHaveValue(choice);
+    expect(commands).toBe(0);
+    expect(previews).toBe(1);
+    const bodies: Array<Record<string, unknown>> = [];
+    await page.route(batchPath, async route => {
+      if (route.request().headers()["x-machbar-preview"] !== "activation") bodies.push(route.request().postDataJSON());
+      await route.continue();
+    });
+    await submit.click();
+    await expect.poll(() => bodies.length).toBe(1);
+    if (kind === "entry") expect(bodies[0]).toMatchObject({ expectedRevision: latest.revision });
+    else expect(bodies[0]!.expectedProjectRevisions).toContainEqual({ projectId: project.id, revision: latest.revision });
+  });
+}
+
+for (const kind of ["entry", "split"]) {
+  test(`fifth review ${kind} owns read recovery without losing its step editor`, async ({ page }) => {
+    const created = await page.request.post("/api/projects", { data: { title: `Batch retry ${randomUUID()}` } });
+    const project = await created.json();
+    const item = await createTask(page, { projectId: project.id });
+    await page.goto(`/#/projects/${project.id}`);
+    if (kind === "entry") await page.getByRole("button", { name: "Aufgaben hinzufügen", exact: true }).click();
+    else {
+      await page.getByRole("button", { name: item.title, exact: true }).click();
+      await page.getByRole("dialog", { name: "Details", exact: true }).getByRole("button", { name: "Aktionen", exact: true }).click();
+      await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Struktur ändern", exact: true }).click();
+      await page.getByRole("dialog").last().getByRole("button", { name: /Teilaufgaben/ }).click();
+    }
+    const sheet = page.getByRole("dialog", { name: kind === "entry" ? "Aufgaben hinzufügen" : "Aufgabe aufteilen", exact: true });
+    const editor = sheet.getByPlaceholder("Schritt …").first();
+    await editor.fill("Keep own recovery editor");
+    await editor.evaluate(element => element.setAttribute("data-fifth-node", "batch"));
+    let mode: "denied" | "failed" | "success" = "denied";
+    let commands = 0;
+    await page.route(`**/api/projects/${project.id}`, async route => {
+      if (mode === "success") await route.continue();
+      else await route.fulfill({ status: mode === "denied" ? 403 : 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Batch read unavailable" } }) });
+    });
+    const batchPath = kind === "entry" ? `**/api/projects/${project.id}/tasks/batch` : `**/api/tasks/${item.id}/children/batch`;
+    await page.route(batchPath, async route => { if (route.request().method() === "POST") commands += 1; await route.continue(); });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    const retry = sheet.getByRole("button", { name: "Erneut versuchen", exact: true });
+    await expect(retry).toBeVisible();
+    mode = "failed";
+    await retry.click();
+    await expect(retry).toBeEnabled();
+    await expect(editor).toHaveAttribute("data-fifth-node", "batch");
+    await expect(editor).toHaveValue("Keep own recovery editor");
+    mode = "success";
+    await retry.click();
+    await expect(retry).toHaveCount(0);
+    await expect(editor).toHaveAttribute("data-fifth-node", "batch");
+    await expect(editor).toHaveValue("Keep own recovery editor");
+    expect(commands).toBe(0);
+  });
+}
+
+test("fifth review activation refreshes the actual revision while preserving choices", async ({ page }) => {
+  const createdParent = await page.request.post("/api/projects", { data: { title: `Activation parent ${randomUUID()}` } });
+  const parent = await createdParent.json();
+  const created = await page.request.post("/api/projects", { data: { title: `Activation child ${randomUUID()}`, parentId: parent.id } });
+  const child = await created.json();
+  await page.goto(`/#/projects/${child.id}`);
+  await page.getByRole("button", { name: "Aktionen", exact: true }).first().click();
+  await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Projekt starten", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Projekt starten", exact: true });
+  await sheet.getByLabel(`Verantwortlich für „${child.title}“`).selectOption({ index: 1 });
+  const selectedDriver = await sheet.getByLabel(`Verantwortlich für „${child.title}“`).inputValue();
+  const next = sheet.getByLabel("Welcher konkrete nächste Schritt bringt das Projekt voran?");
+  await next.fill("Preserved ancestor choices");
+  const updatedTitle = `Accepted activation ${randomUUID()}`;
+  const changed = await page.request.patch(`/api/projects/${child.id}`, { data: {
+    expectedRevision: child.revision, notes: "New actual revision", title: updatedTitle,
+  } });
+  expect(changed.ok()).toBeTruthy();
+  const latest = await changed.json();
+  const reads: Array<Record<string, unknown>> = [];
+  await page.route(`**/api/projects/${child.id}/activate`, async route => { reads.push(route.request().postDataJSON()); await route.continue(); });
+  const refreshed = page.waitForResponse(response => response.url().endsWith(`/api/projects/${child.id}`) && response.request().method() === "GET");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await refreshed;
+  await expect(sheet.getByLabel(`Verantwortlich für „${updatedTitle}“`)).toHaveValue(selectedDriver);
+  await expect(next).toHaveValue("Preserved ancestor choices");
+  expect(reads).toHaveLength(0);
+  await sheet.getByRole("button", { name: "Projekt starten", exact: true }).click();
+  await expect.poll(() => reads.length).toBe(1);
+  const resolution = reads[0]!.activationResolution as { expectedProjects: Array<{ projectId: number; revision: number }> };
+  expect(reads[0]).toMatchObject({ expectedRevision: latest.revision });
+  expect(resolution.expectedProjects).toContainEqual({ projectId: child.id, revision: latest.revision });
+});
+
+test("fifth review conversion uses fresh host dependencies and revision despite a failed local refresh", async ({ page }) => {
+  const item = await createTask(page, { scheduledDate: "2030-12-01" });
+  const prerequisite = await createTask(page);
+  let initialReads = 0;
+  let recoveredReads = 0;
+  let recover = false;
+  await page.route(`**/api/tasks/${item.id}`, async route => {
+    if (route.request().method() !== "GET") { await route.continue(); return; }
+    if (!recover) initialReads += 1;
+    else if (++recoveredReads > 2) { await route.abort("failed"); return; }
+    await route.continue();
+  });
+  await page.goto(`/#/tasks/${item.id}`);
+  await page.getByRole("dialog", { name: "Details", exact: true }).getByRole("button", { name: "Aktionen", exact: true }).click();
+  await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Struktur ändern", exact: true }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "In Projekt umwandeln", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: /^In Projekt umwandeln:/ });
+  const authored = sheet.getByRole("textbox", { name: "Bisherige Aufgabe als Arbeitsschritt fortführen", exact: true });
+  await authored.fill("Keep real conversion draft");
+  await expect.poll(() => initialReads).toBeGreaterThanOrEqual(4);
+  recover = true;
+  const changed = await page.request.post(`/api/tasks/${item.id}/dependencies`, { data: { expectedRevision: item.revision, dependsOnTaskId: prerequisite.id } });
+  expect(changed.ok()).toBeTruthy();
+  const latest = await changed.json();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(sheet.getByLabel(`Diese Aufgabe hängt ab von: ${prerequisite.title}`)).toBeVisible();
+  await expect(authored).toHaveValue("Keep real conversion draft");
+  await expect.poll(() => recoveredReads).toBeGreaterThan(2);
+  const commands: Array<Record<string, unknown>> = [];
+  await page.route(`**/api/tasks/${item.id}/convert-to-story`, async route => { commands.push(route.request().postDataJSON()); await route.continue(); });
+  await sheet.getByRole("button", { name: "In Projekt umwandeln", exact: true }).click();
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands[0]).toMatchObject({ expectedRevision: latest.revision, preservedStepTitle: "Keep real conversion draft" });
+});
+
 test("Planning retries an advanced real revision without losing its draft, save error or recovered wait/dependency state", async ({ page }, testInfo) => {
   const item = await createTask(page, { scheduledDate: "2030-12-01" });
   const prerequisite = await createTask(page);

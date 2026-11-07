@@ -39,25 +39,25 @@ export function ProjectDeadlineSheet({
   const [recoveryRequested, setRecoveryRequested] = useState(false);
   const recovery = useAsync(() => recoveryRequested ? projectActions.readProject(story.id) : Promise.resolve(null),
     [story.id, projectActions.scopeToken, recoveryRequested]);
-  const consumedAuthority = useRef(authoritativeProject);
+  const consumedAuthority = useRef<ProjectDetail | null>(null);
   useEffect(() => {
     if (saving || !authoritativeProject || consumedAuthority.current === authoritativeProject) return;
     consumedAuthority.current = authoritativeProject;
-    if (!projectActions.isCurrentProjectRead(authoritativeProject)) return;
-    setActivationPrompt(previous => previous && (previous.readUnavailable || (previous.isCurrentRead && !previous.isCurrentRead())) &&
-      authoritativeProject.activationDecisionSnapshot
-      ? { ...projectActivationPromptFromSnapshot(authoritativeProject.activationDecisionSnapshot, previous),
-        isCurrentRead: () => projectActions.isCurrentProjectRead(authoritativeProject) }
-      : previous);
+    if (authoritativeProject.id !== story.id || !projectActions.isCurrentProjectRead(authoritativeProject)) return;
+    setActivationPrompt(previous => {
+      if (!previous || !authoritativeProject.activationDecisionSnapshot) return previous;
+      const merged = projectActivationPromptFromSnapshot(authoritativeProject.activationDecisionSnapshot, previous, story.id, previous.targetRevision);
+      return merged === previous ? previous : { ...merged, isCurrentRead: () => projectActions.isCurrentProjectRead(authoritativeProject) };
+    });
   }, [authoritativeProject, saving]);
   useEffect(() => {
     const received = recovery.data;
     if (!received || !projectActions.isCurrentTargetRead(received.read) || !received.value.activationDecisionSnapshot) return;
     projectActions.observeConfirmedStory(received.value, received.read);
-    setActivationPrompt(previous => ({
-      ...projectActivationPromptFromSnapshot(received.value.activationDecisionSnapshot!, previous),
-      isCurrentRead: () => projectActions.isCurrentTargetRead(received.read),
-    }));
+    setActivationPrompt(previous => {
+      const merged = projectActivationPromptFromSnapshot(received.value.activationDecisionSnapshot!, previous, story.id, previous?.targetRevision);
+      return merged === previous ? previous : { ...merged, isCurrentRead: () => projectActions.isCurrentTargetRead(received.read) };
+    });
   }, [recovery.data]);
   const unavailable = activationPrompt?.readUnavailable || (activationPrompt?.isCurrentRead && !activationPrompt.isCurrentRead());
 
@@ -74,7 +74,7 @@ export function ProjectDeadlineSheet({
       if (!projectActions.isCurrentTargetRead(continuation)) return;
       const read = projectActions.captureTargetRead(story.id);
       const prompt = await refreshProjectActivationPrompt(cause, story.id, activationPrompt, "commitment", projectActions.getProject,
-        () => projectActions.isCurrentTargetRead(read));
+        () => projectActions.isCurrentTargetRead(read), activationPrompt?.targetRevision);
       if (!projectActions.isCurrentTargetRead(continuation)) return;
       if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));

@@ -719,6 +719,11 @@ not retain raw project detail. Snapshots never create list membership and are
 discarded on target invalidation, identity change or unmount. Confirmed task
 scalar overlays preserve current child membership and merge matching child
 values by revision, independently of the parent's revision.
+The workflow host uses that same `projectTaskValue` confirmed-only merge rather
+than choosing a higher parent receipt wholesale, then applies pending display
+separately. Conversion also selects the higher actual host/local baseline;
+pending composition cannot certify a revision, and project metadata cannot
+replace qualified conversion detail.
 Recursive matching also reuses the existing descendant-terminal helper for
 parent policies; equal-revision children retain fresh non-lifecycle fields
 without losing completion/cancellation outcomes.
@@ -731,12 +736,26 @@ receipt. Conflict helpers expose unavailable task refreshes explicitly and mark
 old activation requirements unusable while preserving decisions as drafts.
 Local split/project-entry projections carry the original stamped read envelope;
 qualification does not authorize retagging an old payload after a denial.
-Activation and deadline sheets rebuild unavailable requirements from newly
-qualified host detail or their existing GET-only runner, using the snapshot
-decision merge to retain relevant driver and next-action choices. Recovery never
-submits. Move sheets keep the destination selection, disable unavailable
-prerequisites and expose their own read-only retry rather than silently ignoring
-the user's command.
+Activation and deadline sheets reconcile all relevant qualified snapshots from
+host detail or their existing GET-only runner, using the target-scoped snapshot
+decision merge to retain relevant driver and next-action choices. The first
+detail after metadata initialization and equal-revision derived changes count;
+lower target revisions never replace newer requirements/provenance. Recovery
+never submits. Project-entry and split use their own read runner's retry without
+remounting step/decision drafts. Route-owned project entry stays mounted from the
+original page read envelope during denial, while old source steps remain hidden.
+Preview-derived requirements also retain their original task/project epoch:
+denial hides server labels without discarding authored choices. GET-only
+restoration does not recertify them. An explicit subsequent submission requests
+a fresh preview and merges applicable choices, without automatically committing
+that newly qualified prompt. The same guard applies to Planning/conversion
+previews and serialized decision-error prompts. Deadline/activation pass their
+same-target baseline to the existing merge, because active targets may be absent
+from ancestor-only `expectedProjects`. Task-preview revisions must not be
+compared with a different project's target revision.
+Move sheets keep the destination selection, picker/search nodes and sticky
+warning through pending/failed revalidation, disable unavailable prerequisites
+and expose their own read-only retry rather than silently ignoring the command.
 The existing API authentication event also checks an opaque request-identity
 generation before dispatch: an old 401 cannot log out a newer selected or
 cookie-bound identity, including ABA transitions.

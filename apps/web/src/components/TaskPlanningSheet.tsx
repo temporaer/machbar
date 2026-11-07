@@ -327,7 +327,8 @@ export function TaskPlanningSheet({
   const activationPrompt = activationState?.fingerprint === draftFingerprint
     ? activationState.prompt
     : null;
-  const activationDecisionReady = activationPrompt === null ||
+  const activationUnavailable = activationPrompt?.readUnavailable || (activationPrompt?.isCurrentRead && !activationPrompt.isCurrentRead());
+  const activationDecisionReady = activationPrompt === null || activationUnavailable ||
     projectActivationResolutionFromPrompt(activationPrompt) !== null;
   const nextAvailability = notBeforeDate
     ? taskAvailabilityForLocalDate(
@@ -831,6 +832,9 @@ export function TaskPlanningSheet({
   const commit = async () => {
     if (!authoritativeTask || !taskActions.isTargetReadable(task.id) || revisionRevalidationRequired || planningConflicts.length > 0) return;
     const continuation = taskActions.captureTargetRead(baselineTask.id);
+    const projectContinuation = baselineTask.projectId === null ? null : projectActions.captureTargetRead(baselineTask.projectId);
+    const isCurrent = () => taskActions.isCurrentTargetRead(continuation) &&
+      (!projectContinuation || projectActions.isCurrentTargetRead(projectContinuation));
     if (hasExistingWait && (followUpOutcome.trim().length > 0 || followUpChoice !== "continue")) {
       await saveWaitFollowUp();
       return;
@@ -877,20 +881,26 @@ export function TaskPlanningSheet({
       const activationResolution = activationPrompt
         ? projectActivationResolutionFromPrompt(activationPrompt)
         : null;
-      if (activationPrompt && !activationResolution) {
+      if (activationPrompt && !activationUnavailable && !activationResolution) {
         setError(strings.commitmentResolutionHint);
         return;
       }
-      if (!activationPrompt && baselineTask.projectId !== null) {
+      if (activationUnavailable && baselineTask.projectId !== null && !projectActions.isTargetReadable(baselineTask.projectId)) {
+        const project = await projectActions.getProject(baselineTask.projectId);
+        if (!isCurrent() || !projectActions.isCurrentProjectRead(project)) return;
+      }
+      if ((!activationPrompt || activationUnavailable) && baselineTask.projectId !== null) {
         const preview = await api.previewTaskUpdate(baselineTask.id, { ...patch, expectedRevision: expectedTaskRevision });
-        if (!taskActions.isCurrentTargetRead(continuation)) return;
+        if (!isCurrent()) return;
         if (preview.activatingProjects.length) {
-          setActivationState({ fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision) });
+          setActivationState({ fingerprint: draftFingerprint, prompt: {
+            ...projectActivationPromptFromSnapshot(preview.decision, activationPrompt), isCurrentRead: isCurrent,
+          } });
           return;
         }
       }
       const apiPatch = activationPrompt?.projects.length && activationResolution ? { ...patch, activationResolution } : patch;
-      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (!isCurrent()) return;
       const { reminders: _draftReminders, ...optimisticPatchBase } = patch;
       const optimisticPatch = {
         ...optimisticPatchBase,
@@ -911,11 +921,11 @@ export function TaskPlanningSheet({
         optimisticPatch,
         true,
       );
-      if (updated && taskActions.isCurrentTargetRead(continuation)) onClose();
+      if (updated && isCurrent()) onClose();
     } catch (cause) {
-      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (!isCurrent()) return;
       const refreshed = await refreshTaskAfterConflict(cause, baselineTask.id, taskActions.getTask);
-      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (!isCurrent()) return;
       if (refreshed.kind === "current") {
         reconcilePlanningDraft(refreshed.task, priorBaseline);
       } else if (refreshed.kind === "unavailable") {
@@ -926,8 +936,8 @@ export function TaskPlanningSheet({
         ? null
         : await refreshProjectActivationPrompt(cause, baselineTask.projectId, activationPrompt, "commitment", projectActions.getProject,
           () => projectRead !== null && projectActions.isCurrentTargetRead(projectRead));
-      if (!taskActions.isCurrentTargetRead(continuation)) return;
-      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt });
+      if (!isCurrent()) return;
+      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt: { ...prompt, isCurrentRead: isCurrent } });
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);

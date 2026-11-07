@@ -9,6 +9,7 @@ import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { useNavigate } from "react-router-dom";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useProjectActions } from "../lib/useProjectActions";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 function descendantRevisions(tasks: Task[]): Array<{ taskId: number; revision: number }> {
@@ -26,14 +27,21 @@ function openActionDescendants(tasks: Task[]): Task[] {
 }
 
 /** Focused `task.convertToProject` workflow — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
+export function TaskConvertToProjectSheet({ task, authoritativeTask = task, onClose, ...presentation }: {
+  task: Task; authoritativeTask?: Task | null; onClose: () => void;
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
+  const projectActions = useProjectActions();
   const navigate = useNavigate();
   const detail = useTaskDetail();
   const { bump } = useRefresh();
   const [taskRead, setCurrentTask] = useState<TaskDetail | null>(null);
-  const currentTask: TaskDetail = taskRead && taskActions.isCurrentTaskRead(taskRead) ? taskRead : task;
+  const localTask = taskRead && taskActions.isCurrentTaskRead(taskRead) ? taskRead : null;
+  const hostTask = authoritativeTask?.id === task.id ? authoritativeTask : null;
+  const authority = localTask && (!hostTask || localTask.revision >= hostTask.revision)
+    ? localTask : hostTask;
+  const currentTask: TaskDetail = authority ?? task;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preservedStepTitle, setPreservedStepTitle] = useState(task.title);
@@ -70,6 +78,7 @@ export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { 
   const activationResolution: ProjectActivationResolution | null = activationPrompt
     ? projectActivationResolutionFromPrompt(activationPrompt)
     : null;
+  const activationUnavailable = activationPrompt?.readUnavailable || (activationPrompt?.isCurrentRead && !activationPrompt.isCurrentRead());
 
   const decisionDraft = useRef<ProjectActivationPrompt | null>(null);
   useEffect(() => { if (activationPrompt) decisionDraft.current = activationPrompt; }, [activationPrompt]);
@@ -79,10 +88,17 @@ export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { 
 
   const convert = async (status: "active" | "backlog") => {
     const continuation = taskActions.captureTargetRead(task.id);
-    if (busy || blockReason || hierarchyPending) return;
+    const projectContinuation = currentTask.projectId === null ? null : projectActions.captureTargetRead(currentTask.projectId);
+    const isCurrent = () => taskActions.isCurrentTargetRead(continuation) &&
+      (!projectContinuation || projectActions.isCurrentTargetRead(projectContinuation));
+    if (!authority || busy || blockReason || hierarchyPending) return;
     setBusy(true);
     setError(null);
     try {
+      if (activationUnavailable && currentTask.projectId !== null && !projectActions.isTargetReadable(currentTask.projectId)) {
+        const project = await projectActions.getProject(currentTask.projectId);
+        if (!isCurrent() || !projectActions.isCurrentProjectRead(project)) return;
+      }
       const input = {
         status,
         ...(preserveStepRequired ? { preservedStepTitle: preservedStepTitle.trim() } : {}),
@@ -101,37 +117,37 @@ export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { 
         ...(previewIntent === status && activationPrompt?.projects.length && activationResolution ? { activationResolution } : {}),
         expectedRevision: currentTask.revision,
       };
-      if (!activationPrompt || previewIntent !== status) {
+      if (!activationPrompt || activationUnavailable || previewIntent !== status) {
         const preview = await api.previewTaskConversion(task.id, input);
-        if (!taskActions.isCurrentTargetRead(continuation)) return;
+        if (!isCurrent()) return;
         if (preview.activatingProjects.length) {
           setPreviewIntent(status);
-          setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision, decisionDraft.current));
+          setActivationPrompt({ ...projectActivationPromptFromSnapshot(preview.decision, decisionDraft.current), isCurrentRead: isCurrent });
           return;
         }
       }
-      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (!isCurrent()) return;
       const converted = await api.convertTaskToStory(task.id, input);
-      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (!isCurrent()) return;
       bump();
       onClose();
       detail.close();
       navigate(`/projects/${converted.id}`, { state: { createdProjectId: converted.id } });
 
     } catch (cause) {
-      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (!isCurrent()) return;
       const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (refreshedPrompt) { setPreviewIntent(status); setActivationPrompt(refreshedPrompt); }
+      if (refreshedPrompt) { setPreviewIntent(status); setActivationPrompt({ ...refreshedPrompt, isCurrentRead: isCurrent }); }
       if (isStaleWriteConflict(cause)) {
         bump();
         try {
           const latest = await taskActions.getTask(task.id);
-          if (!taskActions.isCurrentTargetRead(continuation) || !taskActions.isCurrentTaskRead(latest)) return;
+          if (!isCurrent() || !taskActions.isCurrentTaskRead(latest)) return;
           setCurrentTask(latest);
         } catch {
           // Keep the draft and let the next submission surface the current server error.
         }
-        if (!taskActions.isCurrentTargetRead(continuation)) return;
+        if (!isCurrent()) return;
       }
       setError(localizedErrorMessage(cause, strings));
     } finally {
@@ -182,8 +198,8 @@ export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { 
             ))}
             {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
             <div className="capture-shape-actions">
-              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "backlog" && activationPrompt !== null && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
-              <button type="button" className="btn capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "active" && activationPrompt !== null && activationResolution === null)} onClick={() => void convert("active")}>{previewIntent === "active" && activationPrompt ? strings.activateStory : strings.convertToProjectActive}</button>
+              <button type="button" className="btn btn-primary capture-shape-action" disabled={!authority || busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "backlog" && activationPrompt !== null && !activationUnavailable && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
+              <button type="button" className="btn capture-shape-action" disabled={!authority || busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "active" && activationPrompt !== null && !activationUnavailable && activationResolution === null)} onClick={() => void convert("active")}>{previewIntent === "active" && activationPrompt ? strings.activateStory : strings.convertToProjectActive}</button>
             </div>
           </>
         )}

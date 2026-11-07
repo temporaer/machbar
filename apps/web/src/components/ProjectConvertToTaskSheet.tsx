@@ -16,10 +16,12 @@ import { ErrorState, LoadingState } from "./AsyncStates";
  */
 export function ProjectConvertToTaskSheet({
   story,
+  authoritativeProject = null,
   onClose,
   ...presentation
 }: {
   story: ProjectWithActions;
+  authoritativeProject?: ProjectDetail | null;
   onClose: () => void;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
@@ -45,7 +47,9 @@ export function ProjectConvertToTaskSheet({
 
   const confirmedRead = freshProject && projectActions.isCurrentProjectRead(freshProject) ? freshProject : null;
   const queryRead = project && projectActions.isCurrentProjectRead(project) ? project : null;
-  const currentProject = confirmedRead && (!queryRead || confirmedRead.revision > queryRead.revision) ? confirmedRead : queryRead;
+  const localProject = confirmedRead && (!queryRead || confirmedRead.revision > queryRead.revision) ? confirmedRead : queryRead;
+  const hostProject = authoritativeProject?.id === story.id && projectActions.isCurrentProjectRead(authoritativeProject) ? authoritativeProject : null;
+  const currentProject = hostProject && (!localProject || hostProject.revision > localProject.revision) ? hostProject : localProject;
 
   useEffect(() => {
     if (!currentProject) return;

@@ -2,6 +2,7 @@ import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useEffect, useRef } from "react";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
+import { projectTaskValue } from "../lib/taskHelpers";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow, type TaskWorkflowState } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
@@ -82,7 +83,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
   const retained = taskId !== null ? taskActions.retained.get(taskId) : undefined;
   const accessLost = isWorkItemAccessError(taskRead.errorCause) || isWorkItemAccessError(taskRead.refreshErrorCause);
   const confirmed = taskId !== null ? taskActions.getConfirmedTask(taskId) : undefined;
-  const input = confirmed && (!fetchedTask || confirmed.revision > fetchedTask.revision) ? confirmed : fetchedTask;
+  const input = fetchedTask ? projectTaskValue(fetchedTask, confirmed) : confirmed;
   const task = accessLost ? null : input ? taskActions.projectTask(input)
     : taskId !== null && taskActions.isTargetReadable(taskId) ? retained ?? null : null;
   useEffect(() => {
@@ -202,7 +203,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
     case "contexts":
       return <TaskContextsSheet {...sheetProps} task={task} />;
     case "convertToProject":
-      return <TaskConvertToProjectSheet {...sheetProps} key={task.id} task={task} />;
+      return <TaskConvertToProjectSheet {...sheetProps} key={task.id} task={task} authoritativeTask={input ?? null} />;
     case "completeWithCriteria":
       return (
         <CompleteWithCriteriaSheet

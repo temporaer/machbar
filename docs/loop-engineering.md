@@ -247,3 +247,58 @@ shared/production builds and all typechecks; 1379 API tests, 1937 web tests,
 159 Python tests with one existing skip, and 55 desktop/mobile Chromium cases
 with one existing skip. Gate3's earlier counts remain historical evidence;
 the additional twelve direct cases and eight browser executions all pass.
+
+The subsequent six Copilot threads exposed further introduced gaps: a higher
+parent receipt replaced fetched child membership wholesale, move retries
+unmounted picker search drafts and warnings, usable activation/deadline prompts
+ignored newly qualified detail, project-entry/split lacked own read recovery,
+and older local conversion detail overrode newer host authority. Eight direct
+counterexamples failed before production correction (the activation fixture
+first needed its real member option to load); the additional pending-only
+conversion case proves no command before an actual lower first baseline.
+The correction reuses confirmed-only tree projection, target-scoped snapshot
+merging and existing read runners, without extending the transitional store.
+Real browser validation additionally rejected route-owned project entry being
+unmounted by page denial. Retaining that opening's original page envelope fixes
+its editor lifetime without restoring denied detail. New-browser fixture
+selectors and the initially incorrect ancestor-activation assumption were
+corrected, not original assertions. Ten new desktop/mobile executions pass:
+sticky move search/warning, entry/split own retry, actual activation revision,
+and conversion host authority despite a failed local refresh. Direct snapshot
+cases separately cover higher/lower/equal-derived requirements. None imply live
+OIDC, physical-device or comprehensive authorization verification.
+The fifth-review final complete verifier/browser command above passed:
+architecture (369 source files), shared/production builds and all typechecks;
+1379 API tests, 1946 web tests, 159 Python tests with one existing skip, and
+65 desktop/mobile Chromium cases with one existing skip. The nine additional
+direct cases and ten additional browser executions extend the historical
+1937-web/55-browser gate; the earlier regressions and browser assertions remain.
+
+Final actual-diff acceptance found two remaining introduced boundaries:
+project-entry/split preview prompts exposed server requirement titles after
+read revocation, and an active Deadline target absent from `expectedProjects`
+could accept an older target snapshot. Three direct counterexamples rejected the
+faulty source before production correction. Two additional sibling cases
+reproduced published-preview leakage in Planning/conversion before their guards.
+Preview prompts now retain original continuations and authored decisions;
+GET-only recovery restores the baseline but requires a deliberate fresh preview
+before committing. The prior entry/split choice-retention assertions remain,
+with a fresh deliberate preview inserted before asserting visible driver
+choices rather than requiring revoked labels to reappear on GET alone.
+The existing decision merge accepts an explicit actual same-target baseline;
+direct tests cover omitted targets, lower/equal/higher requirements and avoiding
+cross-target task/project revision comparisons. No persistent state abstraction
+or query migration was introduced.
+The first complete acceptance gate passed runtime checks but rejected a mobile
+activation test that waited for a transport response rather than accepted sheet
+data. Its strict revision/draft assertions remain; changing the server title
+provides an observable qualified-requirement label to wait for before Submit.
+That strengthened desktop/mobile scenario passed ten repeated executions.
+The batch browser counters also now monitor the real batch endpoint and its
+`x-machbar-preview` header, rather than a non-existent `/steps` path.
+The corrected complete acceptance gate passed architecture, builds/typechecks,
+1379 API tests, 1953 web tests, 159 Python tests with one existing skip, and
+69 desktop/mobile Chromium cases with one existing skip. It extends the prior
+1946-web/65-browser gate with seven direct cases and four browser executions;
+the separate new-work CaptureForm preview lifetime is not certified by this
+bounded existing-target matrix.

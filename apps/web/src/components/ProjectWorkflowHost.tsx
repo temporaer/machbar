@@ -152,7 +152,7 @@ export function ProjectWorkflowHost() {
     case "move":
       return <MoveProjectSheet {...sheetProps} story={story} />;
     case "convertToTask":
-      return <ProjectConvertToTaskSheet {...sheetProps} story={story} />;
+      return <ProjectConvertToTaskSheet {...sheetProps} story={story} authoritativeProject={fetchedProject} />;
     case "completeWithDecisions":
       if (!fetchedProject) return null;
       return (

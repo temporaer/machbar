@@ -58,8 +58,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
-    const jobs: Promise<unknown>[] = [api.getProjects().then(setProjects)];
+    const jobs: Promise<unknown>[] = [api.getProjects().then(values => { if (!cancelled) setProjects(values); })];
     if (selectedProjectId != null) {
       jobs.push(
         projectActions.getProject(selectedProjectId).then((p) => {
@@ -69,7 +68,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
     } else {
       setDestination(null);
     }
-    Promise.all(jobs)
+    Promise.all(jobs).then(() => { if (!cancelled) setError(null); })
       .catch((err: unknown) =>
         !cancelled && setError(localizedErrorMessage(err, strings)),
       )
@@ -111,7 +110,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   }, [selectableParents, projects, selectedProjectId, parentProjectTitle]);
 
   const submit = async () => {
-    if (selectedProjectId !== null && !currentDestination) return;
+    if (loading || error !== null || (selectedProjectId !== null && !currentDestination)) return;
     const sourceRead = taskActions.captureTargetRead(task.id);
     const destinationRead = selectedProjectId === null ? null : projectActions.captureTargetRead(selectedProjectId);
     const isCurrent = () => taskActions.isCurrentTargetRead(sourceRead) &&
@@ -143,7 +142,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
     <BottomSheet {...presentation} title={strings.moveProjectTitle} onClose={onClose} labelledBy="move-task-title">
       <p className="text-muted">{task.title}</p>
       <p className="text-muted">{strings.subtreeHint}</p>
-      {loading ? (
+      {loading && projects === null ? (
         <LoadingState />
       ) : (
         <div className="stack">
@@ -178,7 +177,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
             <button type="button" className="btn" onClick={onClose}>
               {strings.cancel}
             </button>
-            <button type="button" className="btn btn-primary btn-block" disabled={saving || unavailable || error !== null} onClick={() => void submit()}>
+            <button type="button" className="btn btn-primary btn-block" disabled={saving || loading || unavailable || error !== null} onClick={() => void submit()}>
               {strings.moveHere}
             </button>
           </div>

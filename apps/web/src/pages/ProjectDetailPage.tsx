@@ -778,7 +778,8 @@ export function ProjectDetailPage() {
           />
         ) : null}
         <QuickAdd />
-        {focus === "next-action" && project ? <ProjectTaskEntrySheet key={project.id} project={project} onClose={clearRouteFocus} /> : null}
+        {focus === "next-action" && projectResult ? <ProjectTaskEntrySheet key={projectResult.value.id}
+          project={projectResult.value} initialRead={projectResult.read} onClose={clearRouteFocus} /> : null}
         {attachmentOpen && project ? (
           <MarkdownAttachmentSheet
             onClose={() => setAttachmentOpen(false)}

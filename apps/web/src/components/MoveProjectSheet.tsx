@@ -18,13 +18,14 @@ export function MoveProjectSheet({ story, onClose, ...presentation }: { story: P
   const { bump } = useRefresh();
   const [sourceRead, setSource] = useState<ProjectDetail | null>(null);
   const source = sourceRead?.id === story.id && projectActions.isCurrentProjectRead(sourceRead) ? sourceRead : null;
-  const [projects, setProjects] = useState<ProjectWithActions[]>([]);
+  const [projects, setProjects] = useState<ProjectWithActions[] | null>(null);
   const [parentId, setParentId] = useState<number | null>(story.parentId);
   const [destinationRead, setDestination] = useState<ProjectDetail | null>(null);
   const destination = destinationRead?.id === parentId && destinationRead && projectActions.isCurrentProjectRead(destinationRead) ? destinationRead : null;
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [retry, setRetry] = useState(0);
   const load = async () => {
@@ -35,24 +36,22 @@ export function MoveProjectSheet({ story, onClose, ...presentation }: { story: P
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
-    Promise.all([projectActions.getProject(story.id), api.getProjects()]).then(([current, choices]) => {
-      if (!cancelled) { setSource(current); setProjects(choices); }
-    }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); })
+    Promise.all([projectActions.getProject(story.id), api.getProjects(),
+      parentId === null ? Promise.resolve(null) : projectActions.getProject(parentId)]).then(([current, choices, parent]) => {
+      if (!cancelled) {
+        if (!projectActions.isCurrentProjectRead(current) || (parent && !projectActions.isCurrentProjectRead(parent))) {
+          setLoadError(strings.workflowTargetUnavailable);
+          return;
+        }
+        setSource(current); setProjects(choices); setDestination(parent); setLoadError(null);
+      }
+    }).catch((cause) => { if (!cancelled) setLoadError(localizedErrorMessage(cause, strings)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [story.id, strings, retry]);
-  useEffect(() => {
-    let cancelled = false;
-    setDestination(null);
-    if (parentId !== null) projectActions.getProject(parentId).then((current) => {
-      if (!cancelled) setDestination(current);
-    }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); });
-    return () => { cancelled = true; };
-  }, [parentId, strings, retry]);
+  }, [story.id, parentId, strings, retry]);
   const resolution = prompt ? projectActivationResolutionFromPrompt(prompt) : null;
   const submit = async () => {
-    if (!source || busy || (parentId !== null && !destination)) return;
+    if (!source || busy || loading || loadError !== null || (parentId !== null && !destination)) return;
     const sourceContinuation = projectActions.captureTargetRead(story.id);
     const destinationContinuation = parentId === null ? null : projectActions.captureTargetRead(parentId);
     const isCurrent = () => projectActions.isCurrentTargetRead(sourceContinuation) &&
@@ -89,16 +88,16 @@ export function MoveProjectSheet({ story, onClose, ...presentation }: { story: P
     <div className="stack">
       <p className="text-muted">{story.title}</p>
       <p className="text-muted">{strings.projectSubtreeHint}</p>
-      {!loading ? <DestinationPicker kind="project" label={strings.selectProject}
+      {projects !== null ? <DestinationPicker kind="project" label={strings.selectProject}
         options={projects.filter((project) => project.scope === story.scope && !excluded.has(project.id)).map(({ id, title }) => ({ id, title }))}
         disabled={busy} value={parentId} onChange={(id) => { setParentId(id); setPrompt(null); }} noneLabel={strings.noProject} /> : null}
       {source?.status === "active" && destination?.status === "backlog" ? <p className="text-muted">{strings.projectMoveActivationHint}</p> : null}
       {prompt ? <ProjectActivationDecisionFields prompt={prompt} disabled={busy} onChange={setPrompt} /> : null}
       {error ? <p role="alert">{strings.moveFailed}: {error}</p> : null}
-      {!loading && (!source || (parentId !== null && !destination)) ? <ReadErrorState resource={strings.project}
-        error={error ?? strings.workflowTargetUnavailable} refreshError={null} loading={loading} refreshing={false}
+      {loadError || (projects !== null && (!source || (parentId !== null && !destination))) ? <ReadErrorState resource={strings.project}
+        error={loadError ?? strings.workflowTargetUnavailable} refreshError={null} loading={loading} refreshing={false}
         reload={() => setRetry(value => value + 1)} /> : null}
-      <button type="button" className="btn btn-primary" disabled={busy || loading || !source || (parentId !== null && !destination) || (!!prompt && !resolution)} onClick={() => void submit()}>{strings.moveHere}</button>
+      <button type="button" className="btn btn-primary" disabled={busy || loading || loadError !== null || !source || (parentId !== null && !destination) || (!!prompt && !resolution)} onClick={() => void submit()}>{strings.moveHere}</button>
       <button type="button" className="btn" disabled={busy} onClick={onClose}>{strings.cancel}</button>
     </div>
   </BottomSheet>;

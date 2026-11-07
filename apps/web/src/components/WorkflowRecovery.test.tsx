@@ -29,6 +29,7 @@ vi.mock("../lib/api", async (importOriginal) => ({ ...await importOriginal<typeo
   previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
   updateTask: vi.fn(), updateProject: vi.fn(), completeProject: vi.fn(),
   returnProjectToBacklog: vi.fn(),
+  createTaskStepBatchForTask: vi.fn(),
 } }));
 const mocked = vi.mocked(api, true);
 const task = makeTask({ id: 1, title: "Retained task", scheduledDate: "2026-12-01" });
@@ -50,6 +51,7 @@ function Controls() {
   return <>
     <main id="main-content" tabIndex={-1}>
       <button onClick={() => taskWorkflow.open("plan", task.id, "scheduled")}>Open task</button>
+      <button onClick={() => taskWorkflow.open("split", task.id)}>Split task</button>
       <button onClick={() => projectWorkflow.open("assignDriver", project.id)}>Open project</button>
       <button onClick={() => projectWorkflow.open("completeWithDecisions", project.id)}>Complete project</button>
       <button onClick={() => projectWorkflow.open("defer", project.id)}>Defer project</button>
@@ -160,6 +162,26 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("focused workflow read recovery", () => {
+  it("fifth review: a newer parent receipt preserves fetched child membership and newer child revisions in the actual host", async () => {
+    const oldChild = makeTask({ id: 81, parentTaskId: task.id, title: "Receipt-only child" });
+    const staleChild = makeTask({ id: 82, parentTaskId: task.id, title: "Old receipt child", revision: 1 });
+    const freshChild = { ...staleChild, title: "New fetched child", revision: 3 };
+    const addedChild = makeTask({ id: 83, parentTaskId: task.id, title: "New fetched membership" });
+    mocked.updateTask.mockResolvedValue({ ...task, revision: 2, children: [oldChild, staleChild] });
+    mocked.getTask.mockResolvedValue({ ...task, revision: 1, children: [freshChild, addedChild] });
+    mocked.createTaskStepBatchForTask.mockResolvedValue({ tasks: [] });
+    renderWithProviders(<Controls />, { locale: "en" });
+    await userEvent.click(screen.getByRole("button", { name: "Retain task" }));
+    await userEvent.click(screen.getByRole("button", { name: "Split task" }));
+    await screen.findByText(freshChild.title);
+    expect(screen.getByText(addedChild.title)).toBeInTheDocument();
+    expect(screen.queryByText(oldChild.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(staleChild.title)).not.toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText("Step …"), "New authored child");
+    await userEvent.click(screen.getByRole("button", { name: "Create 1 subtask" }));
+    await waitFor(() => expect(mocked.createTaskStepBatchForTask).toHaveBeenCalledWith(task.id,
+      expect.objectContaining({ expectedRevision: 2 })));
+  });
   it("rejects an old suspended same-ID workflow success after the new foreground reader denies", async () => {
     const old = deferred<typeof task>();
     let targetReads = 0;

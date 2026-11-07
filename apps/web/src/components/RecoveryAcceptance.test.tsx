@@ -14,6 +14,11 @@ import { ProjectTaskEntrySheet } from "./ProjectTaskEntrySheet";
 import { TaskSplitSheet } from "./TaskSplitSheet";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { MoveProjectSheet } from "./MoveProjectSheet";
+import { ProjectActivationSheet } from "./ProjectActivationSheet";
+import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
+import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
+import { TaskPlanningSheet } from "./TaskPlanningSheet";
+import { useState } from "react";
 
 vi.mock("../lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("../lib/api")>(),
@@ -25,6 +30,7 @@ vi.mock("../lib/api", async importOriginal => ({
     previewProjectSteps: vi.fn(), previewTaskSteps: vi.fn(),
     createTaskStepBatchForProject: vi.fn(), createTaskStepBatchForTask: vi.fn(),
     moveTask: vi.fn(), moveProject: vi.fn(),
+    previewTaskConversion: vi.fn(), convertTaskToStory: vi.fn(),
   },
 }));
 
@@ -114,6 +120,354 @@ beforeEach(() => {
 });
 
 describe("recovery actual-diff acceptance", () => {
+  it.each(["planning", "conversion"] as const)("final sibling: %s keeps a published preview obsolete after project denial and restoration", async kind => {
+    const actualTask = { ...task, projectId: 42, hierarchyRevisions: [{ id: task.id, revision: 1 }, { id: 42, revision: 1 }] };
+    mocked.getTask.mockResolvedValue(actualTask);
+    const preview = kind === "planning" ? mocked.previewTaskUpdate : mocked.previewTaskConversion;
+    preview.mockResolvedValueOnce({ activatingProjects: [{ id: 42, title: "Revoked sibling title" }],
+      decision: { ...snapshot(1), projects: [{ ...snapshot(1).projects[0]!, title: "Revoked sibling title" }] } })
+      .mockResolvedValue({ activatingProjects: [{ id: 42, title: "New sibling requirements" }],
+        decision: { ...snapshot(2), projects: [{ ...snapshot(2).projects[0]!, title: "New sibling requirements" }] } });
+    function Reader() {
+      const actions = useProjectActions();
+      const [reads, setReads] = useState(0);
+      return <><button onClick={() => void actions.getProject(42).catch(() => {}).finally(() => setReads(value => value + 1))}>Read sibling project</button>
+        <output data-testid="sibling-reads">{reads}</output>
+        {kind === "planning" ? <TaskPlanningSheet task={actualTask} onClose={vi.fn()} />
+          : <TaskConvertToProjectSheet task={actualTask} onClose={vi.fn()} />}</>;
+    }
+    renderWithProviders(<Reader />, { locale: "en" });
+    if (kind === "planning") {
+      fireEvent.change(screen.getByLabelText("Planned for"), { target: { value: "2027-01-05" } });
+      fireEvent.blur(screen.getByLabelText("Planned for"));
+    }
+    const submit = kind === "planning" ? "Save" : "Convert to project";
+    await userEvent.click(screen.getByRole("button", { name: submit }));
+    await userEvent.selectOptions(await screen.findByLabelText("Lead for “Revoked sibling title”"), "1");
+    await userEvent.type(screen.getByLabelText(/concrete next/i), "Keep sibling decision");
+    mocked.getProject.mockRejectedValueOnce(new ApiError(403, "Sibling project denied"));
+    fireEvent.click(screen.getByRole("button", { name: "Read sibling project", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("sibling-reads")).toHaveTextContent("1"));
+    expect(screen.queryByLabelText("Lead for “Revoked sibling title”")).not.toBeInTheDocument();
+    mocked.getProject.mockResolvedValue(detail(2));
+    fireEvent.click(screen.getByRole("button", { name: "Read sibling project", hidden: true }));
+    await waitFor(() => expect(screen.getByTestId("sibling-reads")).toHaveTextContent("2"));
+    expect(screen.queryByLabelText("Lead for “Revoked sibling title”")).not.toBeInTheDocument();
+    expect(preview).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: submit }));
+    expect(await screen.findByLabelText("Lead for “New sibling requirements”")).toHaveValue("1");
+    expect(screen.getByLabelText(/concrete next/i)).toHaveValue("Keep sibling decision");
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+    expect(mocked.convertTaskToStory).not.toHaveBeenCalled();
+  });
+  it.each(["entry", "split"] as const)("final acceptance: %s hides revoked preview requirements and deliberately rebuilds them without losing decisions", async kind => {
+    const decision = (revision: number, title: string) => ({
+      ...snapshot(revision), projects: [{ ...snapshot(revision).projects[0]!, title }],
+    });
+    const preview = kind === "entry" ? mocked.previewProjectSteps : mocked.previewTaskSteps;
+    preview.mockResolvedValueOnce({ activatingProjects: [{ id: 42, title: "Private preview title" }],
+      decision: decision(1, "Private preview title") })
+      .mockResolvedValue({ activatingProjects: [{ id: 42, title: "Fresh requirements" }],
+        decision: decision(2, "Fresh requirements") });
+    mocked.createTaskStepBatchForProject.mockResolvedValue({ project: detail(2), tasks: [] });
+    mocked.createTaskStepBatchForTask.mockResolvedValue({ parent: task, tasks: [] });
+    function Denial() {
+      const actions = useProjectActions();
+      return <button onClick={() => void actions.getProject(42).catch(() => {})}>Deny preview project</button>;
+    }
+    renderWithProviders(<><Denial />{kind === "entry"
+      ? <ProjectTaskEntrySheet project={project} onClose={vi.fn()} />
+      : <TaskSplitSheet parentId={task.id} parentRevision={1} projectId={42} onClose={vi.fn()} />}</>, { locale: "en" });
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledOnce());
+    const editor = screen.getByPlaceholderText("Step …");
+    await userEvent.type(editor, "Preserved private step draft");
+    await userEvent.click(screen.getByText("Planning (optional)"));
+    fireEvent.change(screen.getByLabelText("Due"), { target: { value: "2027-03-01" } });
+    const submitName = kind === "entry" ? "Add task" : "Create 1 subtask";
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    await userEvent.selectOptions(await screen.findByLabelText("Lead for “Private preview title”"), "1");
+    await userEvent.type(screen.getByLabelText(/concrete next/i), "Preserved next-action draft");
+    mocked.getProject.mockRejectedValueOnce(new ApiError(403, "Project read revoked"));
+    fireEvent.click(screen.getByRole("button", { name: "Deny preview project", hidden: true }));
+    await screen.findByRole("button", { name: "Try again" });
+    expect(screen.queryByLabelText("Lead for “Private preview title”")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: submitName })).toBeDisabled();
+    mocked.getProject.mockRejectedValueOnce(new ApiError(503, "Own retry failed"));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled());
+    expect(screen.queryByLabelText("Lead for “Private preview title”")).not.toBeInTheDocument();
+    mocked.getProject.mockResolvedValue(detail(2));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument());
+    expect(screen.queryByLabelText("Lead for “Private preview title”")).not.toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText("Step …")[0]).toBe(editor);
+    expect(editor).toHaveValue("Preserved private step draft");
+    expect(preview).toHaveBeenCalledOnce();
+    expect(mocked.createTaskStepBatchForProject).not.toHaveBeenCalled();
+    expect(mocked.createTaskStepBatchForTask).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    expect(await screen.findByLabelText("Lead for “Fresh requirements”")).toHaveValue("1");
+    expect(screen.getByLabelText(/concrete next/i)).toHaveValue("Preserved next-action draft");
+    expect(mocked.createTaskStepBatchForProject).not.toHaveBeenCalled();
+    expect(mocked.createTaskStepBatchForTask).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    if (kind === "entry") await waitFor(() => expect(mocked.createTaskStepBatchForProject).toHaveBeenCalledWith(42,
+      expect.objectContaining({ expectedRevision: 2, activationResolution: expect.objectContaining({
+        expectedProjects: [{ projectId: 42, revision: 2 }], nextActionTitle: "Preserved next-action draft",
+      }) })));
+    else await waitFor(() => expect(mocked.createTaskStepBatchForTask).toHaveBeenCalledWith(task.id,
+      expect.objectContaining({ expectedProjectRevisions: [{ projectId: 42, revision: 2 }], activationResolution: expect.objectContaining({
+        expectedProjects: [{ projectId: 42, revision: 2 }], nextActionTitle: "Preserved next-action draft",
+      }) })));
+  });
+
+  it("final acceptance: active Deadline target omitted from expectedProjects rejects a lower target but accepts equal/higher requirements", async () => {
+    const ancestorDecision = (revision: number, title: string) => ({
+      targetRevision: revision, expectedProjects: [{ projectId: 88, revision: 12 }],
+      projects: [{ projectId: 88, title, revision: 12, ownerMemberId: null,
+        required: ["driver", "progressPath"] as Array<"driver" | "progressPath"> }],
+    });
+    const save = vi.fn().mockRejectedValueOnce(new ApiError(409, "Decisions",
+      "project_commitment_resolution_required", ancestorDecision(3, "Current ancestor requirements"))).mockResolvedValue(undefined);
+    function Authority() {
+      const actions = useProjectActions();
+      const [actual, setActual] = useState<ProjectDetail | null>(null);
+      return <><button onClick={() => void actions.getProject(42).then(setActual)}>Read deadline target</button>
+        <output data-testid="target-revision">{actual?.revision}</output>
+        <ProjectDeadlineSheet story={{ ...project, status: "active", revision: 3 }}
+          authoritativeProject={actual} onSave={save} onClose={vi.fn()} /></>;
+    }
+    renderWithProviders(<Authority />, { locale: "en" });
+    await userEvent.type(screen.getByLabelText("Due"), "2027-02-01{Enter}");
+    await userEvent.selectOptions(await screen.findByLabelText("Lead for “Current ancestor requirements”"), "1");
+    await userEvent.type(screen.getByLabelText(/concrete next/i), "Kept active-target draft");
+    const read = async (revision: number, title: string) => {
+      mocked.getProject.mockResolvedValue({ ...detail(revision), status: "active",
+        activationDecisionSnapshot: ancestorDecision(revision, title) });
+      fireEvent.click(screen.getByRole("button", { name: "Read deadline target", hidden: true }));
+      await waitFor(() => expect(screen.getByTestId("target-revision")).toHaveTextContent(String(revision)));
+    };
+    await read(3, "Current ancestor requirements");
+    await read(1, "Obsolete ancestor requirements");
+    expect(screen.queryByLabelText("Lead for “Obsolete ancestor requirements”")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Lead for “Current ancestor requirements”")).toHaveValue("1");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedRevision: 3 })));
+    await read(4, "Higher target requirements");
+    expect(await screen.findByLabelText("Lead for “Higher target requirements”")).toHaveValue("1");
+    mocked.getProject.mockResolvedValue({ ...detail(4), status: "active",
+      activationDecisionSnapshot: ancestorDecision(4, "Equal-derived requirements") });
+    fireEvent.click(screen.getByRole("button", { name: "Read deadline target", hidden: true }));
+    expect(await screen.findByLabelText("Lead for “Equal-derived requirements”")).toHaveValue("1");
+    expect(screen.getByLabelText(/concrete next/i)).toHaveValue("Kept active-target draft");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedRevision: 4 })));
+  });
+
+  it.each(["task", "project"] as const)("fifth review: %s move keeps exact search nodes and sticky read feedback through failed then successful retry", async role => {
+    const destination = makeProject({ id: 43, title: "Chosen destination" });
+    mocked.getProjects.mockResolvedValue([project, destination]);
+    mocked.getProject.mockImplementation(async id => ({ ...(id === 43 ? destination : project), tasks: [] }));
+    function Denial() {
+      const actions = useProjectActions();
+      return <button onClick={() => void actions.getProject(43).catch(() => {})}>Invalidate destination</button>;
+    }
+    renderWithProviders(<><Denial />{role === "task"
+      ? <MoveTaskSheet task={{ ...task, projectId: null }} onClose={vi.fn()} />
+      : <MoveProjectSheet story={project} onClose={vi.fn()} />}</>, { locale: "en" });
+    await userEvent.click(await screen.findByRole("button", { name: destination.title }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move here" })).toBeEnabled());
+    const search = screen.getAllByRole("searchbox")[0]!;
+    await userEvent.type(search, "Chosen");
+    mocked.getProject.mockRejectedValueOnce(new ApiError(403, "Destination denied"));
+    fireEvent.click(screen.getByRole("button", { name: "Invalidate destination", hidden: true }));
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    const warning = retry.closest("[role=alert]")!;
+    const pending = deferred<ProjectDetail>();
+    mocked.getProject.mockImplementation(async id => id === 43 ? pending.promise : detail());
+    fireEvent.click(retry);
+    expect(screen.getAllByRole("searchbox")[0]).toBe(search);
+    expect(search).toHaveValue("Chosen");
+    expect(warning).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move here" })).toBeDisabled();
+    await act(async () => pending.reject(new ApiError(503, "Retry unavailable")));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled());
+    expect(screen.getAllByRole("searchbox")[0]).toBe(search);
+    expect(search).toHaveValue("Chosen");
+    expect(screen.getByRole("button", { name: destination.title })).toHaveAttribute("aria-pressed", "true");
+    const success = deferred<ProjectDetail>();
+    mocked.getProject.mockImplementation(async id => id === 43 ? success.promise : detail());
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(warning).toBeInTheDocument();
+    await act(async () => success.resolve({ ...destination, revision: 2, tasks: [] }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move here" })).toBeEnabled());
+    expect(screen.getAllByRole("searchbox")[0]).toBe(search);
+    expect(search).toHaveValue("Chosen");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(mocked.moveTask).not.toHaveBeenCalled();
+    expect(mocked.moveProject).not.toHaveBeenCalled();
+  });
+
+  it.each(["activation", "deadline"] as const)("fifth review: %s merges all qualified snapshots without downgrading or losing decision drafts", async kind => {
+    const activate = vi.fn().mockResolvedValue(false);
+    const save = vi.fn().mockRejectedValueOnce(new ApiError(409, "Decisions", "project_commitment_resolution_required", snapshot(1)))
+      .mockResolvedValue(undefined);
+    function Authority() {
+      const actions = useProjectActions();
+      const [actual, setActual] = useState<ProjectDetail | null>(null);
+      return <>
+        <button onClick={() => void actions.getProject(42).then(setActual).catch(() => {})}>Receive qualified detail</button>
+        {kind === "activation"
+          ? <ProjectActivationSheet story={{ ...project, directActivationDecisionSnapshot: snapshot(1) }}
+            authoritativeProject={actual} action="activate" onActivate={activate} onClose={vi.fn()} />
+          : <ProjectDeadlineSheet story={project} authoritativeProject={actual} onSave={save} onClose={vi.fn()} />}
+      </>;
+    }
+    renderWithProviders(<Authority />, { locale: "en" });
+    if (kind === "deadline") {
+      await userEvent.type(screen.getByLabelText("Due"), "2027-02-01{Enter}");
+      await screen.findByLabelText(/Lead for/);
+    }
+    await screen.findByRole("option", { name: "Mira" });
+    await userEvent.selectOptions(screen.getByLabelText(/Lead for/), "1");
+    await userEvent.type(screen.getByLabelText(/concrete next/i), "Keep these decisions");
+    const receive = () => fireEvent.click(screen.getByRole("button", { name: "Receive qualified detail", hidden: true }));
+    const nextSnapshot = (revision: number, derived = false) => ({
+      ...snapshot(revision),
+      expectedProjects: [{ projectId: 42, revision }, { projectId: 88, revision: 5 }],
+      projects: [...snapshot(revision).projects,
+        { projectId: 88, title: derived ? "New equal-revision requirement" : "New detail requirement", revision: 5, ownerMemberId: null, required: ["driver"] as Array<"driver"> }],
+    });
+    mocked.getProject.mockResolvedValue({ ...detail(2), activationDecisionSnapshot: nextSnapshot(2), directActivationDecisionSnapshot: nextSnapshot(2) });
+    receive();
+    const extra = await screen.findByLabelText("Lead for “New detail requirement”");
+    expect(screen.getByLabelText(/concrete next/i)).toHaveValue("Keep these decisions");
+    expect(screen.getByLabelText(`Lead for “${project.title}”`)).toHaveValue("1");
+    await userEvent.selectOptions(extra, "1");
+    mocked.getProject.mockResolvedValue({ ...detail(3), activationDecisionSnapshot: nextSnapshot(3), directActivationDecisionSnapshot: nextSnapshot(3) });
+    receive();
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(2));
+    mocked.getProject.mockResolvedValue(detail(1));
+    receive();
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(3));
+    expect(screen.getByLabelText("Lead for “New detail requirement”")).toHaveValue("1");
+    mocked.getProject.mockResolvedValue({ ...detail(3), activationDecisionSnapshot: nextSnapshot(3, true), directActivationDecisionSnapshot: nextSnapshot(3, true) });
+    receive();
+    await screen.findByLabelText("Lead for “New equal-revision requirement”");
+    mocked.getProject.mockRejectedValue(new ApiError(503, "Background unavailable"));
+    receive();
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledTimes(5));
+    expect(screen.getByLabelText(/concrete next/i)).toHaveValue("Keep these decisions");
+    fireEvent.click(screen.getByRole("button", { name: kind === "activation" ? "Start project" : "Save" }));
+    if (kind === "activation") {
+      await waitFor(() => expect(activate).toHaveBeenCalledWith(1, expect.objectContaining({
+        expectedProjects: [{ projectId: 42, revision: 3 }, { projectId: 88, revision: 5 }],
+        nextActionTitle: "Keep these decisions",
+      }), 3));
+    } else await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({
+      expectedRevision: 3, activationResolution: expect.objectContaining({
+        expectedProjects: [{ projectId: 42, revision: 3 }, { projectId: 88, revision: 5 }],
+      }),
+    })));
+  });
+
+  it.each(["entry", "split"] as const)("fifth review: %s owns a stamped GET-only retry without losing steps or activation choices", async kind => {
+    mocked.previewProjectSteps.mockResolvedValue({ activatingProjects: [{ id: 42, title: project.title }],
+      decision: { ...snapshot(1), projects: [{ ...snapshot(1).projects[0]!, required: ["driver"] }] } });
+    mocked.previewTaskSteps.mockResolvedValue({ activatingProjects: [{ id: 42, title: project.title }],
+      decision: { ...snapshot(1), projects: [{ ...snapshot(1).projects[0]!, required: ["driver"] }] } });
+    function Denial() {
+      const actions = useProjectActions();
+      return <button onClick={() => void actions.getProject(42).catch(() => {})}>Invalidate batch project</button>;
+    }
+    renderWithProviders(<><Denial />{kind === "entry"
+      ? <ProjectTaskEntrySheet project={project} onClose={vi.fn()} />
+      : <TaskSplitSheet parentId={7} parentRevision={1} projectId={42} onClose={vi.fn()} />}</>, { locale: "en" });
+    await waitFor(() => expect(mocked.getProject).toHaveBeenCalledOnce());
+    const editor = screen.getByPlaceholderText("Step …");
+    await userEvent.type(editor, "Keep batch draft");
+    await userEvent.click(screen.getByText("Planning (optional)"));
+    fireEvent.change(screen.getByLabelText("Due"), { target: { value: "2027-03-01" } });
+    const submitName = kind === "entry" ? "Add task" : "Create 1 subtask";
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    await userEvent.selectOptions(await screen.findByLabelText(/Lead for/), "1");
+    mocked.getProject.mockRejectedValueOnce(new ApiError(403, "Batch project denied"));
+    fireEvent.click(screen.getByRole("button", { name: "Invalidate batch project", hidden: true }));
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    const pending = deferred<ProjectDetail>();
+    mocked.getProject.mockReturnValueOnce(pending.promise);
+    fireEvent.click(retry);
+    expect(editor).toBeInTheDocument();
+    expect(editor).toHaveValue("Keep batch draft");
+    expect(screen.getByRole("button", { name: submitName })).toBeDisabled();
+    await act(async () => pending.reject(new ApiError(503, "Batch retry unavailable")));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled());
+    expect(editor).toHaveValue("Keep batch draft");
+    mocked.getProject.mockResolvedValue(detail(2));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: submitName })).toBeEnabled());
+    expect(screen.getAllByPlaceholderText("Step …")[0]).toBe(editor);
+    expect(screen.queryByLabelText(/Lead for/)).not.toBeInTheDocument();
+    const freshPreview = { activatingProjects: [{ id: 42, title: project.title }],
+      decision: { ...snapshot(2), projects: [{ ...snapshot(2).projects[0]!, required: ["driver"] as Array<"driver"> }] } };
+    if (kind === "entry") mocked.previewProjectSteps.mockResolvedValue(freshPreview);
+    else mocked.previewTaskSteps.mockResolvedValue(freshPreview);
+    await userEvent.click(screen.getByRole("button", { name: submitName }));
+    await screen.findByLabelText(/Lead for/);
+    expect(screen.getByLabelText(/Lead for/)).toHaveValue("1");
+    expect(mocked.createTaskStepBatchForProject).not.toHaveBeenCalled();
+    expect(mocked.createTaskStepBatchForTask).not.toHaveBeenCalled();
+  });
+
+  it("fifth review: conversion prefers higher confirmed host authority over older local data and a failed local refresh", async () => {
+    const old = { ...task, projectId: null, children: [], dependencies: [] };
+    const latest = { ...old, revision: 2, dependencies: [{ id: 90, taskId: task.id, dependsOnTaskId: 88, title: "Fresh host dependency", resolved: false }] };
+    mocked.getTask.mockResolvedValue(old);
+    mocked.previewTaskConversion.mockResolvedValue({ activatingProjects: [], decision: null });
+    mocked.convertTaskToStory.mockResolvedValue(project);
+    function Conversion() {
+      const actions = useTaskActions();
+      const [authority, setAuthority] = useState<typeof task>(old);
+      return <>
+        <button onClick={() => void actions.update(old, { notes: "confirmed" }, undefined, true).then(result => {
+          if (result) setAuthority(result);
+        })}>Receive confirmed task</button>
+        <TaskConvertToProjectSheet task={authority} onClose={vi.fn()} />
+      </>;
+    }
+    mocked.updateTask.mockResolvedValue(latest);
+    renderWithProviders(<Conversion />, { locale: "en" });
+    await waitFor(() => expect(mocked.getTask).toHaveBeenCalledOnce());
+    const authored = screen.getByLabelText("Keep the original task as a work step");
+    await userEvent.clear(authored);
+    await userEvent.type(authored, "Keep conversion choice");
+    mocked.getTask.mockRejectedValue(new ApiError(503, "Local refresh unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Receive confirmed task", hidden: true }));
+    await screen.findByLabelText("This task depends on: Fresh host dependency");
+    expect(authored).toHaveValue("Keep conversion choice");
+    fireEvent.click(screen.getByRole("button", { name: "Convert to project" }));
+    await waitFor(() => expect(mocked.convertTaskToStory).toHaveBeenCalledWith(task.id,
+      expect.objectContaining({ expectedRevision: 2, preservedStepTitle: "Keep conversion choice" })));
+  });
+
+  it("fifth review: conversion composition does not certify pending-only revision2 over a first actual revision1", async () => {
+    const read = deferred<typeof task>();
+    mocked.getTask.mockReturnValue(read.promise);
+    mocked.previewTaskConversion.mockResolvedValue({ activatingProjects: [], decision: null });
+    mocked.convertTaskToStory.mockResolvedValue(project);
+    renderWithProviders(<TaskConvertToProjectSheet task={{ ...task, revision: 2, title: "Pending presentation" }}
+      authoritativeTask={null} onClose={vi.fn()} />, { locale: "en" });
+    const authored = screen.getByLabelText("Keep the original task as a work step");
+    await userEvent.clear(authored);
+    await userEvent.type(authored, "Compose without certifying");
+    expect(screen.getByRole("button", { name: "Convert to project" })).toBeDisabled();
+    expect(mocked.convertTaskToStory).not.toHaveBeenCalled();
+    await act(async () => read.resolve(task));
+    expect(authored).toHaveValue("Compose without certifying");
+    await userEvent.click(screen.getByRole("button", { name: "Convert to project" }));
+    await waitFor(() => expect(mocked.convertTaskToStory).toHaveBeenCalledWith(task.id,
+      expect.objectContaining({ expectedRevision: 1, preservedStepTitle: "Compose without certifying" })));
+  });
   it.each([
     ["planner", false], ["planner", true], ["defer", false], ["defer", true], ["activation", false], ["activation", true],
   ] as const)(

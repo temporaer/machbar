@@ -4,12 +4,13 @@ import type { Task } from "@machbar/shared";
 import type { WorkItemAncestor } from "@machbar/shared";
 import type { ProjectWithActions } from "../lib/api";
 import { api } from "../lib/api";
-import type { TargetRead } from "../lib/useRetainedMutations";
+import type { TargetRead, TargetReadToken } from "../lib/useRetainedMutations";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { useAsync } from "../lib/useAsync";
+import { ReadErrorState } from "./AsyncStates";
 import { useProjectActions } from "../lib/useProjectActions";
 import { StepComposer, type StepDraft } from "./StepComposer";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
@@ -34,9 +35,11 @@ function fingerprint(steps: StepDraft[]) {
 /** Explicit project-owned task entry. Creation/conversion has already finished. */
 export function ProjectTaskEntrySheet({
   project,
+  initialRead,
   onClose,
 }: {
   project: ProjectWithActions & { ancestors?: WorkItemAncestor[] };
+  initialRead?: TargetReadToken;
   onClose: () => void;
 }) {
   const strings = useStrings();
@@ -44,7 +47,7 @@ export function ProjectTaskEntrySheet({
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
   const [projectSnapshot, setProjectSnapshot] = useState<TargetRead<typeof project>>(() => ({
-    value: project, read: projectActions.captureTargetRead(project.id),
+    value: project, read: initialRead ?? projectActions.captureTargetRead(project.id),
   }));
   const currentProject = projectSnapshot.value;
   const current = projectActions.isCurrentTargetRead(projectSnapshot.read);
@@ -54,13 +57,16 @@ export function ProjectTaskEntrySheet({
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
   const requestFingerprint = fingerprint(draftSteps);
   const activationPrompt = activationState?.fingerprint === requestFingerprint ? activationState.prompt : null;
+  const activationUnavailable = activationPrompt?.readUnavailable || (activationPrompt?.isCurrentRead && !activationPrompt.isCurrentRead());
   const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const expectedProjectRevisions = useMemo(() => projectRevisionSnapshot(currentProject), [currentProject]);
-  const { data: projectRead, error: projectLoadError } = useAsync(() => projectActions.readProject(project.id), [project.id, projectActions.scopeToken]);
+  const projectState = useAsync(() => projectActions.readProject(project.id), [project.id, projectActions.scopeToken]);
+  const projectRead = projectState.data;
   const projectDetail = projectRead && projectActions.isCurrentTargetRead(projectRead.read) ? projectRead : null;
 
   useEffect(() => {
     if (projectDetail) {
+      if (projectDetail.value.revision < currentProject.revision) return;
       setProjectSnapshot(projectDetail);
       setSteps(sortByPosition(projectDetail.value.tasks));
     }
@@ -83,11 +89,14 @@ export function ProjectTaskEntrySheet({
         expectedProjectRevisions,
         ...(activationPrompt?.projects.length && activationResolution ? { activationResolution } : {}),
       };
-      if (!activationPrompt && draft.some(step => step.dueDate || step.scheduledDate)) {
+      if ((!activationPrompt && draft.some(step => step.dueDate || step.scheduledDate)) || activationUnavailable) {
         const preview = await api.previewProjectSteps(project.id, input);
         if (!projectActions.isCurrentTargetRead(continuation)) return false;
         if (preview.activatingProjects.length) {
-          setActivationState({ fingerprint: fingerprint(draft), prompt: projectActivationPromptFromSnapshot(preview.decision) });
+          setActivationState({ fingerprint: fingerprint(draft), prompt: {
+            ...projectActivationPromptFromSnapshot(preview.decision, activationPrompt),
+            isCurrentRead: () => projectActions.isCurrentTargetRead(continuation),
+          } });
           return false;
         }
       }
@@ -101,7 +110,9 @@ export function ProjectTaskEntrySheet({
     } catch (cause) {
       if (!projectActions.isCurrentTargetRead(continuation)) return false;
       const prompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (prompt) setActivationState({ fingerprint: fingerprint(draft), prompt });
+      if (prompt) setActivationState({ fingerprint: fingerprint(draft), prompt: {
+        ...prompt, isCurrentRead: () => projectActions.isCurrentTargetRead(continuation),
+      } });
       else if ((cause as { code?: string })?.code === "stale_write_conflict") {
         setActivationState(null);
         try { await refreshProject(); } catch { /* keep the batch draft for a visible retry */ }
@@ -122,8 +133,8 @@ export function ProjectTaskEntrySheet({
           <ProjectActivationDecisionFields prompt={activationPrompt} disabled={addingStep} onChange={(prompt) =>
             setActivationState({ fingerprint: requestFingerprint, prompt })} />
         ) : null}
-        {projectLoadError ? <p role="alert" className="task-row-error">{projectLoadError}</p> : null}
-        {!current && !projectLoadError ? <p role="alert">{strings.workflowTargetUnavailable}</p> : null}
+        <ReadErrorState resource={strings.project} {...projectState}
+          error={projectState.error ?? (!current && !projectState.loading ? strings.workflowTargetUnavailable : null)} />
         <StepComposer
           key={`project-${project.id}-member-${currentMemberId ?? "shared"}`}
           inputIdPrefix={`project-step-${project.id}`}
@@ -134,7 +145,7 @@ export function ProjectTaskEntrySheet({
           onDraftChange={setDraftSteps}
           onPendingChange={setAddingStep}
           onSubmit={submitSteps}
-          submitDisabled={!current || (activationPrompt !== null && activationResolution === null)}
+          submitDisabled={!current || projectState.refreshing || (activationPrompt !== null && !activationUnavailable && activationResolution === null)}
         />
         <p className="text-muted">{strings.projectTaskDraftHint}</p>
         <button type="button" className="btn btn-ghost btn-block" disabled={addingStep} onClick={onClose}>{strings.close}</button>
