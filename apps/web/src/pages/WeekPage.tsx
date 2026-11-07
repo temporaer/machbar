@@ -4,6 +4,7 @@ import {
   calendarDateForInstant,
   moveRevisitToCalendarDate,
   type Member,
+  type Task,
 } from "@machbar/shared";
 import { api, type AgendaScope, type WeekAgendaResponse, type WeekPlanningItem } from "../lib/api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
@@ -35,6 +36,7 @@ interface PlacementIntent {
   value: string | null;
   revision: number;
   acknowledgedAt: number | null;
+  receipt: Task | null;
 }
 interface MoveError {
   selection: symbol;
@@ -467,14 +469,19 @@ export function WeekPage() {
 
   const applyMove = async (item: WeekTaskItem, date: string | null, field: PlacementIntent["field"]) => {
     const token = ++nextToken.current;
-    const commandItem = { ...item, task: taskActions.projectTask(item.task) };
+    let commandTask = item.task;
+    for (const intent of intents) {
+      if (intent.selection === selection && intent.taskId === item.id &&
+          intent.receipt && intent.receipt.revision > commandTask.revision) commandTask = intent.receipt;
+    }
+    const commandItem = { ...item, task: taskActions.projectTask(commandTask) };
     operations.current.set(item.id, { selection, token, pending: true });
     setMoveErrors(current => current.filter(error => error.selection !== selection || error.taskId !== item.id));
     try {
       const intent: PlacementIntent = {
         selection, token, taskId: item.id, field,
         value: field === "scheduledDate" ? date : revisitMoveValue(commandItem, date, householdTimezone),
-        revision: commandItem.task.revision, acknowledgedAt: null,
+        revision: commandItem.task.revision, acknowledgedAt: null, receipt: null,
       };
       setIntents(current => [...current, intent]);
       const result = field === "scheduledDate"
@@ -485,7 +492,7 @@ export function WeekPage() {
       const acknowledgedAt = ++acknowledgement.current;
       setIntents(current => current.flatMap(existing => {
         if (existing.selection !== selection || existing.taskId !== item.id || existing.field !== field) return [existing];
-        if (existing.token === token) return [{ ...intent, value: result[field], revision: result.revision, acknowledgedAt }];
+        if (existing.token === token) return [{ ...intent, value: result[field], revision: result.revision, acknowledgedAt, receipt: result }];
         return existing.acknowledgedAt !== null && existing.revision <= result.revision ? [] : [existing];
       }));
       setMoveErrors(current => current.filter(error => error.selection !== selection || error.taskId !== item.id || error.token !== token));

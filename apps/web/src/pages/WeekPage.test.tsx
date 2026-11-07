@@ -424,7 +424,16 @@ describe("WeekPage", () => {
     expect(within(screen.getByLabelText("Mi., 9.")).queryByText(item.title)).not.toBeInTheDocument();
     if (phase === "pending") await act(async () => write.resolve(accepted.task));
     expect(within(screen.getByLabelText("Do., 10.")).getByText(item.title)).toBeInTheDocument();
-    await act(async () => nextRead.resolve(responseWith(newer)));
+    const movedAgain = taskVersion(newer, { revision: 4, scheduledDate: "2026-09-11" }, "2026-09-11", "scheduled");
+    if (movedAgain.role !== "task") throw new Error("Expected task");
+    mockedApi.updateTask.mockResolvedValueOnce(movedAgain.task);
+    const nextDrag = dataTransfer();
+    fireEvent.dragStart(card(item.title), { dataTransfer: nextDrag });
+    fireEvent.drop(screen.getByLabelText("Fr., 11."), { dataTransfer: nextDrag });
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask).toHaveBeenLastCalledWith(item.id, { scheduledDate: "2026-09-11", expectedRevision: 3 });
+    await act(async () => nextRead.resolve(responseWith(movedAgain)));
+    expect(within(screen.getByLabelText("Fr., 11.")).getByText(item.title)).toBeInTheDocument();
     expect(screen.getAllByText(item.title)).toHaveLength(1);
   });
 
@@ -534,6 +543,52 @@ describe("WeekPage", () => {
     expect(mockedApi.updateTask).toHaveBeenLastCalledWith(item.id, { scheduledDate: "2026-09-10", expectedRevision: 2 });
     await screen.findByText("next move offline");
     expect(within(screen.getByLabelText("Mi., 9.")).getByText(item.title)).toBeInTheDocument();
+  });
+
+  it.each(["scheduled", "revisit"] as const)("preserves the accepted %s receipt through a failed next move and retry", async placement => {
+    const item = taskItem({
+      id: 125, title: "Accepted receipt", placement, attentionDate: "2026-09-08",
+      scheduledDate: placement === "scheduled" ? "2026-09-08" : null,
+      externalWait: placement === "revisit" ? { waitingFor: "Supplier", revisitDate: "2026-09-08" } : null,
+    });
+    if (item.role !== "task") throw new Error("Expected task");
+    let stored = item.task;
+    let attempts = 0;
+    const revisions: Array<number | undefined> = [];
+    mockedApi.getWeekAgenda.mockImplementation(async () => {
+      if (stored.revision > 1) throw new Error("refresh offline");
+      return responseWith(item);
+    });
+    const mutate = async (_id: number, input: { expectedRevision?: number }) => {
+      attempts += 1;
+      revisions.push(input.expectedRevision);
+      if (attempts === 2) throw new Error("next move offline");
+      if (input.expectedRevision !== stored.revision) throw new Error("stale_write_conflict");
+      const date = attempts === 1 ? "2026-09-09" : "2026-09-11";
+      stored = {
+        ...stored, revision: stored.revision + 1,
+        ...(placement === "scheduled"
+          ? { scheduledDate: date }
+          : { revisitAt: householdCalendarDateToRevisitAt(date, "Europe/Berlin") }),
+      };
+      return stored;
+    };
+    mockedApi.updateTask.mockImplementation(mutate);
+    mockedApi.setExternalWait.mockImplementation(mutate);
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Accepted receipt/ });
+    for (const [index, label] of ["Mi., 9.", "Do., 10.", "Fr., 11."].entries()) {
+      const transfer = dataTransfer();
+      fireEvent.dragStart(card(item.title), { dataTransfer: transfer });
+      fireEvent.drop(screen.getByLabelText(label), { dataTransfer: transfer });
+      await waitFor(() => expect(attempts).toBe(index + 1));
+      if (index === 0) await screen.findByText("Wochenplanung konnte nicht aktualisiert werden.");
+      if (index === 1) await screen.findByText("next move offline");
+    }
+    expect(revisions).toEqual([1, 2, 2]);
+    await waitFor(() => expect(stored.revision).toBe(3));
+    expect(within(screen.getByLabelText("Fr., 11.")).getByRole("button", { name: /^Accepted receipt/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Accepted receipt/ })).toHaveLength(1);
   });
 
   it("keeps unrelated failures attributable even after their rows disappear", async () => {

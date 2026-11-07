@@ -681,7 +681,11 @@ has a unique lifetime even for A-to-B-to-A navigation. Reads own membership;
 date feedback never resurrects an omitted task or overwrites a higher revision.
 Fetcher-start provenance and write acknowledgement distinguish old reads from
 successful post-acknowledgement revalidation. Failed reads retain confirmed
-dates, but only pending intents block another move. Drag placement is checked
+dates and their accepted task receipts, but only pending intents block another
+move. Subsequent canonical commands use the newest accepted receipt or newer
+authoritative task, even when a failed move clears shared value retention or an
+external-wait action does not retain values. Receipts do not replace read-owned
+membership or derived display fields. Drag placement is checked
 against current presentation while identity/revision and mutation input come
 from current authoritative/canonical data. Existing action hooks retain
 mutation, conflict and notification semantics.

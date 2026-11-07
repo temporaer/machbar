@@ -221,8 +221,10 @@ test("Week accepted moves stay draggable through refresh failure and a failed ne
   await page.route(`**/api/tasks/${item.id}`, async route => {
     if (route.request().method() === "PATCH") {
       patches += 1;
-      if (patches === 2) {
+      if (patches >= 2) {
         expect(route.request().postDataJSON().expectedRevision).toBe(item.revision + 1);
+      }
+      if (patches === 2) {
         await route.abort("failed");
         return;
       }
@@ -230,35 +232,49 @@ test("Week accepted moves stay draggable through refresh failure and a failed ne
     await route.continue();
   });
   const zones = page.locator(".week-grid .week-drop-zone");
+  const dragToDay = async (index: number) => {
+    const target = zones.nth(index);
+    await card.hover({ position: { x: 6, y: 6 } });
+    await page.mouse.down();
+    await target.hover({ position: { x: 12, y: 12 } });
+    await target.hover({ position: { x: 12, y: 12 } });
+    await page.mouse.up();
+  };
   const readError = page.getByRole("alert").filter({ hasText: "konnte nicht aktualisiert werden." });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(readError).toBeVisible();
   const firstWrite = page.waitForResponse(response =>
     response.url().endsWith(`/api/tasks/${item.id}`) && response.request().method() === "PATCH");
-  await card.dragTo(zones.nth(1), {
-    sourcePosition: { x: 6, y: 6 },
-    targetPosition: { x: 12, y: 12 },
-  });
+  await dragToDay(1);
   const accepted = await firstWrite;
   expect(accepted.status()).toBe(200);
   const receipt = await accepted.json();
   expect(receipt.scheduledDate).toBe(dates[1]!.date);
   expect(receipt.revision).toBe(item.revision + 1);
   await expect(zones.nth(1).locator(`[data-workitem-id="${item.id}"]`)).toBeVisible();
-  await card.dragTo(zones.nth(2), {
-    sourcePosition: { x: 6, y: 6 },
-    targetPosition: { x: 12, y: 12 },
-  });
+  await dragToDay(2);
   await expect.poll(() => patches).toBe(2);
   await expect(zones.nth(1).locator(`[data-workitem-id="${item.id}"]`)).toBeVisible();
+  const afterFailure = await (await page.request.get(`/api/tasks/${item.id}`)).json();
+  expect(afterFailure.scheduledDate).toBe(dates[1]!.date);
+  expect(afterFailure.revision).toBe(item.revision + 1);
+  const retryWrite = page.waitForResponse(response =>
+    response.url().endsWith(`/api/tasks/${item.id}`) && response.request().method() === "PATCH");
+  await dragToDay(3);
+  const retryAccepted = await retryWrite;
+  expect(retryAccepted.status()).toBe(200);
+  const retryReceipt = await retryAccepted.json();
+  expect(retryReceipt.scheduledDate).toBe(dates[3]!.date);
+  expect(retryReceipt.revision).toBe(item.revision + 2);
+  await expect(zones.nth(3).locator(`[data-workitem-id="${item.id}"]`)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("week-confirmed-recovery.png") });
   failing = false;
   await readError.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
   await expect(readError).toHaveCount(0);
   await expect(card).toHaveCount(1);
   const stored = await (await page.request.get(`/api/tasks/${item.id}`)).json();
-  expect(stored.scheduledDate).toBe(dates[1]!.date);
-  expect(stored.revision).toBe(item.revision + 1);
+  expect(stored.scheduledDate).toBe(dates[3]!.date);
+  expect(stored.revision).toBe(item.revision + 2);
 });
 
 test("a suspended planner retains its draft and warning through prerequisite inspection", async ({ page }, testInfo) => {

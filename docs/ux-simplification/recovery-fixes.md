@@ -62,12 +62,24 @@ and task titles and update their subsequent authoritative read. These are
 verification corrections, not new product semantics. An earlier late-read
 fixture failure during unknown-member setup is not counted as regression proof.
 
+Copilot review expanded the accepted-move sequence: a failed later move clears
+shared value retention, and external-wait actions deliberately do not retain
+values. Both sequences initially reused revision 1 instead of the accepted
+revision 2. Two new regressions reject that source before the fix. Confirmed
+intents now retain the accepted task receipt for subsequent canonical command
+input, preferring higher authoritative revisions without replacing read-owned
+membership or derived display fields. The real browser case also executes a
+successful third move after the failed second move while refreshes still fail.
+
 The full-suite browser drag initially failed without sending a PATCH; a read
 warning alone was therefore not evidence of an accepted move. Its fixture now
 waits for the selected member's successful Week query, stabilizes the read warning
 before dragging, uses the card's draggable padding, and asserts the actual
 successful date/revision receipt before testing the failed next move. Temporary
-native-event tracing was removed. The user also verified both requested normal
+native-event tracing was removed. CI also rejected the single-movement drag;
+the fixture uses Playwright's documented two target hovers to reliably dispatch
+native `dragover`, without synthetic drag events or weakened receipt assertions.
+The user also verified both requested normal
 drag starts and persistence after Ctrl+Shift+R; that manual observation does not
 establish injected-failure recovery.
 
