@@ -178,6 +178,60 @@ describe("BottomSheet", () => {
     expect(opener).toHaveFocus();
   });
 
+  it.each(["disabled", "removed"] as const)("falls back to main content when the original opener is %s", async (state) => {
+    const main = document.createElement("main");
+    main.id = "main-content";
+    main.tabIndex = -1;
+    const opener = document.createElement("button");
+    document.body.append(main, opener);
+    const { unmount } = render(<BottomSheet onClose={vi.fn()} restoreFocusTo={opener}>Recovery</BottomSheet>);
+    if (state === "disabled") opener.disabled = true;
+    else opener.remove();
+    unmount();
+    await act(async () => Promise.resolve());
+    expect(main).toHaveFocus();
+    opener.remove();
+    main.remove();
+  });
+
+  it("keeps restoration inside the remaining foreground sheet", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    const bottom = render(<BottomSheet onClose={vi.fn()}><button>Bottom control</button></BottomSheet>);
+    const top = render(<BottomSheet onClose={vi.fn()} restoreFocusTo={opener}>Recovery</BottomSheet>);
+    top.unmount();
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole("button", { name: "Bottom control" })).toHaveFocus();
+    bottom.unmount();
+    opener.remove();
+  });
+
+  it("does not let queued restoration steal focus from a later opening", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    const first = render(<BottomSheet onClose={vi.fn()} restoreFocusTo={opener}>Recovery</BottomSheet>);
+    first.unmount();
+    const second = render(<BottomSheet onClose={vi.fn()}><input aria-label="New editor" /></BottomSheet>);
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole("textbox", { name: "New editor" })).toHaveFocus();
+    second.unmount();
+    opener.remove();
+  });
+
+  it("returns disappearing status focus to the current editor without moving existing editor focus", async () => {
+    const { rerender } = render(<BottomSheet title="Recovery" onClose={vi.fn()} headerStatus={<button>Retry read</button>}>
+      <input aria-label="Draft" />
+    </BottomSheet>);
+    const editor = screen.getByRole("textbox", { name: "Draft" });
+    await userEvent.click(screen.getByRole("button", { name: "Retry read" }));
+    rerender(<BottomSheet title="Recovery" onClose={vi.fn()}><input aria-label="Draft" /></BottomSheet>);
+    expect(editor).toHaveFocus();
+    rerender(<BottomSheet title="Recovery" onClose={vi.fn()} headerStatus={<button>Retry read</button>}>
+      <input aria-label="Draft" />
+    </BottomSheet>);
+    expect(editor).toHaveFocus();
+  });
+
   it("focuses the dialog itself when it has no focusable content", () => {
     render(<BottomSheet onClose={vi.fn()}>Plain content</BottomSheet>);
 

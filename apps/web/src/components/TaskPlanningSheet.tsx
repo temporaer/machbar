@@ -36,7 +36,7 @@ import type { TaskPlanningTarget } from "../lib/commands";
 import { refreshTaskAfterConflict } from "../lib/taskMutations";
 import { DetailPropertyPill } from "./DetailPropertyPill";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
@@ -88,12 +88,13 @@ export function TaskPlanningSheet({
   onClose,
   initialTarget,
   suspended = false,
+  ...presentation
 }: {
   task: Task;
   onClose: () => void;
   initialTarget?: TaskPlanningTarget;
   suspended?: boolean;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
   const [expanded, setExpanded] = useState<Partial<Record<TaskPlanningTarget, boolean>>>({});
@@ -969,6 +970,7 @@ export function TaskPlanningSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       suspended={suspended}
       title={strings.planning}
       initialFocus="dialog"

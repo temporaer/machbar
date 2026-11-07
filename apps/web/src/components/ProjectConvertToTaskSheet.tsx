@@ -6,7 +6,7 @@ import { useStrings } from "../lib/strings";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { ErrorState, LoadingState } from "./AsyncStates";
 
 /**
@@ -16,10 +16,11 @@ import { ErrorState, LoadingState } from "./AsyncStates";
 export function ProjectConvertToTaskSheet({
   story,
   onClose,
+  ...presentation
 }: {
   story: ProjectWithActions;
   onClose: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { bump } = useRefresh();
   const [title, setTitle] = useState(story.title);
@@ -114,6 +115,7 @@ export function ProjectConvertToTaskSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       title={strings.convertProjectToTaskTitle}
       onClose={() => {
         if (!busy) onClose();

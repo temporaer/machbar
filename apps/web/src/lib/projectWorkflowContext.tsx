@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 /**
@@ -53,7 +53,8 @@ export interface ProjectWorkflowState {
 interface ProjectWorkflowContextValue {
   current: ProjectWorkflowState | null;
   open: (kind: ProjectWorkflowKind, projectId: number) => void;
-  close: () => void;
+  close: (opening?: ProjectWorkflowState) => void;
+  isCurrent: (opening: ProjectWorkflowState) => boolean;
   closeCurrent: () => void;
 }
 
@@ -61,13 +62,26 @@ const ProjectWorkflowContext = createContext<ProjectWorkflowContextValue | null>
 
 export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<ProjectWorkflowState | null>(null);
+  const currentRef = useRef<ProjectWorkflowState | null>(null);
   const value = useMemo<ProjectWorkflowContextValue>(
-    () => ({
-      current,
-      open: (kind, projectId) => setCurrent({ kind, projectId }),
-      closeCurrent: () => setCurrent(null),
-      close: () => setCurrent(null),
-    }),
+    () => {
+      const close = (opening?: ProjectWorkflowState) => {
+        if (opening && currentRef.current !== opening) return;
+        currentRef.current = null;
+        setCurrent(null);
+      };
+      return {
+        current,
+        open: (kind, projectId) => {
+          const next = { kind, projectId };
+          currentRef.current = next;
+          setCurrent(next);
+        },
+        isCurrent: (opening) => currentRef.current === opening,
+        closeCurrent: close,
+        close,
+      };
+    },
     [current],
   );
   return <ProjectWorkflowContext.Provider value={value}>{children}</ProjectWorkflowContext.Provider>;

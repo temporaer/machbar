@@ -10,7 +10,7 @@ import {
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 
 function activationPrompt(story: ProjectWithActions & Pick<ProjectDetail, "directActivationDecisionSnapshot">): ProjectActivationPrompt {
   if (story.directActivationDecisionSnapshot) return projectActivationPromptFromSnapshot(story.directActivationDecisionSnapshot);
@@ -38,12 +38,13 @@ export function ProjectActivationSheet({
   action,
   onClose,
   onActivate,
+  ...presentation
 }: {
   story: ProjectWithActions & Pick<ProjectDetail, "directActivationDecisionSnapshot">;
   action: Extract<ProjectWorkflowAction, "activate" | "reopen">;
   onClose: () => void;
   onActivate: (ownerMemberId: number | null, resolution: ProjectActivationResolution, expectedRevision?: number) => Promise<void>;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export function ProjectActivationSheet({
   };
 
   return (
-    <BottomSheet title={action === "reopen" ? strings.reopen : strings.activateStory} onClose={() => {
+    <BottomSheet {...presentation} title={action === "reopen" ? strings.reopen : strings.activateStory} onClose={() => {
       if (!saving) onClose();
     }}>
       <div className="stack">

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, type AgendaScope } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
-import { LoadingState, ErrorState } from "../components/AsyncStates";
+import { LoadingState, ReadErrorState } from "../components/AsyncStates";
 import { WaitingGroupList } from "../components/WaitingGroupList";
 import { PageHeader } from "../components/PageHeader";
 import { useIdentity } from "../lib/identity";
@@ -21,15 +21,11 @@ export function WaitingPage() {
     setScope(nextScope);
     writeTodayScope(nextScope);
   };
-  const {
-    data: entries,
-    loading,
-    error,
-    reload,
-  } = useAsync(
+  const waitingRead = useAsync(
     () => api.getWaiting(currentMemberId, scope),
     [currentMemberId, scope],
   );
+  const { data: entries, loading } = waitingRead;
   useTaskActions(flattenTasks((entries ?? []).map(entry => entry.task)));
   return (
     <InteractionScopeProvider>
@@ -65,7 +61,7 @@ export function WaitingPage() {
           }
         />
         {loading ? <LoadingState /> : null}
-        {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        <ReadErrorState resource={strings.waiting} {...waitingRead} />
         {entries ? <WaitingGroupList key={`${scope}:${currentMemberId}`} entries={entries} /> : null}
       </div>
     </InteractionScopeProvider>

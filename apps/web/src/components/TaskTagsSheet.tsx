@@ -13,13 +13,13 @@ import { useTaskActions } from "../lib/useTaskActions";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useAsync } from "../lib/useAsync";
 import { ErrorState, LoadingState } from "./AsyncStates";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { TagPicker } from "./TagPicker";
 import { TagChip } from "./TagChip";
 
 /** Focused `task.tags` editor — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskTagsSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskTagsSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
@@ -106,6 +106,7 @@ export function TaskTagsSheet({ task, onClose }: { task: Task; onClose: () => vo
 
   return (
     <BottomSheet
+      {...presentation}
       title={strings.tags}
       onClose={() => {
         if (!saving) onClose();

@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { TaskDetailHandoff } from "./taskDetailContext";
 import type { TaskPlanningTarget } from "./commands";
@@ -50,7 +50,8 @@ interface PlanningDetailInspection {
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
   open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;
-  close: () => void;
+  close: (opening?: TaskWorkflowState) => void;
+  isCurrent: (opening: TaskWorkflowState) => boolean;
   detailInspection: PlanningDetailInspection | null;
   detailInspections: PlanningDetailInspection[];
   suspendForDetail: (previousDetail: TaskDetailHandoff | null) => void;
@@ -61,6 +62,7 @@ const TaskWorkflowContext = createContext<TaskWorkflowContextValue | null>(null)
 
 export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<TaskWorkflowState | null>(null);
+  const currentRef = useRef<TaskWorkflowState | null>(null);
   const [detailInspections, setDetailInspections] = useState<PlanningDetailInspection[]>([]);
   const detailInspection = detailInspections.at(-1) ?? null;
   const value = useMemo<TaskWorkflowContextValue>(
@@ -74,18 +76,27 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
         }
       },
       resumeFromDetail: () => {
-        if (detailInspection) setCurrent(detailInspection.planningWorkflow);
+        if (detailInspection) {
+          currentRef.current = detailInspection.planningWorkflow;
+          setCurrent(detailInspection.planningWorkflow);
+        }
         setDetailInspections((previous) => previous.slice(0, -1));
       },
-      open: (kind, taskId, planningTarget) =>
-        setCurrent({
+      open: (kind, taskId, planningTarget) => {
+        const next = {
           kind,
           taskId,
           ...(planningTarget ? { planningTarget } : {}),
-        }),
-      close: () => {
-        if (detailInspection) setCurrent(detailInspection.planningWorkflow);
-        else setCurrent(null);
+        };
+        currentRef.current = next;
+        setCurrent(next);
+      },
+      isCurrent: (opening) => currentRef.current === opening,
+      close: (opening) => {
+        if (opening && currentRef.current !== opening) return;
+        const next = detailInspection?.planningWorkflow ?? null;
+        currentRef.current = next;
+        setCurrent(next);
       },
     }),
     [current, detailInspection, detailInspections],

@@ -5,12 +5,12 @@ import { useRefresh } from "../lib/refresh";
 import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
 import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { rememberDestination } from "../lib/recentDestinations";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { DestinationPicker } from "./DestinationPicker";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 /** Focused story.move workflow: selection and activation decisions remain local until one commit. */
-export function MoveProjectSheet({ story, onClose }: { story: ProjectWithActions; onClose: () => void }) {
+export function MoveProjectSheet({ story, onClose, ...presentation }: { story: ProjectWithActions; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { bump } = useRefresh();
   const [source, setSource] = useState<ProjectDetail | null>(null);
@@ -70,7 +70,7 @@ export function MoveProjectSheet({ story, onClose }: { story: ProjectWithActions
     } finally { setBusy(false); }
   };
   const excluded = new Set([story.id, ...(source?.hierarchyRevisions ?? []).filter((entry) => !source?.ancestors?.some((parent) => parent.id === entry.id)).map((entry) => entry.id)]);
-  return <BottomSheet title={strings.moveProjectTitle} onClose={() => { if (!busy) onClose(); }}>
+  return <BottomSheet {...presentation} title={strings.moveProjectTitle} onClose={() => { if (!busy) onClose(); }}>
     <div className="stack">
       <p className="text-muted">{story.title}</p>
       <p className="text-muted">{strings.projectSubtreeHint}</p>

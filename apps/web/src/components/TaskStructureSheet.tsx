@@ -1,7 +1,7 @@
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 
 /**
  * Focused `task.structure` workflow — the fixed row rail's `Struktur`
@@ -9,12 +9,12 @@ import { BottomSheet } from "./BottomSheet";
  * Each tile dispatches its semantic command; `useWorkItemCommands()` decides
  * which workflow opens next, so this sheet never renders one of its own.
  */
-export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskStructureSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
 
   return (
-    <BottomSheet title={`${strings.structure}: ${task.title}`} onClose={onClose}>
+    <BottomSheet {...presentation} title={`${strings.structure}: ${task.title}`} onClose={onClose}>
       <div className="stack">
         {task.kind !== "reference" ? (
           <button

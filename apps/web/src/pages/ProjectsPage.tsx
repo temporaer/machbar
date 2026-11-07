@@ -20,7 +20,7 @@ import {
   groupItemsByTagKind,
   type GroupableTagKind,
 } from "../lib/tagGrouping";
-import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
+import { LoadingState, ReadErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { BottomSheet } from "../components/BottomSheet";
 import { TagGroupingOptions } from "../components/TagGroupingControl";
@@ -55,7 +55,8 @@ function ProjectsPageContent() {
   const { data: homeAssistant } = useHomeAssistantStatus();
   const { locale } = useLocale();
   const navigate = useNavigate();
-  const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
+  const projectsRead = useAsync(() => api.getProjects(), []);
+  const { data: projects, loading } = projectsRead;
   const { bump } = useRefresh();
   const { currentMemberId } = useIdentity();
   const actions = useProjectActions(projects ?? []);
@@ -287,7 +288,7 @@ function ProjectsPageContent() {
         </div>
       </div>
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={reload} /> : null}
+      <ReadErrorState resource={strings.projects} {...projectsRead} />
       {projects ? (
         allProjects.length === 0 && activeProjects.length + quietProjects.length + backlogProjects.length + terminalProjects.length === 0 ? (
           <EmptyState message={strings.noProjects} />

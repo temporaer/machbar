@@ -3,7 +3,7 @@ import type { AcceptanceCriterion, Project, Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { hasOpenDescendants } from "../lib/taskHelpers";
 import type { ChildPolicy } from "../lib/useTaskActions";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { localizedErrorMessage } from "../lib/errorMessage";
 
 /**
@@ -18,13 +18,14 @@ export function CompleteWithCriteriaSheet({
   onClose,
   onComplete,
   onRefresh,
+  ...presentation
 }: {
   workItem: (Pick<Project, "id" | "title"> & { acceptanceCriteria: AcceptanceCriterion[] }) | Task;
   workItemType: "project" | "task";
   onClose: () => void;
   onComplete: (criteriaToCheck: number[], childPolicy?: ChildPolicy) => Promise<void>;
   onRefresh?: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const criteria = workItem.acceptanceCriteria ?? [];
   const [checkedIds, setCheckedIds] = useState<Set<number>>(() => new Set(criteria.filter((criterion) => criterion.checked).map((criterion) => criterion.id)));
@@ -40,6 +41,7 @@ export function CompleteWithCriteriaSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       title={`${workItemType === "project" ? strings.completeWithCriteriaTitle : strings.taskCompleteWithCriteriaTitle}: ${workItem.title}`}
       onClose={onClose}
       labelledBy="complete-with-criteria-title"

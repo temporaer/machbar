@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Task } from "@machbar/shared";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { useStrings } from "../lib/strings";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { calendarDateForInstant } from "@machbar/shared";
@@ -12,10 +12,11 @@ import { localizedErrorMessage } from "../lib/errorMessage";
 export function TaskClarificationSheet({
   task,
   onClose,
+  ...presentation
 }: {
   task: Task;
   onClose: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { timezone, loaded } = useHouseholdTimezone();
   const taskActions = useTaskActions();
@@ -52,7 +53,7 @@ export function TaskClarificationSheet({
   };
 
   return (
-    <BottomSheet title={strings.clarificationRevisitTitle} onClose={onClose}>
+    <BottomSheet {...presentation} title={strings.clarificationRevisitTitle} onClose={onClose}>
       <form className="stack" onSubmit={(event) => void submit(event)}>
         <p className="text-muted">{strings.clarificationRevisitNote}</p>
         <label htmlFor={`clarification-revisit-${task.id}`}>

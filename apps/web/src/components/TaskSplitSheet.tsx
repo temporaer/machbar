@@ -12,7 +12,7 @@ import {
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { TaskOutline } from "./TaskOutline";
 import { StepComposer, type StepDraft } from "./StepComposer";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
@@ -41,6 +41,7 @@ export function TaskSplitSheet({
   projectId = null,
   existingChildren = [],
   onClose,
+  ...presentation
 }: {
   parentId: number;
   parentTitle?: string;
@@ -49,7 +50,7 @@ export function TaskSplitSheet({
   projectId?: number | null;
   existingChildren?: Task[];
   onClose: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const navigate = useNavigate();
   const detail = useTaskDetail();
@@ -157,7 +158,7 @@ export function TaskSplitSheet({
 
 
   return (
-    <BottomSheet title={strings.splitTask} onClose={() => !busy && onClose()}>
+    <BottomSheet {...presentation} title={strings.splitTask} onClose={() => !busy && onClose()}>
       <div className="stack task-split-outliner">
         {parentTitle ? <p className="text-muted">{parentTitle}</p> : null}
         {existingChildren.length > 0 ? (

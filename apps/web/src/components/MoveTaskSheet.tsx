@@ -6,7 +6,7 @@ import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage
 import { useRefresh } from "../lib/refresh";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { rememberDestination } from "../lib/recentDestinations";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { useLocale } from "../lib/locale";
@@ -28,7 +28,7 @@ import { sortProjectDestinations } from "../lib/sortOrder";
  * the whole subtree, so this is the only project-move path — a project
  * picker plus an optional parent picker ("Keine" meaning root).
  */
-export function MoveTaskSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { locale } = useLocale();
   const { bump } = useRefresh();
@@ -124,7 +124,7 @@ export function MoveTaskSheet({ task, onClose }: { task: Task; onClose: () => vo
   };
 
   return (
-    <BottomSheet title={strings.moveProjectTitle} onClose={onClose} labelledBy="move-task-title">
+    <BottomSheet {...presentation} title={strings.moveProjectTitle} onClose={onClose} labelledBy="move-task-title">
       <p className="text-muted">{task.title}</p>
       <p className="text-muted">{strings.subtreeHint}</p>
       {loading ? (

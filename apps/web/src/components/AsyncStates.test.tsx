@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../test/testUtils";
-import { EmptyState, ErrorState } from "./AsyncStates";
+import { EmptyState, ErrorState, ReadErrorState } from "./AsyncStates";
 
 describe("EmptyState", () => {
   it("keeps its message accessible and its friendly mark decorative", () => {
@@ -16,6 +16,21 @@ describe("EmptyState", () => {
   });
 
   describe("ErrorState", () => {
+    it("keeps a resource warning mounted while its retry is pending", async () => {
+      const reload = vi.fn();
+      const props = { resource: "Projects", error: null, refreshError: "offline", loading: false, reload };
+      const { rerender } = renderWithProviders(<ReadErrorState {...props} refreshing={false} />, { locale: "en" });
+      const alert = screen.getByRole("alert");
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(reload).toHaveBeenCalledOnce();
+      rerender(<ReadErrorState {...props} refreshing />);
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(screen.getByRole("button", { name: "Try again" })).toBeDisabled();
+      expect(alert).toHaveTextContent("The last loaded data remains visible.");
+      rerender(<ReadErrorState {...props} refreshError={null} refreshing={false} />);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
     it("does not repeat an identical generic message", () => {
       renderWithProviders(<ErrorState message="Something went wrong." />, {
         locale: "en",

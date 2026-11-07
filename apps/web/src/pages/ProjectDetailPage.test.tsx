@@ -1325,9 +1325,10 @@ describe("ProjectDetailPage task explanations", () => {
   it("opens the focused outcome editor on direct navigation and clears only the focus query when closed", async () => {
     renderProjectRoute("/projects/42?focus=outcome");
 
-    const dialog = await screen.findByRole("dialog");
+    const editor = await screen.findByPlaceholderText(strings.addCriterionPlaceholder);
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(`${strings.criteria}: Sommerfest planen`)).toBeInTheDocument();
-    expect(within(dialog).getByPlaceholderText(strings.addCriterionPlaceholder)).toHaveFocus();
+    expect(editor).toHaveFocus();
 
     await userEvent.click(
       within(dialog).getAllByRole("button", { name: strings.close })[0]!,
@@ -1412,10 +1413,9 @@ describe("ProjectDetailPage task explanations", () => {
     // A planning repair link is the `task.plan` intent, so it must reach the
     // same focused workflow as the rail, keyboard and detail value — not a
     // route-specific inspector or a focus field inside the task details.
-    const dialog = await screen.findByRole("dialog", {
-      name: strings.planning,
-    });
-    expect(within(dialog).getByLabelText(strings.planningScheduledFor)).toHaveFocus();
+    const editor = await screen.findByLabelText(strings.planningScheduledFor);
+    const dialog = screen.getByRole("dialog", { name: strings.planning });
+    expect(editor).toHaveFocus();
     expect(dialog.querySelectorAll(".task-planning-editor:not([hidden])")).toHaveLength(1);
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|7");
     expect(screen.getByLabelText("task-route-state")).toHaveTextContent("none|none");
@@ -1452,11 +1452,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     renderProjectRoute("/projects/42?focus=planning");
 
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
     expect(screen.getAllByRole("dialog", { name: strings.planning })).toHaveLength(1);
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|71");
   });
@@ -1468,9 +1464,8 @@ describe("ProjectDetailPage task explanations", () => {
 
     renderProjectRoute("/projects/42?focus=planning");
 
-    const dialog = await screen.findByRole("dialog", {
-      name: strings.planning,
-    });
+    await screen.findByLabelText(strings.planningScheduledFor);
+    const dialog = screen.getByRole("dialog", { name: strings.planning });
     await userEvent.click(
       within(dialog).getByRole("button", {
         name: strings.scheduleShortcutLabels.today,
@@ -1502,7 +1497,7 @@ describe("ProjectDetailPage task explanations", () => {
   ])("closes its route-owned planning workflow on %s", async (_name, entries, action) => {
     renderProjectRoute(entries.at(-1)!, entries);
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: action }));
 
     await waitFor(() =>
@@ -1520,21 +1515,13 @@ describe("ProjectDetailPage task explanations", () => {
   it("does not close a workflow that replaced the route-owned planning workflow", async () => {
     renderProjectRoute("/projects/42?focus=planning");
 
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
 
     // Once the user steers the single workflow slot elsewhere, the route no
     // longer owns it and must not close it when it drops its focus query.
     await userEvent.click(screen.getByRole("button", { name: "Plan another task" }));
 
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus="),
     );

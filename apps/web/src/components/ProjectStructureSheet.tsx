@@ -1,7 +1,7 @@
 import type { ProjectWithActions } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 
 /**
  * Focused `story.structure` workflow — the fixed row rail's `Struktur`
@@ -17,15 +17,16 @@ import { BottomSheet } from "./BottomSheet";
 export function ProjectStructureSheet({
   story,
   onClose,
+  ...presentation
 }: {
   story: ProjectWithActions;
   onClose: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
 
   return (
-    <BottomSheet title={`${strings.structure}: ${story.title}`} onClose={onClose}>
+    <BottomSheet {...presentation} title={`${strings.structure}: ${story.title}`} onClose={onClose}>
       <div className="stack">
         <button type="button" className="btn" onClick={() => dispatch({ type: "story.refine", story })}>
           {strings.workRefinement}

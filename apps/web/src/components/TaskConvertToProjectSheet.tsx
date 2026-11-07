@@ -5,7 +5,7 @@ import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { projectActivationPromptFromSnapshot, projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { useNavigate } from "react-router-dom";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
@@ -25,7 +25,7 @@ function openActionDescendants(tasks: Task[]): Task[] {
 }
 
 /** Focused `task.convertToProject` workflow — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskConvertToProjectSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const navigate = useNavigate();
   const detail = useTaskDetail();
@@ -135,6 +135,7 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
 
   return (
     <BottomSheet
+      {...presentation}
       title={`${strings.convertToProject}: ${currentTask.title}`}
       onClose={() => {
         if (!busy) onClose();

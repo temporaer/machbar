@@ -3,12 +3,12 @@ import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 
 const PRIORITIES = [1, 2, 3, 4, 5] as const;
 
 /** Focused `task.priority` editor — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskPrioritySheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskPrioritySheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -26,6 +26,7 @@ export function TaskPrioritySheet({ task, onClose }: { task: Task; onClose: () =
 
   return (
     <BottomSheet
+      {...presentation}
       title={`${strings.priority}: ${task.title}`}
       onClose={() => {
         if (!saving) onClose();

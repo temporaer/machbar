@@ -22,7 +22,7 @@ import {
   type TaskDetailFocusField,
 } from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
-import { ErrorState, EmptyState, LoadingState } from "../components/AsyncStates";
+import { ReadErrorState, EmptyState, LoadingState } from "../components/AsyncStates";
 import { PageHeader } from "../components/PageHeader";
 import { RefinementTools } from "../components/RefinementTools";
 import { ChildPolicyPrompt } from "../components/ChildPolicyPrompt";
@@ -69,24 +69,12 @@ export function ReviewPage() {
   const [workflowReturn, setWorkflowReturn] = useState<ReviewReturn | null>(null);
   const [workflowOpened, setWorkflowOpened] = useState(false);
   const [planningOpen, setPlanningOpen] = useState(false);
-  const {
-    data: items,
-    loading: itemsLoading,
-    error: itemsError,
-    reload: reloadItems,
-  } = useAsync(() => api.getReviewItems(), []);
-  const {
-    data: projects,
-    loading: projectsLoading,
-    error: projectsError,
-    reload: reloadProjects,
-  } = useAsync(() => api.getProjects(), []);
-  const {
-    data: tasks,
-    loading: tasksLoading,
-    error: tasksError,
-    reload: reloadTasks,
-  } = useAsync(() => api.searchTasks({}), []);
+  const itemsRead = useAsync(() => api.getReviewItems(), []);
+  const { data: items, loading: itemsLoading, reload: reloadItems } = itemsRead;
+  const projectsRead = useAsync(() => api.getProjects(), []);
+  const { data: projects, loading: projectsLoading } = projectsRead;
+  const tasksRead = useAsync(() => api.searchTasks({}), []);
+  const { data: tasks, loading: tasksLoading } = tasksRead;
   const projectActions = useProjectActions(projects ?? []);
   const rawTasks = flattenTasks(tasks ?? []);
   const taskActions = useTaskActions(rawTasks);
@@ -489,22 +477,14 @@ export function ReviewPage() {
   };
 
   const loading = itemsLoading || projectsLoading || tasksLoading;
-  const error = itemsError ?? projectsError ?? tasksError;
 
   return (
     <div>
       <PageHeader title={strings.reviewTitle} />
       {loading ? <LoadingState /> : null}
-      {error ? (
-        <ErrorState
-          message={error}
-          onRetry={() => {
-            reloadItems();
-            reloadProjects();
-            reloadTasks();
-          }}
-        />
-      ) : null}
+      <ReadErrorState resource={strings.reviewTitle} {...itemsRead} />
+      <ReadErrorState resource={strings.projects} {...projectsRead} />
+      <ReadErrorState resource={strings.task} {...tasksRead} />
       {items ? (
         <section className="section" aria-labelledby="review-queue-heading">
           <h2 id="review-queue-heading" className="section-title">

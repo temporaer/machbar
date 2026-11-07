@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Project } from "@machbar/shared";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import {
@@ -17,11 +17,12 @@ export function ProjectDeadlineSheet({
   story,
   onClose,
   onSave,
+  ...presentation
 }: {
   story: Project;
   onClose: () => void;
   onSave: (patch: { dueDate: string | null; activationResolution?: ProjectActivationResolution; expectedRevision?: number }) => Promise<void>;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +48,7 @@ export function ProjectDeadlineSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       title={strings.projectDeadlineTitle}
       onClose={() => {
         if (!saving) onClose();

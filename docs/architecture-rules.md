@@ -89,6 +89,11 @@ invalidate a request's result. External events use a bounded leading/trailing
 cadence; explicit mutation refreshes remain immediate. Do not add per-component
 throttles or another fetching layer to compensate for shared refresh behavior.
 
+Same-query read errors remain visible during retries and clear only on success;
+dependency changes clear their obsolete attribution. `ReadErrorState` wraps the
+existing `ErrorState` with a named resource and that query's own GET retry. It
+must not hide retained data, reset filters/drafts, or retry a mutation.
+
 ### Task mutations
 
 `taskMutations.ts` owns pure revision-safe task metadata execution and owner
@@ -180,6 +185,14 @@ drag/outline manipulation, optimistic row presentation, and rail visibility.
 `scripts/check-architecture.mjs` enforce this. Its exception map is empty:
 no surface outside the two hosts renders a focused workflow. Never add to it.
 
+Hosts own loading/error recovery even for ID-only commands. Keep usable editors
+mounted and put read feedback in `BottomSheet.headerStatus`; never fabricate
+missing task trees for completion or commitment withdrawal. Workflow contexts
+own each opening's object identity synchronously: delayed callbacks check
+`isCurrent(opening)` and close with that opening, including same-ID reopenings.
+Carry the original opener through recovery; only foreground sheets register
+modal isolation and restore eligible focus.
+
 ## Canonical primitive registry
 
 | Need | Canonical primitive or path |
@@ -204,6 +217,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
+| Resource-specific read recovery | `apps/web/src/components/AsyncStates.tsx::ReadErrorState` composes the existing `ErrorState` with sticky same-query errors and the failed query's GET-only retry. |
 | Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
@@ -219,7 +233,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
 | Agenda eligibility and available work selection | `apps/api/src/domain/agendaSelection.ts`; Today supplies `executionDate` and one refreshed instant for full execution eligibility, while `agenda.ts` retains attention-root precedence. `compiledViewProjection.ts` filters embedded Today execution with that same predicate and promotes eligible deeper work through unavailable intermediates. Week/Waiting retain default projections. |
-| Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx` |
+| Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx`; successful current-query reads own membership. Local field intents are query-lifetime/task/token-qualified, never whole-agenda copies or rollback snapshots. Higher revisions win; confirmed fields release only after a successful read started at/after acknowledgement. Confirmations are not write locks. |
 | Week attention-date/placement projection | `projectWeekAttention` in `packages/shared/src/index.ts`, shared by backend `weekAgenda.ts` and frontend `WeekPage.tsx` optimistic updates |
 | Exhaustive inventory filtering | `apps/web/src/lib/allInventory.ts` |
 | Refinement sizing semantics | `apps/web/src/lib/refinementHelpers.ts` |
@@ -242,7 +256,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task primary action | `task.primaryAction` in `useWorkItemCommands` clarifies captured tasks and otherwise uses the canonical guarded completion/reopen command. No swipe preferences or persistence; gesture thresholds and the separate lifecycle rail remain in `useHorizontalSwipe`/`TaskRow`. |
 | Horizontal row/card swipe | `apps/web/src/lib/useHorizontalSwipe.ts`; guided capture opts out of interactive-control starts and reuses its existing area navigation |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
-| Modal sheet viewport and focus | `BottomSheet` owns visual viewport resize/scroll bounds, scroll containment, modal isolation and focus; forms do not add keyboard offsets. |
+| Modal sheet viewport and focus | `BottomSheet` owns visual viewport resize/scroll bounds, scroll containment, modal isolation and focus; `BottomSheetPresentationProps` carries host status, original opener and suspension without another workflow wrapper. Restoration stays in the foreground sheet or falls back to `#main-content`, and queued restoration must not steal a later opening's focus. Forms do not add keyboard offsets. |
 | Markdown note editing and input | `MarkdownEditor` (CodeMirror 6), `MarkdownEditorHandle`; existing toolbar/attachment flow and caller-owned explicit save/cancel |
 | Quick note append / current-note tail | `NotesAppend`, `NotesTail`, `noteMarkdown.ts` / `noteEntries.ts`, and task/project `appendNotes` actions; existing atomic notes endpoints |
 | Markdown attachment references and projections | `packages/shared/src/paperlessMarkdown.ts`, `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |

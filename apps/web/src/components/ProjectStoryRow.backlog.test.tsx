@@ -199,8 +199,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, 100);
     fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Projekt starten" }));
 
-    const dialog = await screen.findByRole("dialog");
-    const driver = within(dialog).getByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
+    const driver = await screen.findByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
+    const dialog = screen.getByRole("dialog");
     await userEvent.selectOptions(driver, "2");
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 

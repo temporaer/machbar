@@ -150,6 +150,43 @@ describe("useAsync", () => {
     });
   });
 
+  it("keeps an initial failure visible during delayed recovery", async () => {
+    const retry = deferred<string>();
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error("initial offline"))
+      .mockReturnValueOnce(retry.promise);
+    const { result } = renderHook(() => useAsync(fetcher), { wrapper });
+    await waitFor(() => expect(result.current.error).toBe("initial offline"));
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.loading).toBe(true));
+    expect(result.current).toMatchObject({ data: null, error: "initial offline" });
+    await act(async () => retry.resolve("recovered"));
+    expect(result.current).toMatchObject({ data: "recovered", error: null, loading: false });
+  });
+
+  it("drops an obsolete warning when the resource changes during retry", async () => {
+    const obsolete = deferred<string>();
+    const current = deferred<string>();
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockResolvedValueOnce("old")
+      .mockRejectedValueOnce(new Error("old offline"))
+      .mockReturnValueOnce(obsolete.promise)
+      .mockReturnValueOnce(current.promise);
+    const { result, rerender } = renderHook(({ query }) => useAsync(fetcher, [query]), {
+      wrapper, initialProps: { query: "old" },
+    });
+    await waitFor(() => expect(result.current.data).toBe("old"));
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.refreshError).toBe("old offline"));
+    act(() => result.current.reload());
+    rerender({ query: "new" });
+    expect(result.current).toMatchObject({ data: null, loading: true, error: null, refreshError: null });
+    await act(async () => obsolete.reject(new Error("obsolete retry")));
+    expect(result.current).toMatchObject({ error: null, refreshError: null });
+    await act(async () => current.resolve("new"));
+    expect(result.current.data).toBe("new");
+  });
+
   it("does not let a slower previous request overwrite a newer result", async () => {
     const first = deferred<string>();
     const second = deferred<string>();
@@ -218,10 +255,27 @@ describe("useAsync", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     await act(async () => failed.reject(new Error("offline")));
     expect(fetcher).toHaveBeenCalledTimes(3);
-    expect(result.current).toMatchObject({ data: "stable", loading: false, refreshing: true });
+    expect(result.current).toMatchObject({ data: "stable", loading: false, refreshing: true, refreshError: "offline" });
     await act(async () => trailing.resolve("updated"));
     expect(result.current).toMatchObject({ data: "updated", refreshing: false, refreshError: null });
     expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["stable", ""])("keeps the refresh warning for %j until a retry succeeds", async (initial) => {
+    const retry = deferred<string>();
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockResolvedValueOnce(initial)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockReturnValueOnce(retry.promise);
+    const { result } = renderHook(() => useAsync(fetcher), { wrapper });
+    await waitFor(() => expect(result.current.data).toBe(initial));
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.refreshError).toBe("offline"));
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.refreshing).toBe(true));
+    expect(result.current).toMatchObject({ data: initial, error: null, refreshError: "offline" });
+    await act(async () => retry.resolve("recovered"));
+    expect(result.current).toMatchObject({ data: "recovered", refreshError: null, refreshing: false });
   });
 
   it("discards a pending query and its queued refresh when dependencies change", async () => {

@@ -12,12 +12,12 @@ import { updatePhysicalContextSelection } from "../lib/physicalContextSelection"
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useAsync } from "../lib/useAsync";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { PhysicalContextPicker } from "./PhysicalContextPicker";
 
 /** Focused `task.contexts` editor — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskContextsSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskContextsSheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
@@ -69,6 +69,7 @@ export function TaskContextsSheet({ task, onClose }: { task: Task; onClose: () =
 
   return (
     <BottomSheet
+      {...presentation}
       title={strings.physicalContexts}
       onClose={() => {
         if (!saving) onClose();

@@ -12,7 +12,7 @@ import { useIdentity } from "../lib/identity";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
-import { ErrorState, LoadingState } from "../components/AsyncStates";
+import { ErrorState, LoadingState, ReadErrorState } from "../components/AsyncStates";
 import { PageHeader } from "../components/PageHeader";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
@@ -23,6 +23,39 @@ import { formatDate } from "../lib/format";
 import { QuickAdd } from "../components/QuickAdd";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
+import { useTaskActions } from "../lib/useTaskActions";
+import { localizedErrorMessage } from "../lib/errorMessage";
+
+type WeekTaskItem = Extract<WeekPlanningItem, { role: "task" }>;
+interface PlacementIntent {
+  selection: symbol;
+  token: number;
+  taskId: number;
+  field: "scheduledDate" | "revisitAt";
+  value: string | null;
+  revision: number;
+  acknowledgedAt: number | null;
+}
+interface MoveError {
+  selection: symbol;
+  token: number;
+  taskId: number;
+  title: string;
+  message: string;
+}
+interface WeekDrag {
+  selection: symbol;
+  id: number;
+  role: WeekPlanningItem["role"];
+  revision: number;
+  placement: WeekPlanningItem["placement"];
+  attentionDate: string | null;
+}
+
+function findAgendaItem(agenda: WeekAgendaResponse, id: number) {
+  return agenda.days.flatMap(day => day.items).find(item => item.id === id) ??
+    agenda.unplanned.find(item => item.id === id);
+}
 
 function weekWindowStart(date: Date): string {
   return toIsoCalendarDate(date);
@@ -108,14 +141,12 @@ function projectAttention(
 
 function moveScheduled(
   agenda: WeekAgendaResponse,
-  item: WeekPlanningItem,
+  item: WeekTaskItem,
   date: string | null,
   today: string,
   householdTimezone: string,
 ): WeekAgendaResponse {
-  const task = item.task ? { ...item.task, scheduledDate: date } : item.task;
-  const project = item.project ? { ...item.project, scheduledDate: date } : item.project;
-  const withDate: WeekPlanningItem = { ...item, scheduledDate: date, task, project } as WeekPlanningItem;
+  const withDate: WeekTaskItem = { ...item, scheduledDate: date, task: { ...item.task, scheduledDate: date } };
   const projected = projectAttention(withDate, today, householdTimezone);
   const next: WeekPlanningItem = projected
     ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
@@ -123,15 +154,12 @@ function moveScheduled(
   return addItem(removeItem(agenda, item.id), next);
 }
 
-function moveRevisit(
-  agenda: WeekAgendaResponse,
-  item: WeekPlanningItem,
+function revisitMoveValue(
+  item: WeekTaskItem,
   date: string | null,
-  today: string,
   householdTimezone: string,
-): WeekAgendaResponse {
-  const currentRevisitAt =
-    item.role === "task" ? item.task?.revisitAt : item.project?.revisitAt;
+): string | null {
+  const currentRevisitAt = item.task.revisitAt;
   const revisitAt =
     date && currentRevisitAt
       ? moveRevisitToCalendarDate(currentRevisitAt, date, householdTimezone)
@@ -141,9 +169,17 @@ function moveRevisit(
   if (date && currentRevisitAt && revisitAt === null) {
     throw new Error("invalid_revisit_time");
   }
-  const task = item.task ? { ...item.task, revisitAt } : item.task;
-  const project = item.project ? { ...item.project, revisitAt } : item.project;
-  const withDate: WeekPlanningItem = { ...item, task, project } as WeekPlanningItem;
+  return revisitAt;
+}
+
+function moveRevisitAt(
+  agenda: WeekAgendaResponse,
+  item: WeekTaskItem,
+  revisitAt: string | null,
+  today: string,
+  householdTimezone: string,
+): WeekAgendaResponse {
+  const withDate: WeekTaskItem = { ...item, task: { ...item.task, revisitAt } };
   const projected = projectAttention(withDate, today, householdTimezone);
   const next: WeekPlanningItem = projected
     ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
@@ -178,11 +214,13 @@ function WeekCard({
   item,
   members,
   onDragStart,
+  onDragEnd,
   onOpen,
 }: {
   item: WeekPlanningItem;
   members: Member[];
   onDragStart: (item: WeekPlanningItem) => void;
+  onDragEnd: () => void;
   onOpen: (item: WeekPlanningItem) => void;
 }) {
   const strings = useStrings();
@@ -252,6 +290,7 @@ function WeekCard({
         event.dataTransfer.setData("text/plain", String(item.id));
         onDragStart(item);
       }}
+      onDragEnd={onDragEnd}
     >
       <button
         type="button"
@@ -293,25 +332,24 @@ function WeekDropZone({
   date,
   items,
   members,
-  dragged,
   onDropItem,
   onDragStart,
+  onDragEnd,
   onOpen,
 }: {
   label: string;
   date: string | null;
   items: WeekPlanningItem[];
   members: Member[];
-  dragged: WeekPlanningItem | null;
-  onDropItem: (item: WeekPlanningItem, date: string | null) => void;
+  onDropItem: (date: string | null) => void;
   onDragStart: (item: WeekPlanningItem) => void;
+  onDragEnd: () => void;
   onOpen: (item: WeekPlanningItem) => void;
 }) {
   const strings = useStrings();
   const drop = (event: DragEvent) => {
     event.preventDefault();
-    // A deadline is a hard constraint: generic drag never moves it.
-    if (dragged && dragged.placement !== "due") onDropItem(dragged, date);
+    onDropItem(date);
   };
   return (
     <section
@@ -331,6 +369,7 @@ function WeekDropZone({
               item={item}
               members={members}
               onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
               onOpen={onOpen}
             />
           ))
@@ -358,14 +397,29 @@ export function WeekPage() {
     () => calendarDateForInstant(now, householdTimezone) ?? toIsoCalendarDate(new Date()),
     [householdTimezone, now],
   );
-  const [agenda, setAgenda] = useState<WeekAgendaResponse | null>(null);
-  const [dragged, setDragged] = useState<WeekPlanningItem | null>(null);
-  const [mutationError, setMutationError] = useState<string | null>(null);
   const loadKey = `${start}:${scope}:${currentMemberId ?? "none"}`;
-  const { data, loading, error, reload } = useAsync(
-    () => api.getWeekAgenda(start, currentMemberId, scope),
-    [loadKey],
+  const selection = useMemo(() => Symbol(loadKey), [loadKey]);
+  const selectionRef = useRef<symbol | null>(selection);
+  selectionRef.current = selection;
+  const acknowledgement = useRef(0);
+  const nextToken = useRef(0);
+  const operations = useRef(new Map<number, { selection: symbol; token: number; pending: boolean }>());
+  const dragged = useRef<WeekDrag | null>(null);
+  const [intents, setIntents] = useState<PlacementIntent[]>([]);
+  const [moveErrors, setMoveErrors] = useState<MoveError[]>([]);
+  const weekRead = useAsync(
+    async () => {
+      const startedAtAcknowledgement = acknowledgement.current;
+      const agenda = await api.getWeekAgenda(start, currentMemberId, scope);
+      return { selection, startedAtAcknowledgement, agenda };
+    },
+    [selection],
   );
+  const { data, loading } = weekRead;
+  const base = data?.selection === selection ? data.agenda : null;
+  const taskActions = useTaskActions(base
+    ? [...base.days.flatMap(day => day.items), ...base.unplanned].flatMap(item => item.role === "task" ? [item.task] : [])
+    : []);
   const selectScope = (nextScope: AgendaScope) => {
     setScope(nextScope);
     writeTodayScope(nextScope);
@@ -380,66 +434,107 @@ export function WeekPage() {
   }, [timezoneLoaded, today]);
 
   useEffect(() => {
-    if (data) setAgenda(data);
-  }, [data]);
-
-  const applySchedule = async (
-    item: Extract<WeekPlanningItem, { role: "task" }>,
-    date: string | null,
-  ) => {
-    if (!agenda) return;
-    const previous = agenda;
-    setMutationError(null);
-    setAgenda(sortAgenda(moveScheduled(agenda, item, date, today, householdTimezone)));
-    try {
-      await dispatch({ type: "workItem.schedule", item, date });
-    } catch (cause) {
-      setAgenda(previous);
-      setMutationError(cause instanceof Error ? cause.message : strings.error);
+    selectionRef.current = selection;
+    setIntents(current => current.filter(intent => intent.selection === selection));
+    setMoveErrors(current => current.filter(error => error.selection === selection));
+    for (const [id, operation] of operations.current) {
+      if (operation.selection !== selection) operations.current.delete(id);
     }
-  };
+    return () => {
+      if (selectionRef.current === selection) selectionRef.current = null;
+      if (dragged.current?.selection === selection) dragged.current = null;
+    };
+  }, [selection]);
 
-  const applyRevisitDate = async (
-    item: WeekPlanningItem,
-    date: string | null,
-  ) => {
-    if (!agenda) return;
-    const previous = agenda;
-    setMutationError(null);
+  useEffect(() => {
+    if (selectionRef.current !== selection || data?.selection !== selection) return;
+    setIntents(current => current.filter(intent =>
+      intent.selection === selection &&
+      (intent.acknowledgedAt === null || data.startedAtAcknowledgement < intent.acknowledgedAt)));
+  }, [data, selection]);
+
+  let currentAgenda = base;
+  for (const intent of intents) {
+    if (!currentAgenda || intent.selection !== selection) continue;
+    if (intent.acknowledgedAt !== null && data && data.startedAtAcknowledgement >= intent.acknowledgedAt) continue;
+    const item = findAgendaItem(currentAgenda, intent.taskId);
+    if (!item || item.role !== "task" || item.revision > intent.revision) continue;
+    currentAgenda = intent.field === "scheduledDate"
+      ? moveScheduled(currentAgenda, item, intent.value, today, householdTimezone)
+      : moveRevisitAt(currentAgenda, item, intent.value, today, householdTimezone);
+  }
+  if (currentAgenda) currentAgenda = sortAgenda(currentAgenda);
+
+  const applyMove = async (item: WeekTaskItem, date: string | null, field: PlacementIntent["field"]) => {
+    const token = ++nextToken.current;
+    const commandItem = { ...item, task: taskActions.projectTask(item.task) };
+    operations.current.set(item.id, { selection, token, pending: true });
+    setMoveErrors(current => current.filter(error => error.selection !== selection || error.taskId !== item.id));
     try {
-      setAgenda(
-        sortAgenda(moveRevisit(agenda, item, date, today, householdTimezone)),
-      );
-      await dispatch({
-        type: "workItem.setRevisitDate",
-        item,
-        date,
-        householdTimezone,
-      });
+      const intent: PlacementIntent = {
+        selection, token, taskId: item.id, field,
+        value: field === "scheduledDate" ? date : revisitMoveValue(commandItem, date, householdTimezone),
+        revision: commandItem.task.revision, acknowledgedAt: null,
+      };
+      setIntents(current => [...current, intent]);
+      const result = field === "scheduledDate"
+        ? await dispatch({ type: "workItem.schedule", item: commandItem, date })
+        : await dispatch({ type: "workItem.setRevisitDate", item: commandItem, date, householdTimezone });
+      if (selectionRef.current !== selection || operations.current.get(item.id)?.token !== token) return;
+      if (!result || !("kind" in result) || result.id !== item.id) throw new Error(strings.error);
+      const acknowledgedAt = ++acknowledgement.current;
+      setIntents(current => current.flatMap(existing => {
+        if (existing.selection !== selection || existing.taskId !== item.id || existing.field !== field) return [existing];
+        if (existing.token === token) return [{ ...intent, value: result[field], revision: result.revision, acknowledgedAt }];
+        return existing.acknowledgedAt !== null && existing.revision <= result.revision ? [] : [existing];
+      }));
+      setMoveErrors(current => current.filter(error => error.selection !== selection || error.taskId !== item.id || error.token !== token));
+      // Canonical invalidation can start before this acknowledgement is observed.
+      weekRead.reload();
     } catch (cause) {
-      setAgenda(previous);
-      setMutationError(
-        cause instanceof Error && cause.message === "invalid_revisit_time"
+      if (selectionRef.current !== selection || operations.current.get(item.id)?.token !== token) return;
+      setIntents(current => current.filter(intent => intent.selection !== selection || intent.token !== token));
+      const message = cause instanceof Error && cause.message === "invalid_revisit_time"
           ? strings.invalidRevisitTime
-          : cause instanceof Error
-            ? cause.message
-            : strings.error,
-      );
+          : localizedErrorMessage(cause, strings);
+      setMoveErrors(current => [
+        ...current.filter(error => error.selection !== selection || error.taskId !== item.id),
+        { selection, token, taskId: item.id, title: item.title, message },
+      ]);
+    } finally {
+      const operation = operations.current.get(item.id);
+      if (operation?.selection === selection && operation.token === token) operation.pending = false;
     }
   };
 
-  // Drag routes to whichever date field is responsible for the item's
-  // current placement: a deadline (`due`) is never moved by generic drag.
-  const handleDropItem = (item: WeekPlanningItem, date: string | null) => {
-    if (item.placement === "due" || item.role !== "task") return;
-    if (item.placement === "revisit") {
-      void applyRevisitDate(item, date);
+  const handleDropItem = (date: string | null) => {
+    const drag = dragged.current;
+    dragged.current = null;
+    if (!drag || drag.selection !== selection || selectionRef.current !== selection || !base) return;
+    if (drag.placement === "due" || drag.role !== "task") return;
+    const item = findAgendaItem(base, drag.id);
+    const displayed = currentAgenda ? findAgendaItem(currentAgenda, drag.id) : undefined;
+    const operation = operations.current.get(drag.id);
+    const pending = taskActions.isPending(drag.id) || (operation?.selection === selection && operation.pending);
+    const changed = !item || !displayed || item.role !== drag.role || item.revision !== drag.revision ||
+      displayed.placement !== drag.placement || displayed.attentionDate !== drag.attentionDate;
+    if (pending || changed) {
+      const token = operation?.selection === selection ? operation.token : ++nextToken.current;
+      setMoveErrors(current => [
+        ...current.filter(error => error.selection !== selection || error.taskId !== drag.id),
+        { selection, token, taskId: drag.id, title: item?.title ?? strings.task, message: pending ? strings.weekMovePending : strings.weekDragChanged },
+      ]);
       return;
     }
-    void applySchedule(item, date);
+    if (item.role === "task") void applyMove(item, date, drag.placement === "revisit" ? "revisitAt" : "scheduledDate");
+  };
+  const startDrag = (item: WeekPlanningItem) => {
+    dragged.current = { selection, id: item.id, role: item.role, revision: item.revision, placement: item.placement, attentionDate: item.attentionDate };
+  };
+  const endDrag = () => {
+    if (dragged.current?.selection === selection) dragged.current = null;
   };
 
-  const currentAgenda = agenda;
   const title = strings.weekPlanning;
   const formattedRange = useMemo(() => {
     const end = addIsoCalendarDays(start, 6);
@@ -512,8 +607,9 @@ export function WeekPage() {
           ← {strings.today}
         </Link>
         {loading ? <LoadingState /> : null}
-        {error ? <ErrorState message={error} onRetry={reload} /> : null}
-        {mutationError ? <p className="capture-error" role="alert">{mutationError}</p> : null}
+        <ReadErrorState resource={strings.weekPlanning} {...weekRead} />
+        {moveErrors.filter(error => error.selection === selection).map(error =>
+          <ErrorState key={`${error.taskId}:${error.token}`} title={error.title} message={error.message} />)}
         {currentAgenda ? (
           <>
             <p className="text-muted" id="week-gesture-hint">{strings.weekPlanningHint}</p>
@@ -525,9 +621,9 @@ export function WeekPage() {
                   date={day.date}
                   items={day.items}
                   members={members}
-                  dragged={dragged}
                   onDropItem={handleDropItem}
-                  onDragStart={setDragged}
+                  onDragStart={startDrag}
+                  onDragEnd={endDrag}
                   onOpen={(item) => {
                     if (item.role === "task") {
                       dispatch({ type: "task.open", taskId: item.id });
@@ -543,9 +639,9 @@ export function WeekPage() {
               date={null}
               items={currentAgenda.unplanned}
               members={members}
-              dragged={dragged}
               onDropItem={handleDropItem}
-              onDragStart={setDragged}
+              onDragStart={startDrag}
+              onDragEnd={endDrag}
               onOpen={(item) => {
                 if (item.role === "task") {
                   dispatch({ type: "task.open", taskId: item.id });

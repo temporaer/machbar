@@ -9,7 +9,7 @@ import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import {
   LoadingState,
-  ErrorState,
+  ReadErrorState,
   EmptyState,
 } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
@@ -30,15 +30,11 @@ export function InboxPage() {
     setScope(nextScope);
     writeTodayScope(nextScope);
   };
-  const {
-    data: loadedTasks,
-    loading,
-    error,
-    reload,
-  } = useAsync(
+  const inboxRead = useAsync(
     () => api.getInbox(currentMemberId, scope),
     [currentMemberId, scope],
   );
+  const { data: loadedTasks, loading } = inboxRead;
   const actions = useTaskActions(flattenTasks(loadedTasks ?? []));
   const { rows } = useRetainedPlacement({ rows: loadedTasks ?? [] }, actions.holdingIds,
     actions.projectTask, `${scope}:${currentMemberId}`);
@@ -100,7 +96,7 @@ export function InboxPage() {
           <span aria-hidden="true">›</span>
         </Link>
         {loading ? <LoadingState /> : null}
-        {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        <ReadErrorState resource={strings.inbox} {...inboxRead} />
         {tasks ? (
           tasks.length === 0 ? (
             <EmptyState message={strings.clarifyEmpty} />

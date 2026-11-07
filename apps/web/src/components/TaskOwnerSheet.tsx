@@ -9,7 +9,7 @@ import {
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useLocale } from "../lib/locale";
 import { useStrings } from "../lib/strings";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import {
   TaskOwnerChoiceGroup,
@@ -38,6 +38,7 @@ export function TaskOwnerSheet({
   inheritanceSource,
   onClose,
   onSelect,
+  ...presentation
 }: {
   title: string;
   taskTitle: string;
@@ -49,7 +50,7 @@ export function TaskOwnerSheet({
   inheritanceSource: "parent" | "project" | null;
   onClose: () => void;
   onSelect: (choice: TaskOwnerChoice, cleanedTitle?: string) => Promise<void>;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const { locale } = useLocale();
   const [saving, setSaving] = useState(false);
@@ -91,6 +92,7 @@ export function TaskOwnerSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       title={title}
       onClose={() => {
         if (!saving) onClose();

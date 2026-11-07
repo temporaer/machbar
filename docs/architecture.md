@@ -664,6 +664,28 @@ a leading/trailing one-second cadence, including a final refresh after a burst.
 Explicit mutation refreshes remain immediate; hidden-tab polling and visible
 eligibility timers retain their existing behavior.
 
+Read failures remain attributed to the same resource through delayed retries,
+including successful empty results; only success or a query change clears the
+warning. `ReadErrorState` composes the existing `ErrorState` with resource copy
+and the failed query's own retry, leaving populated views and filters mounted.
+Focused workflow hosts use the same feedback in `BottomSheet.headerStatus` or
+a named recovery sheet when no usable matching task/project exists. Completion
+and commitment withdrawal require fetched project detail, not an invented empty
+task tree. Context-owned opening identity guards stale close/retry/handoff
+callbacks before React renders; optional sheet presentation props retain the
+original opener and unregister suspended sheets without discarding drafts.
+
+Week keeps an authoritative query base plus narrow task-date intents, rather
+than copied agendas or whole-snapshot rollback. Member/scope/window selection
+has a unique lifetime even for A-to-B-to-A navigation. Reads own membership;
+date feedback never resurrects an omitted task or overwrites a higher revision.
+Fetcher-start provenance and write acknowledgement distinguish old reads from
+successful post-acknowledgement revalidation. Failed reads retain confirmed
+dates, but only pending intents block another move. Drag placement is checked
+against current presentation while identity/revision and mutation input come
+from current authoritative/canonical data. Existing action hooks retain
+mutation, conflict and notification semantics.
+
 For temporary incident tracing, set `sessionStorage["machbar:refresh-debug"] =
 "1"` in the affected browser tab. Console diagnostics contain only refresh
 reason, monotonic time, version, and SSE lifecycle (never change-event payloads
