@@ -84,7 +84,7 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
  * `useWorkItemCommands()` routes into the one focused workflow that also
  * serves the fixed row rail (`Später`/`Struktur`), the keyboard, and
  * Review's repairs. Set values have direct editors; unset optional properties
- * live in the summary's More options menu. Tags and places stay one tap away.
+ * live in the summary's More options menu. Tags, places and waiting stay one tap away.
  * The header action menu owns uncommon commands, sharing and attachments.
  *
  * What remains here is genuinely document-shaped and has no other home:
@@ -118,6 +118,8 @@ export function TaskDetailSheet() {
   const [classificationBusy, setClassificationBusy] = useState(false);
   const titleFieldRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const splitShortcutRef = useRef<HTMLButtonElement>(null);
+  const splitShortcutTaskIdRef = useRef<number | null>(null);
   const notesRef = useRef<MarkdownEditorHandle>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
@@ -179,6 +181,7 @@ export function TaskDetailSheet() {
     const nextBaseline = textFieldsSnapshot(loadedTask);
     const isNewTask = lastLoadedTaskIdRef.current !== loadedTask.id;
     if (isNewTask) {
+      splitShortcutTaskIdRef.current = null;
       setSaveError(null);
       setTitleEditing(false);
       setNotesEditing(false);
@@ -216,6 +219,16 @@ export function TaskDetailSheet() {
     if (workflowKind === null && lastLoadedTaskIdRef.current !== null) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowKind]);
+
+  useEffect(() => {
+    if (workflowKind === null && splitShortcutTaskIdRef.current !== null && splitShortcutTaskIdRef.current === openTaskId) {
+      // The first batch classifies the capture, removing its shortcut.
+      if (!splitShortcutRef.current) {
+        splitShortcutTaskIdRef.current = null;
+        titleFieldRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+      }
+    }
+  }, [workflowKind, loadedTask, openTaskId]);
 
   // Focus hints only address this sheet's own document content; scalar
   // properties are reached through their semantic command instead.
@@ -672,7 +685,11 @@ export function TaskDetailSheet() {
                 {task.reminders.length > 0 && reminderSummary ? <DetailPropertyPill label={strings.detailReminder} onClick={() => runCommand("task.reminders")}>
                   {reminderSummary.label}{reminderSummary.overflowCount > 0 ? ` +${reminderSummary.overflowCount}` : ""}
                 </DetailPropertyPill> : null}
-                {task.externalWait ? <DetailPropertyPill label={strings.waitingFor} onClick={() => runCommand("task.waitingLifecycle")}>{waitValue || strings.waiting}</DetailPropertyPill> : null}
+                {task.externalWait ? <DetailPropertyPill label={strings.waitingFor} onClick={() => runCommand("task.waitingLifecycle")}>{waitValue || strings.waiting}</DetailPropertyPill> : (
+                  <DetailPropertyPill variant="unset" onClick={() => runCommand("task.waitingLifecycle")}>
+                    {strings.detailAddWait}
+                  </DetailPropertyPill>
+                )}
                 {task.repeatAfterDays !== null ? <DetailPropertyPill onClick={() => runCommand("task.recurrence")}>
                   {strings.detailRecurrence(task.repeatAfterDays)}
                 </DetailPropertyPill> : null}
@@ -697,7 +714,6 @@ export function TaskDetailSheet() {
               {!isReference ? <DetailActionMenu label={strings.detailMoreOptions} resetKey={task.id} items={[
                 ...(!revisitAtValue ? [{ key: "revisit", icon: "schedule" as const, label: strings.detailAddRevisit, onClick: () => runCommand("task.availability") }] : []),
                 ...(!task.reminders.length ? [{ key: "reminder", icon: "today" as const, label: strings.detailAddReminder, onClick: () => runCommand("task.reminders") }] : []),
-                ...(!task.externalWait ? [{ key: "wait", icon: "waiting" as const, label: strings.detailAddWait, onClick: () => runCommand("task.waitingLifecycle") }] : []),
                 ...(task.repeatAfterDays === null ? [{ key: "recurrence", icon: "recurrence" as const, label: strings.detailAddRecurrence, onClick: () => runCommand("task.recurrence") }] : []),
                 ...(task.priority === null ? [{ key: "priority", icon: "priority" as const, label: strings.detailAddPriority, onClick: () => runCommand("task.priority") }] : []),
                 ...(!task.dependencies.length ? [{ key: "dependencies", icon: "criteria" as const, label: strings.detailAddPrerequisites, onClick: () => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" }) }] : []),
@@ -736,6 +752,7 @@ export function TaskDetailSheet() {
           <PaperlessAttachmentStrip attachments={attachments} />
 
           {taskIsCapturedInboxItem ? (
+            <>
             <div className="capture-shape-actions">
               <button
                 type="button"
@@ -762,6 +779,26 @@ export function TaskDetailSheet() {
                 {strings.classifyAsSomeday}
               </button>
             </div>
+            {task.repeatAfterDays === null ? (
+              <div className="row">
+                <button
+                  ref={splitShortcutRef}
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={classificationBusy || contentDirty || savingTextFields || deleting || taskMutationPending}
+                  onBlur={() => {
+                    if (workflowKind === null) splitShortcutTaskIdRef.current = null;
+                  }}
+                  onClick={() => {
+                    splitShortcutTaskIdRef.current = task.id;
+                    runCommand("task.split");
+                  }}
+                >
+                  {strings.splitTaskAddHeading}
+                </button>
+              </div>
+            ) : null}
+            </>
           ) : null}
 
           <section className={`section task-notes-section${!task.notes && !notesEditing ? " detail-empty-content" : ""}`}>

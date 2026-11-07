@@ -39,6 +39,7 @@ vi.mock("../lib/api", () => ({
     previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     previewProjectSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
+    createTaskStepBatchForProject: vi.fn(),
     getMembers: vi.fn(),
     getProject: vi.fn(),
     deleteProject: vi.fn(),
@@ -181,6 +182,7 @@ describe("ProjectDetailPage task explanations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage?.clear();
+    window.sessionStorage?.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([]);
     mockedApi.getProjects.mockResolvedValue([]);
@@ -590,7 +592,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.getByText(strings.projectEmptyStepsHint)).toBeVisible();
     if (status === "active") expect(screen.getByRole("heading", { name: strings.stuckProjectHeading })).toBeVisible();
     expect(screen.getByText(/Aufgaben: 0 offen/)).toBeVisible();
-    expect(screen.queryByRole("button", { name: strings.addNextAction }) !== null).toBe(status === "active" || status === "backlog");
+    expect(screen.queryByRole("button", { name: strings.projectTasksTitle }) !== null).toBe(status === "active" || status === "backlog");
     await openDetailActions();
     const menu = screen.getByRole("dialog", { name: "Aktionen" });
     for (const action of project.availableActions) {
@@ -604,7 +606,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { level: 1 });
     expect(screen.queryByRole("button", { name: /Wieder ansehen am/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: strings.addNextAction })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
   });
 
   it.each(["active", "archived"] as const)("defers a %s project through the atomic lifecycle command with explicit withdrawal", async (status) => {
@@ -669,14 +671,37 @@ describe("ProjectDetailPage task explanations", () => {
       .not.toBeInTheDocument();
   });
 
-  it("exposes next-step capture and structure actions beside the project tasks", async () => {
+  it.each(["empty", "context-rich", "nested"] as const)("puts one task-entry opener beside the %s project summary without demoting context", async (kind) => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        notes: kind === "context-rich" ? "Keep the room dimensions and constraints in view." : "",
+        parentId: kind === "nested" ? 3 : null,
+        acceptanceCriteria: kind === "context-rich" ? [makeCriterion({ workItemId: 42 })] : [],
+      }),
+      ...(kind === "nested" ? {
+        ancestors: [{ id: 3, role: "story" as const, title: "Haus verbessern" }],
+        childStories: [makeProject({ id: 73, parentId: 42, title: "Wände vorbereiten" })],
+      } : {}),
+      tasks: [],
+    });
     renderProjectRoute("/projects/42");
 
     const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
     const section = tasks.closest("section")!;
-    expect(
-      within(section).getByRole("button", { name: strings.addNextAction }),
-    ).toBeInTheDocument();
+    const overview = screen.getByLabelText(strings.projectOverview);
+    const opener = within(overview).getByRole("button", { name: strings.projectTasksTitle });
+    expect(screen.getAllByRole("button", { name: strings.projectTasksTitle })).toHaveLength(1);
+    expect(opener.parentElement).toHaveTextContent(/Aufgaben: 0 offen/);
+    expect(within(section).queryByRole("button", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
+    const notes = screen.getByRole("heading", { name: strings.notes }).closest("section")!;
+    const outcome = screen.getByRole("heading", { name: new RegExp(strings.outcomeSectionTitle) }).closest("section")!;
+    for (const [before, after] of [[overview, notes], [notes, outcome], [outcome, section]]) {
+      expect(before!.compareDocumentPosition(after!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+    if (kind === "context-rich") expect(within(notes).getByText("Keep the room dimensions and constraints in view.")).toBeVisible();
+    if (kind === "nested") expect(within(section).getByText("Wände vorbereiten")).toBeVisible();
     expect(
       within(section).getByRole("button", { name: strings.structure }),
     ).toBeInTheDocument();
@@ -707,7 +732,7 @@ describe("ProjectDetailPage task explanations", () => {
       within(structureSheet).getByRole("button", { name: strings.workRefinement }),
     ).toBeInTheDocument();
     expect(
-      within(structureSheet).getByRole("button", { name: strings.structurePlanWork }),
+      within(structureSheet).getByRole("button", { name: strings.projectTasksTitle }),
     ).toBeInTheDocument();
     expect(
       within(structureSheet).getByRole("button", {
@@ -744,21 +769,57 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("starts project-scoped next-action capture without duplicating task creation", async () => {
+  it("opens project-scoped batch entry from the summary, retaining drafts and returning focus on close", async () => {
     renderProjectRoute("/projects/42");
 
-    const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
-    const section = tasks.closest("section")!;
-    await userEvent.click(
-      within(section).getByRole("button", { name: strings.addNextAction }),
-    );
+    const overview = await screen.findByLabelText(strings.projectOverview);
+    const opener = within(overview).getByRole("button", { name: strings.projectTasksTitle });
+    await userEvent.click(opener);
 
-    expect(
-      await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder),
-    ).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: strings.projectTasksTitle });
+    expect(within(dialog).getByText("Ort reservieren")).toBeVisible();
+    const first = within(dialog).getByPlaceholderText(strings.splitTaskRowPlaceholder);
+    await userEvent.type(first, "Raum ausmessen");
+    await userEvent.type(within(dialog).getAllByPlaceholderText(strings.splitTaskRowPlaceholder)[1]!, "Material bestellen");
     expect(screen.getByLabelText("project-route")).toHaveTextContent(
       "/projects/42?focus=next-action",
     );
+    await userEvent.click(within(dialog).getByText(strings.close, { exact: true }));
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(screen.queryByRole("dialog", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42|");
+
+    await userEvent.keyboard("{Enter}");
+    const reopened = await screen.findByRole("dialog", { name: strings.projectTasksTitle });
+    expect(within(reopened).getByDisplayValue("Raum ausmessen")).toBeVisible();
+    expect(within(reopened).getByDisplayValue("Material bestellen")).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(mockedApi.createTaskStepBatchForProject).not.toHaveBeenCalled();
+    expect(mockedApi.previewProjectSteps).not.toHaveBeenCalled();
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+  });
+
+  it("keeps successor entry and Structure task entry reachable after a long project outline", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Long project" }),
+      tasks: Array.from({ length: 20 }, (_, index) => makeTask({
+        id: 100 + index, projectId: 42, title: `Task ${index + 1}`, position: index,
+      })),
+    });
+    renderProjectRoute("/projects/42");
+    const heading = await screen.findByRole("heading", { name: strings.taskSummary });
+    const section = heading.closest("section")!;
+    const successors = within(section).getAllByRole("button", { name: strings.insertSuccessorLabel });
+    await userEvent.click(successors.at(-1)!);
+    const successor = within(section).getByRole("form", { name: strings.addSuccessor });
+    expect(within(successor).getByPlaceholderText(strings.successorPlaceholder)).toBeVisible();
+    await userEvent.click(within(successor).getByRole("button", { name: strings.cancel }));
+    await userEvent.click(within(section).getByRole("button", { name: strings.structure }));
+    const structure = await screen.findByRole("dialog", { name: `${strings.structure}: Long project` });
+    await userEvent.click(within(structure).getByRole("button", { name: strings.projectTasksTitle }));
+    expect(await screen.findByRole("dialog", { name: strings.projectTasksTitle })).toBeVisible();
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42?focus=next-action");
   });
 
   it("opens the existing project-to-task conversion from Struktur", async () => {
@@ -803,9 +864,7 @@ describe("ProjectDetailPage task explanations", () => {
       const { unmount } = renderProjectRoute("/projects/42");
       const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
       const section = tasks.closest("section")!;
-      expect(
-        within(section).queryByRole("button", { name: strings.addNextAction }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
       expect(
         within(section).queryByRole("button", { name: strings.structure }),
       ).not.toBeInTheDocument();
@@ -942,6 +1001,11 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ort reservieren" })).toBeEnabled();
     expect(screen.getByRole("button", { name: strings.workRefinement })).toBeDisabled();
+    const opener = within(screen.getByLabelText(strings.projectOverview)).getByRole("button", { name: strings.projectTasksTitle });
+    expect(opener).toBeDisabled();
+    expect(screen.getByRole("button", { name: strings.structure })).toBeDisabled();
+    await userEvent.click(opener);
+    expect(screen.queryByRole("dialog", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
 
     resolveUpdate?.({
       ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
@@ -954,6 +1018,8 @@ describe("ProjectDetailPage task explanations", () => {
         screen.getByRole("button", { name: /Verantwortlich/ }),
       ).toBeEnabled(),
     );
+    expect(opener).toBeEnabled();
+    expect(screen.getByRole("button", { name: strings.structure })).toBeEnabled();
   });
 
   it("marks the derived canonical Next Action, an eligible additional one, and a merely-marked-but-blocked task distinctly", async () => {

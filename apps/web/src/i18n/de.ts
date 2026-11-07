@@ -958,7 +958,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   clearNotBefore: "Wiedervorlage entfernen",
   availabilityMorePlanningOptions: "Planung …",
   structure: "Struktur",
-  structureSplit: "Aufteilen",
   workRefinement: "Mit KI klären…",
   workRefinementIntentLabel: "Wobei soll die KI helfen?",
   workRefinementImprove: "Allgemein verbessern",
@@ -1049,7 +1048,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   taskBreakdownApply: "Geprüfte Änderungen übernehmen",
   structureMove: "Verschieben …",
   structureConvertToProject: "In Projekt umwandeln",
-  structurePlanWork: "Nächste Aufgabe erfassen",
   structureEditOutcome: "Ergebnis bearbeiten",
   insertSuccessorLabel: "Aufgabe danach hinzufügen",
   /**

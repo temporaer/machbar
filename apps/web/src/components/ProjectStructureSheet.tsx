@@ -38,7 +38,7 @@ export function ProjectStructureSheet({
             dispatch({ type: "story.planWork", story });
           }}
         >
-          {strings.structurePlanWork}
+          {strings.projectTasksTitle}
         </button>
         <button
           type="button"

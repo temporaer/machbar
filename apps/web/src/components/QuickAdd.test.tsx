@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { QuickAdd } from "./QuickAdd";
@@ -691,6 +691,85 @@ describe("QuickAdd", () => {
     expect(screen.getByRole("button", { name: "Foto erfassen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Datei erfassen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verarbeiten" })).toBeInTheDocument();
+  });
+
+  it("puts Create before the secondary actions in reading and keyboard order", async () => {
+    renderWithProviders(<QuickAdd />);
+    await openCapture();
+
+    const create = screen.getByRole("button", { name: "Erstellen" });
+    const footer = create.parentElement!;
+    expect(within(footer).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Erstellen", "Abbrechen", "Verarbeiten", "Foto erfassen", "Datei erfassen",
+    ]);
+    expect(create).toBeDisabled();
+    expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveFocus();
+
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Milch kaufen");
+    expect(create).toBeEnabled();
+    create.focus();
+    for (const name of ["Abbrechen", "Verarbeiten", "Foto erfassen", "Datei erfassen"]) {
+      await userEvent.tab();
+      expect(screen.getByRole("button", { name })).toHaveFocus();
+    }
+    expect(mockedApi.createTask).not.toHaveBeenCalled();
+  });
+
+  it("keeps the first Create guarded while pending and retains the draft for retry", async () => {
+    let rejectCreate!: (error: Error) => void;
+    mockedApi.createTask
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+        rejectCreate = reject;
+      }))
+      .mockResolvedValueOnce(makeTask({ id: 76, title: "Nicht verlieren" }));
+    renderWithProviders(<QuickAdd />);
+    await openCapture();
+    const input = screen.getByPlaceholderText("Was ist zu tun?");
+    await userEvent.type(input, "Nicht verlieren");
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    expect(input).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Erstellen" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Abbrechen" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+    expect(mockedApi.createTask).toHaveBeenCalledOnce();
+
+    await act(async () => rejectCreate(new Error("Netzwerkfehler")));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Netzwerkfehler");
+    expect(input).toHaveValue("Nicht verlieren");
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Erfasst: Nicht verlieren");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveValue("");
+    expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveFocus();
+    expect(mockedApi.createTask).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["photo", "file"] as const)("keeps %s selection reachable before a title and cancellation write-free", async (mode) => {
+    renderWithProviders(<QuickAdd />);
+    await openCapture();
+    const input = screen.getByLabelText(mode === "photo" ? "Foto aufnehmen" : "Datei auswählen");
+    const chooseFile = vi.spyOn(input as HTMLInputElement, "click");
+    await userEvent.click(screen.getByRole("button", {
+      name: mode === "photo" ? "Foto erfassen" : "Datei erfassen",
+    }));
+    if (mode === "photo") {
+      expect(await screen.findByRole("dialog", { name: "Foto aufnehmen" })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Bild auswählen" }));
+      expect(screen.queryByRole("dialog", { name: "Foto aufnehmen" })).not.toBeInTheDocument();
+    }
+    expect(chooseFile).toHaveBeenCalledOnce();
+    await userEvent.upload(input, new File(["material"], "material.jpg", { type: "image/jpeg" }));
+
+    expect(screen.getByText("material.jpg")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Erstellen" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Foto zuschneiden" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(screen.queryByPlaceholderText("Was ist zu tun?")).not.toBeInTheDocument();
+    expect(mockedApi.createTask).not.toHaveBeenCalled();
+    expect(mockedApi.uploadPaperlessDocument).not.toHaveBeenCalled();
+    expect(mockedApi.createIntake).not.toHaveBeenCalled();
   });
 
   it("erhält den Capture-Entwurf beim Wechsel zu Verarbeiten und zurück", async () => {

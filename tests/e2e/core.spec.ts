@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { calendarDateForInstant, type ReviewItem } from "@machbar/shared";
 import { randomUUID } from "node:crypto";
 
 const pageErrors = new WeakMap<Page, string[]>();
@@ -135,3 +136,161 @@ for (const kind of ["task", "project"] as const) {
     expect(rows.filter((row: { title: string }) => row.title === title)).toHaveLength(1);
   });
 }
+
+test("Quick Add puts full-width Create before the preserved capture alternatives", async ({ page }, testInfo) => {
+  await page.goto("/#/inbox");
+  await page.getByRole("button", { name: "Schnell hinzufügen", exact: true }).click();
+  const dialog = page.getByRole("dialog").last();
+  const title = `Simple capture ${randomUUID()}`;
+  const input = dialog.locator("#capture-title");
+  await input.fill(title);
+  const create = dialog.getByRole("button", { name: "Erstellen", exact: true });
+  const cancel = dialog.getByRole("button", { name: "Abbrechen", exact: true });
+  const process = dialog.getByRole("button", { name: "Verarbeiten", exact: true });
+  const photo = dialog.getByRole("button", { name: "Foto erfassen", exact: true });
+  const file = dialog.getByRole("button", { name: "Datei erfassen", exact: true });
+  for (const control of [create, cancel, process, photo, file]) await expect(control).toBeVisible();
+  const createBounds = (await create.boundingBox())!;
+  const inputBounds = (await input.boundingBox())!;
+  expect(createBounds.width).toBeGreaterThanOrEqual(inputBounds.width - 2);
+  expect(createBounds.y).toBeLessThan((await cancel.boundingBox())!.y);
+  expect(createBounds.y).toBeLessThan((await process.boundingBox())!.y);
+  expect((await process.boundingBox())!.y).toBeLessThan((await photo.boundingBox())!.y);
+  await page.screenshot({ path: testInfo.outputPath("capture-hierarchy.png") });
+  await create.click();
+  await expect(input).toHaveValue("");
+  await expect(dialog.getByRole("button", { name: "Öffnen", exact: true })).toBeVisible();
+  const inbox = await (await page.request.get("/api/inbox?scope=all")).json();
+  expect(inbox.filter((item: { title: string }) => item.title === title)).toHaveLength(1);
+});
+
+test("project task entry precedes context and returns focus after an atomic batch", async ({ page }, testInfo) => {
+  const title = `Project flow ${randomUUID()}`;
+  const response = await page.request.post("/api/projects", {
+    data: { title, notes: "Measure first; keep these constraints before the task outline." },
+  });
+  expect(response.status()).toBe(201);
+  const project = await response.json();
+  await page.goto(`/#/projects/${project.id}`);
+  const add = page.getByRole("button", { name: "Aufgaben hinzufügen", exact: true });
+  await expect(add).toHaveCount(1);
+  await expect(add).toBeVisible();
+  const notes = page.getByRole("heading", { name: "Notizen", exact: true });
+  expect((await add.boundingBox())!.y).toBeLessThan((await notes.boundingBox())!.y);
+  await page.screenshot({ path: testInfo.outputPath("project-entry.png") });
+  await add.click();
+  const dialog = page.getByRole("dialog").last();
+  await dialog.getByPlaceholder("Schritt …").nth(0).fill("Measure the available space");
+  await dialog.getByPlaceholder("Schritt …").nth(1).fill("Prepare the materials");
+  await dialog.getByRole("button", { name: "2 Aufgaben hinzufügen", exact: true }).click();
+  await expect(dialog.getByText("Measure the available space", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Schließen", exact: true }).last().click();
+  await expect(add).toBeFocused();
+  const stored = await (await page.request.get(`/api/projects/${project.id}`)).json();
+  expect(stored.status).toBe("backlog");
+  expect(stored.tasks.map((item: { title: string }) => item.title)).toEqual([
+    "Measure the available space", "Prepare the materials",
+  ]);
+});
+
+test("captured work opens the existing subtask composer without choosing a project", async ({ page }, testInfo) => {
+  const item = await task(page, { status: "captured" });
+  await page.goto(`/#/tasks/${item.id}`);
+  const add = page.getByRole("button", { name: "Teilaufgaben hinzufügen", exact: true });
+  await expect(add).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("capture-subtasks.png") });
+  await add.click();
+  const dialog = page.getByRole("dialog").last();
+  await expect(dialog.getByRole("checkbox", { name: "Als Projekt behandeln", exact: true })).not.toBeChecked();
+  await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
+  await expect(add).toBeFocused();
+  await add.click();
+  await dialog.getByPlaceholder("Schritt …").nth(0).fill("First known step");
+  await dialog.getByPlaceholder("Schritt …").nth(1).fill("Second known step");
+  await dialog.getByRole("button", { name: "2 Teilaufgaben anlegen", exact: true }).click();
+  await expect.poll(async () => {
+    const stored = await (await page.request.get(`/api/tasks/${item.id}`)).json();
+    return { status: stored.status, children: stored.children.map((child: { title: string }) => child.title) };
+  }).toEqual({ status: "actionable", children: ["First known step", "Second known step"] });
+  await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
+  await expect(page.locator(".detail-complete-trigger")).toBeFocused();
+});
+
+test("waiting is directly reachable and revisit precedes the single follow-up commit", async ({ page }, testInfo) => {
+  const item = await task(page);
+  await page.goto(`/#/tasks/${item.id}`);
+  const start = page.getByRole("button", { name: "Wartet auf …", exact: true });
+  await start.click();
+  let dialog = page.getByRole("dialog", { name: "Planung", exact: true });
+  await expect(dialog.getByLabel("Wartet auf", { exact: true })).toBeVisible();
+  await dialog.getByLabel("Wartet auf", { exact: true }).fill("Unsaved wait");
+  await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(start).toBeFocused();
+  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).externalWait).toBeNull();
+
+  const response = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
+    data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
+  });
+  expect(response.ok()).toBeTruthy();
+  await page.reload();
+  await page.getByRole("button", { name: /Wartet auf.*Supplier response/ }).click();
+  dialog = page.getByRole("dialog", { name: "Planung", exact: true });
+  const revisit = dialog.locator(".task-planning-inline-hint").filter({ hasText: "Erst wieder anzeigen ab" });
+  const followUp = dialog.getByRole("button", { name: "Rückmeldung speichern", exact: true });
+  await expect(revisit).toBeVisible();
+  expect((await revisit.boundingBox())!.y).toBeLessThan((await followUp.boundingBox())!.y);
+  await page.screenshot({ path: testInfo.outputPath("follow-up-order.png") });
+  await dialog.getByLabel("Was ist passiert?", { exact: true }).fill("Supplier confirmed the new delivery window.");
+  await revisit.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  const date = dialog.locator(`#planning-availability-date-${item.id}`);
+  await date.fill("10.05.2099");
+  await date.press("Tab");
+  const committed = page.waitForResponse(result => result.url().endsWith(`/api/tasks/${item.id}/external-wait/follow-up`) && result.request().method() === "POST");
+  await followUp.click();
+  expect((await committed).ok()).toBeTruthy();
+  await expect(dialog).not.toBeVisible();
+  const stored = await (await page.request.get(`/api/tasks/${item.id}`)).json();
+  const { timezone } = await (await page.request.get("/api/settings/household")).json();
+  expect(calendarDateForInstant(stored.revisitAt, timezone)).toBe("2099-05-10");
+  expect(stored.externalWait.waitingFor).toBe("Supplier response");
+  expect(stored.notes).toContain("Supplier confirmed the new delivery window.");
+});
+
+test("Review keeps one routine inspection, explicit Keep and a separate repair", async ({ page }) => {
+  const title = `Routine project ${randomUUID()}`;
+  const response = await page.request.post("/api/projects", { data: { title } });
+  expect(response.status()).toBe(201);
+  const project = await response.json();
+  const repairTask = await task(page, { size: "XL" });
+  const routineItem: ReviewItem = {
+    entityType: "project",
+    entityId: project.id,
+    entityTitle: title,
+    projectId: project.id,
+    projectTitle: title,
+    category: "reconsider",
+    reason: "backlog_stale",
+    suggestedAction: { code: "review_project" },
+  };
+  // Only the age-triggered card is injected; repairs, details and mutations use the real API.
+  await page.route("**/api/review", async route => {
+    const response = await route.fetch();
+    const items = await response.json();
+    await route.fulfill({
+      response,
+      json: [...items, routineItem],
+    });
+  });
+  await page.goto("/#/more/review");
+  const routine = page.locator("article.review-item").filter({ hasText: title });
+  await expect(routine.getByRole("button", { name: "Details öffnen", exact: true })).toHaveCount(1);
+  await expect(routine.getByRole("button", { name: "So beibehalten", exact: true })).toBeVisible();
+  const repair = page.locator("article.review-item").filter({ hasText: repairTask.title });
+  await expect(repair.getByRole("button", { name: "Teilaufgabe hinzufügen", exact: true })).toBeVisible();
+  await expect(repair.getByRole("button", { name: "Details öffnen", exact: true })).toBeVisible();
+  await routine.getByRole("button", { name: "Details öffnen", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`#/projects/${project.id}$`));
+  await page.getByRole("link", { name: "← Review", exact: true }).click();
+  await expect(routine).toBeFocused();
+  expect((await (await page.request.get(`/api/projects/${project.id}`)).json()).reviewedAt).toBeNull();
+});

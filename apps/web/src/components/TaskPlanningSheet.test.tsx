@@ -613,6 +613,29 @@ describe("TaskPlanningSheet", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
+  it("keeps end-without-outcome on general Save without removing prerequisites", async () => {
+    const task = makeTask({
+      id: 71,
+      externalWait: { waitingFor: "Permit office", revisitDate: null },
+      revisitAt: "2026-10-20T06:00:00Z",
+      dependencies: [{ id: 1, taskId: 71, dependsOnTaskId: 72, title: "Permit prerequisite", resolved: false }],
+    });
+    mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, externalWait: null, revisitAt: null });
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Rückmeldung speichern" })).toBeDisabled();
+    await userEvent.click(within(card("Wartet auf", false)).getByRole("button", { name: "Warten beenden" }));
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Permit prerequisite" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      externalWait: null,
+      revisitAt: null,
+      expectedRevision: task.revision,
+    }));
+    expect(mockedApi.followUpExternalWait).not.toHaveBeenCalled();
+    expect(mockedApi.removeDependency).not.toHaveBeenCalled();
+  });
+
   it("keeps a legacy empty wait during unrelated date edits", async () => {
     const user = userEvent.setup();
     const task = makeTask({
@@ -1165,7 +1188,7 @@ describe("TaskPlanningSheet", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("records a wait outcome together with the next wait decision", async () => {
+  it.each(["continue", "resolve"] as const)("orders revisit editing before atomic %s follow-up without adding an editor", async (action) => {
     const task = makeTask({
       id: 71,
       title: "Versicherung kontaktieren",
@@ -1179,13 +1202,34 @@ describe("TaskPlanningSheet", () => {
     renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={onClose} />);
 
     await userEvent.type(screen.getByLabelText("Was ist passiert?"), "Unterlagen sind angekommen.");
+    await userEvent.selectOptions(screen.getByLabelText("Danach"), action);
+    const waiting = card("Wartet auf", false);
+    const edit = within(waiting).getByRole("button", { name: "Bearbeiten" });
+    const saveFollowUp = screen.getByRole("button", { name: "Rückmeldung speichern" });
+    const endWithoutOutcome = within(waiting).getByRole("button", { name: "Warten beenden" });
+    expect(edit.compareDocumentPosition(saveFollowUp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(saveFollowUp.compareDocumentPosition(endWithoutOutcome) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelectorAll('[id^="planning-editor-availability-"]')).toHaveLength(1);
+    const revisitEditor = document.querySelector<HTMLElement>('[id^="planning-editor-availability-"]')!;
+    expect(revisitEditor).not.toBeVisible();
+    await userEvent.click(edit);
+    expect(revisitEditor).toBeVisible();
+    const date = within(revisitEditor).getByRole("textbox");
+    await userEvent.clear(date);
+    await userEvent.type(date, "22.10.2026");
+    await userEvent.tab();
+    expect(document.querySelectorAll('[id^="planning-editor-availability-"]')).toHaveLength(1);
+    expect(mockedApi.followUpExternalWait).not.toHaveBeenCalled();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Rückmeldung speichern" }));
 
     await waitFor(() => expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(71, {
-      action: "continue",
+      action,
       content: "Unterlagen sind angekommen.",
-      waitingFor: "Rückmeldung der Versicherung",
-      revisitAt: "2026-10-20T06:00:00.000Z",
+      ...(action === "continue" ? {
+        waitingFor: "Rückmeldung der Versicherung",
+        revisitAt: "2026-10-22T06:00:00Z",
+      } : {}),
       expectedRevision: 4,
     }));
     expect(onClose).toHaveBeenCalled();
