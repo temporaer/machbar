@@ -359,7 +359,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 
-  it("still navigates to the project detail page through the structure sheet's 'Nächste Aufgabe erfassen' action", async () => {
+  it("still navigates to the project detail page through the structure sheet's 'Aufgaben hinzufügen' action", async () => {
     const story = makeProject({ id: 19, title: "Dachboden entrümpeln", status: "backlog" });
     const { container } = renderAtRootWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Dachboden entrümpeln");
@@ -370,7 +370,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
       name: "Struktur: Dachboden entrümpeln",
     });
     await userEvent.click(
-      within(structureSheet).getByRole("button", { name: "Nächste Aufgabe erfassen" }),
+      within(structureSheet).getByRole("button", { name: "Aufgaben hinzufügen" }),
     );
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 19");
   });

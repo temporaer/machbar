@@ -246,6 +246,65 @@ describe("ReviewPage", () => {
     expect(tools).not.toHaveAttribute("open");
   });
 
+  it.each([
+    ["task", false],
+    ["task", true],
+    ["project", false],
+    ["project", true],
+  ] as const)("offers one self-review inspection for %s, explicit target: %s", async (entityType, explicitTarget) => {
+    const source = reviewItems.find(item => item.entityType === entityType && item.category === "reconsider")!;
+    const issue: ReviewItem = {
+      ...source,
+      suggestedAction: {
+        ...source.suggestedAction,
+        ...(explicitTarget ? { targetEntityType: entityType, targetEntityId: source.entityId } : {}),
+      },
+    };
+    mockedApi.getReviewItems.mockResolvedValue([issue]);
+    mockedApi.getTask.mockResolvedValue(task);
+    renderWithProviders(
+      <Routes>
+        <Route path="/more/review" element={<><ReviewPage /><TaskDetailSheet /></>} />
+        <Route path="/projects/:id" element={<ReviewProjectDestination />} />
+      </Routes>,
+      { initialEntries: ["/more/review"] },
+    );
+    const card = (await screen.findByText(issue.entityTitle)).closest("article")!;
+    const details = within(card).getAllByRole("button", { name: "Details öffnen" });
+    expect(details).toHaveLength(1);
+    expect(within(card).getByRole("button", { name: "So beibehalten" })).toBeVisible();
+    await userEvent.click(details[0]!);
+    if (entityType === "task") {
+      const dialog = await screen.findByRole("dialog");
+      expect(mockedApi.getTask).toHaveBeenCalledWith(issue.entityId);
+      await userEvent.click(within(dialog).getByRole("button", { name: "Schließen" }));
+    } else {
+      expect(screen.getByLabelText("repair-location")).toHaveTextContent(`/projects/${issue.entityId}`);
+      await userEvent.click(screen.getByRole("link", { name: "Back to Review" }));
+    }
+    await waitFor(() => expect(screen.getByText(issue.entityTitle).closest("article")).toHaveFocus());
+    expect(mockedApi.acknowledgeProjectReview).not.toHaveBeenCalled();
+    expect(mockedApi.acknowledgeTaskReview).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { source: 2, action: { code: "review_task", targetEntityId: 99 } },
+    { source: 2, action: { code: "review_task", targetEntityType: "project" } },
+    { source: 1, action: { code: "review_project", targetEntityId: 99 } },
+    { source: 1, action: { code: "review_project", targetEntityType: "task" } },
+    { source: 1, action: { code: "review_task" } },
+    { source: 1, projectId: 99, action: { code: "review_project" } },
+  ] satisfies { source: number; projectId?: number; action: ReviewItem["suggestedAction"] }[])(
+    "retains non-equivalent inspection choices: %j",
+    async ({ source, action, ...overrides }) => {
+      const issue = { ...reviewItems[source]!, ...overrides, suggestedAction: action };
+      mockedApi.getReviewItems.mockResolvedValue([issue]);
+      renderWithProviders(<ReviewPage />);
+      const card = (await screen.findByText(issue.entityTitle)).closest("article")!;
+      expect(within(card).getAllByRole("button", { name: "Details öffnen" })).toHaveLength(2);
+    },
+  );
+
   it("reveals the preserved sizing and assignment tools only on demand", async () => {
     mockedApi.getRefinementOwners.mockResolvedValue([
       { ownerId: null, ownerName: null, S: 1, M: 0, L: 0, XL: 0, unestimated: 0, total: 1 },

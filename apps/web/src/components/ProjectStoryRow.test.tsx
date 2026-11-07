@@ -1073,7 +1073,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
   // toggle state left to clear, so there is nothing left to assert here that
   // isn't already covered by the "only one rail open" test above.
 
-  it("navigates to the project detail page through the structure sheet's 'Nächste Aufgabe erfassen' action", async () => {
+  it("navigates to the project detail page through the structure sheet's 'Aufgaben hinzufügen' action", async () => {
     const story = makeProject({ id: 47, title: "Voll bearbeiten", status: "active", ownerMemberId: 1, stuckReason: "no_next_action" });
     renderWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Voll bearbeiten");
@@ -1084,7 +1084,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
       name: "Struktur: Voll bearbeiten",
     });
     await userEvent.click(
-      within(structureSheet).getByRole("button", { name: "Nächste Aufgabe erfassen" }),
+      within(structureSheet).getByRole("button", { name: "Aufgaben hinzufügen" }),
     );
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 47");
   });

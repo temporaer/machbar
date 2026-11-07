@@ -502,6 +502,20 @@ export function ProjectDetailPage() {
                     {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
                     {strings.doneTasks.toLowerCase()}
                   </span>
+                  {project.status !== "completed" &&
+                  project.status !== "archived" &&
+                  !project.archivedAt ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={projectMutationPending}
+                      onClick={() =>
+                        dispatch({ type: "story.planWork", story: project })
+                      }
+                    >
+                      {strings.projectTasksTitle}
+                    </button>
+                  ) : null}
                 </div>
                 {lifecycleOpen ? (
                   <div
@@ -719,16 +733,6 @@ export function ProjectDetailPage() {
                   project.status !== "archived" &&
                   !project.archivedAt ? (
                     <div className="row project-task-header-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={projectMutationPending}
-                        onClick={() =>
-                          dispatch({ type: "story.planWork", story: project })
-                        }
-                      >
-                        {strings.addNextAction}
-                      </button>
                       <button
                         type="button"
                         className="btn btn-sm"

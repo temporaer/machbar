@@ -1020,7 +1020,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   clearNotBefore: "Clear revisit",
   availabilityMorePlanningOptions: "Planning …",
   structure: "Structure",
-  structureSplit: "Break down",
   workRefinement: "Clarify with AI…",
   workRefinementIntentLabel: "What should AI help with?",
   workRefinementImprove: "Improve overall",
@@ -1111,7 +1110,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   taskBreakdownApply: "Apply reviewed changes",
   structureMove: "Move …",
   structureConvertToProject: "Convert to project",
-  structurePlanWork: "Capture next task",
   structureEditOutcome: "Edit outcome",
   insertSuccessorLabel: "Add task after this one",
   actionTileLabels: {

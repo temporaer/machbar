@@ -5,7 +5,7 @@ import { BottomSheet } from "./BottomSheet";
 
 /**
  * Focused `task.structure` workflow — the fixed row rail's `Struktur`
- * button. It offers AI clarification, splitting, moving, and role conversion.
+ * button. It offers subtask entry, AI clarification, moving, and role conversion.
  * Each tile dispatches its semantic command; `useWorkItemCommands()` decides
  * which workflow opens next, so this sheet never renders one of its own.
  */
@@ -17,17 +17,17 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
     <BottomSheet title={`${strings.structure}: ${task.title}`} onClose={onClose}>
       <div className="stack">
         {task.kind !== "reference" ? (
-          <button type="button" className="btn" onClick={() => dispatch({ type: "task.refine", taskId: task.id })}>
-            {strings.workRefinement}
-          </button>
-        ) : null}
-        {task.kind !== "reference" ? (
           <button
             type="button"
             className="btn"
             onClick={() => dispatch({ type: "task.split", taskId: task.id })}
           >
-            {strings.structureSplit}
+            {strings.splitTaskAddHeading}
+          </button>
+        ) : null}
+        {task.kind !== "reference" ? (
+          <button type="button" className="btn" onClick={() => dispatch({ type: "task.refine", taskId: task.id })}>
+            {strings.workRefinement}
           </button>
         ) : null}
         <button

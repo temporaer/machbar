@@ -1200,25 +1200,7 @@ export function TaskPlanningSheet({
                       <option value="resolve">{strings.planningEndWaiting}</option>
                     </select>
                     <p className="text-muted">{strings.planningFollowUpPrerequisitesNote}</p>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={saving || followUpSaving || !followUpOutcome.trim() || planningConflicts.length > 0 || (followUpChoice === "continue" && (!validity.availability || invalidRevisitSelection))}
-                      onClick={() => void saveWaitFollowUp()}
-                    >
-                      {followUpSaving ? strings.saving : strings.planningSaveFollowUp}
-                    </button>
                   </div>
-                ) : null}
-                {hasExistingWait ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-ghost"
-                    disabled={saving}
-                    onClick={endWaitingLocally}
-                  >
-                    {strings.planningEndWaiting}
-                  </button>
                 ) : (
                   <button
                     type="button"
@@ -1245,6 +1227,28 @@ export function TaskPlanningSheet({
                       {revisitSummary ? strings.edit : strings.planningSetRevisit}
                     </button>
                   </div>
+                ) : null}
+                {hasExistingWait ? (
+                  <div className="task-planning-follow-up stack">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={saving || followUpSaving || !followUpOutcome.trim() || planningConflicts.length > 0 || (followUpChoice === "continue" && (!validity.availability || invalidRevisitSelection))}
+                      onClick={() => void saveWaitFollowUp()}
+                    >
+                      {followUpSaving ? strings.saving : strings.planningSaveFollowUp}
+                    </button>
+                  </div>
+                ) : null}
+                {hasExistingWait ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    disabled={saving}
+                    onClick={endWaitingLocally}
+                  >
+                    {strings.planningEndWaiting}
+                  </button>
                 ) : null}
               </>
             )}

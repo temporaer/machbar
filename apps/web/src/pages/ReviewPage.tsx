@@ -517,6 +517,11 @@ export function ReviewPage() {
               <div className="review-list">
                 {group.items.map((item) => {
                   const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
+                  const equivalentInspection =
+                    item.suggestedAction.code === (item.entityType === "task" ? "review_task" : "review_project") &&
+                    (item.suggestedAction.targetEntityType ?? item.entityType) === item.entityType &&
+                    (item.suggestedAction.targetEntityId ?? item.entityId) === item.entityId &&
+                    (item.entityType !== "project" || (item.projectId ?? item.entityId) === item.entityId);
                   return (
                   <ReviewCard
                     item={item}
@@ -538,19 +543,21 @@ export function ReviewPage() {
                     </div>
                     <p>{reasonText(item.reason)}</p>
                     <div className="review-item-actions">
+                      {!equivalentInspection ? (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => repair(item, issueIndex)}
+                        >
+                          {actionLabel(item)}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="btn btn-sm btn-ghost"
                         onClick={() => openDetails(item, issueIndex)}
                       >
                         {strings.reviewOpenDetails}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => repair(item, issueIndex)}
-                      >
-                        {actionLabel(item)}
                       </button>
                       {item.entityType === "project"
                         ? projectDecisionButtons(item)

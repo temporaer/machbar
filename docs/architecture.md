@@ -1379,8 +1379,12 @@ CSS makes it quiet and wraps long values while keeping 44px touch targets;
 focused editors retain their existing presentation. Every current value opens
 its canonical editor directly. Unset tags/places always have a direct labelled
 shortcut. The optional-property menu contains only applicable unset revisit,
-reminder, waiting, recurrence, priority and prerequisite entries. Clearing a
-value brings its add entry back; no domain eligibility rules change.
+reminder, recurrence, priority and prerequisite entries. Missing external waits
+have a direct entry in the planning summary, through the same waiting command.
+Clearing a value brings its add entry back; no domain eligibility rules change.
+Captured tasks also expose a secondary Add subtasks entry through `task.split`,
+with the same pending/authored-draft guards as Structure. Manual subtask entry
+precedes optional AI in Structure; both retain their existing workflow hosts.
 
 `DetailActionMenu` is a shared presentation wrapper over `BottomSheet` and
 `ActionTileGrid`, with no mutation or workflow routing. Its header instance
@@ -2208,7 +2212,7 @@ exercised. This does not replace real-device keyboard or screen-reader testing.
 
 ### Role-specific detail scope (#246 clarification)
 
-Only ordinary tasks use the six optional-property add entries. Projects share
+Only ordinary tasks use the optional-property add entries. Projects share
 visual conventions and direct tags/places, not task properties. Their deadline
 is directly editable; their revisit value is guarded by unarchived backlog
 status and labelled “Wieder ansehen am”. There is no project More options menu
@@ -2221,6 +2225,17 @@ execution date. Outcome guidance/edit access and next-step guidance/actions rema
 prominent for empty projects; completed/archived projects retain their existing
 next-step eligibility guards. Task captured/reference/recurrence/terminal guards
 remain independent.
+
+The project Add tasks launcher lives beside the summary/task count, rather than
+being duplicated beneath Notes and Outcome. It still dispatches `story.planWork`
+and returns focus to its opener. The section order remains Notes, Outcome, Tasks.
+Quick Add similarly puts its existing full-width Create before secondary
+processing/media actions, without changing shared thought/Share capture layouts.
+The waiting planner places its existing revisit summary/Edit before follow-up
+Save; the shared date editor and separate general-planning commit remain intact.
+Review suppresses a duplicate suggested inspection only for self-target
+`review_task`/`review_project` matching the generic Details target and return;
+repair, completion, acknowledgement and lifecycle actions remain distinct.
 
 Detail action selection commits menu dismissal with `flushSync` before invoking
 its existing command. This lets BottomSheet restore the stable trigger before

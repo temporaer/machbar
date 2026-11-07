@@ -131,6 +131,18 @@ describe("TaskStructureSheet routing", () => {
     } as never);
   });
 
+  it("keeps manual subtask entry before visible optional AI at the same depth", async () => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 88, title: "Known steps" }));
+    renderStructure(88);
+    await userEvent.click(screen.getByRole("button", { name: "open structure" }));
+    const sheet = await screen.findByRole("dialog", { name: `${strings.structure}: Known steps` });
+    const manual = within(sheet).getByRole("button", { name: strings.splitTaskAddHeading });
+    const ai = within(sheet).getByRole("button", { name: strings.workRefinement });
+    expect(manual.parentElement).toBe(ai.parentElement);
+    expect(manual.compareDocumentPosition(ai) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(ai).toBeVisible();
+  });
+
   it("exposes Project → Task conversion from the project structure sheet", async () => {
     const project = makeProject({ id: 80, title: "Keller planen" });
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
@@ -515,7 +527,7 @@ describe("TaskStructureSheet routing", () => {
     renderStructure(70);
 
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Aufteilen" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.splitTaskAddHeading }));
 
     expect(await screen.findByRole("dialog", { name: "Aufgabe aufteilen" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Schritt …")).toBeInTheDocument();
@@ -641,7 +653,7 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
     await screen.findByRole("dialog", { name: "Struktur: Unklarer Einfall" });
 
-    expect(screen.getByRole("button", { name: "Aufteilen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: strings.splitTaskAddHeading })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "In Projekt umwandeln" })).toBeInTheDocument();
   });
@@ -692,7 +704,7 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
     await screen.findByRole("dialog", { name: "Struktur: Fahrplan" });
 
-    expect(screen.queryByRole("button", { name: "Aufteilen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: strings.splitTaskAddHeading })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "In Projekt umwandeln" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
   });

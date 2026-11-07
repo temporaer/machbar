@@ -296,6 +296,19 @@ export function CaptureForm({
     focusTitle();
   };
 
+  const primaryActionFirst = !isThought && captureActions !== undefined;
+  const createAction = (
+    <button
+      type="submit"
+      className="btn btn-primary"
+      aria-label={isThought ? strings.guidedCaptureSave : strings.create}
+      disabled={saving || !capturedTitle || !dueDateValid ||
+        (currentActivationPrompt !== null && projectActivationResolutionFromPrompt(currentActivationPrompt) === null)}
+    >
+      {isThought ? strings.guidedCaptureSave : strings.create}
+    </button>
+  );
+
   return (
     <form
       className={isThought ? "capture-thought-form" : "stack"}
@@ -541,7 +554,8 @@ export function CaptureForm({
         />
       ) : null}
       {error && error.draftKey === thoughtDraft?.key ? <p className="capture-error" role="alert">{error.message}</p> : null}
-      <div className="capture-actions">
+      <div className={`capture-actions${primaryActionFirst ? " capture-actions-quick-add" : ""}`}>
+        {primaryActionFirst ? createAction : null}
         {!isThought ? <button type="button" className="btn" onClick={onCancel} disabled={saving}>
           {strings.cancel}
         </button> : null}
@@ -560,15 +574,7 @@ export function CaptureForm({
             </button>
           </>
         ) : null}
-        <button
-          type="submit"
-          className="btn btn-primary"
-          aria-label={isThought ? strings.guidedCaptureSave : strings.create}
-          disabled={saving || !capturedTitle || !dueDateValid ||
-            (currentActivationPrompt !== null && projectActivationResolutionFromPrompt(currentActivationPrompt) === null)}
-        >
-          {isThought ? strings.guidedCaptureSave : strings.create}
-        </button>
+        {!primaryActionFirst ? createAction : null}
       </div>
     </form>
   );

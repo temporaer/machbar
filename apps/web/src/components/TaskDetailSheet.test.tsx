@@ -39,6 +39,7 @@ vi.mock("../lib/api", () => ({
     updateTask: vi.fn(),
     convertTaskToStory: vi.fn(),
     createTask: vi.fn(),
+    createTaskStepBatchForTask: vi.fn(),
     getProject: vi.fn(),
     setExternalWait: vi.fn(),
     addCriterion: vi.fn(),
@@ -570,9 +571,10 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Vollständige Aufgabe");
     await openDetailOptions();
     const menu = screen.getByRole("dialog", { name: "Weitere Optionen" });
-    for (const name of ["Erst wieder anzeigen ab …", "Erinnern am …", "Wartet auf …", "Wiederholen alle …", "Priorität setzen …", "Kann erst beginnen nach …"]) {
+    for (const name of ["Erst wieder anzeigen ab …", "Erinnern am …", "Wiederholen alle …", "Priorität setzen …", "Kann erst beginnen nach …"]) {
       expect(within(menu).getByRole("button", { name })).toBeVisible();
     }
+    expect(within(menu).queryByRole("button", { name: strings.detailAddWait })).not.toBeInTheDocument();
     expect(within(menu).queryByRole("button", { name: /Tags|Orte/ })).not.toBeInTheDocument();
     await userEvent.click(within(menu).getByRole("button", { name: "Schließen" }));
     expect(screen.getByRole("button", { name: "Weitere Optionen" })).toHaveFocus();
@@ -855,13 +857,138 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Rechnung prüfen");
 
-    await openDetailOptions();
-    await userEvent.click(screen.getByRole("button", { name: "Wartet auf …" }));
+    const planning = screen.getByLabelText(strings.planning);
+    const opener = within(planning).getByRole("button", { name: strings.detailAddWait });
+    expect(screen.getAllByRole("button", { name: strings.detailAddWait })).toHaveLength(1);
+    await userEvent.click(opener);
 
     // A task with no external wait resolves to the shared planning workflow.
     expect(await screen.findByLabelText("Wartet auf")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: strings.cancel }));
+    expect(opener).toHaveFocus();
+  });
+
+  it.each(["captured", "someday", "done", "cancelled"] as const)(
+    "does not make a missing wait editable for a %s task",
+    async (status) => {
+      mockedApi.getTask.mockResolvedValue(makeTask({ id: 43, title: "Not ready to wait", status }));
+      renderSheet(43);
+      await userEvent.click(screen.getByRole("button", { name: "open" }));
+      await waitForTaskTitle("Not ready to wait");
+      await userEvent.click(screen.getByRole("button", { name: strings.detailAddWait }));
+      expect(await screen.findByRole("heading", { name: strings.planning })).toBeInTheDocument();
+      expect(screen.queryByLabelText(strings.waitingFor)).not.toBeInTheDocument();
+      expect(mockedApi.updateTask).not.toHaveBeenCalled();
+      expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retains cancelled subtask rows and restores focus across a delayed successful batch refresh", async () => {
+    sessionStorage.clear();
+    let task = makeTask({ id: 43, title: "Known steps", status: "captured", children: [
+      makeTask({ id: 44, title: "Existing step", parentTaskId: 43 }),
+    ] });
+    let releaseRefresh!: () => void;
+    const refreshedTask = new Promise<Task>((resolve) => {
+      releaseRefresh = () => resolve(task);
+    });
+    mockedApi.getTask.mockImplementation(async () => task.status === "captured" ? task : refreshedTask);
+    mockedApi.createTaskStepBatchForTask.mockImplementation(async () => {
+      task = { ...task, revision: task.revision + 1, status: "actionable", children: [
+        ...task.children,
+        makeTask({ id: 45, parentTaskId: 43, title: "First new step" }),
+        makeTask({ id: 46, parentTaskId: 43, title: "Second new step" }),
+      ] };
+      return { parent: task, tasks: task.children.slice(1) } as never;
+    });
+    renderSheet(43);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Known steps");
+    const opener = screen.getByRole("button", { name: strings.splitTaskAddHeading });
+    expect(opener).not.toHaveClass("btn-primary");
+    expect(opener.closest(".capture-shape-actions")).toBeNull();
+    expect(document.querySelectorAll(".capture-shape-actions button")).toHaveLength(3);
+    await userEvent.click(opener);
+    let sheet = await screen.findByRole("dialog", { name: strings.splitTask });
+    expect(within(sheet).getByText("Existing step")).toBeVisible();
+    expect(within(sheet).getByRole("checkbox", { name: strings.stepTreatAsProject })).not.toBeChecked();
+    await userEvent.type(within(sheet).getAllByRole("textbox", { name: strings.splitTaskAddHeading })[0]!, "First new step");
+    await userEvent.type(within(sheet).getAllByRole("textbox", { name: strings.splitTaskAddHeading })[1]!, "Second new step");
+    await userEvent.click(within(sheet).getByRole("button", { name: strings.cancel }));
+    expect(opener).toHaveFocus();
+    expect(mockedApi.createTaskStepBatchForTask).not.toHaveBeenCalled();
+    await userEvent.click(opener);
+    sheet = await screen.findByRole("dialog", { name: strings.splitTask });
+    expect(within(sheet).getByDisplayValue("First new step")).toBeVisible();
+    expect(within(sheet).getByDisplayValue("Second new step")).toBeVisible();
+    await userEvent.click(within(sheet).getByRole("button", { name: strings.splitTaskCount(2) }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledWith(43, {
+      steps: [{ title: "First new step" }, { title: "Second new step" }],
+      expectedRevision: 1,
+      expectedProjectRevisions: [],
+    }));
+    expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
+    await userEvent.click(within(sheet).getByRole("button", { name: strings.cancel }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: strings.splitTask })).not.toBeInTheDocument());
+    expect(opener).toHaveFocus();
+    await act(async () => releaseRefresh());
+    await waitFor(() => expect(opener).not.toBeInTheDocument());
+    expect(within(document.querySelector<HTMLElement>(".task-detail-title-field")!).getByRole("button", { name: strings.done })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Existing step" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "First new step" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Second new step" })).toBeVisible();
+    sessionStorage.clear();
+  });
+
+  it.each(["title", "notes"] as const)("blocks the captured shortcut while %s contains unsaved text", async (field) => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 43, title: "Known steps", status: "captured" }));
+    renderSheet(43);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Known steps");
+    const editor = field === "title" ? await openTitleEditor() : await openNotesEditor();
+    if (field === "title") await userEvent.type(editor, " changed");
+    else setMarkdownValue(editor, "Unsaved note");
+    const opener = screen.getByRole("button", { name: strings.splitTaskAddHeading });
+    expect(opener).toBeDisabled();
+    await userEvent.click(opener);
+    expect(screen.queryByRole("dialog", { name: strings.splitTask })).not.toBeInTheDocument();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("blocks subtask entry during classification and retains the shortcut after a failed classification", async () => {
+    const task = makeTask({ id: 43, title: "Known steps", status: "captured" });
+    mockedApi.getTask.mockResolvedValue(task);
+    let rejectClassification!: (reason: Error) => void;
+    mockedApi.clarifyTask.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectClassification = reject;
+    }));
+    renderSheet(43);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Known steps");
+    const opener = screen.getByRole("button", { name: strings.splitTaskAddHeading });
+    await userEvent.click(screen.getByRole("button", { name: strings.classifyAsAction }));
+    expect(opener).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: strings.splitTaskAddHeading })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: strings.splitTask })).not.toBeInTheDocument();
+    await act(async () => rejectClassification(new Error("Classification failed")));
+    await waitFor(() => expect(screen.getByRole("button", { name: strings.splitTaskAddHeading })).toBeEnabled());
+    expect(mockedApi.createTaskStepBatchForTask).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: "actionable" as const },
+    { status: "captured" as const, repeatAfterDays: 7 },
+    { status: "captured" as const, projectId: 7 },
+    { status: "captured" as const, parentTaskId: 7 },
+    { status: "captured" as const, kind: "reference" as const },
+  ])("does not add the captured shortcut outside its existing eligibility: %j", async (overrides) => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 43, title: "Not an inbox leaf", ...overrides }));
+    renderSheet(43);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Not an inbox leaf");
+    expect(screen.queryByRole("button", { name: strings.splitTaskAddHeading })).not.toBeInTheDocument();
   });
 
   it("opens the split workflow from the Teilaufgaben section's Aufteilen button", async () => {
