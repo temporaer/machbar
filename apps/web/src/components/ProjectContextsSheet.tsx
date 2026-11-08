@@ -3,17 +3,18 @@ import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useAsync } from "../lib/useAsync";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { PhysicalContextPicker } from "./PhysicalContextPicker";
 
 /** Focused project/story physical-contexts editor. */
 export function ProjectContextsSheet({
   story,
   onClose,
+  ...presentation
 }: {
   story: ProjectWithActions;
   onClose: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const projectActions = useProjectActions([story]);
   const saving = projectActions.isPending(story.id);
@@ -27,6 +28,7 @@ export function ProjectContextsSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       title={strings.physicalContexts}
       onClose={() => {
         if (!saving) onClose();

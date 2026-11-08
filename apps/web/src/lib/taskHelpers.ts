@@ -137,8 +137,17 @@ export function applyDescendantTerminalOutcome<T extends Task>(current: T, inher
 /** Confirmed equal-revision reads own derived fields. Pending writes keep
  * their optimistic values until the request settles. */
 export function projectTaskValue(current: Task, retained: Task | undefined, pending = false): Task {
-  return retained && (retained.revision > current.revision || (pending && retained.revision === current.revision))
+  const selected = retained && (retained.revision > current.revision || (pending && retained.revision === current.revision))
     ? retained : current;
+  if (!retained || retained === current || retained.revision < current.revision || pending || current.children === undefined) return selected;
+  const selectedChildren = new Map(retained.children?.map(child => [child.id, child]));
+  const children = current.children.map(child => {
+    const inherited = selectedChildren.get(child.id);
+    const projected = projectTaskValue(child, inherited);
+    return inherited ? applyDescendantTerminalOutcome(projected, inherited) : projected;
+  });
+  if (selected.children?.length === children.length && selected.children.every((child, index) => child === children[index])) return selected;
+  return { ...selected, children };
 }
 
 /** Sort authoritative siblings before placement; rendered placement is final. */

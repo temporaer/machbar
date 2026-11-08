@@ -81,13 +81,43 @@ its retention and conflict behavior fit.
 
 ### Read invalidation
 
-`refresh.tsx` is the shared invalidation bus; `useAsync.ts` owns query execution.
-Same-query refreshes serialize into one in-flight request and one queued
+`refresh.tsx` is the shared invalidation bus. `useAsync.ts` owns reads outside
+the initial project-detail migration; TanStack Query owns fetched project detail
+and the focused project workflows that consume it. Do not mirror those project
+results in `useAsync` or a confirmed-receipt map.
+For legacy `useAsync` reads, same-query refreshes serialize into one in-flight request and one queued
 revalidation. They must accept the pending result so repeated invalidations
 cannot starve initial loading. Only logical dependency changes and unmount
 invalidate a request's result. External events use a bounded leading/trailing
 cadence; explicit mutation refreshes remain immediate. Do not add per-component
-throttles or another fetching layer to compensate for shared refresh behavior.
+throttles or another fetching layer to compensate for legacy read behavior.
+
+The project query key includes the current identity generation and project ID.
+`useProjectActions.getProject` and observed project-detail queries use that
+same QueryClient entry. Access-denied detail reads must immediately hide
+older project data; a later successful GET can restore readability, not certify
+an old response. Pre-request read tokens identify the Query cache entry and its
+access epoch. That epoch and denial state belong to the entry's metadata, not a
+parallel receipt or authorization map. A single revision publication rule is
+applied at the Query cache boundary for observed and imperative reads: lower
+full or metadata revisions reject without replacing the cache, while an equal
+revision keeps the exact incoming object and its fresh derived hierarchy.
+Only a committed, current full-GET success clears a denial; manual metadata
+reconciliation is not read recovery. Confirmed detail uses an identity-scoped
+non-collecting Query lifetime and the old identity scope is removed when the
+actor changes. Network and server errors retain usable cached input with
+visible, query-keyed presentation feedback that survives retries but does not
+authorize data or live in Query metadata. Query retries and focus/reconnect
+refetch are disabled to preserve the existing explicit-retry contract. Project
+mutation responses reconcile through `useProjectActions`; metadata-only
+responses never fabricate full detail, and revisions cannot move backward. The
+refresh bus invalidates the migrated project queries. Project lists and task
+fetched-state ownership are not migrated by this initial slice.
+
+Same-query read errors remain visible during retries and clear only on success;
+dependency changes clear their obsolete attribution. `ReadErrorState` wraps the
+existing `ErrorState` with a named resource and that query's own GET retry. It
+must not hide retained data, reset filters/drafts, or retry a mutation.
 
 ### Task mutations
 
@@ -103,8 +133,12 @@ mutation functions, as the optional Review planning tools do. They must not repr
 ### Project mutations
 
 `useProjectActions.ts` owns project metadata updates and lifecycle commands,
-including Review acknowledgement, revision handling, optimistic retention, and
-confirmed overlays.
+including Review acknowledgement, revision handling, and optimistic
+presentation. TanStack Query owns fetched/confirmed project-detail values for
+`ProjectDetailPage` and its focused workflows. Project optimism and row
+placement remain separate from that fetched cache. Task confirmed values remain
+owned by the existing task mutation path; this is not yet a whole-app query
+migration.
 Presentation code must not reproduce those raw API calls.
 
 `SharePage` is an explicit exception for its unique conflict-aware share/import
@@ -180,11 +214,140 @@ drag/outline manipulation, optimistic row presentation, and rail visibility.
 `scripts/check-architecture.mjs` enforce this. Its exception map is empty:
 no surface outside the two hosts renders a focused workflow. Never add to it.
 
+Hosts own loading/error recovery even for ID-only commands. Keep usable editors
+mounted and put read feedback in `BottomSheet.headerStatus`; never fabricate
+missing task trees for completion or commitment withdrawal. Workflow contexts
+own each opening's object identity synchronously: delayed callbacks check
+`isCurrent(opening)` and close with that opening, including same-ID reopenings.
+Carry the original opener through recovery; only foreground sheets register
+modal isolation and restore eligible focus.
+
+Task workflow inputs continue to use canonical task receipts and qualified task
+reads; task receipt lifetimes remain independent of visual retention and scoped
+to effective identity generations. For project detail, the initial migration
+uses the application QueryClient as the sole fetched/confirmed owner for
+`ProjectDetailPage` and focused project workflows. Identity-generation/project
+IDs qualify its keys; `useProjectActions.readProject/getProject` and observed
+queries share the same entry. A project access-denial GET hides cached detail,
+while network/5xx errors preserve usable detail and show sticky feedback.
+Read tokens capture the cache-entry identity and access epoch before transport;
+matching denials advance the entry's epoch. Query options preserve that metadata
+across refetches, and read feedback reaches the affected caller before denial
+invalidates its continuation.
+Mutation results reconcile through `useProjectActions`, revision-safe, and
+metadata-only results never create full detail. Query retries and automatic
+focus/reconnect reads are disabled; recovery is GET-only and explicit.
+Metadata and task-batch project revision snapshots reconcile into the same
+project entry. A revision-only snapshot requires an existing project baseline;
+full-detail consumers must check that actual task-tree data exists.
+
+Conflict, conversion, split, destination and project-entry callers use
+action-owned project reads and check the current opening/identity before using
+results. A local projection must retain its original read context rather than
+relabeling an obsolete response as current. Dispatched commands recheck their
+continuation before automatic Close/navigation or publishing errors; an
+unpublished mutation result is not success. Focused selection/completion
+callbacks can return `false` to suppress automatic Close, without changing
+explicit Cancel/Close. Project optimism and placement remain UI state and do
+not become a second fetched-detail cache.
+
+Access-related write failures request canonical revalidation; they do not prove
+that the source is unreadable. Existing workflow/detail providers reset opening,
+inspection and queue state on identity changes and guard expired methods, even
+when authentication remounts the hosts. Task read-only snapshots expire with
+the last interaction lease; task command-touched IDs retain one latest input
+per identity generation for offline consumers. Observation provenance uses weak
+object keys rather than strong references to raw detail responses. Project
+detail does not use this task receipt/provenance runtime. Confirmed task overlays preserve
+authoritative child membership and each child's revision precedence.
+The task workflow host merges its fetched tree with confirmed receipts through
+`taskHelpers.projectTaskValue` before applying pending presentation separately;
+a higher parent receipt must not replace fetched child membership wholesale.
+Conversion workflows choose the newest actual host/local input, never pending
+props, and project conversion still requires qualified full detail.
+The existing descendant-terminal helper remains the narrow lifecycle exception
+for parent completion/cancellation policies, including equal-revision children.
+Planning keeps pending presentation and draft composition separate from its
+`authoritativeTask` reconciliation input. New actual input runs the existing
+three-way merge once, refreshes untouched wait/dependency fields and revisions,
+and preserves save errors, divergent conflicts and unfinished reminder input.
+No real baseline means no Save; neither the planner nor its reminder editor is
+keyed by server revision. Planning previews capture the target continuation
+before the await and recheck it before publishing decisions or starting a write.
+Activation/deadline requirements reconcile every relevant qualified snapshot
+through the existing target-scoped snapshot merge, including the first detail
+after metadata initialization and equal-revision derived changes. Lower target
+revisions do not replace requirements or acquire new provenance. GET-only
+recovery preserves driver/next-action drafts and requires deliberate Save.
+Explicit activation/reopening uses `directActivationDecisionSnapshot`, not the
+commitment snapshot used by deadline changes. Its read guard retains the
+source-read provenance and checks only IDs actually named by that direct
+snapshot; a known but unused ancestor is not an activation prerequisite.
+Requirements naming additional IDs need their original qualified reads and
+cannot receive response-time stamps. Deadline changes continue to guard the
+full commitment chain, and an omitted shared snapshot remains unavailable
+rather than falling back to direct requirements. Project openings carry known
+story ancestor IDs into the host's pre-GET qualification for chain-dependent
+operations; each recovery result retains its own original affected-read
+tokens, including when another retry is queued. Omitted or unqualified
+requirements remain unavailable. An equal-revision full host input wins
+derived ancestry, but metadata alone must not displace a qualified full-detail
+prerequisite.
+Project-entry and split expose their own existing read runner's retry while
+keeping step editors mounted. Route-owned project entry remains mounted for
+the same actor-generation/project opening across page loading, error and access
+denial, and reads only nullable full-detail authority from the canonical
+project Query. It hides protected source fields and expired preview
+requirements while preserving authored steps; a fresh committed GET enables a
+new deliberate preview, never a write by recovery. Preview requirements carry
+their original pre-preview target continuation:
+revocation hides server requirement labels immediately but retains authored
+steps/driver/next-action choices internally. A qualified GET restores the source
+baseline, not old preview authority; a deliberate fresh preview merges choices
+before another deliberate Submit. Planning/conversion apply the same boundary
+to task/project continuations. Deadline/activation snapshot merges receive the
+actual same-target baseline explicitly when an active target is absent from
+`expectedProjects`; ancestor or different-task revisions are not its baseline.
+Move/conversion and containing-project previews bind the original source,
+destination and affected story-ancestor epochs before the request. Use
+`projectActivationTargetIds` with qualified detail's typed ancestry; task parents
+and revision-bearing descendants are not project targets. If a task input lacks
+its containing project's ancestry, its canonical GET learns that chain before
+the command, never from the response. Denied affected reads require a qualified
+GET before requesting requirements. Requirements and expected-project IDs
+outside the captured chain cannot acquire fresh provenance after the response.
+Restoration alone never recertifies a stored prompt; deliberate regeneration
+merges applicable authored decisions. Project conversion reconciles every newly
+selected actual detail through its existing title/notes three-way merge, retains
+divergent conflicts across equivalent reads, rejects lower baselines and uses
+current selected authority for explicit choices.
+The canonical project reader reports a matching operation's read failure before
+revoking its generation; obsolete failures cannot invoke that feedback path.
+Affected-read failures retain drafts and expose an explicit GET-only retry.
+Local failed-read feedback applies only to the currently qualified affected
+chain; changing to an unrelated qualified destination never clears shared read
+revocation. Entry/split recovery of their containing target uses the existing
+stamped read runner and installs its accepted full baseline, not the obsolete
+snapshot token. Ancestor-only retry does not replace that target baseline.
+Equal-revision qualified host detail wins derived hierarchy over local conversion
+reads; only the existing higher stale-refresh slot may retain local authority,
+not a mirror of every selected fetched snapshot.
+Invalidated
+move destinations disable Submit and offer visible read feedback and a GET-only
+retry for the same selection. Usable destination pickers/search nodes and read
+warnings stay mounted through pending/failed retries; only accepted read success
+clears the warning. A silent no-op is not recovery.
+`IdentityGate` waits for unresolved startup identity before mounting routes;
+known server-bound identities need not wait for the member catalog. Route-driven
+openings must not be started in a provisional identity and then silently reset.
+Opening ownership includes that identity lifetime. `useAsync` exposes raw
+failure causes alongside localized messages for these typed access decisions.
+
 ## Canonical primitive registry
 
 | Need | Canonical primitive or path |
 |------|-----------------------------|
-| Status transition display lifetime | `useRetainedMutations` owns pending/confirmed values and independent holding IDs; `useRetainedPlacement`/`retainedPlacement` preserve view-local buckets and tree positions; `useRetentionInteraction` leases removal while an interaction is open, including task placement ancestors, held descendants keeping ancestors mounted, and pending child-policy prompts. TaskActions observes tree relations separately from authoritative value reconciliation using cached descendant sets in `taskHelpers.indexTaskDescendants`. Review reuses placement with stable issue keys and task/project holding predicates, including timed acknowledgements. Placement merges each sibling level once and keeps authoritative membership/fields separate from retained values; `taskHelpers.applyDescendantTerminalOutcome` is the narrow task lifecycle exception. A live task interaction registry refreshes owner leases when observations add descendants. Task rows/projectors use `TaskActions.projectTask`, and project views use `ProjectActions.projectStory`, for pending-aware value selection; confirmed equal-revision reads supply fresh derived fields. Ordering precedes placement; explicit outline commands reset its local generation. Linear sibling-anchor merging covers wide holds, and project placement includes tag groups. Successful task/project writes invalidate immediately. |
+| Status transition display lifetime | `useRetainedMutations` owns pending optimistic values and independent holding IDs; `useRetainedPlacement`/`retainedPlacement` preserve view-local buckets and tree positions; `useRetentionInteraction` leases removal while an interaction is open, including task placement ancestors, held descendants keeping ancestors mounted, and pending child-policy prompts. TaskActions observes tree relations separately from authoritative value reconciliation using cached descendant sets in `taskHelpers.indexTaskDescendants`. Review reuses placement with stable issue keys and task/project holding predicates, including timed acknowledgements. Placement merges each sibling level once and keeps authoritative membership/fields separate from retained values; `taskHelpers.applyDescendantTerminalOutcome` is the narrow task lifecycle exception. A live task interaction registry refreshes owner leases when observations add descendants. Task rows/projectors use `TaskActions.projectTask` and project views use `ProjectActions.projectStory` for pending-aware optimistic presentation; project detail fetched state belongs to TanStack Query, while task confirmed values remain on the existing task path. Ordering precedes placement; explicit outline commands reset its local generation. Linear sibling-anchor merging covers wide holds, and project placement includes tag groups. Successful task/project writes invalidate immediately. |
 | AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakeCanonicalPlanning`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus boundary normalization in `packages/shared/src/inputNormalization.ts` and Zod structural schemas in `apps/api/src/schemas.ts` |
 | AI intake execution (jobs, prompt, apply) | `apps/api/src/intake/` (`jobs.ts`, `prompt.ts`, `apply.ts`, `storage.ts`, `cleanup.ts`), `apps/api/src/routes/intake.ts`, `apps/web/src/pages/IntakeReviewPage.tsx`, and `apps/web/src/lib/useStartIntake.ts`; Apply uses the domain create primitives |
 | AI clarification and reviewed application | `task.refine`/`story.refine` open the shared `WorkClarificationSheet` through the canonical workflow hosts. It offers general improvement, next action and structure intents for tasks/projects, plus a task-only smaller-steps intent when `canBreakDownTask` allows it. Smaller steps reuse `/api/intake/task/:taskId`; typed existing-work changes use `/api/intake/refinement/:targetType/:targetId`. Both use the existing intake job, Home Assistant `intake_analyze` bridge, `/intake/:id` review route, and transactional canonical domain mutations. Typed planning uses shared date/reminder contracts and canonical task mutations. `update_wait` starts or updates the existing external wait; `resolve_wait` calls `resolveExternalWait` without completing the action. `cancel_task` calls `cancelTask` and requires an explicit reviewed descendants policy when open work is affected. Nested `create_child` steps use proposal-local keys, validate accepted parent references, and are created topologically inside the same transaction. A task→project conversion can include a reviewed `update_task` title/notes edit only; the API applies it to the converted project through `updateProject`, while shared selected-change validation rejects incompatible same-item operations and duplicate text-field writes before Apply. `WorkRefinementReview` summarizes proposed differences by default, retains local edits on failure, focuses visible errors or activation requirements, and keeps existing editors mounted behind per-change disclosures. Launch from task details hands off to the existing intake route while suspending the live detail context and queue for return; it does not create a second review/polling path. |
@@ -203,8 +366,11 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` (method-aware facts and citation selection), `ObservationPlanSummary` in `ObservationPlanEditor.tsx`, and `InterventionAssessSheet`; existing reflection evidence is reused |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
-| Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
-| Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
+| Shared read invalidation | `apps/web/src/lib/refresh.tsx`; initial project-detail slice invalidates identity-qualified TanStack Query entries, while non-migrated resources continue to use their existing read owners |
+| Project detail fetched-state ownership and publication | `apps/web/src/lib/projectQueries.ts` and `useProjectActions.tsx::useProjectDetailQuery/getProject`; QueryClient is the sole fetched/confirmed detail owner for ProjectDetail and focused project workflows. Full and metadata-only revisions share the actual cache-publication guard; equal revisions preserve the incoming full object, and an accepted current full GET alone clears read denial. Identity-scoped confirmed detail remains available until its identity scope is removed. Lists and task reads remain outside this initial migration. |
+| Resource-specific read recovery | `apps/web/src/components/AsyncStates.tsx::ReadErrorState` composes the existing `ErrorState` with sticky same-query errors and the failed query's GET-only retry. Entry/split retain their composers; moves retain usable destination picker/search nodes and warnings during retry. Route-owned entry keeps its actor/opening composer mounted and derives nullable authority from the canonical Query rather than retaining page props. |
+| Confirmed task tree input | `apps/web/src/lib/taskHelpers.ts::projectTaskValue` merges fetched membership and per-child revision precedence with task confirmed receipts before the workflow host applies pending presentation separately. A higher parent receipt is not a replacement fetched tree. Planning/conversion receive actual authority separately from presentation. |
+| Retained optimistic task mutation and confirmed command input | `apps/web/src/lib/useRetainedMutations.ts` owns task visual retention and task-side revisioned receipts, stable `TargetReadToken` identity/target epochs, weak read provenance and lease/timer ownership. Task action-owned stamped readers feed existing task read boundaries; only current post-denial GETs restore readability. `identity.tsx::useIdentityScope` supplies action/workflow/detail generations, and `identityStorage.ts` supplies opaque request generations checked by `api.ts` before authentication-required events, including cookie-bound identities. `IdentityGate` prevents provisional startup openings. Project fetched/confirmed detail no longer uses this receipt/provenance runtime. |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
@@ -219,7 +385,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
 | Agenda eligibility and available work selection | `apps/api/src/domain/agendaSelection.ts`; Today supplies `executionDate` and one refreshed instant for full execution eligibility, while `agenda.ts` retains attention-root precedence. `compiledViewProjection.ts` filters embedded Today execution with that same predicate and promotes eligible deeper work through unavailable intermediates. Week/Waiting retain default projections. |
-| Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx` |
+| Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx`; successful current-query reads own membership. Local field intents are query-lifetime/task/token-qualified, never whole-agenda copies or rollback snapshots. The existing operation ledger retains the newest confirmed canonical Task baseline independently of failed intents, including observed Planning results. Higher authoritative revisions win; confirmed fields and command baselines release only after a successful read started at/after their acknowledgement/observation. Receipts never restore read-excluded membership or replace derived display fields. Confirmations are not write locks. |
 | Week attention-date/placement projection | `projectWeekAttention` in `packages/shared/src/index.ts`, shared by backend `weekAgenda.ts` and frontend `WeekPage.tsx` optimistic updates |
 | Exhaustive inventory filtering | `apps/web/src/lib/allInventory.ts` |
 | Refinement sizing semantics | `apps/web/src/lib/refinementHelpers.ts` |
@@ -227,7 +393,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project metadata and lifecycle actions | `apps/web/src/lib/useProjectActions.ts` |
 | Task hierarchy planning | `apps/web/src/lib/taskTreeMove.ts` |
 | Task hierarchy execution | `apps/web/src/lib/useOutlineOrganize.tsx` and `api.moveTask` |
-| Proposed activation decisions | `activationPreview.ts` evaluates the exact canonical mutation in a rollback-only transaction; the existing routes carry the preview header, and `projectActivationResolution.ts` adapts server snapshots. No preview writes or change notifications persist. |
+| Proposed activation decisions | `activationPreview.ts` evaluates the exact canonical mutation in a rollback-only transaction; the existing routes carry the preview header, and `projectActivationResolution.ts` adapts server snapshots. Its React-free `projectActivationTargetIds` selects explicit project IDs and typed story ancestors for original pre-request action-owned read continuations, never response-time stamps or revision heuristics. No preview writes or change notifications persist. |
 | Shared task-step entry and atomic batches | `apps/web/src/components/StepComposer.tsx` for authored rows; `POST /api/tasks/:id/children/batch` and `POST /api/projects/:id/tasks/batch` call the shared transactional task-step operation in `apps/api/src/domain/taskStepBatch.ts`. Inbox parent classification and commitment activation are part of that transaction. Inline successors still use the canonical successor mutation. |
 | Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |
 | Household member selection | `apps/web/src/components/MemberSelectionSheet.tsx` |
@@ -242,7 +408,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task primary action | `task.primaryAction` in `useWorkItemCommands` clarifies captured tasks and otherwise uses the canonical guarded completion/reopen command. No swipe preferences or persistence; gesture thresholds and the separate lifecycle rail remain in `useHorizontalSwipe`/`TaskRow`. |
 | Horizontal row/card swipe | `apps/web/src/lib/useHorizontalSwipe.ts`; guided capture opts out of interactive-control starts and reuses its existing area navigation |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
-| Modal sheet viewport and focus | `BottomSheet` owns visual viewport resize/scroll bounds, scroll containment, modal isolation and focus; forms do not add keyboard offsets. |
+| Modal sheet viewport and focus | `BottomSheet` owns visual viewport resize/scroll bounds, scroll containment, modal isolation and focus; `BottomSheetPresentationProps` carries host status, original opener and suspension without another workflow wrapper. Restoration stays in the foreground sheet or falls back to `#main-content`, and queued restoration must not steal a later opening's focus. Forms do not add keyboard offsets. |
 | Markdown note editing and input | `MarkdownEditor` (CodeMirror 6), `MarkdownEditorHandle`; existing toolbar/attachment flow and caller-owned explicit save/cancel |
 | Quick note append / current-note tail | `NotesAppend`, `NotesTail`, `noteMarkdown.ts` / `noteEntries.ts`, and task/project `appendNotes` actions; existing atomic notes endpoints |
 | Markdown attachment references and projections | `packages/shared/src/paperlessMarkdown.ts`, `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |
@@ -262,7 +428,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome/convert to task) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
-| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria, while the canonical domain operation preserves a nested root's parent/position and rejects project descendants, archived-status, or incompatible recurrence/wait mappings atomically |
+| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; reviews preserved children and criteria and applies its existing authored-field three-way merge to each selected qualified detail, with explicit divergent choices against current authority. Original source/containing-story epochs guard requirements and completion. The canonical domain operation preserves a nested root's parent/position and rejects project descendants, archived-status, or incompatible recurrence/wait mappings atomically. |
 | Project hierarchy execution | `apps/api/src/domain/structuralMoves.ts` (`moveProject`) and `POST /api/projects/:id/move`; `MoveProjectSheet` is the focused `story.move` workflow. `assertHierarchySnapshot` is reused by moves and role conversion. |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
 | View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, `InboxPage` |

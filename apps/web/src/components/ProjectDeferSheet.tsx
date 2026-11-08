@@ -3,10 +3,11 @@ import { calendarDateForInstant, type Project } from "@machbar/shared";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { taskRevisitForLocalDate } from "../lib/taskAvailability";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
+import { useProjectActions } from "../lib/useProjectActions";
 
 function toRevisitAt(
   date: string,
@@ -27,13 +28,17 @@ export function ProjectDeferSheet({
   onClose,
   onSave,
   onRefresh,
+  withdrawalReady = true,
+  ...presentation
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { revisitAt: string | null; withdrawCommitments: boolean }) => Promise<void>;
+  onSave: (patch: { revisitAt: string | null; withdrawCommitments: boolean }) => Promise<void | boolean>;
   onRefresh?: () => void;
-}) {
+  withdrawalReady?: boolean;
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
+  const projectActions = useProjectActions();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
   const [customDate, setCustomDate] = useState(false);
@@ -62,12 +67,14 @@ export function ProjectDeferSheet({
 
   const commit = async (patch: { revisitAt: string | null }) => {
     if (saving) return;
+    const continuation = projectActions.captureTargetRead(story.id);
     setSaving(true);
     setError(null);
     try {
-      await onSave({ ...patch, withdrawCommitments });
-      onClose();
+      const accepted = await onSave({ ...patch, withdrawCommitments });
+      if (accepted !== false && projectActions.isCurrentTargetRead(continuation)) onClose();
     } catch (cause) {
+      if (!projectActions.isCurrentTargetRead(continuation)) return;
       setError(localizedErrorMessage(cause, strings));
       onRefresh?.();
     } finally {
@@ -90,6 +97,7 @@ export function ProjectDeferSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       title={story.status === "active" ? strings.deferProject : story.status === "archived" ? strings.restoreProjectToBacklog : strings.revisit}
       onClose={() => {
         if (!saving) onClose();
@@ -107,7 +115,7 @@ export function ProjectDeferSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || (withdrawCommitments && !withdrawalReady)}
               onClick={() => commitDate(addIsoCalendarDays(today(), 1))}
             >
               {strings.projectDeferShortcutLabels.tomorrow}
@@ -115,7 +123,7 @@ export function ProjectDeferSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || (withdrawCommitments && !withdrawalReady)}
               onClick={() => commitDate(addIsoCalendarDays(today(), 7))}
             >
               {strings.projectDeferShortcutLabels.nextWeek}
@@ -123,7 +131,7 @@ export function ProjectDeferSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || (withdrawCommitments && !withdrawalReady)}
               onClick={() => commitDate(addIsoCalendarDays(today(), 14))}
             >
               {strings.projectDeferShortcutLabels.twoWeeks}
@@ -131,7 +139,7 @@ export function ProjectDeferSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || (withdrawCommitments && !withdrawalReady)}
               onClick={() => commitDate(addIsoCalendarDays(today(), 30))}
             >
               {strings.projectDeferShortcutLabels.nextMonth}
@@ -139,7 +147,7 @@ export function ProjectDeferSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || (withdrawCommitments && !withdrawalReady)}
               onClick={() => void commit({ revisitAt: null })}
             >
               {strings.projectDeferWithoutRevisit}
@@ -169,7 +177,7 @@ export function ProjectDeferSheet({
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={saving || !timezoneLoaded || !dateValid}
+                disabled={saving || !timezoneLoaded || !dateValid || (withdrawCommitments && !withdrawalReady)}
                 onClick={() => commitDate(revisitDate)}
               >
                 {strings.save}

@@ -9,6 +9,8 @@ export interface AsyncState<T> {
   refreshing: boolean;
   error: string | null;
   refreshError: string | null;
+  errorCause: unknown | null;
+  refreshErrorCause: unknown | null;
   reload: () => void;
 }
 
@@ -87,7 +89,6 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
             loading: false,
             refreshing: true,
             errorCause: null,
-            refreshErrorCause: null,
           }
         : {
             generation: currentGeneration,
@@ -95,7 +96,7 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
             hasData: false,
             loading: true,
             refreshing: false,
-            errorCause: null,
+            errorCause: existing.generation === currentGeneration ? existing.errorCause : null,
             refreshErrorCause: null,
           };
       snapshotRef.current = pending;
@@ -176,6 +177,8 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
         };
   return {
     data: current.data,
+    errorCause: current.errorCause,
+    refreshErrorCause: current.refreshErrorCause,
     loading: current.loading,
     refreshing: current.refreshing,
     error:

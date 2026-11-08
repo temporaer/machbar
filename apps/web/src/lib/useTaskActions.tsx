@@ -4,6 +4,7 @@ import { api } from "./api";
 import type {
   ExternalWaitFollowUpInput,
   ExternalWaitInput,
+  TaskDetail,
   UpdateTaskInput,
 } from "./api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
@@ -19,7 +20,10 @@ import {
   setOwnerInheritance,
   updateTask,
 } from "./taskMutations";
-import { useRetainedMutations } from "./useRetainedMutations";
+import { useRetainedMutations, type TargetReadToken, type TargetRead } from "./useRetainedMutations";
+import { isWorkItemAccessError } from "./errorMessage";
+import { useStrings } from "./strings";
+import { useIdentityScope } from "./identity";
 export { RETENTION_MS } from "./useRetainedMutations";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
@@ -29,6 +33,8 @@ export type PendingAction = "complete" | "cancel";
 type WithoutExpectedRevision<T> = T extends unknown
   ? Omit<T, "expectedRevision">
   : never;
+
+const taskReceiptRevision = (task: Task) => task.revision;
 
 /**
  * Centralises the complete/reopen/cancel/quick-status flow, including the
@@ -49,11 +55,21 @@ type WithoutExpectedRevision<T> = T extends unknown
  * of each owning an independent copy. Call `useTaskActions()` to consume it.
  */
 function useTaskActionsState() {
+  const strings = useStrings();
+  const identityKey = useIdentityScope();
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
-  const mutations = useRetainedMutations<Task>({ immediateRefresh: true });
+  const mutations = useRetainedMutations<Task>({ immediateRefresh: true, identityKey, receiptRevision: taskReceiptRevision });
+  const scope = useRef(mutations.scopeToken);
+  if (scope.current !== mutations.scopeToken) {
+    scope.current = mutations.scopeToken;
+    if (pending !== null) setPending(null);
+    if (acknowledgedReviewIds.size > 0) setAcknowledgedReviewIds(new Set());
+  }
   const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
-  const projectTask = useCallback((task: Task) => projectTaskValue(task, retained.get(task.id), isPending(task.id)), [retained, isPending]);
+  const projectTask = useCallback((task: Task) => projectTaskValue(
+    projectTaskValue(task, mutations.getConfirmed(task.id)), retained.get(task.id), isPending(task.id),
+  ), [mutations.getConfirmed, mutations.confirmedSnapshots, retained, isPending]);
   useEffect(() => {
     setAcknowledgedReviewIds(current => {
       const next = new Set([...current].filter(id => mutations.holdingIds.has(id)));
@@ -67,7 +83,34 @@ function useTaskActionsState() {
   const liveState = useRef({ holding: mutations.holdingIds, pending: pendingIds });
   liveState.current = { holding: mutations.holdingIds, pending: pendingIds };
   const interactions = useRef(new Set<{ id: number; leases: Map<number, () => void> }>());
+  const relationScope = useRef(mutations.scopeToken);
+  if (relationScope.current !== mutations.scopeToken) {
+    relationScope.current = mutations.scopeToken;
+    placementDescendants.current.clear();
+    observedDescendants.current.clear();
+    interactions.current.clear();
+  }
+  const observeConfirmedTask = useCallback((task: Task, read?: TargetReadToken) =>
+    mutations.observeConfirmed(task.id, task, task, read), [mutations.observeConfirmed]);
+  const readTask = useCallback(async (id: number): Promise<TargetRead<TaskDetail>> => {
+    const read = mutations.captureTargetRead(id);
+    try {
+      const value = await api.getTask(id);
+      mutations.trackTargetRead(read, value);
+      return { read, value };
+    } catch (cause) {
+      if (!mutations.isCurrentTargetRead(read)) throw new Error(strings.workflowTargetUnavailable);
+      if (isWorkItemAccessError(cause)) mutations.invalidateConfirmed(id, read);
+      throw cause;
+    }
+  }, [mutations.captureTargetRead, mutations.invalidateConfirmed, mutations.trackTargetRead, mutations.isCurrentTargetRead, strings]);
+  const getTask = useCallback(async (id: number) => {
+    const result = await readTask(id);
+    if (!mutations.isCurrentTargetRead(result.read)) throw new Error(strings.workflowTargetUnavailable);
+    return result.value;
+  }, [readTask, mutations.isCurrentTargetRead, strings]);
   const syncInteractions = useCallback(() => {
+    if (!mutations.isCurrentScope(mutations.scopeToken)) return;
     for (const interaction of interactions.current) {
       const owners = new Set([interaction.id]);
       for (const [owner, descendants] of placementDescendants.current) {
@@ -80,8 +123,9 @@ function useTaskActionsState() {
         if (!interaction.leases.has(owner)) interaction.leases.set(owner, mutations.pauseRetention(owner));
       }
     }
-  }, [mutations.pauseRetention]);
+  }, [mutations.pauseRetention, mutations.isCurrentScope, mutations.scopeToken]);
   const observeTasks = useCallback((tasks: readonly Task[]) => {
+    if (!mutations.isCurrentScope(mutations.scopeToken)) return;
     for (const [id, descendants] of indexTaskDescendants(tasks)) {
       observedDescendants.current.set(id, descendants);
       const previous = placementDescendants.current.get(id);
@@ -93,7 +137,7 @@ function useTaskActionsState() {
     // Existing interactions acquire new owners too, without dropping the old
     // paths that still keep their displayed row mounted.
     syncInteractions();
-  }, [syncInteractions]);
+  }, [syncInteractions, mutations.isCurrentScope, mutations.scopeToken]);
   useEffect(() => {
     for (const [id, descendants] of placementDescendants.current) {
       if (![id, ...descendants].some(candidate => mutations.holdingIds.has(candidate) || pendingIds.has(candidate))) placementDescendants.current.delete(id);
@@ -101,6 +145,7 @@ function useTaskActionsState() {
   }, [mutations.holdingIds, pendingIds]);
   useLayoutEffect(syncInteractions, [syncInteractions, mutations.holdingIds, pendingIds]);
   const pauseRetention = useCallback((id: number) => {
+    if (!mutations.isCurrentScope(mutations.scopeToken)) return () => {};
     const interaction = { id, leases: new Map<number, () => void>() };
     interactions.current.add(interaction);
     syncInteractions();
@@ -108,7 +153,7 @@ function useTaskActionsState() {
       if (!interactions.current.delete(interaction)) return;
       interaction.leases.forEach(close => close());
     };
-  }, [syncInteractions]);
+  }, [syncInteractions, mutations.isCurrentScope, mutations.scopeToken]);
   useEffect(() => {
     if (pending) return pauseRetention(pending.task.id);
   }, [pending, pauseRetention]);
@@ -120,6 +165,8 @@ function useTaskActionsState() {
       job: () => Promise<Task>,
       throwOnError = false,
     ) => {
+      const token = mutations.scopeToken;
+      if (!mutations.isCurrentScope(token)) return undefined;
       for (const [ancestor, descendants] of observedDescendants.current) {
         if (descendants.has(task.id)) {
           placementDescendants.current.set(ancestor, new Set([...(placementDescendants.current.get(ancestor) ?? []), ...descendants]));
@@ -135,10 +182,10 @@ function useTaskActionsState() {
           throwOnError,
         });
       } finally {
-        setPending(null);
+        if (mutations.isCurrentScope(token)) setPending(null);
       }
     },
-    [run],
+    [run, mutations.scopeToken, mutations.isCurrentScope],
   );
 
   const complete = useCallback(
@@ -317,6 +364,7 @@ function useTaskActionsState() {
       run({
         id: task.id,
         mutate: () => api.makeTaskAction(task.id, task.revision),
+        confirmed: task => task,
         retain: false,
         refreshImmediately: true,
         throwOnError: true,
@@ -463,6 +511,7 @@ function useTaskActionsState() {
       run({
         id: task.id,
         mutate,
+        confirmed: task => task,
         retain: false,
         throwOnError,
       }),
@@ -512,6 +561,7 @@ function useTaskActionsState() {
   /** Toggle from a checkbox: asks first when there are open children. */
   const requestToggle = useCallback(
     (task: Task) => {
+      if (!mutations.isCurrentScope(mutations.scopeToken)) return;
       if (task.status === "done" || task.status === "cancelled") {
         void reopen(task);
         return;
@@ -522,12 +572,13 @@ function useTaskActionsState() {
       }
       void complete(task);
     },
-    [complete, reopen],
+    [complete, reopen, mutations.isCurrentScope, mutations.scopeToken],
   );
 
   /** Explicit "discard" action: asks first when there are open children. */
   const requestCancel = useCallback(
     (task: Task) => {
+      if (!mutations.isCurrentScope(mutations.scopeToken)) return;
       if (task.status === "cancelled") return;
       if (hasOpenDescendants(task)) {
         setPending({ task, action: "cancel" });
@@ -535,7 +586,7 @@ function useTaskActionsState() {
       }
       void cancel(task);
     },
-    [cancel],
+    [cancel, mutations.isCurrentScope, mutations.scopeToken],
   );
 
   const resolvePolicy = useCallback(
@@ -547,10 +598,23 @@ function useTaskActionsState() {
     [pending, complete, cancel],
   );
 
-  const cancelPrompt = useCallback(() => setPending(null), []);
+  const cancelPrompt = useCallback(() => {
+    if (mutations.isCurrentScope(mutations.scopeToken)) setPending(null);
+  }, [mutations.isCurrentScope, mutations.scopeToken]);
 
   return {
     observeTasks,
+    observeConfirmedTask,
+    readTask,
+    getTask,
+    captureTargetRead: mutations.captureTargetRead,
+    isCurrentTargetRead: mutations.isCurrentTargetRead,
+    isCurrentTaskRead: mutations.isCurrentTargetValue,
+    isTargetReadable: mutations.isTargetReadable,
+    getConfirmedTask: mutations.getConfirmed,
+    invalidateConfirmedTask: mutations.invalidateConfirmed,
+    scopeToken: mutations.scopeToken,
+    isCurrentScope: mutations.isCurrentScope,
     projectTask,
     acknowledgedReviewIds,
     release: mutations.release,

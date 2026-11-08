@@ -21,6 +21,12 @@ type HiddenState = {
 
 type BottomSheetInitialFocus = "first-control" | "dialog";
 
+export interface BottomSheetPresentationProps {
+  headerStatus?: ReactNode;
+  restoreFocusTo?: HTMLElement | null;
+  suspended?: boolean;
+}
+
 const sheetStack: SheetEntry[] = [];
 const hiddenElements = new Map<HTMLElement, HiddenState>();
 let nextSheetOrder = 0;
@@ -184,13 +190,24 @@ function unregisterSheet(id: symbol) {
     bodyOverflow = null;
   }
 
-  if (wasTop && entry.opener?.isConnected) {
-    const opener = entry.opener;
+  if (wasTop) {
     const nextTopId = topSheet()?.id;
-    opener.focus();
-    queueMicrotask(() => {
-      if (opener.isConnected && topSheet()?.id === nextTopId) opener.focus();
-    });
+    const restoreFocus = () => {
+      if (topSheet()?.id !== nextTopId) return;
+      const foreground = topSheet();
+      const opener = entry.opener;
+      const eligible = opener?.isConnected &&
+        opener !== document.body &&
+        !opener.hasAttribute("disabled") &&
+        !opener.closest('[hidden], [aria-hidden="true"], [inert]') &&
+        !isHiddenByClosedDetails(opener) &&
+        (!foreground || foreground.dialog.contains(opener));
+      if (eligible) opener.focus({ preventScroll: true });
+      else if (foreground) focusSheet(foreground, "first-control");
+      else document.getElementById("main-content")?.focus({ preventScroll: true });
+    };
+    restoreFocus();
+    queueMicrotask(restoreFocus);
   }
 }
 
@@ -201,6 +218,7 @@ export function BottomSheet({
   labelledBy,
   headerActions,
   headerStatus,
+  restoreFocusTo,
   initialFocus = "first-control",
   suspended = false,
 }: {
@@ -209,10 +227,8 @@ export function BottomSheet({
   children: ReactNode;
   labelledBy?: string;
   headerActions?: ReactNode;
-  headerStatus?: ReactNode;
   initialFocus?: BottomSheetInitialFocus;
-  suspended?: boolean;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const internalHeadingId = useId();
   const headingId = labelledBy ?? internalHeadingId;
@@ -220,9 +236,11 @@ export function BottomSheet({
   const orderRef = useRef<number | null>(null);
   const order = orderRef.current ?? (orderRef.current = nextSheetOrder++);
   const openerRef = useRef<HTMLElement | null>(
-    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
+    restoreFocusTo !== undefined
+      ? restoreFocusTo
+      : typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null,
   );
   const dialogRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -279,6 +297,11 @@ export function BottomSheet({
     });
     return () => unregisterSheet(idRef.current);
   }, [suspended]);
+
+  useLayoutEffect(() => {
+    const entry = topSheet();
+    if (entry?.id === idRef.current) focusSheet(entry, entry.initialFocus);
+  }, [headerStatus, suspended]);
 
   return createPortal(
     <div

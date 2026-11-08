@@ -199,12 +199,14 @@ export function useWorkItemCommands() {
           projectWorkflow.open(
             action === "reopen" ? "reopenWithDriver" : "activateWithDriver",
             story.id,
+            story.ancestors?.filter(ancestor => ancestor.role === "story").map(ancestor => ancestor.id),
           );
           return true;
         case "driver":
           projectWorkflow.open(
             action === "reopen" ? "reopenWithDriver" : "activateWithDriver",
             story.id,
+            story.ancestors?.filter(ancestor => ancestor.role === "story").map(ancestor => ancestor.id),
           );
           return true;
         default:
@@ -489,7 +491,8 @@ export function useWorkItemCommands() {
           projectWorkflow.open("convertToTask", command.story.id);
           return;
         case "story.deadline":
-          projectWorkflow.open("deadline", command.story.id);
+          projectWorkflow.open("deadline", command.story.id,
+            command.story.ancestors?.filter(ancestor => ancestor.role === "story").map(ancestor => ancestor.id));
           return;
         case "story.tags":
           projectWorkflow.open("tags", command.story.id);

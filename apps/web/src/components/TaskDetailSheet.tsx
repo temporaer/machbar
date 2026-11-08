@@ -126,14 +126,19 @@ export function TaskDetailSheet() {
   const revisionRef = useRef<number | null>(null);
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
+  const taskActions = useTaskActions();
   const {
-    data: loadedTask,
+    data: taskResult,
     loading,
     error,
     reload,
-  } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
-  const taskActions = useTaskActions(flattenTasks(loadedTask ? [loadedTask] : []));
+  } = useAsync(() => (openTaskId ? taskActions.readTask(openTaskId) : Promise.resolve(null)), [openTaskId, taskActions.scopeToken]);
+  const loadedTask = taskResult && taskActions.isCurrentTargetRead(taskResult.read) ? taskResult.value : null;
+  useTaskActions(flattenTasks(loadedTask ? [loadedTask] : []));
   useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
+  useEffect(() => {
+    if (loadedTask && taskResult) taskActions.observeConfirmedTask(loadedTask, taskResult.read);
+  }, [loadedTask, taskResult, taskActions.observeConfirmedTask]);
   const task = loadedTask ? taskActions.projectTask(loadedTask) : null;
 
   // Recency is a soft ranking boost for search/pickers, not domain state —
@@ -489,6 +494,7 @@ export function TaskDetailSheet() {
     >
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
+      {!task && !loading && !error ? <ErrorState message={strings.workflowTargetUnavailable} onRetry={reload} /> : null}
       {task ? (
         <fieldset
           className="stack task-detail-content"

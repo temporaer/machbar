@@ -6,6 +6,7 @@ import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { useAsync } from "../lib/useAsync";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useProjectActions } from "../lib/useProjectActions";
 import {
   cleanupAnswerSurface,
   cleanupDefaultAnswer,
@@ -218,6 +219,7 @@ function CleanupRoundCard({
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
+  const projectActions = useProjectActions();
   const [error, setError] = useState<string | null>(null);
   const [flow, setFlow] = useState<CleanupMicroFlow | null>(null);
   const result = item.status === "ready" ? item.result : null;
@@ -257,7 +259,7 @@ function CleanupRoundCard({
       } else if (action.kind === "command") {
         dispatch(action.command);
       } else {
-        dispatch({ type: action.command, story: await api.getProject(action.projectId) });
+        dispatch({ type: action.command, story: await projectActions.getProject(action.projectId) });
       }
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));

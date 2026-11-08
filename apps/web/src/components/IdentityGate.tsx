@@ -34,7 +34,9 @@ export function IdentityGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!membersLoading && currentMemberId === null) {
+  if (membersLoading && currentMemberId === null) return <LoadingState />;
+
+  if (currentMemberId === null) {
     return (
       <div className="identity-gate">
         <h1>{strings.identity}</h1>

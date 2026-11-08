@@ -7,14 +7,15 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import { PageHeader } from "../components/PageHeader";
-import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
+import { LoadingState, ReadErrorState, EmptyState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 
 /** A quiet, shared list of work nominated for a future household discussion. */
 export function DiscussionPage() {
   const strings = useStrings();
-  const { data, loading, error, reload } = useAsync(() => api.getDiscussion(), []);
+  const discussionRead = useAsync(() => api.getDiscussion(), []);
+  const { data, loading } = discussionRead;
   const taskActions = useTaskActions(flattenTasks(data?.tasks ?? []));
   const projectActions = useProjectActions(data?.projects ?? []);
   const { rows: tasks } = useRetainedPlacement({ rows: data?.tasks ?? [] }, taskActions.holdingIds,
@@ -28,7 +29,7 @@ export function DiscussionPage() {
     <div className="discussion-page">
       <PageHeader title={strings.discussionTitle} />
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={reload} /> : null}
+      <ReadErrorState resource={strings.discussionTitle} {...discussionRead} />
       {empty ? <EmptyState message={strings.discussionEmpty} /> : null}
       {projects.length ? (
         <section className="section" aria-label={strings.projects}>

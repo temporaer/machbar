@@ -1,4 +1,5 @@
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
@@ -42,6 +43,9 @@ import { SwipeCoachProvider } from "./lib/swipeCoach";
 import { DeveloperModeProvider, useDeveloperMode } from "./lib/developerMode";
 import { HouseholdTimezoneProvider } from "./lib/householdTimezone";
 import { useStrings } from "./lib/strings";
+import { createQueryClient } from "./lib/projectQueries";
+
+const queryClient = createQueryClient();
 
 function TaskDetailHost() {
   return <TaskDetailSheet />;
@@ -74,7 +78,7 @@ function Shell() {
   const navigationHint = useGlobalNavigationKeys();
   return (
     <div className="app-shell">
-      <main className="app-main">
+      <main id="main-content" className="app-main" tabIndex={-1}>
         <IdentityGate>
           <Routes>
             <Route path="/" element={<Navigate to="/today" replace />} />
@@ -137,6 +141,7 @@ function Shell() {
 
 export function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       <LocaleProvider>
         <DeveloperModeProvider>
@@ -162,5 +167,6 @@ export function App() {
         </DeveloperModeProvider>
       </LocaleProvider>
     </ThemeProvider>
+    </QueryClientProvider>
   );
 }

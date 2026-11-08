@@ -13,7 +13,7 @@ vi.mock("../lib/api", () => ({ api: {
 const mocked = vi.mocked(api);
 const base = makeProject({ id: 42, title: "Project", status: "backlog" });
 let current = { ...base, tasks: [] as ReturnType<typeof makeTask>[] };
-function open() { return renderWithProviders(<ProjectTaskEntrySheet project={current} onClose={vi.fn()} />); }
+function open() { return renderWithProviders(<ProjectTaskEntrySheet projectId={current.id} onClose={vi.fn()} />); }
 async function title(value: string) { await userEvent.type(screen.getAllByPlaceholderText("Schritt …").at(-1)!, value); }
 
 describe("explicit project task entry", () => {

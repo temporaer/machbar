@@ -633,7 +633,21 @@ describe("ProjectDetailPage task explanations", () => {
 
   it("keeps driver decisions in the project activation workflow", async () => {
     const project = { ...makeProject({ id: 42, title: "Needs driver", status: "backlog", ownerMemberId: null }), tasks: [] };
-    mockedApi.getProject.mockResolvedValue(project);
+    mockedApi.getProject.mockResolvedValue({
+      ...project,
+      activationDecisionSnapshot: {
+        targetRevision: project.revision,
+        expectedProjects: [{ projectId: project.id, revision: project.revision }],
+        projects: [{ projectId: project.id, title: project.title, revision: project.revision,
+          ownerMemberId: null, required: ["driver"] as Array<"driver"> }],
+      },
+      directActivationDecisionSnapshot: {
+        targetRevision: project.revision,
+        expectedProjects: [{ projectId: project.id, revision: project.revision }],
+        projects: [{ projectId: project.id, title: project.title, revision: project.revision,
+          ownerMemberId: null, required: ["driver"] as Array<"driver"> }],
+      },
+    });
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { name: project.title });
     await openDetailActions();
@@ -883,6 +897,101 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
+  it("keeps the route-owned task-entry composer mounted across project-read denial", async () => {
+    let denied = false;
+    let revision = 1;
+    const source = makeProject({ id: 42, title: "Private route project" });
+    const requirementTitle = "Revoked route requirement";
+    mockedApi.getProject.mockImplementation(async () => {
+      if (denied) throw Object.assign(new Error("Project read revoked"), { name: "ApiError", status: 403 });
+      return { ...source, revision, tasks: [] };
+    });
+    mockedApi.previewProjectSteps.mockResolvedValue({
+      activatingProjects: [{ id: 42, title: requirementTitle }],
+      decision: {
+        targetRevision: 1,
+        expectedProjects: [{ projectId: 42, revision: 1 }],
+        projects: [{ projectId: 42, title: requirementTitle, revision: 1, ownerMemberId: null, required: ["driver"] }],
+      },
+    });
+    function RevokePageRead() {
+      const actions = useProjectActions();
+      return <button onClick={() => void actions.getProject(42).catch(() => {})}>Revoke page read</button>;
+    }
+
+    renderWithProviders(
+      <>
+        <Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes>
+        <TaskDetailHost /><TaskWorkflowHost /><ProjectWorkflowHost /><ProjectRouteLocation />
+        <TaskRouteState /><RouteControls /><RevokePageRead />
+      </>,
+      { initialEntries: ["/projects/42?focus=next-action"] },
+    );
+    const editor = (await screen.findAllByPlaceholderText("Schritt …"))[0]!;
+    await userEvent.type(editor, "Draft survives the route read");
+    await userEvent.click(screen.getByText(strings.stepPlanningOptional));
+    fireEvent.change(screen.getByLabelText(strings.due), { target: { value: "2027-01-15" } });
+    await userEvent.click(screen.getByRole("button", { name: "Aufgabe hinzufügen" }));
+    const requirement = await screen.findByLabelText(strings.commitmentDriverFor(requirementTitle));
+    await userEvent.selectOptions(requirement, "1");
+    const dialog = screen.getByRole("dialog", { name: strings.projectTasksTitle });
+    denied = true;
+    await userEvent.click(screen.getByRole("button", { name: "Revoke page read" }));
+    await waitFor(() => expect(dialog).toBeInTheDocument());
+    expect(screen.getAllByPlaceholderText("Schritt …")[0]).toBe(editor);
+    expect(editor).toHaveValue("Draft survives the route read");
+    expect(screen.queryByLabelText(strings.commitmentDriverFor(requirementTitle))).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: source.title })).not.toBeInTheDocument();
+
+    denied = false;
+    revision = 2;
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.retry }));
+    await waitFor(() => expect(editor).toBeInTheDocument());
+    expect(editor).toHaveValue("Draft survives the route read");
+    expect(screen.queryByLabelText(strings.commitmentDriverFor(requirementTitle))).not.toBeInTheDocument();
+    expect(mockedApi.createTaskStepBatchForProject).not.toHaveBeenCalled();
+  });
+
+  it("shows a sticky named refresh warning beside cached page data until a full GET succeeds", async () => {
+    const source = { ...makeProject({ id: 42, title: "Readable project" }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(source);
+    function Controls() {
+      const actions = useProjectActions();
+      return <>
+        <button onClick={() => void actions.getProject(42).catch(() => {})}>Refresh page project</button>
+        <button onClick={() => actions.reconcileProjectSnapshot({ ...source, revision: 2, title: "Confirmed metadata" })}>
+          Confirm metadata
+        </button>
+      </>;
+    }
+
+    renderWithProviders(
+      <>
+        <Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes>
+        <TaskWorkflowHost /><ProjectWorkflowHost /><Controls />
+      </>,
+      { initialEntries: ["/projects/42"] },
+    );
+    expect(await screen.findByRole("heading", { name: source.title })).toBeVisible();
+    mockedApi.getProject.mockRejectedValueOnce(
+      Object.assign(new Error("offline"), { name: "ApiError", status: 503 }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Refresh page project" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent(strings.readRefreshFailed(strings.project));
+    expect(screen.getByRole("heading", { name: source.title })).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Confirm metadata" }));
+    expect(await screen.findByRole("heading", { name: "Confirmed metadata" })).toBeVisible();
+    const updatedWarning = screen.getByRole("alert");
+    expect(updatedWarning).toHaveTextContent(strings.readRefreshFailed(strings.project));
+
+    mockedApi.getProject.mockResolvedValueOnce({ ...source, title: "Fresh project", revision: 3 });
+    await userEvent.click(within(updatedWarning).getByRole("button", { name: strings.retry }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Fresh project" })).toBeVisible();
+  });
+
   it("preserves project tasks without generic page help", async () => {
     renderWithProviders(<ProjectDetailPage />);
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
@@ -890,11 +999,13 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it("edits title and notes inline as separate explicit transactions", async () => {
-    mockedApi.updateProject.mockImplementation(async (id, input) => ({
-      ...makeProject({ id, title: "Sommerfest planen", ownerMemberId: 1 }),
-      ...input,
-      revision: 2,
-    }));
+    let confirmed = makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 });
+    mockedApi.updateProject.mockImplementation(async (id, input) => {
+      const { expectedRevision, ...patch } = input;
+      if (expectedRevision === undefined) throw new Error("Expected a revision-bound command");
+      confirmed = { ...confirmed, ...patch, id, revision: expectedRevision + 1 };
+      return confirmed;
+    });
     renderWithProviders(<ProjectDetailPage />);
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
@@ -948,6 +1059,7 @@ describe("ProjectDetailPage task explanations", () => {
       }),
     );
     expect(await screen.findByText("Neue Notiz")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Sommerfest 2027" })).toBeInTheDocument();
   });
 
   it("shows a title-save failure with the shared inline error treatment", async () => {
@@ -968,6 +1080,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Speichern fehlgeschlagen");
     expect(screen.getByRole("alert")).toHaveClass("detail-inline-error");
+    expect(screen.getByDisplayValue("Sommerfest 2027")).toBeInTheDocument();
   });
 
   it("disables other mutating controls while a canonical project mutation is pending", async () => {
@@ -1153,6 +1266,24 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
+  it("navigates away after successful project deletion removes the detail query", async () => {
+    mockedApi.deleteProject.mockResolvedValue(undefined);
+    renderProjectRoute("/projects/42");
+    await screen.findByText("Ort reservieren");
+
+    await userEvent.click(screen.getByRole("button", { name: "Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: strings.deleteProject }));
+    const dialog = await screen.findByRole("dialog", {
+      name: strings.deleteProjectChoiceTitle,
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: new RegExp(strings.deleteProjectOnlyLabel) }),
+    );
+
+    expect(await screen.findByText("Projects destination")).toBeInTheDocument();
+    expect(mockedApi.deleteProject).toHaveBeenCalledWith(42, { deleteTasks: false });
+  });
+
   it("separates destructive deletion inside the shared header action menu", async () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
@@ -1325,9 +1456,10 @@ describe("ProjectDetailPage task explanations", () => {
   it("opens the focused outcome editor on direct navigation and clears only the focus query when closed", async () => {
     renderProjectRoute("/projects/42?focus=outcome");
 
-    const dialog = await screen.findByRole("dialog");
+    const editor = await screen.findByPlaceholderText(strings.addCriterionPlaceholder);
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(`${strings.criteria}: Sommerfest planen`)).toBeInTheDocument();
-    expect(within(dialog).getByPlaceholderText(strings.addCriterionPlaceholder)).toHaveFocus();
+    expect(editor).toHaveFocus();
 
     await userEvent.click(
       within(dialog).getAllByRole("button", { name: strings.close })[0]!,
@@ -1412,10 +1544,9 @@ describe("ProjectDetailPage task explanations", () => {
     // A planning repair link is the `task.plan` intent, so it must reach the
     // same focused workflow as the rail, keyboard and detail value — not a
     // route-specific inspector or a focus field inside the task details.
-    const dialog = await screen.findByRole("dialog", {
-      name: strings.planning,
-    });
-    expect(within(dialog).getByLabelText(strings.planningScheduledFor)).toHaveFocus();
+    const editor = await screen.findByLabelText(strings.planningScheduledFor);
+    const dialog = screen.getByRole("dialog", { name: strings.planning });
+    expect(editor).toHaveFocus();
     expect(dialog.querySelectorAll(".task-planning-editor:not([hidden])")).toHaveLength(1);
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|7");
     expect(screen.getByLabelText("task-route-state")).toHaveTextContent("none|none");
@@ -1452,11 +1583,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     renderProjectRoute("/projects/42?focus=planning");
 
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
     expect(screen.getAllByRole("dialog", { name: strings.planning })).toHaveLength(1);
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|71");
   });
@@ -1468,9 +1595,8 @@ describe("ProjectDetailPage task explanations", () => {
 
     renderProjectRoute("/projects/42?focus=planning");
 
-    const dialog = await screen.findByRole("dialog", {
-      name: strings.planning,
-    });
+    await screen.findByLabelText(strings.planningScheduledFor);
+    const dialog = screen.getByRole("dialog", { name: strings.planning });
     await userEvent.click(
       within(dialog).getByRole("button", {
         name: strings.scheduleShortcutLabels.today,
@@ -1502,7 +1628,7 @@ describe("ProjectDetailPage task explanations", () => {
   ])("closes its route-owned planning workflow on %s", async (_name, entries, action) => {
     renderProjectRoute(entries.at(-1)!, entries);
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: action }));
 
     await waitFor(() =>
@@ -1520,21 +1646,13 @@ describe("ProjectDetailPage task explanations", () => {
   it("does not close a workflow that replaced the route-owned planning workflow", async () => {
     renderProjectRoute("/projects/42?focus=planning");
 
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
 
     // Once the user steers the single workflow slot elsewhere, the route no
     // longer owns it and must not close it when it drops its focus query.
     await userEvent.click(screen.getByRole("button", { name: "Plan another task" }));
 
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(strings.planningScheduledFor)).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus="),
     );

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useLocation } from "react-router-dom";
 import { renderWithProviders } from "../test/testUtils";
@@ -66,9 +66,14 @@ function OpenStructureHarness({ taskId, openDetails = false }: { taskId: number;
 function OpenProjectStructureHarness({ projectId }: { projectId: number }) {
   const workflow = useProjectWorkflow();
   return (
-    <button type="button" onClick={() => workflow.open("structure", projectId)}>
-      open project structure
-    </button>
+    <>
+      <button type="button" onClick={() => workflow.open("structure", projectId)}>
+        open project structure
+      </button>
+      <button type="button" onClick={() => workflow.open("defer", projectId)}>
+        open replacement defer
+      </button>
+    </>
   );
 }
 
@@ -226,6 +231,30 @@ describe("TaskStructureSheet routing", () => {
         expectedRevision: project.revision,
       }),
     );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Projekt zur Aufgabe machen" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps a replacement project opening when an earlier conversion succeeds", async () => {
+    const project = makeProject({ id: 82, title: "Keller planen" });
+    let resolveConversion!: (task: ReturnType<typeof makeTask>) => void;
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    mockedApi.convertStoryToTask.mockImplementation(() => new Promise(resolve => {
+      resolveConversion = resolve;
+    }));
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.convertProjectToTask }));
+    const conversion = await screen.findByRole("dialog", { name: strings.convertProjectToTaskTitle });
+    await userEvent.click(within(conversion).getByRole("button", { name: strings.convertProjectToTask }));
+    await waitFor(() => expect(mockedApi.convertStoryToTask).toHaveBeenCalledOnce());
+
+    await userEvent.click(screen.getByRole("button", { name: "open replacement defer" }));
+    expect(await screen.findByRole("dialog", { name: strings.deferProject })).toBeInTheDocument();
+    await act(async () => resolveConversion(makeTask({ id: project.id })));
+    expect(screen.getByRole("dialog", { name: strings.deferProject })).toBeInTheDocument();
   });
 
   it("uses the fresh detail revision rather than the stale list revision", async () => {

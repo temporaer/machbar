@@ -11,7 +11,7 @@ import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
 import {
   LoadingState,
-  ErrorState,
+  ReadErrorState,
   EmptyState,
 } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
@@ -51,18 +51,14 @@ export function TodayPage() {
   // ensures switching identities always shows that member's own agenda.
   const { currentMemberId, members } = useIdentity();
   const agendaSelectionKey = `${scope}:${currentMemberId ?? "none"}`;
-  const {
-    data: loadedAgenda,
-    loading,
-    error,
-    reload,
-  } = useAsync(
+  const agendaRead = useAsync(
     async () => ({
       selectionKey: agendaSelectionKey,
       agenda: await api.getAgenda(currentMemberId, scope),
     }),
     [currentMemberId, scope],
   );
+  const { data: loadedAgenda, loading, reload } = agendaRead;
   useVisibleRefreshInterval(reload);
   const agenda =
     loadedAgenda?.selectionKey === agendaSelectionKey
@@ -225,7 +221,7 @@ export function TodayPage() {
         <ActivityDigest />
         <ContributionPulse />
         {loading ? <LoadingState /> : null}
-        {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        <ReadErrorState resource={strings.today} {...agendaRead} />
         {agenda ? (
           <InterventionFocusStrip focus={agenda.interventions} />
         ) : null}

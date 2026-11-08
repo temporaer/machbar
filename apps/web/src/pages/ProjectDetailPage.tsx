@@ -9,14 +9,14 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { api } from "../lib/api";
-import { useAsync } from "../lib/useAsync";
+import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useStrings } from "../lib/strings";
-import { LoadingState, ErrorState } from "../components/AsyncStates";
+import { LoadingState, ErrorState, ReadErrorState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { QuickAdd } from "../components/QuickAdd";
 import { countTasks, flattenTasks } from "../lib/taskHelpers";
-import { useIdentity } from "../lib/identity";
+import { identityQueryKey, useIdentity, useIdentityScope } from "../lib/identity";
 import { formatDate, formatDateTime } from "../lib/format";
 import { formatRevisitAt } from "../lib/relativeDate";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
@@ -43,7 +43,7 @@ import { useLocale } from "../lib/locale";
 import { recordRecentlyViewed } from "../lib/recentlyViewed";
 import type { ProjectWithActions } from "../lib/api";
 import { useTaskActions } from "../lib/useTaskActions";
-import { useProjectActions } from "../lib/useProjectActions";
+import { useProjectActions, useProjectDetailQuery } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
 import { MarkdownEditor, type MarkdownEditorHandle } from "../components/MarkdownEditor";
@@ -75,6 +75,7 @@ export function ProjectDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const focus = searchParams.get("focus");
   const { members } = useIdentity();
+  const identityKey = identityQueryKey(useIdentityScope());
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -90,8 +91,6 @@ export function ProjectDetailPage() {
     notes: string;
   } | null>(null);
   const notesRef = useRef<MarkdownEditorHandle>(null);
-  const [confirmedProject, setConfirmedProject] =
-    useState<ProjectWithActions | null>(null);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const planningTaskRef = useRef<number | null>(null);
@@ -116,32 +115,21 @@ export function ProjectDetailPage() {
   const closeTaskDetailRef = useRef(taskWorkflow.close);
   openTaskIdRef.current = planningWorkflowTaskId;
   closeTaskDetailRef.current = taskWorkflow.close;
-  const {
-    data: loadedProject,
-    loading: projectLoading,
-    error: projectError,
-    reload: reloadProject,
-  } = useAsync(() => api.getProject(projectId), [projectId]);
+  const projectActions = useProjectActions();
+  const projectRead = useProjectDetailQuery(projectId);
+  const projectLoading = projectRead.loading;
+  const projectError = projectRead.error;
+  const reloadProject = projectRead.reload;
+  const loadedProject = projectRead.data;
+  useRetentionInteraction(projectId, projectActions.pauseRetention, Number.isFinite(projectId));
   useTaskActions(flattenTasks(loadedProject?.tasks ?? []));
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
   useEffect(() => {
     if (Number.isFinite(projectId)) recordRecentlyViewed("project", projectId);
   }, [projectId]);
-  useEffect(() => {
-    setConfirmedProject((current) => {
-      if (!current || current.id !== loadedProject?.id) return null;
-      if (loadedProject.revision >= current.revision) return null;
-      return current;
-    });
-  }, [loadedProject]);
-  const baseProject =
-    loadedProject &&
-    confirmedProject?.id === loadedProject.id &&
-    confirmedProject.revision > loadedProject.revision
-      ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks, childStories: loadedProject.childStories ?? [] }
-      : loadedProject;
-  const projectActions = useProjectActions(
+  const baseProject = loadedProject;
+  useProjectActions(
     loadedProject ? [loadedProject, ...(loadedProject.childStories ?? [])] : [],
   );
   const project = baseProject
@@ -216,7 +204,6 @@ export function ProjectDetailPage() {
         true,
       );
       if (!confirmed) return false;
-      setConfirmedProject(confirmed);
       return true;
     } catch (cause) {
       if (isStaleWriteConflict(cause)) reloadProject();
@@ -232,7 +219,7 @@ export function ProjectDetailPage() {
     setDeleting(true);
     setContentError(null);
     try {
-      await api.deleteProject(project.id, { deleteTasks });
+      await projectActions.deleteProject(project.id, deleteTasks);
       setConfirmingDelete(false);
       navigate(reviewReturn ? "/more/review" : "/projects", {
         ...(reviewReturn ? { state: { reviewReturn } } : {}),
@@ -388,9 +375,10 @@ export function ProjectDetailPage() {
         </Link>
         {project?.ancestors?.length ? <WorkItemBreadcrumbs ancestors={project.ancestors} /> : null}
         {projectLoading ? <LoadingState /> : null}
-        {projectError ? (
-          <ErrorState message={projectError} onRetry={reloadProject} />
+        {projectError || projectRead.refreshError ? (
+          <ReadErrorState resource={strings.project} {...projectRead} reload={reloadProject} />
         ) : null}
+        {!project && !projectLoading && !projectError ? <ErrorState message={strings.workflowTargetUnavailable} onRetry={reloadProject} /> : null}
         {project ? (
           <>
             {(location.state as { createdProjectId?: number } | null)?.createdProjectId === project.id ? <p role="status">{strings.projectCreated}</p> : null}
@@ -459,9 +447,7 @@ export function ProjectDetailPage() {
                         onClick: () => dispatch(storyWorkflowCommand(project, action)),
                       })),
                       { key: "discussion", icon: "followUp", label: project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
-                        onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.then((confirmed) => {
-                          if (confirmed && "availableActions" in confirmed) setConfirmedProject(confirmed);
-                        })?.catch(() => {}); } },
+                        onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.catch(() => {}); } },
                       { key: "structure", icon: "split", label: strings.actionTileLabels["task.structure"], onClick: () => dispatch({ type: "story.structure", story: project }) },
                       { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => { setAttachmentError(null); setAttachmentOpen(true); } },
                     ]}>
@@ -646,7 +632,6 @@ export function ProjectDetailPage() {
               </div>
               <NotesAppend disabled={notesEditing || projectMutationPending} onAppend={async content => {
                 const updated = await projectActions.appendNotes(project, content);
-                if (updated) { setConfirmedProject(updated); setNotesDraft(updated.notes); }
                 return updated;
               }} />
             {notesEditing ? (
@@ -788,7 +773,11 @@ export function ProjectDetailPage() {
           />
         ) : null}
         <QuickAdd />
-        {focus === "next-action" && project ? <ProjectTaskEntrySheet key={project.id} project={project} onClose={clearRouteFocus} /> : null}
+        {focus === "next-action" ? <ProjectTaskEntrySheet
+          key={`${identityKey}-${projectId}`}
+          projectId={projectId}
+          onClose={clearRouteFocus}
+        /> : null}
         {attachmentOpen && project ? (
           <MarkdownAttachmentSheet
             onClose={() => setAttachmentOpen(false)}
@@ -801,13 +790,12 @@ export function ProjectDetailPage() {
               const nextNotes = appendTextBlock(project.notes, markdown);
               setAttachmentError(null);
               try {
-                const updated = await projectActions.update(
+                await projectActions.update(
                   project,
                   { notes: nextNotes },
                   { notes: nextNotes },
                   true,
                 );
-                if (updated) setConfirmedProject(updated);
               } catch (cause) {
                 if (isStaleWriteConflict(cause)) reloadProject();
                 setAttachmentError(localizedErrorMessage(cause, strings));

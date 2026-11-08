@@ -3,29 +3,32 @@ import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 
 const PRIORITIES = [1, 2, 3, 4, 5] as const;
 
 /** Focused `task.priority` editor — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskPrioritySheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskPrioritySheet({ task, onClose, ...presentation }: { task: Task; onClose: () => void } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
   const [saveError, setSaveError] = useState<string | null>(null);
   const saving = taskActions.isPending(task.id);
 
   const choose = async (priority: number | null) => {
+    const continuation = taskActions.captureTargetRead(task.id);
     setSaveError(null);
     try {
-      await taskActions.update(task, { priority }, { priority }, true);
-      onClose();
+      const updated = await taskActions.update(task, { priority }, { priority }, true);
+      if (updated && taskActions.isCurrentTargetRead(continuation)) onClose();
     } catch (cause) {
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
       setSaveError(localizedErrorMessage(cause, strings));
     }
   };
 
   return (
     <BottomSheet
+      {...presentation}
       title={`${strings.priority}: ${task.title}`}
       onClose={() => {
         if (!saving) onClose();

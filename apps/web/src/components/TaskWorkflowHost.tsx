@@ -1,8 +1,8 @@
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
-import { useEffect } from "react";
-import { api } from "../lib/api";
+import { useEffect, useRef } from "react";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
+import { projectTaskValue } from "../lib/taskHelpers";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow, type TaskWorkflowState } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
@@ -21,6 +21,9 @@ import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
+import { BottomSheet } from "./BottomSheet";
+import { ErrorState, LoadingState, ReadErrorState } from "./AsyncStates";
+import { isWorkItemAccessError } from "../lib/errorMessage";
 
 /**
  * The single host for every focused task workflow reachable through a
@@ -66,45 +69,82 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
   const navigate = useNavigate();
   const dispatch = useWorkItemCommands();
   const taskId = state?.taskId ?? null;
-  const { data: fetchedTask, reload } = useAsync(
-    () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
-    [taskId],
+  const frameRead = taskId === null ? null : taskActions.captureTargetRead(taskId);
+  const opening = useRef<{ state: TaskWorkflowState | null; opener: HTMLElement | null }>({ state: null, opener: null });
+  if (opening.current.state !== state) {
+    opening.current = { state, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+  }
+  const taskRead = useAsync(
+    () => (taskId !== null ? taskActions.readTask(taskId) : Promise.resolve(null)),
+    [state, taskActions.scopeToken],
   );
+  const fetchedTask = taskRead.data && taskActions.isCurrentTargetRead(taskRead.data.read) ? taskRead.data.value : null;
   useRetentionInteraction(taskId, taskActions.pauseRetention, taskId !== null);
   const retained = taskId !== null ? taskActions.retained.get(taskId) : undefined;
-  const task = fetchedTask ? taskActions.projectTask(fetchedTask) : retained ?? null;
-
+  const accessLost = isWorkItemAccessError(taskRead.errorCause) || isWorkItemAccessError(taskRead.refreshErrorCause);
+  const confirmed = taskId !== null ? taskActions.getConfirmedTask(taskId) : undefined;
+  const input = fetchedTask ? projectTaskValue(fetchedTask, confirmed) : confirmed;
+  const task = accessLost ? null : input ? taskActions.projectTask(input)
+    : taskId !== null && taskActions.isTargetReadable(taskId) ? retained ?? null : null;
   useEffect(() => {
-    if (taskId !== null) reload();
-  }, [taskId, reload]);
+    if (taskId === null) return;
+    if (fetchedTask && taskRead.data && taskRead.error === null && taskRead.refreshError === null) taskActions.observeConfirmedTask(fetchedTask, taskRead.data.read);
+  }, [taskId, fetchedTask, taskRead.data, taskRead.error, taskRead.refreshError, taskActions.observeConfirmedTask]);
 
-  if (!state || !task) return null;
-  const close = workflow.close;
+  if (!state) return null;
+  const close = () => workflow.close(state);
+  const reload = () => {
+    if (workflow.isCurrent(state) && taskActions.isCurrentScope(taskActions.scopeToken)) taskRead.reload();
+  };
+  const sheetProps = {
+    onClose: close,
+    suspended,
+    restoreFocusTo: opening.current.opener,
+    headerStatus: taskRead.loading || taskRead.error !== null || taskRead.refreshError !== null ? <>
+      {taskRead.loading ? <LoadingState /> : null}
+      <ReadErrorState resource={task?.title ?? strings.task} {...taskRead} reload={reload} />
+    </> : null,
+  };
+  if (!task) {
+    const titles: Record<TaskWorkflowState["kind"], string> = {
+      plan: strings.planning, availability: strings.planning, waitingLifecycle: strings.planning,
+      deferClarification: strings.clarificationRevisitTitle, structure: strings.structure,
+      split: strings.splitTask, refinement: strings.workRefinement, assignOwner: strings.assign,
+      changeProject: strings.structureMove, priority: strings.priority, tags: strings.tags,
+      contexts: strings.physicalContexts, convertToProject: strings.structureConvertToProject,
+      completeWithCriteria: strings.taskCompleteWithCriteriaTitle,
+    };
+    return <BottomSheet {...sheetProps} title={titles[state.kind]}>
+      {!taskRead.loading && taskRead.error === null && taskRead.refreshError === null
+        ? <ErrorState message={strings.workflowTargetUnavailable} onRetry={reload} /> : null}
+    </BottomSheet>;
+  }
 
   switch (state.kind) {
     case "plan":
       return (
         <TaskPlanningSheet
+          {...sheetProps}
           key={task.id}
           task={task}
-          suspended={suspended}
-          onClose={close}
+          authoritativeTask={input ?? null}
           {...(state.planningTarget
             ? { initialTarget: state.planningTarget }
             : {})}
         />
       );
     case "availability":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} initialTarget="availability" />;
+      return <TaskPlanningSheet {...sheetProps} key={task.id} task={task} authoritativeTask={input ?? null} initialTarget="availability" />;
     case "deferClarification":
-      return <TaskClarificationSheet task={task} onClose={close} />;
+      return <TaskClarificationSheet {...sheetProps} task={task} />;
     case "structure":
-      return <TaskStructureSheet task={task} onClose={close} />;
+      return <TaskStructureSheet {...sheetProps} task={task} />;
     case "waitingLifecycle":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} initialTarget="waiting" />;
+      return <TaskPlanningSheet {...sheetProps} key={task.id} task={task} authoritativeTask={input ?? null} initialTarget="waiting" />;
     case "split":
       return (
         <TaskSplitSheet
+          {...sheetProps}
           key={task.id}
           parentId={task.id}
           parentTitle={task.title}
@@ -112,11 +152,11 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
           parentStatus={task.status}
           projectId={task.projectId}
           existingChildren={task.children}
-          onClose={close}
         />
       );
     case "refinement":
-      return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onStarted={(intakeId) => {
+      return <WorkClarificationSheet {...sheetProps} targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onStarted={(intakeId) => {
+        if (!workflow.isCurrent(state) || !frameRead || !taskActions.isCurrentTargetRead(frameRead)) return;
         const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
         const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
         close();
@@ -125,6 +165,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
     case "assignOwner":
       return (
         <TaskOwnerSheet
+          {...sheetProps}
           title={`${strings.assign}: ${task.title}`}
           taskTitle={task.title}
           createdAt={task.createdAt}
@@ -139,9 +180,9 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
                 ? "parent"
                 : "project"
           }
-          onClose={close}
           onSelect={async ({ ownerMemberId, ownerInheritanceMode }, cleanedTitle) => {
-            await taskActions.assignOwner(
+            const continuation = taskActions.captureTargetRead(task.id);
+            const updated = await taskActions.assignOwner(
               task,
               ownerMemberId,
               ownerInheritanceMode,
@@ -149,28 +190,31 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
                 ? { title: cleanedTitle }
                 : {},
             );
+            return updated !== undefined && taskActions.isCurrentTargetRead(continuation);
           }}
         />
       );
     case "changeProject":
-      return <MoveTaskSheet task={task} onClose={close} />;
+      return <MoveTaskSheet {...sheetProps} task={task} />;
     case "priority":
-      return <TaskPrioritySheet task={task} onClose={close} />;
+      return <TaskPrioritySheet {...sheetProps} task={task} />;
     case "tags":
-      return <TaskTagsSheet task={task} onClose={close} />;
+      return <TaskTagsSheet {...sheetProps} task={task} />;
     case "contexts":
-      return <TaskContextsSheet task={task} onClose={close} />;
+      return <TaskContextsSheet {...sheetProps} task={task} />;
     case "convertToProject":
-      return <TaskConvertToProjectSheet key={task.id} task={task} onClose={close} />;
+      return <TaskConvertToProjectSheet {...sheetProps} key={task.id} task={task} authoritativeTask={input ?? null} />;
     case "completeWithCriteria":
       return (
         <CompleteWithCriteriaSheet
+          {...sheetProps}
           workItem={task}
           workItemType="task"
-          onClose={close}
           onRefresh={reload}
           onComplete={async (criteriaToCheck, childPolicy) => {
-            await taskActions.complete(task, childPolicy, criteriaToCheck, true);
+            const continuation = taskActions.captureTargetRead(task.id);
+            const updated = await taskActions.complete(task, childPolicy, criteriaToCheck, true);
+            return updated !== undefined && taskActions.isCurrentTargetRead(continuation);
           }}
         />
       );

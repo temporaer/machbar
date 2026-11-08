@@ -10,6 +10,8 @@ import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
 import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../lib/projectQueries";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
@@ -38,6 +40,30 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
+function projectDetail(story: ReturnType<typeof makeProject>) {
+  const required = story.activationReadiness.requiredDecisions ?? [];
+  return {
+    ...story,
+    tasks: [],
+    activationDecisionSnapshot: {
+      targetRevision: story.revision,
+      expectedProjects: [{ projectId: story.id, revision: story.revision }],
+      projects: required.length ? [{
+        projectId: story.id, title: story.title, revision: story.revision,
+        ownerMemberId: story.ownerMemberId, required,
+      }] : [],
+    },
+    directActivationDecisionSnapshot: {
+      targetRevision: story.revision,
+      expectedProjects: [{ projectId: story.id, revision: story.revision }],
+      projects: required.length ? [{
+        projectId: story.id, title: story.title, revision: story.revision,
+        ownerMemberId: story.ownerMemberId, required,
+      }] : [],
+    },
+  };
+}
+
 /** Flushes the microtask queue (mutation `await`s) without depending on real timers. */
 async function flushMicrotasks(times = 3) {
   for (let i = 0; i < times; i += 1) {
@@ -49,7 +75,7 @@ async function flushMicrotasks(times = 3) {
 function Harness({ story }: { story: ReturnType<typeof makeProject> }) {
   // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
   // and every focused workflow they open is rendered by the single host.
-  mockedApi.getProject.mockResolvedValue({ ...story, tasks: [] });
+  mockedApi.getProject.mockResolvedValue(projectDetail(story));
   return (
     <>
       <ul>
@@ -80,6 +106,7 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
     return <div data-testid="project-page">Projektseite {id}</div>;
   }
   return render(
+    <QueryClientProvider client={createQueryClient()}>
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
@@ -101,7 +128,8 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
             </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -199,8 +227,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, 100);
     fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Projekt starten" }));
 
-    const dialog = await screen.findByRole("dialog");
-    const driver = within(dialog).getByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
+    const driver = await screen.findByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
+    const dialog = screen.getByRole("dialog");
     await userEvent.selectOptions(driver, "2");
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Member } from "@machbar/shared";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
 
 export function MemberSelectionSheet({
@@ -17,6 +17,7 @@ export function MemberSelectionSheet({
   onClose,
   onCancel,
   onSelect,
+  ...presentation
 }: {
   title: string;
   label: string;
@@ -28,8 +29,8 @@ export function MemberSelectionSheet({
   hint?: string | undefined;
   onClose: () => void;
   onCancel?: () => void;
-  onSelect: (memberId: number | null) => Promise<void>;
-}) {
+  onSelect: (memberId: number | null) => Promise<void | boolean>;
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +44,8 @@ export function MemberSelectionSheet({
     setSaving(true);
     setError(null);
     try {
-      await onSelect(memberId);
-      onClose();
+      const accepted = await onSelect(memberId);
+      if (accepted !== false) onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {
@@ -53,7 +54,7 @@ export function MemberSelectionSheet({
   };
 
   return (
-    <BottomSheet title={title} onClose={() => {
+    <BottomSheet {...presentation} title={title} onClose={() => {
       if (!saving) (onCancel ?? onClose)();
     }}>
       <div className="stack task-quick-action-sheet">

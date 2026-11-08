@@ -1,5 +1,6 @@
-import type { ComponentProps, ReactElement, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
@@ -13,6 +14,7 @@ import { LocaleProvider, type Locale } from "../lib/locale";
 import { ThemeProvider } from "../lib/theme";
 import { SwipeCoachProvider } from "../lib/swipeCoach";
 import { DeveloperModeProvider } from "../lib/developerMode";
+import { createQueryClient } from "../lib/projectQueries";
 
 function AllProviders({
   children,
@@ -23,7 +25,9 @@ function AllProviders({
   initialEntries?: ComponentProps<typeof MemoryRouter>["initialEntries"];
   locale: Locale;
 }) {
+  const [queryClient] = useState(createQueryClient);
   return (
+    <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       <LocaleProvider initialLocale={locale}>
         <DeveloperModeProvider>
@@ -49,6 +53,7 @@ function AllProviders({
         </DeveloperModeProvider>
       </LocaleProvider>
     </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

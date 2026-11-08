@@ -12,6 +12,8 @@ import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { IdentityProvider } from "../lib/identity";
 import { LocaleProvider } from "../lib/locale";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../lib/projectQueries";
 import { RefreshProvider } from "../lib/refresh";
 import { SwipeCoachProvider } from "../lib/swipeCoach";
 import { TaskActionsProvider } from "../lib/useTaskActions";
@@ -365,6 +367,7 @@ describe("TaskSplitSheet", () => {
     const first = makeTask({ id: 101, parentTaskId: 7, position: 0, title: "Kisten kaufen" });
     const second = makeTask({ id: 102, parentTaskId: 7, position: 1, title: "Klebeband besorgen" });
     render(
+      <QueryClientProvider client={createQueryClient()}>
       <ThemeProvider>
         <LocaleProvider initialLocale="de">
           <MemoryRouter>
@@ -387,7 +390,8 @@ describe("TaskSplitSheet", () => {
             </IdentityProvider>
           </MemoryRouter>
         </LocaleProvider>
-      </ThemeProvider>,
+      </ThemeProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Vorhandene Teilaufgaben")).toBeInTheDocument();

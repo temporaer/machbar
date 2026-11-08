@@ -5,7 +5,7 @@ import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useAsync } from "../lib/useAsync";
 import { ErrorState, LoadingState } from "./AsyncStates";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
 
 /** Focused project-tag editor used directly from a project row. */
@@ -13,11 +13,12 @@ export function ProjectTagsSheet({
   story,
   onClose,
   onSave,
+  ...presentation
 }: {
   story: Project;
   onClose: () => void;
   onSave: (tagIds: number[]) => Promise<void>;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const [selectedIds, setSelectedIds] = useState(
     story.tags.map((tag) => tag.id),
@@ -43,6 +44,7 @@ export function ProjectTagsSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       title={strings.tags}
       onClose={() => {
         if (!saving) onClose();

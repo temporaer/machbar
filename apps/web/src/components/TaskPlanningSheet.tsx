@@ -11,7 +11,8 @@ import { calendarDateForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
-import { api } from "../lib/api";
+import { useProjectActions } from "../lib/useProjectActions";
+import { api, type TaskDetail } from "../lib/api";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { hasApiErrorCode } from "../lib/errorMessage";
@@ -36,7 +37,8 @@ import type { TaskPlanningTarget } from "../lib/commands";
 import { refreshTaskAfterConflict } from "../lib/taskMutations";
 import { DetailPropertyPill } from "./DetailPropertyPill";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
+import { ErrorState } from "./AsyncStates";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
@@ -46,6 +48,7 @@ import { sortDependencyCandidates } from "../lib/sortOrder";
 import { recencyRankLookup } from "../lib/recentlyViewed";
 import {
   projectActivationPromptFromSnapshot,
+  projectActivationTargetIds,
   refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
@@ -85,15 +88,18 @@ function cardClass(active: boolean) {
  */
 export function TaskPlanningSheet({
   task,
+  authoritativeTask = task,
   onClose,
   initialTarget,
   suspended = false,
+  ...presentation
 }: {
-  task: Task;
+  task: TaskDetail;
+  authoritativeTask?: TaskDetail | null;
   onClose: () => void;
   initialTarget?: TaskPlanningTarget;
   suspended?: boolean;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
   const [expanded, setExpanded] = useState<Partial<Record<TaskPlanningTarget, boolean>>>({});
@@ -109,6 +115,7 @@ export function TaskPlanningSheet({
   };
   const { locale } = useLocale();
   const taskActions = useTaskActions();
+  const projectActions = useProjectActions();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
   const scheduledCardRef = useRef<HTMLElement>(null);
@@ -124,6 +131,8 @@ export function TaskPlanningSheet({
   const planningFormRef = useRef<HTMLFormElement>(null);
   const reminderEditorRef = useRef<TaskRemindersEditorHandle>(null);
   const [baselineTask, setBaselineTask] = useState(task);
+  const actualBaseline = useRef<Task | null>(authoritativeTask);
+  const consumedInput = useRef<Task | null>(authoritativeTask);
   const [reminderEditorRevision, setReminderEditorRevision] = useState(0);
   const [planningConflicts, setPlanningConflicts] = useState<PlanningConflict[]>([]);
   const [reminderDraftPending, setReminderDraftPending] = useState(false);
@@ -148,6 +157,7 @@ export function TaskPlanningSheet({
   const [reminders, setReminders] = useState<TaskReminderInput[]>(() => baselineTask.reminders);
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
   const [expectedTaskRevision, setExpectedTaskRevision] = useState(baselineTask.revision);
+  const [revisionRevalidationRequired, setRevisionRevalidationRequired] = useState(false);
   const hasExistingWait = baselineTask.externalWait !== null;
   const canAddWaiting =
     baselineTask.kind === "action" &&
@@ -181,6 +191,7 @@ export function TaskPlanningSheet({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedProjectRead, setFailedProjectRead] = useState<{ id: number; error: string } | null>(null);
   const [scheduledNotice, setScheduledNotice] = useState<string | null>(null);
   const [availabilityNotice, setAvailabilityNotice] = useState<string | null>(null);
   const [waitingError, setWaitingError] = useState<string | null>(null);
@@ -319,7 +330,8 @@ export function TaskPlanningSheet({
   const activationPrompt = activationState?.fingerprint === draftFingerprint
     ? activationState.prompt
     : null;
-  const activationDecisionReady = activationPrompt === null ||
+  const activationUnavailable = activationPrompt?.readUnavailable || (activationPrompt?.isCurrentRead && !activationPrompt.isCurrentRead());
+  const activationDecisionReady = activationPrompt === null || activationUnavailable ||
     projectActivationResolutionFromPrompt(activationPrompt) !== null;
   const nextAvailability = notBeforeDate
     ? taskAvailabilityForLocalDate(
@@ -584,6 +596,9 @@ export function TaskPlanningSheet({
   // untouched fields refresh from the server, local-only edits remain drafts,
   // and divergent edits require an explicit choice before any retry is allowed.
   const reconcilePlanningDraft = (latest: Task, previous: Task) => {
+    if (actualBaseline.current && latest.revision < actualBaseline.current.revision) return;
+    actualBaseline.current = latest;
+    setRevisionRevalidationRequired(false);
     const plannedReminders = reminderEditorRef.current?.getCommitValue() ?? reminders;
     const conflicts: PlanningConflict[] = [];
     const addConflict = (
@@ -621,7 +636,8 @@ export function TaskPlanningSheet({
       addConflict("availabilityRule", strings.availabilityWindow, windowLabel(latest.availabilityRule), windowLabel(availabilityRule));
     }
     const localRecurrence = repeatAfterDays !== previous.repeatAfterDays || allowedDeviationDays !== previous.allowedDeviationDays;
-    const localReminders = JSON.stringify(plannedReminders) !== JSON.stringify(previous.reminders);
+    const reminderEditorOpen = reminderEditorRef.current?.hasOpenEditor() ?? false;
+    const localReminders = reminderEditorOpen || JSON.stringify(plannedReminders) !== JSON.stringify(previous.reminders);
     const localWait = waitingEnded || waitingFor.trim() !== (previous.externalWait?.waitingFor ?? "").trim();
     const localTitle = cleanedTitle !== previous.title;
 
@@ -662,39 +678,67 @@ export function TaskPlanningSheet({
       setNotBeforeTime(taskAvailabilityClock(latest.revisitAt, householdTimezone) ?? "06:00");
     }
     setReminders(localReminders ? plannedReminders : latest.reminders);
-    setReminderDraftPending(false);
-    setReminderEditorRevision((revision) => revision + 1);
+    if (!reminderEditorOpen) {
+      setReminderDraftPending(false);
+      setReminderEditorRevision((revision) => revision + 1);
+    }
     if (!localWait) {
       setWaitingFor(latest.externalWait?.waitingFor ?? "");
       setWaitingEnded(false);
-      setWaitingOpen(latest.externalWait !== null);
+      setWaitingOpen(current => latest.externalWait !== null || (current && previous.externalWait === null));
     }
     if (!localTitle) setAcceptedHints({});
-    setPlanningConflicts(conflicts);
+    setPlanningConflicts(current => [
+      ...current.filter(conflict => !conflicts.some(next => next.field === conflict.field) && ({
+        availabilityRule: localWindow && JSON.stringify(latest.availabilityRule) !== JSON.stringify(availabilityRule),
+        scheduledDate: localScheduled && latest.scheduledDate !== (scheduledDate || null),
+        dueDate: localDeadline && latest.dueDate !== (dueDate || null),
+        revisitAt: localRevisit && latest.revisitAt !== revisitAtForCommit,
+        recurrence: localRecurrence && (latest.repeatAfterDays !== repeatAfterDays || latest.allowedDeviationDays !== allowedDeviationDays),
+        reminders: localReminders && JSON.stringify(latest.reminders) !== JSON.stringify(plannedReminders),
+        externalWait: localWait && (latest.externalWait?.waitingFor ?? "") !== (waitingEnded ? "" : waitingFor.trim()),
+        title: localTitle && latest.title !== cleanedTitle,
+      })[conflict.field]),
+      ...conflicts,
+    ]);
     setActivationState(null);
   };
 
+  useEffect(() => {
+    if (!authoritativeTask || consumedInput.current === authoritativeTask ||
+      saving || followUpSaving || dependencyBusy !== null) return;
+    consumedInput.current = authoritativeTask;
+    reconcilePlanningDraft(authoritativeTask, baselineTask);
+  }, [authoritativeTask, saving, followUpSaving, dependencyBusy]);
+
   const changeDependency = async (dependsOnTaskId: number, remove: boolean) => {
-    if (dependencyBusy !== null || planningConflicts.length > 0) return;
+    if (!authoritativeTask || !taskActions.isTargetReadable(task.id) || revisionRevalidationRequired || dependencyBusy !== null || planningConflicts.length > 0) return;
     if (reminderDraftPending) {
       reveal("reminders");
       setDependencyError(strings.planningFinishReminderFirst);
       return;
     }
     setDependencyBusy(dependsOnTaskId);
+    const continuation = taskActions.captureTargetRead(task.id);
     setDependencyError(null);
     try {
       const updated = remove
         ? await api.removeDependency(baselineTask.id, dependsOnTaskId, expectedTaskRevision)
         : await api.addDependency(baselineTask.id, dependsOnTaskId, expectedTaskRevision);
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      actualBaseline.current = updated;
       setBaselineTask(updated);
       setExpectedTaskRevision(updated.revision);
       setDependencyResults([]);
       setDependencyQuery("");
     } catch (cause) {
-      const latest = await refreshTaskAfterConflict(cause, baselineTask.id);
-      if (latest) {
-        reconcilePlanningDraft(latest, baselineTask);
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      const refreshed = await refreshTaskAfterConflict(cause, baselineTask.id, taskActions.getTask);
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (refreshed.kind === "current") {
+        reconcilePlanningDraft(refreshed.task, baselineTask);
+      } else if (refreshed.kind === "unavailable") {
+        setRevisionRevalidationRequired(true);
       }
       const candidate = dependencyResults.find((entry) => entry.id === dependsOnTaskId);
       setDependencyError(
@@ -708,7 +752,7 @@ export function TaskPlanningSheet({
   };
 
   const saveWaitFollowUp = async () => {
-    if (!hasExistingWait || followUpSaving || planningConflicts.length > 0) return;
+    if (!authoritativeTask || !taskActions.isTargetReadable(task.id) || revisionRevalidationRequired || !hasExistingWait || followUpSaving || planningConflicts.length > 0) return;
     if (followUpChoice === "continue" && (!validity.availability || invalidRevisitSelection)) {
       reveal("availability");
       return;
@@ -723,6 +767,7 @@ export function TaskPlanningSheet({
       return;
     }
     setFollowUpSaving(true);
+    const continuation = taskActions.captureTargetRead(task.id);
     setWaitingError(null);
     try {
       const updated = await taskActions.followUpExternalWait(
@@ -732,7 +777,9 @@ export function TaskPlanningSheet({
           : { action: "resolve", content: followUpOutcome.trim() },
         { throwOnError: true },
       );
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
       if (updated) {
+        actualBaseline.current = updated;
         const otherDraftChanges = windowChanged || scheduledChanged || deadlineChanged || recurrenceChanged || remindersChanged || reminderDraftPending || titleChanged;
         setBaselineTask(updated);
         setExpectedTaskRevision(updated.revision);
@@ -751,9 +798,13 @@ export function TaskPlanningSheet({
         }
       }
     } catch (cause) {
-      const latest = await refreshTaskAfterConflict(cause, baselineTask.id);
-      if (latest) {
-        reconcilePlanningDraft(latest, baselineTask);
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      const refreshed = await refreshTaskAfterConflict(cause, baselineTask.id, taskActions.getTask);
+      if (!taskActions.isCurrentTargetRead(continuation)) return;
+      if (refreshed.kind === "current") {
+        reconcilePlanningDraft(refreshed.task, baselineTask);
+      } else if (refreshed.kind === "unavailable") {
+        setRevisionRevalidationRequired(true);
       }
       setWaitingError(localizedErrorMessage(cause, strings));
     } finally {
@@ -781,7 +832,26 @@ export function TaskPlanningSheet({
     setValidity((current) => ({ ...current, deadline: true }));
   };
 
+  const retryProjectRead = async () => {
+    if (!failedProjectRead || saving || !authoritativeTask) return;
+    const continuation = taskActions.captureTargetRead(task.id);
+    setSaving(true);
+    try {
+      const latest = await projectActions.getProject(failedProjectRead.id, cause => {
+        if (taskActions.isCurrentTargetRead(continuation)) setFailedProjectRead({ id: failedProjectRead.id, error: localizedErrorMessage(cause, strings) });
+      });
+      if (taskActions.isCurrentTargetRead(continuation) && projectActions.isCurrentProjectRead(latest)) setFailedProjectRead(null);
+    } catch { /* Preserve the planning draft and the matching read failure. */ }
+    finally { setSaving(false); }
+  };
+
   const commit = async () => {
+    if (!authoritativeTask || !taskActions.isTargetReadable(task.id) || failedProjectRead !== null || revisionRevalidationRequired || planningConflicts.length > 0) return;
+    const continuation = taskActions.captureTargetRead(baselineTask.id);
+    const affectedIds = new Set(projectActivationTargetIds(baselineTask.projectId, baselineTask.ancestors));
+    const projectContinuations = [...affectedIds].map(projectActions.captureTargetRead);
+    const isCurrent = () => taskActions.isCurrentTargetRead(continuation) &&
+      projectContinuations.every(projectActions.isCurrentTargetRead);
     if (hasExistingWait && (followUpOutcome.trim().length > 0 || followUpChoice !== "continue")) {
       await saveWaitFollowUp();
       return;
@@ -808,6 +878,15 @@ export function TaskPlanningSheet({
     setSaving(true);
     setError(null);
     try {
+      if (baselineTask.projectId !== null && !baselineTask.ancestors?.some(ancestor => ancestor.role === "story" && ancestor.id === baselineTask.projectId)) {
+        const containing = await projectActions.getProject(baselineTask.projectId, cause => {
+          if (isCurrent()) setFailedProjectRead({ id: baselineTask.projectId!, error: localizedErrorMessage(cause, strings) });
+        });
+        if (!isCurrent() || !projectActions.isCurrentProjectRead(containing)) return;
+        for (const id of projectActivationTargetIds(containing.id, containing.ancestors)) {
+          if (!affectedIds.has(id)) { affectedIds.add(id); projectContinuations.push(projectActions.captureTargetRead(id)); }
+        }
+      }
       const externalWait = waitingEnded
         ? null
         : waitingChangedFromBaseline
@@ -828,18 +907,32 @@ export function TaskPlanningSheet({
       const activationResolution = activationPrompt
         ? projectActivationResolutionFromPrompt(activationPrompt)
         : null;
-      if (activationPrompt && !activationResolution) {
+      if (activationPrompt && !activationUnavailable && !activationResolution) {
         setError(strings.commitmentResolutionHint);
         return;
       }
-      if (!activationPrompt && baselineTask.projectId !== null) {
+      for (const id of affectedIds) {
+        if (!projectActions.isTargetReadable(id)) {
+          const project = await projectActions.getProject(id, cause => {
+            if (isCurrent()) setFailedProjectRead({ id, error: localizedErrorMessage(cause, strings) });
+          });
+          if (!isCurrent() || !projectActions.isCurrentProjectRead(project)) return;
+        }
+      }
+      if ((!activationPrompt || activationUnavailable) && baselineTask.projectId !== null) {
         const preview = await api.previewTaskUpdate(baselineTask.id, { ...patch, expectedRevision: expectedTaskRevision });
+        if (!isCurrent()) return;
         if (preview.activatingProjects.length) {
-          setActivationState({ fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision) });
+          setActivationState({ fingerprint: draftFingerprint, prompt: {
+            ...projectActivationPromptFromSnapshot(preview.decision, activationPrompt), isCurrentRead: () => isCurrent() &&
+              (preview.decision?.projects ?? []).every(project => affectedIds.has(project.projectId)) &&
+              (preview.decision?.expectedProjects ?? []).every(project => affectedIds.has(project.projectId)),
+          } });
           return;
         }
       }
       const apiPatch = activationPrompt?.projects.length && activationResolution ? { ...patch, activationResolution } : patch;
+      if (!isCurrent()) return;
       const { reminders: _draftReminders, ...optimisticPatchBase } = patch;
       const optimisticPatch = {
         ...optimisticPatchBase,
@@ -854,22 +947,31 @@ export function TaskPlanningSheet({
             }
           : {}),
       };
-      await taskActions.update(
+      const updated = await taskActions.update(
         { ...baselineTask, revision: expectedTaskRevision },
         apiPatch,
         optimisticPatch,
         true,
       );
-      onClose();
+      if (updated && isCurrent()) onClose();
     } catch (cause) {
-      const latestTask = await refreshTaskAfterConflict(cause, baselineTask.id);
-      if (latestTask !== null) {
-        reconcilePlanningDraft(latestTask, priorBaseline);
+      if (!isCurrent()) return;
+      const refreshed = await refreshTaskAfterConflict(cause, baselineTask.id, taskActions.getTask);
+      if (!isCurrent()) return;
+      if (refreshed.kind === "current") {
+        reconcilePlanningDraft(refreshed.task, priorBaseline);
+      } else if (refreshed.kind === "unavailable") {
+        setRevisionRevalidationRequired(true);
       }
+      const projectRead = baselineTask.projectId === null ? null : projectActions.captureTargetRead(baselineTask.projectId);
       const prompt = baselineTask.projectId === null
         ? null
-        : await refreshProjectActivationPrompt(cause, baselineTask.projectId, activationPrompt);
-      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt });
+        : await refreshProjectActivationPrompt(cause, baselineTask.projectId, activationPrompt, "commitment", projectActions.getProject,
+          () => projectRead !== null && projectActions.isCurrentTargetRead(projectRead));
+      if (!isCurrent()) return;
+      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt: { ...prompt, isCurrentRead: () => isCurrent() &&
+        prompt.projects.every(project => affectedIds.has(project.projectId)) &&
+        prompt.expectedProjects.every(project => affectedIds.has(project.projectId)) } });
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -969,6 +1071,7 @@ export function TaskPlanningSheet({
 
   return (
     <BottomSheet
+      {...presentation}
       suspended={suspended}
       title={strings.planning}
       initialFocus="dialog"
@@ -1596,7 +1699,7 @@ export function TaskPlanningSheet({
               <div><h3>{strings.reminders}</h3></div>
             </div>
             <TaskRemindersEditor
-              key={`${baselineTask.revision}-${reminderEditorRevision}`}
+              key={reminderEditorRevision}
               ref={reminderEditorRef}
               reminders={reminders}
               dueDate={recurrenceEnabled ? recurrenceDeadline : dueDate || null}
@@ -1628,6 +1731,7 @@ export function TaskPlanningSheet({
             <span className="text-muted">{error}</span>
           </div>
         ) : null}
+        {failedProjectRead ? <ErrorState message={failedProjectRead.error} onRetry={() => void retryProjectRead()} pending={saving} /> : null}
 
         <div className="task-planning-actions">
           <button type="button" className="btn" disabled={saving || followUpSaving || dependencyBusy !== null} onClick={onClose}>
@@ -1637,7 +1741,7 @@ export function TaskPlanningSheet({
             type="submit"
             className="btn btn-primary"
             disabled={
-              saving || followUpSaving || dependencyBusy !== null ||
+              !authoritativeTask || failedProjectRead !== null || revisionRevalidationRequired || saving || followUpSaving || dependencyBusy !== null ||
               !allValid ||
               invalidRevisitSelection ||
               dateConflict ||

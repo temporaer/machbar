@@ -1,9 +1,238 @@
 import { act, renderHook } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { StrictMode, useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "./locale";
 import { RefreshProvider, useRefresh } from "./refresh";
 import { RETENTION_MS, useRetainedMutations } from "./useRetainedMutations";
+
+type Receipt = { revision: number; title: string };
+const receiptRevision = (receipt: Receipt) => receipt.revision;
+
+function deferredReceipt() {
+  let resolve!: (receipt: Receipt) => void;
+  let reject!: (cause: Error) => void;
+  const promise = new Promise<Receipt>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe("confirmed mutation receipts", () => {
+  it("keeps a post-denial command receipt unusable until a new target GET succeeds", async () => {
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    const receipt = { revision: 2, title: "Post-denial command" };
+    act(() => result.current.invalidateConfirmed(1));
+    await act(async () => {
+      await result.current.run({ id: 1, mutate: async () => receipt, confirmed: value => value, retain: false });
+    });
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    act(() => result.current.observeConfirmed(1, receipt, receipt, result.current.captureTargetRead(1)));
+    expect(result.current.getConfirmed(1)).toBe(receipt);
+  });
+
+  it("rejects pre-denial read success and obsolete denial after a new read restores access", () => {
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    const old = result.current.captureTargetRead(1);
+    const readable = { revision: 2, title: "Readable" };
+    act(() => {
+      result.current.pauseRetention(1);
+      result.current.invalidateConfirmed(1, old);
+      result.current.observeConfirmed(1, readable, readable, old);
+    });
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    const fresh = result.current.captureTargetRead(1);
+    act(() => result.current.observeConfirmed(1, readable, readable, fresh));
+    expect(result.current.getConfirmed(1)).toBe(readable);
+    act(() => result.current.invalidateConfirmed(1, old));
+    expect(result.current.getConfirmed(1)).toBe(readable);
+    expect(result.current.isCurrentTargetRead(old)).toBe(false);
+    expect(result.current.isCurrentTargetRead(fresh)).toBe(true);
+  });
+
+  it("shares the initial read generation with a pending first command", async () => {
+    const pending = deferredReceipt();
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    let run!: Promise<Receipt | undefined>;
+    act(() => {
+      run = result.current.run({ id: 1, mutate: () => pending.promise, confirmed: value => value });
+      result.current.captureTargetRead(1);
+    });
+    const receipt = { revision: 2, title: "Accepted" };
+    await act(async () => { pending.resolve(receipt); await run; });
+    expect(result.current.getConfirmed(1)).toBe(receipt);
+  });
+
+  it("prunes read-only inputs after their last interaction but preserves command input needed by an offline consumer", async () => {
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    const readOnly = { revision: 1, title: "Read-only visit" };
+    let close!: () => void;
+    act(() => {
+      close = result.current.pauseRetention(1);
+      result.current.observeConfirmed(1, readOnly, readOnly, result.current.captureTargetRead(1));
+    });
+    expect(result.current.getConfirmed(1)).toBe(readOnly);
+    act(close);
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    const confirmed = { revision: 2, title: "Accepted command" };
+    await act(async () => {
+      await result.current.run({ id: 2, mutate: async () => confirmed, confirmed: value => value, retain: false });
+    });
+    act(() => {
+      close = result.current.pauseRetention(2);
+      result.current.observeConfirmed(2, confirmed, confirmed, result.current.captureTargetRead(2));
+    });
+    act(close);
+    expect(result.current.getConfirmed(2)).toBe(confirmed);
+  });
+
+  it("rejects saved mutation, release, observation and invalidation methods from discarded StrictMode render scope", async () => {
+    let obsolete: Pick<ReturnType<typeof useRetainedMutations<Receipt>>, "run" | "release" | "observeConfirmed" | "invalidateConfirmed"> | undefined;
+    const { result } = renderHook(() => {
+      const mutations = useRetainedMutations<Receipt>({ receiptRevision });
+      useEffect(() => { obsolete ??= mutations; }, [mutations]);
+      return mutations;
+    }, { wrapper: ({ children }) => <StrictMode>{wrapper({ children })}</StrictMode> });
+    const confirmed = { revision: 2, title: "Current confirmed" };
+    await act(async () => {
+      await result.current.run({ id: 1, optimistic: confirmed, mutate: async () => confirmed, confirmed: value => value });
+    });
+    if (!obsolete) throw new Error("Expected initial effect methods");
+    const old = obsolete;
+    const mutate = vi.fn(async () => ({ revision: 9, title: "Obsolete command" }));
+    await act(async () => {
+      old.release(1);
+      old.observeConfirmed(1, { revision: 8, title: "Obsolete read" });
+      old.invalidateConfirmed(1);
+      await old.run({ id: 1, mutate, confirmed: value => value, retain: false });
+    });
+    expect(mutate).not.toHaveBeenCalled();
+    expect(result.current.getConfirmed(1)).toBe(confirmed);
+    expect(result.current.retained.get(1)).toBe(confirmed);
+  });
+
+  it("preserves confirmed input after its visual retention deadline expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+      const confirmed = { revision: 2, title: "Server title" };
+      await act(async () => {
+        await result.current.run({
+          id: 1, optimistic: { revision: 2, title: "Pending title" },
+          mutate: async () => confirmed, confirmed: value => value,
+        });
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(RETENTION_MS + 1); });
+      expect(result.current.retained.has(1)).toBe(false);
+      expect(result.current.holdingIds.has(1)).toBe(false);
+      expect(result.current.getConfirmed(1)).toBe(confirmed);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps unretained server input through visual release and a failed later write", async () => {
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    const confirmed = { revision: 2, title: "Server title" };
+    await act(async () => {
+      await result.current.run({ id: 1, mutate: async () => confirmed, confirmed: value => value, retain: false });
+    });
+    expect(result.current.getConfirmed(1)).toBe(confirmed);
+    expect(result.current.retained.has(1)).toBe(false);
+    expect(result.current.holdingIds.has(1)).toBe(false);
+    await act(async () => {
+      await result.current.run({
+        id: 1, optimistic: { revision: 3, title: "Unsaved title" },
+        mutate: async () => { throw new Error("save offline"); }, confirmed: value => value,
+      });
+    });
+    act(() => result.current.release(1));
+    expect(result.current.getConfirmed(1)).toBe(confirmed);
+    expect(result.current.retained.has(1)).toBe(false);
+    expect(result.current.errors[1]).toBe("save offline");
+  });
+
+  it("prefers fresh equal-revision authority over a late response and never downgrades it", async () => {
+    const pending = deferredReceipt();
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    let run!: Promise<Receipt | undefined>;
+    act(() => {
+      run = result.current.run({ id: 1, mutate: () => pending.promise, confirmed: value => value, retain: false });
+    });
+    const fresh = { revision: 3, title: "Fresh derived title" };
+    act(() => result.current.observeConfirmed(1, fresh));
+    await act(async () => { pending.resolve({ revision: 3, title: "Older response title" }); await run; });
+    act(() => result.current.observeConfirmed(1, { revision: 2, title: "Older read" }));
+    expect(result.current.getConfirmed(1)).toBe(fresh);
+    act(() => result.current.release(1));
+    expect(result.current.getConfirmed(1)).toBe(fresh);
+  });
+
+  it.each(["resolve", "reject"] as const)("isolates A-to-B-to-A receipts and same-ID pending ownership from old %s", async (settlement) => {
+    const old = deferredReceipt();
+    const next = deferredReceipt();
+    const { result, rerender } = renderHook(({ identityKey }) =>
+      useRetainedMutations<Receipt>({ receiptRevision, identityKey }), { wrapper, initialProps: { identityKey: "A" } });
+    let first!: Promise<Receipt | undefined>;
+    act(() => {
+      first = result.current.run({ id: 1, optimistic: { revision: 2, title: "Old pending" }, mutate: () => old.promise, confirmed: value => value });
+    });
+    const oldToken = result.current.scopeToken;
+    const oldLease = result.current.pauseRetention(1);
+    rerender({ identityKey: "B" });
+    expect(result.current.retained.size).toBe(0);
+    expect(result.current.pendingIds.size).toBe(0);
+    rerender({ identityKey: "A" });
+    expect(result.current.scopeToken).not.toBe(oldToken);
+    let second!: Promise<Receipt | undefined>;
+    act(() => {
+      second = result.current.run({ id: 1, optimistic: { revision: 5, title: "New pending" }, mutate: () => next.promise, confirmed: value => value });
+      oldLease();
+    });
+    await act(async () => {
+      if (settlement === "resolve") old.resolve({ revision: 9, title: "Old private title" });
+      else old.reject(new Error("Old private error"));
+      await first;
+    });
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    expect(result.current.isPending(1)).toBe(true);
+    expect(result.current.retained.get(1)?.title).toBe("New pending");
+    expect(result.current.errors[1]).toBeUndefined();
+    await act(async () => { next.resolve({ revision: 5, title: "New confirmed" }); await second; });
+    expect(result.current.getConfirmed(1)?.title).toBe("New confirmed");
+  });
+
+  it("invalidates denied targets without allowing old results or cached observations to restore them", async () => {
+    const pending = deferredReceipt();
+    const { result } = renderHook(() => useRetainedMutations<Receipt>({ receiptRevision }), { wrapper });
+    let run!: Promise<Receipt | undefined>;
+    act(() => {
+      run = result.current.run({ id: 1, mutate: () => pending.promise, confirmed: value => value, retain: false });
+      result.current.invalidateConfirmed(1);
+    });
+    await act(async () => { pending.resolve({ revision: 2, title: "No longer accessible" }); await run; });
+    const readable = { revision: 3, title: "Authorized again" };
+    act(() => result.current.observeConfirmed(1, readable));
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    act(() => result.current.observeConfirmed(1, readable, readable, result.current.captureTargetRead(1)));
+    expect(result.current.getConfirmed(1)).toBe(readable);
+  });
+
+  it("does not publish a response from the discarded StrictMode effect lifetime", async () => {
+    const pending = deferredReceipt();
+    let started = false;
+    let run!: Promise<Receipt | undefined>;
+    const { result } = renderHook(() => {
+      const mutations = useRetainedMutations<Receipt>({ receiptRevision });
+      useEffect(() => {
+        if (started) return;
+        started = true;
+        run = mutations.run({ id: 1, mutate: () => pending.promise, confirmed: value => value, retain: false });
+      }, [mutations.run]);
+      return mutations;
+    }, { wrapper: ({ children }) => <StrictMode>{wrapper({ children })}</StrictMode> });
+    await act(async () => { pending.resolve({ revision: 2, title: "Discarded" }); await run; });
+    expect(result.current.getConfirmed(1)).toBeUndefined();
+    expect(result.current.pendingIds.size).toBe(0);
+  });
+});
 
 function wrapper({ children }: { children: ReactNode }) {
   return (

@@ -65,6 +65,27 @@ describe("IdentityGate with Pocket ID", () => {
     expect(window.localStorage.getItem("machbar:identity-member-id")).toBeNull();
   });
 
+  it("waits for a pending member catalog before mounting routes with a stored but unresolved identity", async () => {
+    const member = makeMember({ id: 7 });
+    window.localStorage.setItem("machbar:identity-member-id", String(member.id));
+    mockedApi.getAuthStatus.mockResolvedValue({ enabled: false, authenticated: false, member: null });
+    let resolve!: (members: ReturnType<typeof makeMember>[]) => void;
+    mockedApi.getMembers.mockReturnValue(new Promise(yes => { resolve = yes; }));
+    renderWithProviders(<IdentityGate><div>Privater Inhalt</div></IdentityGate>);
+    await waitFor(() => expect(mockedApi.getMembers).toHaveBeenCalledOnce());
+    expect(screen.queryByText("Privater Inhalt")).not.toBeInTheDocument();
+    await act(async () => resolve([member]));
+    expect(screen.getByText("Privater Inhalt")).toBeInTheDocument();
+  });
+
+  it("allows a known server-bound identity while the member catalog is pending", async () => {
+    const member = makeMember({ id: 7, managedByOidc: true });
+    mockedApi.getAuthStatus.mockResolvedValue({ enabled: true, authenticated: true, member });
+    mockedApi.getMembers.mockReturnValue(new Promise(() => {}));
+    renderWithProviders(<IdentityGate><div>Privater Inhalt</div></IdentityGate>);
+    expect(await screen.findByText("Privater Inhalt")).toBeInTheDocument();
+  });
+
   it("shows a callback error beside the sign-in action and removes it from the URL", async () => {
     window.history.replaceState(
       null,

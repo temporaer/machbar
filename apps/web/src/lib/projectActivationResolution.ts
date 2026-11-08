@@ -2,8 +2,16 @@ import type {
   ProjectActivationDecisionSnapshot,
   ProjectActivationRequirement,
   ProjectActivationResolution,
+  WorkItemAncestor,
 } from "@machbar/shared";
-import { api } from "./api";
+import type { ProjectDetail } from "./api";
+
+export function projectActivationTargetIds(projectId: number | null | undefined, ancestors: readonly WorkItemAncestor[] = []): number[] {
+  return [...new Set([
+    ...(projectId == null ? [] : [projectId]),
+    ...ancestors.filter(ancestor => ancestor.role === "story").map(ancestor => ancestor.id),
+  ])];
+}
 
 export interface ProjectActivationPrompt {
   projects: ProjectActivationRequirement[];
@@ -13,6 +21,8 @@ export interface ProjectActivationPrompt {
   requestFingerprint?: string;
   selectedDrivers: Record<number, number>;
   nextActionTitle: string;
+  readUnavailable?: boolean;
+  isCurrentRead?: () => boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,40 +95,35 @@ export function projectDriverRequirementFromError(
 export async function refreshProjectActivationPrompt(
   error: unknown,
   targetProjectId: number,
-  previous?: ProjectActivationPrompt | null,
-  intent: "commitment" | "explicit_activation" = "commitment",
+  previous: ProjectActivationPrompt | null | undefined,
+  intent: "commitment" | "explicit_activation",
+  readProject: (id: number) => Promise<ProjectDetail>,
+  isCurrentRead?: () => boolean,
+  previousTargetRevision?: number,
 ): Promise<ProjectActivationPrompt | null> {
   const fromError = projectActivationPromptFromError(error, previous);
-  if (fromError) return fromError;
+  if (fromError) return { ...fromError, ...(isCurrentRead ? { isCurrentRead } : {}) };
   if (!isStructuredApiError(error) || error.code !== "stale_write_conflict") return null;
 
   let snapshot: ProjectActivationDecisionSnapshot | undefined;
   try {
-    const project = await api.getProject(targetProjectId);
+    const project = await readProject(targetProjectId);
+    if (isCurrentRead && !isCurrentRead()) return previous ? { ...previous, readUnavailable: true } : null;
     snapshot = intent === "explicit_activation"
       ? project.directActivationDecisionSnapshot
       : project.activationDecisionSnapshot;
   } catch {
-    return previous ?? null;
+    return previous ? { ...previous, readUnavailable: true } : null;
   }
-  if (!snapshot) return previous ?? null;
-  const requiredDriverIds = new Set(
-    snapshot.projects.filter((project) => project.required.includes("driver")).map((project) => project.projectId),
-  );
-  return {
-    projects: snapshot.projects,
-    expectedProjects: snapshot.expectedProjects,
-    targetRevision: snapshot.targetRevision,
-    selectedDrivers: Object.fromEntries(
-      Object.entries(previous?.selectedDrivers ?? {}).filter(([id]) => requiredDriverIds.has(Number(id))),
-    ),
-    nextActionTitle: previous?.nextActionTitle ?? "",
-  };
+  if (!snapshot) return previous ? { ...previous, readUnavailable: true } : null;
+  const merged = projectActivationPromptFromSnapshot(snapshot, previous, targetProjectId, previousTargetRevision);
+  return merged === previous ? merged : { ...merged, ...(isCurrentRead ? { isCurrentRead } : {}) };
 }
 
 export function projectActivationResolutionFromPrompt(
   prompt: ProjectActivationPrompt,
 ): ProjectActivationResolution | null {
+  if (prompt.readUnavailable || (prompt.isCurrentRead && !prompt.isCurrentRead())) return null;
   const requiresPath = prompt.projects.some((project) => project.required.includes("progressPath"));
   if (requiresPath && prompt.nextActionTitle.trim() === "") return null;
   const drivers = prompt.projects
@@ -140,7 +145,12 @@ export function projectActivationResolutionFromPrompt(
 export function projectActivationPromptFromSnapshot(
   snapshot: ProjectActivationDecisionSnapshot | null,
   previous?: ProjectActivationPrompt | null,
+  targetProjectId?: number,
+  previousTargetRevision?: number,
 ): ProjectActivationPrompt {
+  const previousRevision = previousTargetRevision ??
+    previous?.expectedProjects.find(project => project.projectId === targetProjectId)?.revision;
+  if (snapshot && previous && previousRevision !== undefined && snapshot.targetRevision < previousRevision) return previous;
   const projects = snapshot?.projects ?? [];
   const requiredDrivers = new Set(projects.filter(project => project.required.includes("driver")).map(project => project.projectId));
   return {

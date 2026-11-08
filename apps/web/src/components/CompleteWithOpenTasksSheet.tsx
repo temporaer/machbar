@@ -3,7 +3,7 @@ import type { AcceptanceCriterion, Task } from "@machbar/shared";
 import type { ProjectDetail, ProjectWorkflowInput } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 
 type Resolution = NonNullable<ProjectWorkflowInput["descendantResolutions"]>[number]["action"];
 
@@ -29,12 +29,13 @@ export function CompleteWithOpenTasksSheet({
   onClose,
   onComplete,
   onRefresh,
+  ...presentation
 }: {
   story: ProjectDetail;
   onClose: () => void;
-  onComplete: (input: ProjectWorkflowInput) => Promise<void>;
+  onComplete: (input: ProjectWorkflowInput) => Promise<void | boolean>;
   onRefresh?: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const branches = openActionBranches(story.tasks);
   const taskSnapshot = flattenTasks(story.tasks).map(({ id, revision }) => ({ taskId: id, revision }));
@@ -51,7 +52,7 @@ export function CompleteWithOpenTasksSheet({
   }, [criteria]);
 
   return (
-    <BottomSheet title={`${strings.completeProjectAction}: ${story.title}`} onClose={() => { if (!busy) onClose(); }}>
+    <BottomSheet {...presentation} title={`${strings.completeProjectAction}: ${story.title}`} onClose={() => { if (!busy) onClose(); }}>
       <div className="stack">
         {criteria.length > 0 ? (
           <section className="stack">
@@ -103,13 +104,13 @@ export function CompleteWithOpenTasksSheet({
             setBusy(true);
             setError(null);
             try {
-              await onComplete({
+              const accepted = await onComplete({
                 expectedRevision: story.revision,
                 criteriaToCheck: [...checkedIds].filter((id) => unchecked.some((criterion) => criterion.id === id)),
                 expectedTaskRevisions: taskSnapshot,
                 descendantResolutions: branches.map((task) => ({ taskId: task.id, action: resolutions[task.id]!, expectedRevision: task.revision })),
               });
-              onClose();
+              if (accepted !== false) onClose();
             } catch (cause) {
               setError(localizedErrorMessage(cause, strings));
               onRefresh?.();

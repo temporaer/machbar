@@ -8,17 +8,21 @@ import { useStrings } from "../lib/strings";
 import { sortByPosition } from "../lib/taskHelpers";
 import {
   projectActivationPromptFromSnapshot,
+  projectActivationTargetIds,
   projectActivationPromptFromError,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { TaskOutline } from "./TaskOutline";
 import { StepComposer, type StepDraft } from "./StepComposer";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import { useNavigate } from "react-router-dom";
 import { useIdentity } from "../lib/identity";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useProjectActions, useProjectDetailQuery } from "../lib/useProjectActions";
+import { ReadErrorState } from "./AsyncStates";
 
 function fingerprint(steps: StepDraft[], convert: boolean, projectId: number | null): string {
   return JSON.stringify({ steps, convert, projectId });
@@ -41,6 +45,7 @@ export function TaskSplitSheet({
   projectId = null,
   existingChildren = [],
   onClose,
+  ...presentation
 }: {
   parentId: number;
   parentTitle?: string;
@@ -49,8 +54,10 @@ export function TaskSplitSheet({
   projectId?: number | null;
   existingChildren?: Task[];
   onClose: () => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
+  const taskActions = useTaskActions();
+  const projectActions = useProjectActions();
   const navigate = useNavigate();
   const detail = useTaskDetail();
   const { currentMemberId } = useIdentity();
@@ -59,35 +66,30 @@ export function TaskSplitSheet({
   const [convertParent, setConvertParent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
-  const [currentProject, setCurrentProject] = useState<ProjectRevisionSnapshot | null>(null);
+  const [parentRead, setParentRead] = useState(() => taskActions.captureTargetRead(parentId));
+  const parentCurrent = taskActions.isCurrentTargetRead(parentRead);
   const [currentParentRevision, setCurrentParentRevision] = useState(parentRevision);
   const [currentParentStatus, setCurrentParentStatus] = useState(parentStatus);
   const [currentProjectId, setCurrentProjectId] = useState(projectId);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [failedProjectRead, setFailedProjectRead] = useState<{ id: number; error: string } | null>(null);
 
+  const projectState = useProjectDetailQuery(currentProjectId ?? -1, currentProjectId !== null);
+  const currentProject = projectState.data;
+  const projectRead = currentProjectId === null ? null : projectActions.captureTargetRead(currentProjectId);
   useEffect(() => {
-    let current = true;
-    if (currentProjectId !== null) {
-      void api.getProject(currentProjectId).then((project) => {
-        if (current) {
-          setCurrentProject(project);
-          setSnapshotError(null);
-        }
-      }).catch((cause) => {
-        if (current) {
-          setCurrentProject(null);
-          setSnapshotError(localizedErrorMessage(cause, strings));
-        }
-      });
-    } else {
-      setCurrentProject(null);
+    if (currentProjectId === null) {
       setSnapshotError(null);
+    } else if (currentProject && currentProject.id === currentProjectId) {
+      setSnapshotError(null);
+      const affectedIds = new Set(projectActivationTargetIds(currentProject.id, currentProject.ancestors));
+      setFailedProjectRead(previous => previous && previous.id !== currentProject.id && affectedIds.has(previous.id) ? previous : null);
     }
-    return () => { current = false; };
-  }, [currentProjectId, strings]);
+  }, [currentProject, currentProjectId]);
 
   const requestFingerprint = fingerprint(draftSteps, convertParent, currentProjectId);
   const activationPrompt = activationState?.fingerprint === requestFingerprint ? activationState.prompt : null;
+  const activationUnavailable = activationPrompt?.readUnavailable || (activationPrompt?.isCurrentRead && !activationPrompt.isCurrentRead());
   const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const expectedProjectRevisions = currentProjectId === null
     ? []
@@ -96,21 +98,39 @@ export function TaskSplitSheet({
   const refreshSnapshots = async () => {
     let nextProjectId = currentProjectId;
     if (parentId > 0) {
-      const task = await api.getTask(parentId);
-      setCurrentParentRevision(task.revision);
-      setCurrentParentStatus(task.status);
-      nextProjectId = task.projectId;
+      const task = await taskActions.readTask(parentId);
+      if (!taskActions.isCurrentTargetRead(task.read)) return;
+      setParentRead(task.read);
+      setCurrentParentRevision(task.value.revision);
+      setCurrentParentStatus(task.value.status);
+      nextProjectId = task.value.projectId;
       setCurrentProjectId(nextProjectId);
     }
-    if (nextProjectId === null) {
-      setCurrentProject(null);
-    } else {
-      const project = await api.getProject(nextProjectId);
-      setCurrentProject(project);
-    }
+    if (nextProjectId !== null) await projectActions.getProject(nextProjectId);
+  };
+
+  const retryProjectRead = async () => {
+    if (busy) return;
+    if (!failedProjectRead || failedProjectRead.id === currentProjectId || !currentProject) { projectState.reload(); return; }
+    if (busy || !parentCurrent || !projectRead) return;
+    const isCurrent = () => taskActions.isCurrentTargetRead(parentRead) && projectActions.isCurrentTargetRead(projectRead);
+    setBusy(true);
+    try {
+      const latest = await projectActions.getProject(failedProjectRead.id, cause => {
+        if (isCurrent()) setFailedProjectRead({ id: failedProjectRead.id, error: localizedErrorMessage(cause, strings) });
+      });
+      if (isCurrent() && projectActions.isCurrentProjectRead(latest)) setFailedProjectRead(null);
+    } catch { /* Preserve the step draft and the matching read failure. */ }
+    finally { setBusy(false); }
   };
 
   const submit = async (steps: StepDraft[]) => {
+    if (!parentCurrent) return false;
+    const taskContinuation = taskActions.captureTargetRead(parentId);
+    const affectedIds = new Set(projectActivationTargetIds(currentProjectId, currentProject?.ancestors));
+    const projectContinuations = [...affectedIds].map(projectActions.captureTargetRead);
+    const isCurrent = () => taskActions.isCurrentTargetRead(taskContinuation) &&
+      projectContinuations.every(projectActions.isCurrentTargetRead);
     if (currentParentRevision === undefined) throw new Error(strings.stepParentRevisionMissing);
     if (expectedProjectRevisions === null) throw new Error(strings.loading);
     const input: CreateTaskStepBatchInput = {
@@ -121,20 +141,36 @@ export function TaskSplitSheet({
       ...(activationPrompt?.projects.length && activationResolution ? { activationResolution } : {}),
     };
     try {
-      if (!activationPrompt && (currentProjectId !== null || convertParent)) {
+      for (const id of affectedIds) {
+        if (!projectActions.isTargetReadable(id)) {
+          const current = await projectActions.getProject(id, cause => {
+            if (isCurrent()) setFailedProjectRead({ id, error: localizedErrorMessage(cause, strings) });
+          });
+          if (!isCurrent() || !projectActions.isCurrentProjectRead(current)) return false;
+        }
+      }
+      if ((!activationPrompt || activationUnavailable) && (currentProjectId !== null || convertParent)) {
         const preview = await api.previewTaskSteps(parentId, input);
+        if (!isCurrent()) return false;
         if (preview.activatingProjects.length) {
-          setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt: projectActivationPromptFromSnapshot(preview.decision) });
+          setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt: {
+            ...projectActivationPromptFromSnapshot(preview.decision, activationPrompt), isCurrentRead: () => isCurrent() &&
+              (preview.decision?.projects ?? []).every(project => project.projectId === parentId || affectedIds.has(project.projectId)) &&
+              (preview.decision?.expectedProjects ?? []).every(project => project.projectId === parentId || affectedIds.has(project.projectId)),
+          } });
           return false;
         }
       }
+      if (!isCurrent()) return false;
       const result = await api.createTaskStepBatchForTask(parentId, input);
+      if (!isCurrent()) return false;
       if (result.parent) {
+        setParentRead(taskContinuation);
         setCurrentParentRevision(result.parent.revision);
         setCurrentParentStatus(result.parent.status);
         setCurrentProjectId(result.parent.projectId);
-        setCurrentProject(result.projectSnapshot ?? null);
       }
+      if (result.projectSnapshot) projectActions.reconcileProjectSnapshot(result.projectSnapshot);
       bump();
       setActivationState(null);
       if (result.convertedProject) {
@@ -143,21 +179,26 @@ export function TaskSplitSheet({
         navigate(`/projects/${result.convertedProject.id}`, { state: { createdProjectId: result.convertedProject.id } });
       }
     } catch (cause) {
+      if (!isCurrent()) return false;
       const prompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (prompt) setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt });
+      if (prompt) setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt: {
+        ...prompt, isCurrentRead: () => isCurrent() && prompt.projects.every(project => project.projectId === parentId || affectedIds.has(project.projectId)) &&
+          prompt.expectedProjects.every(project => project.projectId === parentId || affectedIds.has(project.projectId)),
+      } });
       else if ((cause as { code?: string })?.code === "stale_write_conflict") {
         setActivationState(null);
         try { await refreshSnapshots(); } catch (refreshCause) {
           setSnapshotError(localizedErrorMessage(refreshCause, strings));
         }
       }
+      if (!isCurrent()) return false;
       throw cause;
     }
   };
 
 
   return (
-    <BottomSheet title={strings.splitTask} onClose={() => !busy && onClose()}>
+    <BottomSheet {...presentation} title={strings.splitTask} onClose={() => !busy && onClose()}>
       <div className="stack task-split-outliner">
         {parentTitle ? <p className="text-muted">{parentTitle}</p> : null}
         {existingChildren.length > 0 ? (
@@ -170,6 +211,9 @@ export function TaskSplitSheet({
         ) : null}
         {currentProject?.title ? <p className="text-muted">{currentProject.title}</p> : null}
         {snapshotError ? <p role="alert" className="task-row-error">{snapshotError}</p> : null}
+        {currentProjectId !== null ? <ReadErrorState resource={strings.project} {...projectState}
+          error={projectState.error ?? failedProjectRead?.error ?? (!currentProject && !projectState.loading ? strings.workflowTargetUnavailable : null)}
+          refreshing={projectState.refreshing || busy} reload={() => void retryProjectRead()} /> : null}
         {currentParentStatus === "captured" ? (
           <label className="row">
             <input type="checkbox" checked={convertParent} disabled={busy}
@@ -192,7 +236,7 @@ export function TaskSplitSheet({
           onPendingChange={setBusy}
           onSubmit={submit}
           onCancel={onClose}
-          submitDisabled={expectedProjectRevisions === null || (activationPrompt !== null && activationResolution === null)}
+          submitDisabled={!parentCurrent || failedProjectRead !== null || busy || expectedProjectRevisions === null || projectState.refreshing || (activationPrompt !== null && !activationUnavailable && activationResolution === null)}
         />
       </div>
     </BottomSheet>

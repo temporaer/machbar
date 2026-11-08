@@ -10,6 +10,8 @@ import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
 import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../lib/projectQueries";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
@@ -57,6 +59,30 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
+function projectDetail(story: ProjectWithActions, tasks: Task[] = []) {
+  const required = story.activationReadiness.requiredDecisions ?? [];
+  return {
+    ...story,
+    tasks,
+    activationDecisionSnapshot: {
+      targetRevision: story.revision,
+      expectedProjects: [{ projectId: story.id, revision: story.revision }],
+      projects: required.length ? [{
+        projectId: story.id, title: story.title, revision: story.revision,
+        ownerMemberId: story.ownerMemberId, required,
+      }] : [],
+    },
+    directActivationDecisionSnapshot: {
+      targetRevision: story.revision,
+      expectedProjects: [{ projectId: story.id, revision: story.revision }],
+      projects: required.length ? [{
+        projectId: story.id, title: story.title, revision: story.revision,
+        ownerMemberId: story.ownerMemberId, required,
+      }] : [],
+    },
+  };
+}
+
 /** Flushes the microtask queue (mutation `await`s) without depending on real timers. */
 async function flushMicrotasks(times = 3) {
   for (let i = 0; i < times; i += 1) {
@@ -86,7 +112,7 @@ function Harness({
 }) {
   // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
   // and every focused workflow they open is rendered by the single host.
-  mockedApi.getProject.mockResolvedValue({ ...story, tasks });
+  mockedApi.getProject.mockResolvedValue(projectDetail(story, tasks));
   return (
     <>
       <ul>
@@ -125,6 +151,7 @@ function renderWithProjectRoute(ui: ReactElement) {
     );
   }
   return render(
+    <QueryClientProvider client={createQueryClient()}>
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
@@ -146,7 +173,8 @@ function renderWithProjectRoute(ui: ReactElement) {
             </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -514,8 +542,9 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     await screen.findByText(story.title);
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Wieder öffnen" }));
 
-    const dialog = await screen.findByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"), "Ersten Schritt festlegen");
+    const nextAction = await screen.findByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?");
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(nextAction, "Ersten Schritt festlegen");
     await userEvent.click(within(dialog).getByRole("button", { name: "Wieder öffnen" }));
 
     await waitFor(() =>
@@ -550,8 +579,9 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
 
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Wieder öffnen" }));
-    const dialog = await screen.findByRole("dialog");
-    await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Abgeschlossen ohne Driver“"), "1");
+    const driver = await screen.findByLabelText("Verantwortlich für „Abgeschlossen ohne Driver“");
+    const dialog = screen.getByRole("dialog");
+    await userEvent.selectOptions(driver, "1");
     await userEvent.click(within(dialog).getByRole("button", { name: "Wieder öffnen" }));
 
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(26, {
@@ -645,9 +675,10 @@ describe("ProjectStoryRow – activation preparation", () => {
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Projekt starten" }));
 
-    const dialog = await screen.findByRole("dialog");
+    const driver = await screen.findByLabelText("Verantwortlich für „Ohne Driver backlog“");
+    const dialog = screen.getByRole("dialog");
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
-    await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Ohne Driver backlog“"), "2");
+    await userEvent.selectOptions(driver, "2");
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
     // Assigning and activating happen in one atomic backend call.
@@ -711,9 +742,10 @@ describe("ProjectStoryRow – activation preparation", () => {
     await screen.findByText(story.title);
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
 
-    const dialog = await screen.findByRole("dialog");
+    const driver = await screen.findByLabelText("Verantwortlich für „Beide Aktivierungsvoraussetzungen fehlen“");
+    const dialog = screen.getByRole("dialog");
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
-    await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Beide Aktivierungsvoraussetzungen fehlen“"), "2");
+    await userEvent.selectOptions(driver, "2");
     await userEvent.type(within(dialog).getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"), "Ersten Schritt vorbereiten");
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
@@ -748,8 +780,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     await screen.findByText(story.title);
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
 
-    const dialog = await screen.findByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Abbrechen" }));
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -765,8 +796,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Aktivierung abgebrochen");
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
-    const dialog = await screen.findByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Abbrechen" }));
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -866,10 +896,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
-    const deferSheet = await screen.findByRole("dialog", { name: "Zurückstellen …" });
-    await userEvent.click(
-      within(deferSheet).getByRole("button", { name: "Ohne Wiedervorlage" }),
-    );
+    await userEvent.click(await screen.findByRole("button", { name: "Ohne Wiedervorlage" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -1040,7 +1067,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
         revisitAt: null,
-        expectedRevision: 1,
+        expectedRevision: 2,
       }),
     );
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
@@ -1156,7 +1183,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     swipe(container, -64);
     swipe(container, 64);
     expect(container.querySelector(".story-row-lifecycle, .work-item-command-rail")).toBeNull();
-    expect(mockedApi.completeProject).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mockedApi.completeProject).toHaveBeenCalledOnce());
     await act(async () => finish());
   });
 

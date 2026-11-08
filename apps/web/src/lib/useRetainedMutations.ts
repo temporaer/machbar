@@ -1,9 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { isStaleWriteConflict, localizedErrorMessage } from "./errorMessage";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isStaleWriteConflict, isWorkItemAccessError, localizedErrorMessage } from "./errorMessage";
 import { useRefresh } from "./refresh";
 import { useStrings } from "./strings";
 
 export const RETENTION_MS = 4000;
+
+export interface TargetReadToken {
+  id: number;
+  scopeToken: object;
+  targetToken: object;
+}
+
+export interface TargetRead<T> {
+  read: TargetReadToken;
+  value: T;
+}
 
 interface RetainedMutation<TStored, TResult> {
   id: number;
@@ -16,97 +27,231 @@ interface RetainedMutation<TStored, TResult> {
   throwOnError?: boolean;
 }
 
-export function useRetainedMutations<TStored>({ immediateRefresh = false } = {}) {
+interface MutationOptions<TStored> {
+  immediateRefresh?: boolean;
+  identityKey?: string | object;
+  receiptRevision?: (value: TStored) => number;
+  captureTargetGuard?: (id: number) => () => boolean;
+}
+
+function mutationState<TStored>() {
+  const errors: Record<number, string> = {};
+  return {
+    pendingIds: new Set<number>(),
+    retained: new Map<number, TStored>(),
+    holdingIds: new Set<number>(),
+    errors,
+    confirmed: new Map<number, TStored>(),
+  };
+}
+
+export function useRetainedMutations<TStored>({
+  immediateRefresh = false,
+  identityKey,
+  receiptRevision,
+  captureTargetGuard,
+}: MutationOptions<TStored> = {}) {
   const strings = useStrings();
   const { bump } = useRefresh();
-  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
-  const [retained, setRetained] = useState<Map<number, TStored>>(new Map());
-  const [holdingIds, setHoldingIds] = useState<Set<number>>(new Set());
-  const leases = useRef(new Map<number, number>());
-  const deadlines = useRef(new Map<number, number>());
-  const [errors, setErrors] = useState<Record<number, string>>({});
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-  const inFlight = useRef<Set<number>>(new Set());
-
-  useEffect(
-    () => () => {
-      timers.current.forEach((timer) => clearTimeout(timer));
-      timers.current.clear();
-    },
-    [],
-  );
+  const [, render] = useState(0);
+  const runtime = useMemo(() => ({
+    state: mutationState<TStored>(),
+    scopeToken: {},
+    active: true,
+    leases: new Map<number, number>(),
+    deadlines: new Map<number, number>(),
+    timers: new Map<number, ReturnType<typeof setTimeout>>(),
+    inFlight: new Set<number>(),
+    targetTokens: new Map<number, object>(),
+    invalidated: new Set<number>(),
+    observed: new WeakMap<object, Set<number>>(),
+    readSources: new WeakMap<object, TargetReadToken>(),
+    commandIds: new Set<number>(),
+  }), [identityKey]);
+  const currentRuntime = useRef(runtime);
+  currentRuntime.current = runtime;
+  const scopeToken = runtime.scopeToken;
+  const isCurrentScope = useCallback((token: object) =>
+    runtime.active && currentRuntime.current === runtime && runtime.scopeToken === token, [runtime]);
+  const change = useCallback((update: (current: typeof runtime.state) => typeof runtime.state) => {
+    if (!isCurrentScope(scopeToken)) return;
+    const next = update(runtime.state);
+    if (next === runtime.state) return;
+    runtime.state = next;
+    render(value => value + 1);
+  }, [isCurrentScope, runtime, scopeToken]);
+  useEffect(() => {
+    if (!runtime.active) {
+      runtime.active = true;
+      render(value => value + 1);
+    }
+    return () => {
+      runtime.active = false;
+      runtime.scopeToken = {};
+      runtime.timers.forEach(clearTimeout);
+      runtime.timers.clear();
+      runtime.leases.clear();
+      runtime.deadlines.clear();
+      runtime.inFlight.clear();
+      runtime.targetTokens.clear();
+      runtime.invalidated.clear();
+      runtime.observed = new WeakMap();
+      runtime.readSources = new WeakMap();
+      runtime.commandIds.clear();
+      runtime.state = mutationState<TStored>();
+    };
+  }, [runtime]);
 
   const release = useCallback((id: number, refresh = false) => {
-    const timer = timers.current.get(id);
+    if (!isCurrentScope(scopeToken)) return;
+    const timer = runtime.timers.get(id);
     if (timer) {
       clearTimeout(timer);
-      timers.current.delete(id);
+      runtime.timers.delete(id);
     }
-    deadlines.current.delete(id);
-    setHoldingIds((current) => { const next = new Set(current); next.delete(id); return next; });
-    setRetained((current) => {
-      if (!current.has(id)) return current;
-      const next = new Map(current);
-      next.delete(id);
-      return next;
+    runtime.deadlines.delete(id);
+    change(current => {
+      if (!current.holdingIds.has(id) && !current.retained.has(id)) return current;
+      const holdingIds = new Set(current.holdingIds);
+      const retained = new Map(current.retained);
+      holdingIds.delete(id);
+      retained.delete(id);
+      return { ...current, holdingIds, retained };
     });
     if (refresh) bump();
-  }, [bump]);
+  }, [bump, change, isCurrentScope, runtime, scopeToken]);
 
-  // A confirmed value and its display lifetime are independent: expiry must
-  // never put an older server snapshot back on screen.
   const retain = useCallback((id: number, value: TStored) => {
-    setRetained((current) => new Map(current).set(id, value));
-  }, []);
+    change(current => ({ ...current, retained: new Map(current.retained).set(id, value) }));
+  }, [change]);
+
+  const recordConfirmed = useCallback((id: number, value: TStored, authoritative = false) => {
+    if (!receiptRevision) return;
+    change(current => {
+      const previous = current.confirmed.get(id);
+      if (previous !== undefined && (previous === value ||
+        receiptRevision(previous) > receiptRevision(value) ||
+        (!authoritative && receiptRevision(previous) === receiptRevision(value)))) return current;
+      return { ...current, confirmed: new Map(current.confirmed).set(id, value) };
+    });
+  }, [change, receiptRevision]);
+  const getConfirmed = useCallback((id: number) =>
+    isCurrentScope(scopeToken) && !runtime.invalidated.has(id)
+      ? runtime.state.confirmed.get(id) : undefined, [isCurrentScope, runtime, scopeToken]);
+  const captureTargetRead = useCallback((id: number): TargetReadToken => {
+    let targetToken = runtime.targetTokens.get(id);
+    if (!targetToken) {
+      targetToken = {};
+      runtime.targetTokens.set(id, targetToken);
+    }
+    return { id, scopeToken, targetToken };
+  }, [runtime, scopeToken]);
+  const isCurrentTargetRead = useCallback((read: TargetReadToken) =>
+    isCurrentScope(read.scopeToken) && runtime.targetTokens.get(read.id) === read.targetToken,
+  [isCurrentScope, runtime]);
+  const trackTargetRead = useCallback((read: TargetReadToken, value: object) => {
+    runtime.readSources.set(value, read);
+  }, [runtime]);
+  const isCurrentTargetValue = useCallback((value: object) => {
+    const read = runtime.readSources.get(value);
+    return read !== undefined && isCurrentTargetRead(read);
+  }, [runtime, isCurrentTargetRead]);
+  const isTargetReadable = useCallback((id: number) =>
+    isCurrentScope(scopeToken) && !runtime.invalidated.has(id), [isCurrentScope, runtime, scopeToken]);
+  const observeConfirmed = useCallback((id: number, value: TStored, source: unknown = value, read?: TargetReadToken) => {
+    if (!isCurrentScope(scopeToken) || !receiptRevision ||
+      (read && (read.id !== id || !isCurrentTargetRead(read))) ||
+      (runtime.invalidated.has(id) && !read)) return;
+    if (!read && !runtime.state.confirmed.has(id) && !runtime.inFlight.has(id)) return;
+    if (read && !runtime.leases.has(id) && !runtime.commandIds.has(id)) return;
+    const restoring = runtime.invalidated.has(id);
+    if (read) runtime.invalidated.delete(id);
+    if (typeof source === "object" && source !== null) {
+      const observedIds = runtime.observed.get(source) ?? new Set<number>();
+      if (observedIds.has(id) && !restoring && runtime.state.confirmed.has(id)) return;
+      observedIds.add(id);
+      runtime.observed.set(source, observedIds);
+    }
+    recordConfirmed(id, value, true);
+  }, [isCurrentScope, isCurrentTargetRead, receiptRevision, recordConfirmed, runtime, scopeToken]);
+  const invalidateConfirmed = useCallback((id: number, read?: TargetReadToken) => {
+    if (!isCurrentScope(scopeToken) || (read && (read.id !== id || !isCurrentTargetRead(read)))) return;
+    runtime.targetTokens.set(id, {});
+    runtime.invalidated.add(id);
+    release(id);
+    change(current => {
+      const confirmed = new Map(current.confirmed);
+      confirmed.delete(id);
+      return { ...current, confirmed };
+    });
+  }, [change, isCurrentScope, isCurrentTargetRead, release, runtime, scopeToken]);
 
   const schedule = useCallback(function scheduleExpiry(id: number) {
-    const existing = timers.current.get(id);
+    if (!isCurrentScope(scopeToken)) return;
+    const token = scopeToken;
+    const existing = runtime.timers.get(id);
     if (existing) clearTimeout(existing);
-    timers.current.delete(id);
-    const deadline = deadlines.current.get(id);
-    if (deadline === undefined || leases.current.has(id)) return;
-    timers.current.set(id, setTimeout(() => {
-      timers.current.delete(id);
-      deadlines.current.delete(id);
+    runtime.timers.delete(id);
+    const deadline = runtime.deadlines.get(id);
+    if (deadline === undefined || runtime.leases.has(id)) return;
+    runtime.timers.set(id, setTimeout(() => {
+      if (!isCurrentScope(token)) return;
+      runtime.timers.delete(id);
+      runtime.deadlines.delete(id);
       if (!immediateRefresh) {
-        setRetained(current => { const next = new Map(current); next.delete(id); return next; });
+        change(current => {
+          const retained = new Map(current.retained);
+          retained.delete(id);
+          return { ...current, retained };
+        });
         bump();
       }
-      setHoldingIds((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
+      change(current => {
+        const holdingIds = new Set(current.holdingIds);
+        holdingIds.delete(id);
+        return { ...current, holdingIds };
       });
     }, Math.max(0, deadline - Date.now())));
-  }, [bump, immediateRefresh]);
+  }, [bump, change, immediateRefresh, isCurrentScope, runtime, scopeToken]);
 
   const pauseRetention = useCallback((id: number) => {
-    leases.current.set(id, (leases.current.get(id) ?? 0) + 1);
-    const timer = timers.current.get(id);
+    const token = scopeToken;
+    if (!isCurrentScope(token)) return () => {};
+    runtime.leases.set(id, (runtime.leases.get(id) ?? 0) + 1);
+    const timer = runtime.timers.get(id);
     if (timer) clearTimeout(timer);
-    timers.current.delete(id);
+    runtime.timers.delete(id);
     return () => {
-      const remaining = (leases.current.get(id) ?? 1) - 1;
-      if (remaining > 0) leases.current.set(id, remaining);
+      if (!isCurrentScope(token)) return;
+      const remaining = (runtime.leases.get(id) ?? 1) - 1;
+      if (remaining > 0) runtime.leases.set(id, remaining);
       else {
-        leases.current.delete(id);
-        const deadline = deadlines.current.get(id);
+        runtime.leases.delete(id);
+        if (!runtime.commandIds.has(id) && !runtime.inFlight.has(id)) {
+          change(current => {
+            if (!current.confirmed.has(id)) return current;
+            const confirmed = new Map(current.confirmed);
+            confirmed.delete(id);
+            return { ...current, confirmed };
+          });
+        }
+        const deadline = runtime.deadlines.get(id);
         if (deadline !== undefined) {
-          deadlines.current.set(id, Math.max(deadline, Date.now() + 2000));
+          runtime.deadlines.set(id, Math.max(deadline, Date.now() + 2000));
           schedule(id);
         }
       }
     };
-  }, [schedule]);
+  }, [change, isCurrentScope, runtime, schedule, scopeToken]);
 
   const clearError = useCallback((id: number) => {
-    setErrors((current) => {
-      if (!(id in current)) return current;
-      const next = { ...current };
-      delete next[id];
-      return next;
+    change(current => {
+      if (!(id in current.errors)) return current;
+      const errors = { ...current.errors };
+      delete errors[id];
+      return { ...current, errors };
     });
-  }, []);
+  }, [change]);
 
   const run = useCallback(
     async <TResult,>({
@@ -119,35 +264,51 @@ export function useRetainedMutations<TStored>({ immediateRefresh = false } = {})
       refreshImmediately = false,
       throwOnError = false,
     }: RetainedMutation<TStored, TResult>): Promise<TResult | undefined> => {
-      if (inFlight.current.has(id)) {
+      const token = scopeToken;
+      if (!isCurrentScope(token)) return undefined;
+      const targetRead = captureTargetGuard ? undefined : captureTargetRead(id);
+      const canPublishTarget = captureTargetGuard
+        ? captureTargetGuard(id)
+        : () => runtime.targetTokens.get(id) === targetRead?.targetToken;
+      const canPublish = () => isCurrentScope(token) && canPublishTarget();
+      if (runtime.inFlight.has(id)) {
         const error = new Error("An update for this item is already in progress.");
-        setErrors((current) => ({
+        change((current) => ({
           ...current,
-          [id]: localizedErrorMessage(error, strings),
+          errors: { ...current.errors, [id]: localizedErrorMessage(error, strings) },
         }));
         if (throwOnError) throw error;
         return undefined;
       }
-      inFlight.current.add(id);
-      setPendingIds((current) => new Set(current).add(id));
+      runtime.inFlight.add(id);
+      if (receiptRevision) runtime.commandIds.add(id);
+      change((current) => ({ ...current, pendingIds: new Set(current.pendingIds).add(id) }));
       clearError(id);
-      const holdPosition = !retainUntilRefresh || deadlines.current.has(id);
-      const oldTimer = timers.current.get(id);
+      const holdPosition = !retainUntilRefresh || runtime.deadlines.has(id);
+      const oldTimer = runtime.timers.get(id);
       if (oldTimer) clearTimeout(oldTimer);
-      timers.current.delete(id);
-      deadlines.current.delete(id);
+      runtime.timers.delete(id);
+      runtime.deadlines.delete(id);
       if (optimistic !== undefined) {
         retain(id, optimistic);
-        if (holdPosition) setHoldingIds((current) => new Set(current).add(id));
+        if (holdPosition) change((current) => ({ ...current, holdingIds: new Set(current.holdingIds).add(id) }));
       }
 
       try {
         const result = await mutate();
+        if (!canPublish()) {
+          if (currentRuntime.current.active) bump();
+          return undefined;
+        }
+        const value = confirmed?.(result);
+        if (value !== undefined) {
+          recordConfirmed(id, value);
+        }
         if (shouldRetain) {
-          if (confirmed) retain(id, confirmed(result));
+          if (value !== undefined) retain(id, value);
           if (holdPosition) {
-            setHoldingIds((current) => new Set(current).add(id));
-            deadlines.current.set(id, Date.now() + RETENTION_MS);
+            change((current) => ({ ...current, holdingIds: new Set(current.holdingIds).add(id) }));
+            runtime.deadlines.set(id, Date.now() + RETENTION_MS);
             schedule(id);
           }
           if (immediateRefresh || refreshImmediately) bump();
@@ -157,26 +318,30 @@ export function useRetainedMutations<TStored>({ immediateRefresh = false } = {})
         }
         return result;
       } catch (error) {
+        if (!canPublish()) return undefined;
         release(id);
-        if (isStaleWriteConflict(error)) bump();
-        setErrors((current) => ({
+        if (isStaleWriteConflict(error) || isWorkItemAccessError(error)) bump();
+        change((current) => ({
           ...current,
-          [id]: localizedErrorMessage(error, strings),
+          errors: { ...current.errors, [id]: localizedErrorMessage(error, strings) },
         }));
         if (throwOnError) throw error;
         return undefined;
       } finally {
-        inFlight.current.delete(id);
-        setPendingIds((current) => {
-          const next = new Set(current);
-          next.delete(id);
-          return next;
-        });
+        if (isCurrentScope(token)) {
+          runtime.inFlight.delete(id);
+          change((current) => {
+            const next = new Set(current.pendingIds);
+            next.delete(id);
+            return { ...current, pendingIds: next };
+          });
+        }
       }
     },
-    [bump, clearError, release, retain, schedule, strings, immediateRefresh],
+    [bump, change, clearError, release, retain, schedule, strings, immediateRefresh, isCurrentScope, captureTargetRead, captureTargetGuard, receiptRevision, recordConfirmed, runtime, scopeToken],
   );
 
+  const { pendingIds, holdingIds, retained, errors } = runtime.state;
   const isPending = useCallback((id: number) => pendingIds.has(id), [pendingIds]);
 
   return {
@@ -189,5 +354,16 @@ export function useRetainedMutations<TStored>({ immediateRefresh = false } = {})
     clearError,
     run,
     release,
+    getConfirmed,
+    observeConfirmed,
+    invalidateConfirmed,
+    captureTargetRead,
+    isCurrentTargetRead,
+    trackTargetRead,
+    isCurrentTargetValue,
+    isTargetReadable,
+    scopeToken,
+    isCurrentScope,
+    confirmedSnapshots: runtime.state.confirmed,
   };
 }

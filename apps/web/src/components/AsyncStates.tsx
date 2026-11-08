@@ -1,4 +1,5 @@
 import { useStrings } from "../lib/strings";
+import type { AsyncState } from "../lib/useAsync";
 
 export function LoadingState() {
   const strings = useStrings();
@@ -14,11 +15,13 @@ export function ErrorState({
   onRetry,
   title,
   guidance,
+  pending = false,
 }: {
   message: string;
   onRetry?: () => void;
   title?: string;
   guidance?: string;
+  pending?: boolean;
 }) {
   const strings = useStrings();
   const resolvedTitle = title ?? strings.error;
@@ -29,11 +32,35 @@ export function ErrorState({
       {showMessage ? <p>{message}</p> : null}
       <p className="text-muted">{guidance ?? strings.errorRecoveryHint}</p>
       {onRetry ? (
-        <button type="button" className="btn" onClick={onRetry}>
+        <button type="button" className="btn" onClick={onRetry} disabled={pending}>
           {strings.retry}
         </button>
       ) : null}
     </div>
+  );
+}
+
+export function ReadErrorState({
+  resource,
+  error,
+  refreshError,
+  loading,
+  refreshing,
+  reload,
+}: Pick<AsyncState<unknown>, "error" | "refreshError" | "loading" | "refreshing" | "reload"> & {
+  resource: string;
+}) {
+  const strings = useStrings();
+  const message = error ?? refreshError;
+  if (message === null) return null;
+  return (
+    <ErrorState
+      title={error !== null ? strings.readLoadFailed(resource) : strings.readRefreshFailed(resource)}
+      message={message}
+      guidance={error !== null ? strings.errorRecoveryHint : strings.readRefreshRecoveryHint}
+      onRetry={reload}
+      pending={loading || refreshing}
+    />
   );
 }
 

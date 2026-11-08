@@ -4,15 +4,15 @@ import { canBreakDownTask, type Task, type WorkRefinementIntent } from "@machbar
 import { api } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
-import { BottomSheet } from "./BottomSheet";
+import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 
 type WorkClarificationIntent = WorkRefinementIntent | "smaller_steps";
 
 export function WorkClarificationSheet({
-  targetType, targetId, revision, title, task, onClose, onStarted,
+  targetType, targetId, revision, title, task, onClose, onStarted, ...presentation
 }: {
   targetType: "task" | "project"; targetId: number; revision: number; title: string; task?: Task; onClose: () => void; onStarted?: (intakeId: string) => void;
-}) {
+} & BottomSheetPresentationProps) {
   const strings = useStrings();
   const navigate = useNavigate();
   const [intent, setIntent] = useState<WorkClarificationIntent>("improve");
@@ -39,7 +39,7 @@ export function WorkClarificationSheet({
     } finally { setPending(false); }
   };
   const canSuggestSteps = task !== undefined && canBreakDownTask(task);
-  return <BottomSheet title={`${strings.workRefinement}: ${title}`} onClose={onClose}>
+  return <BottomSheet {...presentation} title={`${strings.workRefinement}: ${title}`} onClose={onClose}>
     <div className="stack">
       <p className="muted">{strings.workRefinementHelp}</p>
       <label className="stack">

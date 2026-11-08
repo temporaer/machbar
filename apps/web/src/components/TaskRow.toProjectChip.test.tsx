@@ -60,7 +60,10 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
     mockedApi.getProjects.mockResolvedValue([umzug, garten]);
-    mockedApi.getProject.mockResolvedValue({ ...umzug, tasks: [] });
+    mockedApi.getProject.mockImplementation(async id => ({
+      ...([umzug, garten].find(project => project.id === id) ?? makeProject({ id })),
+      tasks: [],
+    }));
   });
 
   describe("task already belongs to a project", () => {

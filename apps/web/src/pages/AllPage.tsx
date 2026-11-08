@@ -14,7 +14,7 @@ import {
 } from "../lib/allInventory";
 import {
   LoadingState,
-  ErrorState,
+  ReadErrorState,
   EmptyState,
 } from "../components/AsyncStates";
 import { PageHeader } from "../components/PageHeader";
@@ -33,19 +33,12 @@ export function AllPage() {
   const { locale } = useLocale();
   const [filters, setFilters] = useState<SearchFilters>({});
   const filtersKey = JSON.stringify(filters);
-  const {
-    data: projects,
-    loading: projectsLoading,
-    error: projectsError,
-    reload: reloadProjects,
-  } = useAsync(() => api.getProjects(), []);
-  const { data: tags } = useAsync(() => api.getTags(), []);
-  const {
-    data: tasks,
-    loading: tasksLoading,
-    error: tasksError,
-    reload: reloadTasks,
-  } = useAsync(() => api.searchTasks({ ...filters, includeTerminal: true }), [filtersKey]);
+  const projectsRead = useAsync(() => api.getProjects(), []);
+  const { data: projects, loading: projectsLoading } = projectsRead;
+  const tagsRead = useAsync(() => api.getTags(), []);
+  const { data: tags } = tagsRead;
+  const tasksRead = useAsync(() => api.searchTasks({ ...filters, includeTerminal: true }), [filtersKey]);
+  const { data: tasks, loading: tasksLoading } = tasksRead;
   const projectCandidates = useMemo(
     () =>
       filterAndSortProjects(filterInventoryProjects(projects ?? [], filters), {
@@ -74,7 +67,6 @@ export function AllPage() {
   const { rows: filteredProjects } = useRetainedPlacement({ rows: projectCandidates }, projectActions.holdingIds,
     projectActions.projectStory, filtersKey);
   const loading = projectsLoading || tasksLoading;
-  const error = projectsError ?? tasksError;
 
   return (
     <InteractionScopeProvider>
@@ -90,15 +82,9 @@ export function AllPage() {
           tags={tags ?? []}
         />
         {loading ? <LoadingState /> : null}
-        {error ? (
-          <ErrorState
-            message={error}
-            onRetry={() => {
-              reloadProjects();
-              reloadTasks();
-            }}
-          />
-        ) : null}
+        <ReadErrorState resource={strings.projects} {...projectsRead} />
+        <ReadErrorState resource={strings.task} {...tasksRead} />
+        <ReadErrorState resource={strings.tags} {...tagsRead} />
         {projects && tasks ? (
           filteredProjects.length === 0 && visibleTasks.length === 0 ? (
             <EmptyState message={strings.allEmpty} />

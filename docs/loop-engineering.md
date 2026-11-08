@@ -207,3 +207,139 @@ results, and migration snapshot drift. The creation APIs require an explicit
 CreationIntent at compile time, so new production callers must choose their
 operation lifetime rather than inheriting an implicit payload queue. Activation
 fixtures deliberately give task, project and ancestor different owners.
+
+Recovery PR #256 review exposed introduced authorization-generation and draft
+reconciliation gaps: detail denials did not revoke shared fallback, pre-denial
+successes could restore it, and revision-advancing read retries left Planning's
+baseline stale. The expanded contracts cover task/project detail-to-offline
+workflow denial, concurrent/already-rendered readers, post-denial commands,
+selected/cookie identity ABA through the real transport 401 event, and Planning
+preview continuation invalidation. Direct Planning cases preserve unresolved
+conflicts, pending-only composition with a lower first real baseline, and the
+exact unfinished reminder editor across reads. Browser cases separately exercise
+real persisted revision/wait/dependency recovery and visible cross-reader task
+and project suppression on desktop/mobile Chromium. These are scenario claims,
+not complete authorization or physical-device coverage.
+
+The full browser gate also rejected an introduced equivalent-read regression
+that closed an explicitly opened empty waiting composer. A direct failing
+counterexample preceded the fix; the original browser assertions stayed intact.
+Final validation passed with
+`PATH=/home/hannes/miniforge3/envs/machbar-pytest/bin:$PATH npm exec --yes --package=node@22 -- bash -c 'bash scripts/verify.sh && npm run test:e2e'`:
+architecture, builds and typechecks; 1379 API and 1925 web tests; 159 Python
+tests with one existing skip; and 47 desktop/mobile Chromium cases with one
+existing skip. These results include the four new browser scenarios in both
+viewports and do not imply live OIDC or physical-device verification.
+
+Actual-diff acceptance then found four further introduced gaps: obsolete
+dispatched commands still closed recovered openings, local projections could
+retag old qualified reads with a newer epoch, unavailable activation/deadline
+requirements had no draft-preserving recovery, and invalidated move destinations
+offered a silent no-op. Twelve direct counterexamples failed before correction.
+The correction retains original read envelopes, guards command completions,
+reuses snapshot decision merges and GET-only runners, and makes destination
+recovery explicit. Additional desktop/mobile browser cases exercise delayed
+successful/failed responses, real persisted deadline revision recovery and
+same-selection destination retry. These extend—not replace—the earlier gate,
+original fault regressions or original browser assertions.
+The subsequent complete verifier/browser command above passed: architecture,
+shared/production builds and all typechecks; 1379 API tests, 1937 web tests,
+159 Python tests with one existing skip, and 55 desktop/mobile Chromium cases
+with one existing skip. Gate3's earlier counts remain historical evidence;
+the additional twelve direct cases and eight browser executions all pass.
+
+The subsequent six Copilot threads exposed further introduced gaps: a higher
+parent receipt replaced fetched child membership wholesale, move retries
+unmounted picker search drafts and warnings, usable activation/deadline prompts
+ignored newly qualified detail, project-entry/split lacked own read recovery,
+and older local conversion detail overrode newer host authority. Eight direct
+counterexamples failed before production correction (the activation fixture
+first needed its real member option to load); the additional pending-only
+conversion case proves no command before an actual lower first baseline.
+The correction reuses confirmed-only tree projection, target-scoped snapshot
+merging and existing read runners, without extending the transitional store.
+Real browser validation additionally rejected route-owned project entry being
+unmounted by page denial. Retaining that opening's original page envelope fixes
+its editor lifetime without restoring denied detail. New-browser fixture
+selectors and the initially incorrect ancestor-activation assumption were
+corrected, not original assertions. Ten new desktop/mobile executions pass:
+sticky move search/warning, entry/split own retry, actual activation revision,
+and conversion host authority despite a failed local refresh. Direct snapshot
+cases separately cover higher/lower/equal-derived requirements. None imply live
+OIDC, physical-device or comprehensive authorization verification.
+The fifth-review final complete verifier/browser command above passed:
+architecture (369 source files), shared/production builds and all typechecks;
+1379 API tests, 1946 web tests, 159 Python tests with one existing skip, and
+65 desktop/mobile Chromium cases with one existing skip. The nine additional
+direct cases and ten additional browser executions extend the historical
+1937-web/55-browser gate; the earlier regressions and browser assertions remain.
+
+Final actual-diff acceptance found two remaining introduced boundaries:
+project-entry/split preview prompts exposed server requirement titles after
+read revocation, and an active Deadline target absent from `expectedProjects`
+could accept an older target snapshot. Three direct counterexamples rejected the
+faulty source before production correction. Two additional sibling cases
+reproduced published-preview leakage in Planning/conversion before their guards.
+Preview prompts now retain original continuations and authored decisions;
+GET-only recovery restores the baseline but requires a deliberate fresh preview
+before committing. The prior entry/split choice-retention assertions remain,
+with a fresh deliberate preview inserted before asserting visible driver
+choices rather than requiring revoked labels to reappear on GET alone.
+The existing decision merge accepts an explicit actual same-target baseline;
+direct tests cover omitted targets, lower/equal/higher requirements and avoiding
+cross-target task/project revision comparisons. No persistent state abstraction
+or query migration was introduced.
+The first complete acceptance gate passed runtime checks but rejected a mobile
+activation test that waited for a transport response rather than accepted sheet
+data. Its strict revision/draft assertions remain; changing the server title
+provides an observable qualified-requirement label to wait for before Submit.
+That strengthened desktop/mobile scenario passed ten repeated executions.
+The batch browser counters also now monitor the real batch endpoint and its
+`x-machbar-preview` header, rather than a non-existent `/steps` path.
+The corrected complete acceptance gate passed architecture, builds/typechecks,
+1379 API tests, 1953 web tests, 159 Python tests with one existing skip, and
+69 desktop/mobile Chromium cases with one existing skip. It extends the prior
+1946-web/65-browser gate with seven direct cases and four browser executions;
+the separate new-work CaptureForm preview lifetime is not certified by this
+bounded existing-target matrix.
+
+The sixth Copilot review exposed three more introduced boundaries: stored move
+requirements lacked destination/ancestor read provenance, project conversion
+advanced authority without reconciling authored title/notes, and conversion
+requirements could describe containing projects absent from its source-only
+continuation. Six corrected direct counterexamples failed before production
+changes. Two entry/split ancestor-preview siblings and two first-request
+post-denial revalidation cases also failed before their corrections. The task
+move continuation case is an additional positive contract, not a claimed
+pre-fix reproduction. A pure selector case verifies revisionless story ancestry
+and excludes task parents even when they carry revisions.
+
+Original source/destination/story-ancestor epochs now bind the request and its
+requirements; no response-time target stamping or revision-based ID inference
+is used. Task inputs without containing-project ancestry learn it through the
+existing canonical reader before the command. Existing prompt merging preserves
+applicable decisions for deliberate regeneration, and existing conversion
+field merging reconciles selected qualified authority with explicit divergent
+choices. This extends only the transitional correctness baseline, not a fetched
+state framework, CaptureForm scope, backend policy or Query migration.
+
+The focused gate passed web typecheck and 134 tests. Initial new-browser failures
+were fixture mistakes: unplanned task creation does not activate its containing
+projects, explicit child activation leaves its ancestor in backlog, textarea
+labels need role-based lookup, relative conflict controls need relative locators,
+and a ready project's action rail deliberately contains no Structure action.
+The corrected browser journey uses the existing project-detail action menu and
+holds the ancestor reader across navigation, so a matching transport denial
+still reaches the shared generation without an abandoned query publishing data.
+Browser recovery uses GET-only retry, retains exact authored/search nodes, and
+holds deliberate regenerated requirements after a qualified affected GET to
+check that restoration alone does not recertify the old prompt.
+The sixth-review complete gate passed:
+`PATH=/home/hannes/miniforge3/envs/machbar-pytest/bin:$PATH npm exec --yes --package=node@22 -- bash -c 'bash scripts/verify.sh && npm run test:e2e'`.
+Architecture (369 source files), shared/production builds and all typechecks
+passed; 1379 API, 1965 web and 159 Python tests passed, with one existing Python
+skip. Chromium passed 75 desktop/mobile cases with one existing skip, including
+all six new executions. This extends the historical 1953-web/69-browser gate
+with twelve direct cases and six browser executions; original browser assertions
+remain unchanged. Synthetic HTTP denials exercise real frontend transport and
+generation handling, not live identity-provider or production authorization.

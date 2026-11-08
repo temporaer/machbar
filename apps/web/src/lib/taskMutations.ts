@@ -47,13 +47,14 @@ export function updateTask(
 export async function refreshTaskAfterConflict(
   error: unknown,
   taskId: number,
-): Promise<Task | null> {
+  readTask: (id: number) => Promise<Task>,
+): Promise<{ kind: "not_conflict" } | { kind: "current"; task: Task } | { kind: "unavailable"; cause: unknown }> {
   if (!(error instanceof Error) || (error as Error & { code?: unknown }).code !== "stale_write_conflict") {
-    return null;
+    return { kind: "not_conflict" };
   }
   try {
-    return await api.getTask(taskId);
-  } catch {
-    return null;
+    return { kind: "current", task: await readTask(taskId) };
+  } catch (cause) {
+    return { kind: "unavailable", cause };
   }
 }

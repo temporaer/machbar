@@ -38,7 +38,10 @@ describe("MoveTaskSheet", () => {
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.getProjects.mockResolvedValue([umzug, garten, steuer]);
-    mockedApi.getProject.mockResolvedValue({ ...umzug, tasks: [] });
+    mockedApi.getProject.mockImplementation(async id => ({
+      ...([umzug, garten, steuer].find(project => project.id === id) ?? makeProject({ id })),
+      tasks: [],
+    }));
     mockedApi.moveTask.mockResolvedValue(makeTask() as never);
   });
 
@@ -162,7 +165,10 @@ describe("MoveTaskSheet", () => {
     const sibling = makeTask({ id: 60, title: "Möbelwagen mieten", projectId: 1 });
 
     beforeEach(() => {
-      mockedApi.getProject.mockResolvedValue({ ...umzug, tasks: [moved, sibling] });
+      mockedApi.getProject.mockImplementation(async id => ({
+        ...(id === umzug.id ? umzug : garten),
+        tasks: id === umzug.id ? [moved, sibling] : [],
+      }));
     });
 
     it("excludes the moved task and its descendants from the candidates", async () => {

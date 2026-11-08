@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useIdentityScope } from "./identity";
 
 /**
  * Project counterpart of `taskWorkflowContext.tsx`. Every `story.*`
@@ -48,27 +49,51 @@ export type ProjectWorkflowKind =
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;
   projectId: number;
+  ancestorProjectIds?: number[];
 }
 
 interface ProjectWorkflowContextValue {
   current: ProjectWorkflowState | null;
-  open: (kind: ProjectWorkflowKind, projectId: number) => void;
-  close: () => void;
+  open: (kind: ProjectWorkflowKind, projectId: number, ancestorProjectIds?: readonly number[]) => void;
+  close: (opening?: ProjectWorkflowState) => void;
+  isCurrent: (opening: ProjectWorkflowState) => boolean;
   closeCurrent: () => void;
 }
 
 const ProjectWorkflowContext = createContext<ProjectWorkflowContextValue | null>(null);
 
 export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
+  const scope = useIdentityScope();
+  const currentScope = useRef(scope);
   const [current, setCurrent] = useState<ProjectWorkflowState | null>(null);
+  const currentRef = useRef<ProjectWorkflowState | null>(null);
+  if (currentScope.current !== scope) {
+    currentScope.current = scope;
+    currentRef.current = null;
+    if (current !== null) setCurrent(null);
+  }
   const value = useMemo<ProjectWorkflowContextValue>(
-    () => ({
-      current,
-      open: (kind, projectId) => setCurrent({ kind, projectId }),
-      closeCurrent: () => setCurrent(null),
-      close: () => setCurrent(null),
-    }),
-    [current],
+    () => {
+      const close = (opening?: ProjectWorkflowState) => {
+        if (currentScope.current !== scope) return;
+        if (opening && currentRef.current !== opening) return;
+        currentRef.current = null;
+        setCurrent(null);
+      };
+      return {
+        current,
+        open: (kind, projectId, ancestorProjectIds) => {
+          if (currentScope.current !== scope) return;
+          const next = { kind, projectId, ...(ancestorProjectIds?.length ? { ancestorProjectIds: [...new Set(ancestorProjectIds)] } : {}) };
+          currentRef.current = next;
+          setCurrent(next);
+        },
+        isCurrent: (opening) => currentScope.current === scope && currentRef.current === opening,
+        closeCurrent: close,
+        close,
+      };
+    },
+    [current, scope],
   );
   return <ProjectWorkflowContext.Provider value={value}>{children}</ProjectWorkflowContext.Provider>;
 }

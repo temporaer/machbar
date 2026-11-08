@@ -651,18 +651,212 @@ After a successful mutating API response commits, the single application
 process publishes a coarse invalidation through an authenticated SSE stream.
 Each browser tab identifies its own writes so their echo does not interrupt
 local optimistic-retention UI. Other tabs/devices refetch through the existing
-frontend refresh bus. `useAsync` treats these same-query refetches as
+frontend refresh bus. Legacy `useAsync` reads treat same-query refetches as
 stale-while-revalidate: successful data remains rendered, `loading` stays
-false, and background failures do not replace the page with its foreground
-error state. Dependency changes start a new logical query generation and hide
-old-query data immediately. Each logical query generation allows one in-flight
-request; additional invalidations queue one trailing revalidation and do not
-cancel the pending result, so initial loading can settle. Generation checks and
-effect cancellation prevent stale or unmounted requests from committing.
+false, and background failures do not replace the foreground error state.
+Dependency changes start a new logical query generation and hide old-query data
+immediately. Each logical generation allows one in-flight request; additional
+invalidations queue one trailing revalidation and do not cancel the pending
+result. These semantics remain for non-migrated resources.
 Remote SSE, focus, visibility, online, and disconnected-poll invalidations use
 a leading/trailing one-second cadence, including a final refresh after a burst.
 Explicit mutation refreshes remain immediate; hidden-tab polling and visible
 eligibility timers retain their existing behavior.
+
+Read failures remain attributed to the same resource through delayed retries,
+including successful empty results; only success or a query change clears the
+warning. `ReadErrorState` composes the existing `ErrorState` with resource copy
+and the failed query's own retry, leaving populated views and filters mounted.
+Focused workflow hosts use the same feedback in `BottomSheet.headerStatus` or
+a named recovery sheet when no usable matching task/project exists. Completion
+and commitment withdrawal require fetched project detail, not an invented empty
+task tree. Context-owned opening identity guards stale close/retry/handoff
+callbacks before React renders; optional sheet presentation props retain the
+original opener and unregister suspended sheets without discarding drafts.
+
+The initial project-detail read migration uses TanStack Query v5 as the sole
+fetched and confirmed detail owner for `ProjectDetailPage`, its focused project
+workflows, and imperative project-detail reads. Keys include an opaque identity
+generation and project ID, so returning A→B→A cannot reuse an old identity's
+data. `useProjectActions` reconciles successful project responses into that
+cache without lowering revisions; metadata-only results cannot synthesize a
+detail tree. A 401/403/404 detail result masks cached data, while network/5xx
+failures preserve usable detail and visible error feedback. Queries do not
+silently retry or refetch on focus/reconnect; recovery is an explicit GET.
+Project read tokens capture the Query cache entry and its access epoch before
+transport. Denial state and epoch are stored on that entry's metadata and
+preserved by subsequent query options; an old token cannot become current after
+access is restored. The revision rule is enforced at actual Query publication
+for both full and metadata-only data: lower arrivals reject without replacing
+the cache, while equal revisions preserve the exact incoming object and fresh
+derived hierarchy. Only an accepted current full GET clears denial; metadata
+mutation reconciliation is not read recovery. Confirmed detail is not
+time-collected within its identity scope, and changing identity removes the old
+scope. Shared action consumers subscribe to project cache changes, including
+ancestor denial, without storing another copy of the fetched data.
+Metadata-only mutation results and task-batch project revision snapshots update
+that same cache entry. Full-detail selectors require actual task-tree data.
+Mutation success and the existing SSE/refresh invalidations refresh these
+queries. Project optimism and row placement remain presentation state, not a
+second fetched snapshot store. Task detail, project-list collections, and
+other resources are intentionally not migrated in this initial slice.
+
+The existing retained-mutation primitive still owns task-side confirmed
+snapshots independently of optimistic values and visual retention. Task actions
+publish receipts from every successful canonical funnel, including
+non-retaining external-wait follow-up and reference promotion. Task projectors
+prefer newer receipts while equal-revision authoritative input owns derived
+fields. Project detail no longer uses this receipt/provenance store.
+
+Identity and workflow lifetimes still protect task continuations and focused
+openings. A-to-B-to-A changes and StrictMode effect replay invalidate older
+continuations without remounting all consumers. The existing workflow/detail
+providers own opening identity, inspection stacks, queued detail IDs and
+focus/suspension state. The identity gate waits for a stored, unresolved
+member's initial catalog before mounting routes; known server-bound identities
+may mount while their member catalog is loading.
+The existing identity gate waits for a stored, unresolved member's initial
+catalog before mounting routes. Otherwise a task deep link opens in the
+provisional identity and the later scope reset incorrectly navigates to Today.
+A known server-bound member may still mount while its catalog is loading.
+Typed HTTP 401/403/404 task GET failures suppress fetched/confirmed/retained
+fallback and invalidate older task results. Task action-owned target readers
+capture the retained primitive's stable `{ id, scopeToken, targetToken }` before
+GET; `useAsync` owns dependency/unmount acceptance and only accepted, leased
+task data is observed. A stale success produces the existing unavailable/retry
+state. Network/5xx failures keep usable task inputs. Access-related write errors
+request authoritative revalidation rather than equating a destination/write
+denial with source read revocation. Raw `useAsync` causes remain query-qualified
+and sticky through retries alongside existing localized feedback. Task
+confirmed scalar overlays preserve current child membership and merge matching
+child values by revision independently of the parent's revision.
+The task workflow host applies `projectTaskValue`'s confirmed-only merge before
+pending presentation separately. Conversion selects the higher actual
+host/local baseline; pending composition cannot certify a revision.
+Recursive matching also reuses the existing descendant-terminal helper for
+parent policies; equal-revision children retain fresh non-lifecycle fields
+without losing completion/cancellation outcomes.
+
+Imperative conflict, conversion, split, destination, cleanup and project-entry
+readers use the same action-owned transport and weak provenance, without
+publishing abandoned reads into a snapshot cache. Local full-detail prerequisites
+remain epoch-qualified; the project page no longer has a parallel metadata
+receipt. Conflict helpers expose unavailable task refreshes explicitly and mark
+old activation requirements unusable while preserving decisions as drafts.
+Local split/project-entry projections carry the original stamped read envelope;
+qualification does not authorize retagging an old payload after a denial.
+Activation and deadline sheets reconcile all relevant qualified snapshots from
+host detail or their existing GET-only runner, using the target-scoped snapshot
+decision merge to retain relevant driver and next-action choices. The first
+detail after metadata initialization and equal-revision derived changes count;
+lower target revisions never replace newer requirements/provenance. Recovery
+never submits. Explicit activation/reopening uses the direct target decision
+snapshot; deadline changes use the commitment snapshot. They are not
+interchangeable, and omission must not fall back to the other snapshot.
+Command routing carries known story ancestor IDs into the opening so the host
+captures their tokens before its GET. Those ancestor tokens remain available
+for chain-dependent operations, but do not by themselves gate explicit
+activation: activation checks its source-read provenance and IDs named by the
+direct target snapshot only. Requirements naming additional IDs need their
+original qualified reads and cannot receive response-time stamps. Deadline
+continues to require the full commitment chain. Every recovery result pairs its
+value with that run's immutable affected-read tokens; a queued retry cannot
+qualify an older result with newer tokens. Rejected lower snapshots retain
+their original provenance. Post-await command continuations recheck those
+original tokens.
+Project-entry and split use their own read runner's retry without
+remounting step/decision drafts. Route-owned project entry remains mounted for
+the same actor/opening/project identity during page loading, error, and denial,
+but derives nullable authority from the canonical Query rather than retaining
+the original page read envelope. Protected source fields and old preview
+requirements stay hidden while authored steps remain. Preview-derived
+requirements also retain their original task/project epoch:
+denial hides server labels without discarding authored choices. GET-only
+restoration does not recertify them. An explicit subsequent submission requests
+a fresh preview and merges applicable choices, without automatically committing
+that newly qualified prompt. The same guard applies to Planning/conversion
+previews and serialized decision-error prompts. Deadline/activation pass their
+same-target baseline to the existing merge, because active targets may be absent
+from ancestor-only `expectedProjects`. Task-preview revisions must not be
+compared with a different project's target revision.
+Move sheets keep the destination selection, picker/search nodes and sticky
+warning through pending/failed revalidation, disable unavailable prerequisites
+and expose their own read-only retry rather than silently ignoring the command.
+The existing API authentication event also checks an opaque request-identity
+generation before dispatch: an old 401 cannot log out a newer selected or
+cookie-bound identity, including ABA transitions.
+
+Compound move/conversion and containing-project previews retain the original
+source, destination and story-ancestor generations before the request.
+`projectActivationResolution.ts::projectActivationTargetIds` uses explicit
+project IDs and `WorkItemAncestor.role`, including revisionless story ancestors;
+task parents and revision-bearing task descendants are not projects. Task inputs
+missing this ancestry learn it through the existing canonical containing-project
+reader before the command. Response requirement/expected IDs cannot add newly
+stamped targets. A denied affected read is revalidated before requirements are
+requested. Stored labels stay hidden after restoration until deliberate fresh
+requirements merge applicable choices; recovery itself never executes a command.
+Project conversion runs its existing title/notes three-way merge for each
+selected actual detail, rather than advancing only the command revision.
+Equivalent reads retain divergent conflicts and choices use current authority.
+Its pre-existing local stale-refresh slot remains opening-bound; new query data
+releases that slot without letting an older baseline replace newer authority.
+Equal-revision qualified host detail takes precedence for derived ancestry and
+prerequisites; metadata-only host input still allows a qualified equal-revision
+local full detail to supply required hierarchy data. Ordinary selected
+host/query data is not copied into that slot.
+The canonical reader's optional current-error callback runs before matching
+access denial invalidates its original epoch, allowing the affected operation to
+show a recoverable read error. Obsolete reads never invoke it. The existing
+sheets retain only the failed target/error for explicit GET-only retry, not a
+new fetched-state cache; drafts and selections stay mounted throughout.
+That local feedback is inactive when a qualified current affected chain excludes
+its target, without clearing the canonical denial. Entry/split containing-target
+recovery reloads their existing stamped runner; accepted full target data updates
+the baseline and releases its latch, while obsolete/lower reads cannot restore
+it and ancestor-only recovery does not replace the full target input.
+Task conversion's preserved-step title is new authored work, not an override of
+the source task's title/notes, so it does not add a parallel source-text editor.
+
+Planning reconciles raw/command authority independently of pending display
+props. The same task-ID editor survives newer/equal actual reads, updates its
+revision and untouched waiting/dependency fields, and preserves authored text,
+save errors and unresolved divergent-field choices. Lower actual revisions are
+rejected, while a pending-only draft may accept its first lower real baseline;
+Save stays disabled until that baseline exists. Reminder rekeys occur only
+when a closed draft is deliberately replaced or a conflict choice replaces it,
+never merely because the task revision changed. Preview continuations capture
+the target epoch before awaiting and recheck before decisions or PATCH, so a
+denial followed by restoration cannot make an old preview current.
+That continuation also guards an already dispatched command's completion:
+obsolete success or failure cannot close/navigate away from a recovered opening.
+Canonical selection/completion callbacks distinguish unpublished results with
+`false`; explicit Close/Cancel remains independent of command acceptance.
+
+This retained snapshot/provenance/identity runtime is transitional. The initial
+project-detail migration above makes TanStack Query the fetched and confirmed
+owner for that slice; task reads and list collections retain their existing
+ownership. Further migration must separate server-state reconciliation from
+optimism and UI interaction lifetime, replacing rather than porting the old
+machinery. Preserve the recovery contracts, delete superseded code and revise
+architecture enforcement for each explicitly scoped migration.
+
+Week keeps an authoritative query base plus narrow task-date intents, rather
+than copied agendas or whole-snapshot rollback. Member/scope/window selection
+has a unique lifetime even for A-to-B-to-A navigation. Reads own membership;
+date feedback never resurrects an omitted task or overwrites a higher revision.
+Fetcher-start provenance and write acknowledgement distinguish old reads from
+successful post-acknowledgement revalidation. Failed reads retain confirmed
+dates, but only pending intents block another move. The existing operation ledger
+keeps the newest confirmed Task baseline independently of failed field intents,
+including a newer canonical Planning result observed before another drag.
+Receipt-observation provenance prevents an older in-flight read from releasing
+that baseline. Own accepted results use the same ledger; the intent-as-Task cache
+is removed. Newer authoritative tasks win. Receipts do not replace read-owned
+membership or derived display fields. Drag placement is checked
+against current presentation while identity/revision and mutation input come
+from current authoritative/canonical data. Existing action hooks retain
+mutation, conflict and notification semantics.
 
 For temporary incident tracing, set `sessionStorage["machbar:refresh-debug"] =
 "1"` in the affected browser tab. Console diagnostics contain only refresh
