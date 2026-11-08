@@ -130,6 +130,11 @@ the reported regression against fresh main before changing production code.
 Use real API/serialized contracts where response shape matters, and real
 desktop/mobile app mounting for browser-visible changes.
 
+Callback authority must rotate at the qualified read-denial event, not only
+when queued React state renders. Test command success/error after restoration
+and success in the same batch as denial: a render-mirrored authority ref left
+a reproduced closing race.
+
 ## Mistakes not to repeat
 
 ### Hidden DOM is not data removal
@@ -176,6 +181,12 @@ captured/Someday open work appeared healthy although canonical `nextAction` was
 null. Reuse canonical unfinished-work facts, including arbitrary depth and
 embedded projects, rather than duplicating hierarchy SQL or treating every
 non-null revisit as unhealthy.
+
+Project-progress candidates and execution candidates are not interchangeable.
+A reached revisit can remain non-executable until acknowledged while providing
+viable progress. Audit Review's no-path repair and reflection's first
+execution-eligible action, including mixed leaves; project GET alone did not
+cover these consumers.
 
 Preserved serialized regressions cover captured/Someday direct children, nested
 Someday work, active embedded projects, terminal project boundaries, future
