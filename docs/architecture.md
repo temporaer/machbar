@@ -532,7 +532,10 @@ in the household IANA timezone. `taskAvailability.ts` evaluates an explicit inst
 with Temporal without database or clock access. Today passes one instant through
 `agendaSelection.ts` and `agenda.ts`: project next-action selection, planned rows,
 ordinary reached revisits, shared/unplanned work, and embedded execution suggestions
-respect the window. Deadline attention and reached external waits retain their
+respect the window. Planned rows, execution suggestions and ordinary reached
+revisits also share scheduled-date eligibility: an old reconsideration instant
+cannot pull future-planned work into Today. Reached external-wait follow-ups
+remain independent of the work plan. Deadline attention and reached external waits retain their
 existing precedence. Null preserves existing behavior; Week, inventory, completion,
 structural executability, and blocker diagnoses do not evaluate the window.
 Boundaries are evaluated on reads through Today's existing visible refresh interval;
