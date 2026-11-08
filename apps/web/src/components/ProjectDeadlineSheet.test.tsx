@@ -7,6 +7,8 @@ import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { RefreshProvider } from "../lib/refresh";
 import type { ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../lib/projectQueries";
 
 vi.mock("../lib/identity", async importOriginal => ({
   ...await importOriginal<typeof import("../lib/identity")>(),
@@ -14,7 +16,7 @@ vi.mock("../lib/identity", async importOriginal => ({
 }));
 
 function Actions({ children }: { children: ReactNode }) {
-  return <RefreshProvider><ProjectActionsProvider>{children}</ProjectActionsProvider></RefreshProvider>;
+  return <QueryClientProvider client={createQueryClient()}><RefreshProvider><ProjectActionsProvider>{children}</ProjectActionsProvider></RefreshProvider></QueryClientProvider>;
 }
 
 describe("ProjectDeadlineSheet", () => {

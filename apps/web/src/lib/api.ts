@@ -360,6 +360,7 @@ export type ProjectWorkflowAction =
 export type ProjectWithActions = Project & {
   availableActions: ProjectWorkflowAction[];
   activationReadiness: ProjectActivationReadiness;
+  ancestors?: WorkItemAncestor[];
 };
 export type StuckProjectWithActions = StuckProject & {
   availableActions: ProjectWorkflowAction[];
@@ -757,7 +758,8 @@ export const api = {
   deleteTag: (id: number) => request<void>(`/tags/${id}`, { method: "DELETE" }),
 
   getProjects: () => request<ProjectWithActions[]>("/projects"),
-  getProject: (id: number) => request<ProjectDetail>(`/projects/${id}`),
+  getProject: (id: number, signal?: AbortSignal) =>
+    request<ProjectDetail>(`/projects/${id}`, signal ? { signal } : undefined),
   createProject: (input: CreateProjectInput, intent: CreationIntent) =>
     requestCreation<ProjectWithActions>("/projects", input, intent),
   updateProject: (id: number, patch: UpdateProjectInput) =>

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type ProjectDetail, type ProjectWithActions } from "../lib/api";
-import { useAsync } from "../lib/useAsync";
-import { useProjectActions } from "../lib/useProjectActions";
-import { useRefresh } from "../lib/refresh";
+import { isCancelledError } from "@tanstack/react-query";
+import { type ProjectWithActions } from "../lib/api";
+import { useProjectActions, useProjectDetailQuery } from "../lib/useProjectActions";
 import { useStrings } from "../lib/strings";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { projectActivationTargetIds, projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
@@ -16,50 +15,33 @@ import { ErrorState, LoadingState } from "./AsyncStates";
  */
 export function ProjectConvertToTaskSheet({
   story,
-  authoritativeProject = null,
   onClose,
   ...presentation
 }: {
   story: ProjectWithActions;
-  authoritativeProject?: ProjectDetail | null;
   onClose: () => void;
 } & BottomSheetPresentationProps) {
   const strings = useStrings();
   const projectActions = useProjectActions();
-  const { bump } = useRefresh();
   const [title, setTitle] = useState(story.title);
   const [notes, setNotes] = useState(story.notes ?? "");
   const [titleEdited, setTitleEdited] = useState(false);
   const [notesEdited, setNotesEdited] = useState(false);
   const baseline = useRef({ title: story.title, notes: story.notes ?? "", revision: null as number | null });
   const [conflicts, setConflicts] = useState<Array<"title" | "notes">>([]);
-  const [freshProject, setFreshProject] = useState<ProjectDetail | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const activationUnavailable = activationPrompt?.readUnavailable || (activationPrompt?.isCurrentRead && !activationPrompt.isCurrentRead());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedProjectRead, setFailedProjectRead] = useState<{ id: number; error: string } | null>(null);
-  const {
-    data: project,
-    loading,
-    error: loadError,
-    reload,
-  } = useAsync<ProjectDetail>(() => projectActions.getProject(story.id), [story.id, projectActions.scopeToken]);
-
-  const confirmedRead = freshProject && projectActions.isCurrentProjectRead(freshProject) ? freshProject : null;
-  const queryRead = project && projectActions.isCurrentProjectRead(project) ? project : null;
-  const localProject = confirmedRead && (!queryRead || confirmedRead.revision >= queryRead.revision) ? confirmedRead : queryRead;
-  const hostProject = authoritativeProject?.id === story.id && projectActions.isCurrentProjectRead(authoritativeProject) ? authoritativeProject : null;
-  const currentProject = hostProject && (!localProject || hostProject.revision >= localProject.revision) ? hostProject : localProject;
-
-  useEffect(() => {
-    if (queryRead) setFreshProject(previous => previous && queryRead.revision >= previous.revision ? null : previous);
-  }, [queryRead]);
-
-  useEffect(() => {
-    if (hostProject) setFreshProject(previous => previous && hostProject.revision >= previous.revision ? null : previous);
-  }, [hostProject]);
+  const projectRead = useProjectDetailQuery(story.id);
+  const loading = projectRead.loading;
+  const refreshing = projectRead.refreshing;
+  const loadError = projectRead.error;
+  const reload = projectRead.reload;
+  const queryRead = projectRead.data && projectActions.isCurrentProjectRead(projectRead.data) ? projectRead.data : null;
+  const currentProject = queryRead;
 
   useEffect(() => {
     if (!currentProject || (baseline.current.revision !== null && currentProject.revision < baseline.current.revision)) return;
@@ -100,10 +82,14 @@ export function ProjectConvertToTaskSheet({
   };
 
   const convert = async () => {
-    if (busy || !canConvert || !currentProject || currentProject.revision !== baseline.current.revision || conflicts.length > 0) return;
+    if (busy || refreshing || !canConvert || !currentProject || currentProject.revision !== baseline.current.revision || conflicts.length > 0) return;
     const affectedIds = new Set(projectActivationTargetIds(currentProject.id, currentProject.ancestors));
     const continuations = [...affectedIds].map(projectActions.captureTargetRead);
-    const isCurrent = () => continuations.every(projectActions.isCurrentTargetRead);
+    const continuationScope = projectActions.scopeToken;
+    const isCurrent = () => projectActions.isCurrentScope(continuationScope) &&
+      continuations.every(projectActions.isCurrentTargetRead);
+    const isCurrentAfterConversion = () => projectActions.isCurrentScope(continuationScope) &&
+      continuations.every(read => read.id === story.id || projectActions.isCurrentTargetRead(read));
     setBusy(true);
     setError(null);
     try {
@@ -115,18 +101,18 @@ export function ProjectConvertToTaskSheet({
           if (!isCurrent() || !projectActions.isCurrentProjectRead(current)) return;
         }
       }
-      await api.convertStoryToTask(story.id, {
+      await projectActions.convertProjectToTask(story.id, {
         ...(titleEdited ? { title } : {}),
         ...(notesEdited ? { notes } : {}),
         expectedRevision: currentProject.revision,
         ...(activationResolution ? { activationResolution } : {}),
         ...(currentProject.hierarchyRevisions ? { expectedHierarchyRevisions: currentProject.hierarchyRevisions } : {}),
       });
-      if (!isCurrent()) return;
-      bump();
+      if (!isCurrentAfterConversion()) return;
       onClose();
     } catch (cause) {
       if (!isCurrent()) return;
+      if (isCancelledError(cause)) return;
       const prompt = projectActivationPromptFromError(cause, activationPrompt);
       if (prompt) setActivationPrompt({ ...prompt, isCurrentRead: () => isCurrent() &&
         prompt.projects.every(project => affectedIds.has(project.projectId)) &&
@@ -136,7 +122,6 @@ export function ProjectConvertToTaskSheet({
         try {
           const latest = await projectActions.getProject(story.id);
           if (!isCurrent() || !projectActions.isCurrentProjectRead(latest)) return;
-          setFreshProject(latest);
         } catch {
           // Keep the authored draft; the next attempt can reload the current project.
         }
@@ -156,7 +141,7 @@ export function ProjectConvertToTaskSheet({
       }}
     >
       <div className="stack">
-        {loading && !project ? <LoadingState /> : null}
+        {loading && !currentProject ? <LoadingState /> : null}
         {!currentProject && !loading ? (
           <ErrorState
             message={loadError ? localizedErrorMessage(loadError, strings) : strings.workflowTargetUnavailable}
@@ -239,7 +224,7 @@ export function ProjectConvertToTaskSheet({
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy || failedProjectRead !== null || title.trim() === "" || !canConvert || currentProject.revision !== baseline.current.revision || conflicts.length > 0 || (!!activationPrompt && !activationUnavailable && !activationResolution)}
+                  disabled={busy || refreshing || failedProjectRead !== null || title.trim() === "" || !canConvert || currentProject.revision !== baseline.current.revision || conflicts.length > 0 || (!!activationPrompt && !activationUnavailable && !activationResolution)}
                   onClick={() => void convert()}
                 >
                   {strings.convertProjectToTask}

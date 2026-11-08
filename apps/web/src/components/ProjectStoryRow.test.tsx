@@ -10,6 +10,8 @@ import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
 import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../lib/projectQueries";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
@@ -57,6 +59,30 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
+function projectDetail(story: ProjectWithActions, tasks: Task[] = []) {
+  const required = story.activationReadiness.requiredDecisions ?? [];
+  return {
+    ...story,
+    tasks,
+    activationDecisionSnapshot: {
+      targetRevision: story.revision,
+      expectedProjects: [{ projectId: story.id, revision: story.revision }],
+      projects: required.length ? [{
+        projectId: story.id, title: story.title, revision: story.revision,
+        ownerMemberId: story.ownerMemberId, required,
+      }] : [],
+    },
+    directActivationDecisionSnapshot: {
+      targetRevision: story.revision,
+      expectedProjects: [{ projectId: story.id, revision: story.revision }],
+      projects: required.length ? [{
+        projectId: story.id, title: story.title, revision: story.revision,
+        ownerMemberId: story.ownerMemberId, required,
+      }] : [],
+    },
+  };
+}
+
 /** Flushes the microtask queue (mutation `await`s) without depending on real timers. */
 async function flushMicrotasks(times = 3) {
   for (let i = 0; i < times; i += 1) {
@@ -86,7 +112,7 @@ function Harness({
 }) {
   // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
   // and every focused workflow they open is rendered by the single host.
-  mockedApi.getProject.mockResolvedValue({ ...story, tasks });
+  mockedApi.getProject.mockResolvedValue(projectDetail(story, tasks));
   return (
     <>
       <ul>
@@ -125,6 +151,7 @@ function renderWithProjectRoute(ui: ReactElement) {
     );
   }
   return render(
+    <QueryClientProvider client={createQueryClient()}>
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
@@ -146,7 +173,8 @@ function renderWithProjectRoute(ui: ReactElement) {
             </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -1039,7 +1067,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
         revisitAt: null,
-        expectedRevision: 1,
+        expectedRevision: 2,
       }),
     );
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
@@ -1155,7 +1183,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     swipe(container, -64);
     swipe(container, 64);
     expect(container.querySelector(".story-row-lifecycle, .work-item-command-rail")).toBeNull();
-    expect(mockedApi.completeProject).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mockedApi.completeProject).toHaveBeenCalledOnce());
     await act(async () => finish());
   });
 

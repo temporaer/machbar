@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { isCancelledError } from "@tanstack/react-query";
 import type { Project, Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
@@ -10,8 +11,8 @@ import { BottomSheet, type BottomSheetPresentationProps } from "./BottomSheet";
 import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
 import { LoadingState, ReadErrorState } from "./AsyncStates";
 import { useLocale } from "../lib/locale";
-import { useProjectActions } from "../lib/useProjectActions";
-import type { ProjectDetail, TaskDetail } from "../lib/api";
+import { useProjectActions, useProjectDetailQuery } from "../lib/useProjectActions";
+import type { TaskDetail } from "../lib/api";
 import { projectActivationTargetIds } from "../lib/projectActivationResolution";
 import { sortProjectDestinations } from "../lib/sortOrder";
 import { useTaskActions } from "../lib/useTaskActions";
@@ -39,8 +40,9 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   const { locale } = useLocale();
   const { bump } = useRefresh();
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [destination, setDestination] = useState<ProjectDetail | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(task.projectId);
+  const destinationQuery = useProjectDetailQuery(selectedProjectId ?? -1, selectedProjectId !== null);
+  const destination = destinationQuery.data;
   const currentDestination = destination?.id === selectedProjectId && projectActions.isCurrentProjectRead(destination) ? destination : null;
   const parentProjectTitle = currentDestination?.title ?? null;
   const projectTasks = selectedProjectId === null ? [] : currentDestination?.tasks ?? null;
@@ -49,7 +51,11 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [failedSourceRead, setFailedSourceRead] = useState<{ id: number; error: string } | null>(null);
+  const [retryingSource, setRetryingSource] = useState(false);
+  const sourceReadAttempt = useRef(0);
   const unavailable = selectedProjectId !== null && !currentDestination;
+  const isLoading = loading || destinationQuery.loading;
   // Separate from the load `error` above: a failed *submit* must not blank
   // out the picker (the user's selection and search state are still worth
   // keeping around to retry), so it renders inline instead of swapping the
@@ -59,21 +65,12 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const jobs: Promise<unknown>[] = [api.getProjects().then(values => { if (!cancelled) setProjects(values); })];
-    if (selectedProjectId != null) {
-      jobs.push(
-        projectActions.getProject(selectedProjectId).then((p) => {
-          if (!cancelled) setDestination(p);
-        }),
-      );
-    } else {
-      setDestination(null);
-    }
-    Promise.all(jobs).then(() => { if (!cancelled) setError(null); })
+    api.getProjects().then(values => { if (!cancelled) { setProjects(values); setError(null); } })
       .catch((err: unknown) =>
         !cancelled && setError(localizedErrorMessage(err, strings)),
       )
       .finally(() => { if (!cancelled) setLoading(false); });
+    if (retry > 0 && selectedProjectId !== null) destinationQuery.reload();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProjectId, retry]);
@@ -111,7 +108,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
   }, [selectableParents, projects, selectedProjectId, parentProjectTitle]);
 
   const submit = async () => {
-    if (loading || error !== null || (selectedProjectId !== null && !currentDestination)) return;
+    if (isLoading || error !== null || failedSourceRead !== null || (selectedProjectId !== null && !currentDestination)) return;
     const sourceRead = taskActions.captureTargetRead(task.id);
     const affectedIds = new Set([...projectActivationTargetIds(task.projectId, (task as TaskDetail).ancestors),
       ...projectActivationTargetIds(currentDestination?.id, currentDestination?.ancestors)]);
@@ -122,7 +119,9 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
     setSubmitError(null);
     try {
       if (task.projectId !== null && !(task as TaskDetail).ancestors?.some(ancestor => ancestor.role === "story" && ancestor.id === task.projectId)) {
-        const containing = await projectActions.getProject(task.projectId);
+        const containing = await projectActions.getProject(task.projectId, cause => {
+          if (isCurrent()) setFailedSourceRead({ id: task.projectId!, error: localizedErrorMessage(cause, strings) });
+        });
         if (!isCurrent() || !projectActions.isCurrentProjectRead(containing)) return;
         for (const id of projectActivationTargetIds(containing.id, containing.ancestors)) {
           if (!affectedIds.has(id)) { affectedIds.add(id); projectReads.push(projectActions.captureTargetRead(id)); }
@@ -140,7 +139,7 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
       bump();
       onClose();
     } catch (err) {
-      if (!isCurrent()) return;
+      if (isCancelledError(err) || !isCurrent()) return;
       if (isStaleWriteConflict(err)) bump();
       setSubmitError(localizedErrorMessage(err, strings));
     } finally {
@@ -148,17 +147,39 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
     }
   };
 
+  const retrySourceRead = async () => {
+    if (!failedSourceRead || retryingSource) return;
+    const attempt = ++sourceReadAttempt.current;
+    const continuation = taskActions.captureTargetRead(task.id);
+    setRetryingSource(true);
+    try {
+      const received = await projectActions.readProject(failedSourceRead.id, cause => {
+        if (attempt === sourceReadAttempt.current && taskActions.isCurrentTargetRead(continuation)) {
+          setFailedSourceRead(current => current?.id === failedSourceRead.id
+            ? { id: failedSourceRead.id, error: localizedErrorMessage(cause, strings) } : current);
+        }
+      });
+      if (attempt !== sourceReadAttempt.current || !taskActions.isCurrentTargetRead(continuation) ||
+        !projectActions.isCurrentTargetRead(received.read)) return;
+      setFailedSourceRead(current => current?.id === failedSourceRead.id ? null : current);
+    } catch { /* Keep the same task and the matching source-read error. */ }
+    finally {
+      if (attempt === sourceReadAttempt.current) setRetryingSource(false);
+    }
+  };
+
   return (
     <BottomSheet {...presentation} title={strings.moveProjectTitle} onClose={onClose} labelledBy="move-task-title">
       <p className="text-muted">{task.title}</p>
       <p className="text-muted">{strings.subtreeHint}</p>
-      {loading && projects === null ? (
+      {isLoading && projects === null ? (
         <LoadingState />
       ) : (
         <div className="stack">
-          {error || unavailable ? <ReadErrorState resource={strings.project}
-            error={error ?? strings.workflowTargetUnavailable} refreshError={null}
-            loading={loading} refreshing={false} reload={() => setRetry(value => value + 1)} /> : null}
+          {error || destinationQuery.error || destinationQuery.refreshError || unavailable ? <ReadErrorState resource={strings.project}
+            error={error ?? destinationQuery.error ?? (unavailable ? strings.workflowTargetUnavailable : null)}
+            refreshError={destinationQuery.refreshError}
+            loading={isLoading} refreshing={destinationQuery.refreshing} reload={() => setRetry(value => value + 1)} /> : null}
           <DestinationPicker
             kind="project"
             label={strings.selectProject}
@@ -183,11 +204,13 @@ export function MoveTaskSheet({ task, onClose, ...presentation }: { task: Task; 
               {strings.moveFailed}: {submitError}
             </p>
           ) : null}
+          {failedSourceRead ? <ReadErrorState resource={strings.project} error={failedSourceRead.error}
+            refreshError={null} loading={false} refreshing={retryingSource} reload={() => void retrySourceRead()} /> : null}
           <div className="row">
             <button type="button" className="btn" onClick={onClose}>
               {strings.cancel}
             </button>
-            <button type="button" className="btn btn-primary btn-block" disabled={saving || loading || unavailable || error !== null} onClick={() => void submit()}>
+            <button type="button" className="btn btn-primary btn-block" disabled={saving || isLoading || unavailable || error !== null || destinationQuery.error !== null || failedSourceRead !== null} onClick={() => void submit()}>
               {strings.moveHere}
             </button>
           </div>

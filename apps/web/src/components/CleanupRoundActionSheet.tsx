@@ -103,7 +103,9 @@ export function CleanupRoundActionSheet({
   const apply = async () => {
     if (!ready || busy || !current) return;
     const continuation = isProject ? projectActions.captureTargetRead(targetId) : taskActions.captureTargetRead(targetId);
-    const isCurrent = () => isProject ? projectActions.isCurrentTargetRead(continuation) : taskActions.isCurrentTargetRead(continuation);
+    const isCurrent = () => isProject
+      ? projectActions.isCurrentTargetRead(continuation as import("../lib/projectQueries").ProjectReadToken)
+      : taskActions.isCurrentTargetRead(continuation as import("../lib/useRetainedMutations").TargetReadToken);
     setBusy(true);
     setError(null);
     try {

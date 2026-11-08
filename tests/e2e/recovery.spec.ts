@@ -47,7 +47,7 @@ for (const kind of ["move", "convert"] as const) {
     } });
     expect(sourceResponse.status()).toBe(201);
     const source = await sourceResponse.json();
-    await createTask(page, { projectId: source.id });
+    const sourceTask = await createTask(page, { projectId: source.id });
     const currentSource = await (await page.request.get(`/api/projects/${source.id}`)).json();
     const activated = await page.request.post(`/api/projects/${source.id}/activate`, {
       data: { expectedRevision: currentSource.revision, ownerMemberId: pageMemberIds.get(page) },
@@ -55,6 +55,10 @@ for (const kind of ["move", "convert"] as const) {
     expect(activated.ok()).toBeTruthy();
     const activeSource = await activated.json();
     expect(activeSource.status).toBe("active");
+    const waitingTask = await page.request.put(`/api/tasks/${sourceTask.id}/external-wait`, {
+      data: { expectedRevision: sourceTask.revision, waitingFor: "Recovery reader" },
+    });
+    expect(waitingTask.ok()).toBeTruthy();
     const parkedParent = await (await page.request.get(`/api/projects/${parent.id}`)).json();
     expect(parkedParent.status).toBe("backlog");
     const unassigned = await page.request.patch(`/api/projects/${parent.id}`, {
@@ -72,6 +76,7 @@ for (const kind of ["move", "convert"] as const) {
     const denial = new Promise<void>(resolve => { releaseDenial = resolve; });
     let heldRead = false;
     let qualifiedAffectedReads = 0;
+    let secondCommandBody: { expectedHierarchyRevisions: Array<{ id: number; revision: number }> } | undefined;
     await page.route(`**/api/projects/${parent.id}`, async route => {
       if (!heldRead) {
         heldRead = true;
@@ -87,10 +92,11 @@ for (const kind of ["move", "convert"] as const) {
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => heldRead).toBe(true);
     const row = page.locator(`[data-workitem-id="${source.id}"][data-workitem-role="story"]`).first();
-    await row.locator(".story-row-main").click();
-    await page.getByRole("button", { name: "Aktionen", exact: true }).click();
-    await page.getByRole("dialog", { name: "Aktionen", exact: true }).getByRole("button", { name: "Struktur ändern", exact: true }).click();
-    await page.getByRole("dialog").last().getByRole("button", {
+    await row.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+    await row.getByRole("group", { name: "Weitere Aktionen", exact: true })
+      .getByRole("button", { name: "Struktur bearbeiten", exact: true }).click();
+    const structure = page.getByRole("dialog", { name: `Struktur: ${source.title}`, exact: true });
+    await structure.getByRole("button", {
       name: kind === "move" ? "Verschieben …" : "Zur Aufgabe machen", exact: true,
     }).click();
     const sheet = page.getByRole("dialog", {
@@ -108,7 +114,10 @@ for (const kind of ["move", "convert"] as const) {
     const freshRequirements = new Promise<void>(resolve => { releaseRequirements = resolve; });
     await page.route(`**/api/projects/${source.id}/${kind === "move" ? "move" : "convert-to-task"}`, async route => {
       commands += 1;
-      if (commands === 2) await freshRequirements;
+      if (commands === 2) {
+        secondCommandBody = route.request().postDataJSON() as typeof secondCommandBody;
+        await freshRequirements;
+      }
       await route.continue();
     });
     await submit.click();
@@ -135,11 +144,34 @@ for (const kind of ["move", "convert"] as const) {
     });
     expect(changed.ok()).toBeTruthy();
     const latestParent = await changed.json();
+    let holdSourceRefresh = false;
+    let sourceRefreshHeld = false;
+    let markSourceRefreshStarted!: () => void;
+    const sourceRefreshStarted = new Promise<void>(resolve => { markSourceRefreshStarted = resolve; });
+    let heldSourceResponseBody: unknown;
+    let releaseSourceRefresh!: () => void;
+    const sourceRefreshGate = new Promise<void>(resolve => { releaseSourceRefresh = resolve; });
     const changedSource = await page.request.patch(`/api/projects/${source.id}`, {
       data: { expectedRevision: activeSource.revision, notes: "Accepted fresh source authority" },
     });
     expect(changedSource.ok()).toBeTruthy();
     sourceUnavailable = false;
+    await page.unroute(`**/api/projects/${source.id}`);
+    await page.route(`**/api/projects/${source.id}`, async route => {
+      if (sourceUnavailable) {
+        await route.fulfill({ status: 503, contentType: "application/json",
+          body: JSON.stringify({ error: { message: "Source recovery failed" } }) });
+      } else if (holdSourceRefresh && !sourceRefreshHeld) {
+        sourceRefreshHeld = true;
+        markSourceRefreshStarted();
+        await sourceRefreshGate;
+        const response = await route.fetch();
+        heldSourceResponseBody = await response.json();
+        await route.fulfill({ response });
+      } else {
+        await route.continue();
+      }
+    });
     const recoveredRead = page.waitForResponse(response => response.url().endsWith(`/api/projects/${source.id}`) && response.status() === 200);
     await sheet.getByRole("button", { name: "Erneut versuchen", exact: true }).first().click();
     await recoveredRead;
@@ -151,14 +183,53 @@ for (const kind of ["move", "convert"] as const) {
     if (kind === "move") await sheet.getByRole("button", { name: "Erneut versuchen", exact: true }).last().click();
     else await expect(sheet.getByRole("textbox", { name: /^Notizen/ })).toHaveValue("Accepted fresh source authority");
     await expect(submit).toBeEnabled();
+    holdSourceRefresh = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    const latestSourceResponse = await page.request.get(`/api/projects/${source.id}`);
+    expect(latestSourceResponse.ok()).toBeTruthy();
+    const latestSource = await latestSourceResponse.json();
+    const refreshedSource = await page.request.patch(`/api/projects/${source.id}`, {
+      data: { expectedRevision: latestSource.revision, notes: "Accepted fresh source authority after revalidation" },
+    });
+    expect(refreshedSource.ok()).toBeTruthy();
+    await sourceRefreshStarted;
+    await expect(submit).toBeDisabled();
+    releaseSourceRefresh();
+    await expect.poll(() => heldSourceResponseBody).not.toBeUndefined();
+    expect(heldSourceResponseBody).toMatchObject({
+      revision: (await refreshedSource.json()).revision,
+      ancestors: [expect.objectContaining({ id: parent.id, revision: latestParent.revision, title: recoveredTitle })],
+    });
+    if (kind === "convert") {
+      await expect(sheet.getByRole("textbox", { name: /^Notizen/ }))
+        .toHaveValue("Accepted fresh source authority after revalidation");
+    }
+    await expect(submit).toBeEnabled();
+    const freshCommandResponse = page.waitForResponse(response =>
+      response.url().endsWith(`/api/projects/${source.id}/${kind === "move" ? "move" : "convert-to-task"}`) &&
+      response.request().method() === "POST");
     await submit.click();
-    await expect.poll(() => qualifiedAffectedReads).toBeGreaterThan(0);
     await expect.poll(() => commands).toBe(2);
+    await expect.poll(() => secondCommandBody).not.toBeUndefined();
+    expect(secondCommandBody?.expectedHierarchyRevisions).toContainEqual({ id: parent.id, revision: latestParent.revision });
+    await expect.poll(() => qualifiedAffectedReads).toBeGreaterThan(0);
     await expect(originalDriver).toHaveCount(0);
     await expect(sheet.getByLabel(`Verantwortlich für „${recoveredTitle}“`)).toHaveCount(0);
     releaseRequirements();
+    const requirements = await freshCommandResponse;
+    expect(requirements.status()).toBe(409);
+    const responseBody = await requirements.json();
+    expect(responseBody.error.code).toBe("project_commitment_resolution_required");
+    expect(responseBody.error.details.projects).toContainEqual(expect.objectContaining({
+      projectId: parent.id, title: recoveredTitle, revision: latestParent.revision,
+      required: expect.arrayContaining(["driver"]),
+    }));
     const driver = sheet.getByLabel(`Verantwortlich für „${recoveredTitle}“`);
     await expect(driver).toHaveValue(choice);
+    if (kind === "convert") {
+      await sheet.getByRole("textbox", { name: "Welcher konkrete nächste Schritt bringt das Projekt voran?" })
+        .fill("Continue the waiting task");
+    }
     expect(commands).toBe(2);
     await expect(editor).toHaveAttribute("data-sixth-node", "original");
     const finalCommand = page.waitForRequest(request => request.url().endsWith(`/api/projects/${source.id}/${kind === "move" ? "move" : "convert-to-task"}`));
@@ -700,14 +771,16 @@ test("another target reader's denial hides already rendered task detail and obso
   await expect(detail.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
 });
 
-test("a project workflow denial hides the already loaded project page until that page gets fresh authority", async ({ page }) => {
+test("a project workflow denial hides the page until a shared fresh query restores authority", async ({ page }) => {
   const response = await page.request.post("/api/projects", { data: { title: `Private recovery project ${randomUUID()}` } });
   expect(response.status()).toBe(201);
   const item = await response.json();
   await page.goto(`/#/projects/${item.id}`);
   await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
   let denied = true;
+  let projectGets = 0;
   await page.route(`**/api/projects/${item.id}`, async route => {
+    if (route.request().method() === "GET") projectGets += 1;
     if (denied) await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "Read denied" } }) });
     else await route.continue();
   });
@@ -716,9 +789,19 @@ test("a project workflow denial hides the already loaded project page until that
   await expect(workflow.getByRole("alert")).toBeVisible();
   await expect(page.getByRole("heading", { name: item.title, exact: true, includeHidden: true })).toHaveCount(0);
   denied = false;
+  const recoveredRead = page.waitForResponse(response =>
+    response.url().endsWith(`/api/projects/${item.id}`) &&
+    response.request().method() === "GET",
+  );
   await workflow.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+  expect((await recoveredRead).status()).toBe(200);
   await expect(workflow).toHaveAccessibleName(`Verantwortliche Person zuweisen: ${item.title}`);
-  await expect(page.getByRole("heading", { name: item.title, exact: true, includeHidden: true })).toHaveCount(0);
+  const readsAfterRecovery = projectGets;
+  await expect(page.getByRole("heading", { name: item.title, exact: true, includeHidden: true })).toHaveCount(1);
+  await workflow.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(workflow).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+  expect(projectGets).toBe(readsAfterRecovery);
 });
 
 test("the real Shell receives focus when the last sheet closes with an unavailable opener", async ({ page }) => {

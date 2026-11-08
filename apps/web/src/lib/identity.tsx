@@ -24,6 +24,8 @@ import {
 } from "./errorMessage";
 
 const STORAGE_KEY = SELECTED_MEMBER_STORAGE_KEY;
+const identityQueryKeys = new WeakMap<object, string>();
+let nextIdentityQueryKey = 1;
 
 interface IdentityContextValue {
   members: Member[];
@@ -317,4 +319,13 @@ export function useOptionalIdentity(): Pick<IdentityContextValue, "currentMember
 export function useIdentityScope(): object {
   const { currentMemberId, authEnabled, authenticated } = useOptionalIdentity();
   return useMemo(() => ({}), [currentMemberId, authEnabled, authenticated]);
+}
+
+export function identityQueryKey(scope: object): string {
+  let key = identityQueryKeys.get(scope);
+  if (!key) {
+    key = String(nextIdentityQueryKey++);
+    identityQueryKeys.set(scope, key);
+  }
+  return key;
 }

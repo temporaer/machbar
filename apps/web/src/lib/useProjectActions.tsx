@@ -1,12 +1,26 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import type { Project, ProjectActivationResolution } from "@machbar/shared";
-import type { ProjectDetail, ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
+import type {
+  ConvertStoryToTaskInput,
+  CreateTaskStepBatchInput,
+  ProjectDetail,
+  ProjectRevisionSnapshot,
+  ProjectWithActions,
+  ProjectWorkflowAction,
+  ProjectWorkflowInput,
+  UpdateProjectInput,
+} from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
-import { useRetainedMutations, type TargetReadToken, type TargetRead } from "./useRetainedMutations";
-import { isWorkItemAccessError } from "./errorMessage";
+import { useRetainedMutations } from "./useRetainedMutations";
+import { isWorkItemAccessError, localizedErrorMessage, ProjectReadRevisionRegressionError } from "./errorMessage";
 import { useStrings } from "./strings";
-import { useIdentityScope } from "./identity";
+import { identityQueryKey, useIdentityScope } from "./identity";
+import { captureProjectRead, isProjectDetail, projectQueryKeys, projectReadIsAccessible, projectReadIsCurrent, projectRevisionIsPublishable, projectStructuralSharing, reconcileProjectMetadata, setProjectReadState } from "./projectQueries";
+import type { ProjectRead, ProjectReadToken } from "./projectQueries";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRefresh } from "./refresh";
 
 /**
  * An optimistically transitioned story plus the transition that produced it,
@@ -18,8 +32,6 @@ export interface RetainedStory {
   story: ProjectWithActions;
   action?: ProjectWorkflowAction;
 }
-
-const projectReceiptRevision = (entry: RetainedStory) => entry.story.revision;
 
 function projectMetadata(project: ProjectWithActions & Partial<ProjectDetail>): ProjectWithActions {
   const {
@@ -53,8 +65,41 @@ function projectMetadata(project: ProjectWithActions & Partial<ProjectDetail>): 
  */
 function useProjectActionsState() {
   const strings = useStrings();
-  const identityKey = useIdentityScope();
-  const mutations = useRetainedMutations<RetainedStory>({ immediateRefresh: true, identityKey, receiptRevision: projectReceiptRevision });
+  const identityScope = useIdentityScope();
+  const identityKey = identityQueryKey(identityScope);
+  const queryClient = useQueryClient();
+  const { bump, version } = useRefresh();
+  const [, notifyCacheChange] = useState(0);
+  const captureTargetGuard = useCallback((id: number) => {
+    const read = captureProjectRead(queryClient, identityKey, id);
+    return () => projectReadIsCurrent(queryClient, read);
+  }, [identityKey, queryClient]);
+  useEffect(() => queryClient.getQueryCache().subscribe(event => {
+    if (event.query.queryKey[0] !== "projects" ||
+      event.query.queryKey[1] !== identityKey) return;
+    const data = event.query.state.data as ProjectWithActions | undefined;
+    if (event.type === "updated" && event.action.type === "success" &&
+      event.action.manual !== true && typeof event.query.queryKey[3] === "number" &&
+      data && isProjectDetail(data)) {
+      const read = captureProjectRead(queryClient, identityKey, event.query.queryKey[3]);
+      setProjectReadState(queryClient, read, false);
+    }
+    if (event.type === "removed" || (event.type === "updated" &&
+      ["success", "error", "setState"].includes(event.action.type))) {
+      notifyCacheChange(current => current + 1);
+    }
+  }), [identityKey, queryClient]);
+  const mutations = useRetainedMutations<RetainedStory>({
+    immediateRefresh: true,
+    identityKey: identityScope,
+    captureTargetGuard,
+  });
+  const previousIdentity = useRef(identityKey);
+  useEffect(() => {
+    if (previousIdentity.current === identityKey) return;
+    queryClient.removeQueries({ queryKey: projectQueryKeys.identity(previousIdentity.current) });
+    previousIdentity.current = identityKey;
+  }, [identityKey, queryClient]);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<Set<number>>(new Set());
   const scope = useRef(mutations.scopeToken);
   if (scope.current !== mutations.scopeToken) {
@@ -70,39 +115,185 @@ function useProjectActionsState() {
     errors,
     clearError,
   } = mutations;
+  const queryKey = useCallback((id: number) => projectQueryKeys.detail(identityKey, id), [identityKey]);
+  const getCachedStory = useCallback((id: number) =>
+    projectReadIsAccessible(queryClient, identityKey, id)
+      ? queryClient.getQueryData<ProjectWithActions>(queryKey(id))
+      : undefined, [identityKey, queryClient, queryKey]);
   const projectStory = useCallback(<T extends Project,>(current: T): T => {
-    const confirmed = mutations.getConfirmed(current.id)?.story;
-    const baseline = confirmed && confirmed.revision > current.revision ? { ...current, ...confirmed } : current;
+    const cached = getCachedStory(current.id);
+    const baseline = cached && cached.revision > current.revision
+      ? { ...current, ...projectMetadata(cached) }
+      : current;
     const candidate = retained.get(current.id)?.story;
     return candidate &&
       (candidate.revision > baseline.revision ||
         (isPending(current.id) && candidate.revision === baseline.revision))
       ? { ...baseline, ...candidate }
       : baseline;
-  }, [isPending, retained, mutations.getConfirmed, mutations.confirmedSnapshots]);
-  const getConfirmedStory = useCallback((id: number) => mutations.getConfirmed(id)?.story, [mutations.getConfirmed]);
-  const observeConfirmedStory = useCallback((project: ProjectWithActions & Partial<ProjectDetail>, read?: TargetReadToken) => {
-    mutations.observeConfirmed(project.id, { story: projectMetadata(project) }, project, read);
-  }, [mutations.observeConfirmed]);
-  const readProject = useCallback(async (id: number, onCurrentError?: (cause: unknown) => void): Promise<TargetRead<ProjectDetail>> => {
-    const read = mutations.captureTargetRead(id);
+  }, [getCachedStory, isPending, retained]);
+  const captureTargetRead = useCallback((id: number): ProjectReadToken =>
+    captureProjectRead(queryClient, identityKey, id), [identityKey, queryClient]);
+  const queryMeta = useCallback((id: number) => {
+    captureTargetRead(id);
+    const meta = queryClient.getQueryCache().find({ queryKey: queryKey(id), exact: true })?.meta;
+    if (!meta) throw new Error("Project query read metadata is unavailable.");
+    return meta;
+  }, [captureTargetRead, queryClient, queryKey]);
+  const isCurrentTargetRead = useCallback((read: ProjectReadToken) =>
+    read.identity === identityKey && projectReadIsCurrent(queryClient, read),
+  [identityKey, queryClient]);
+  const isTargetReadable = useCallback((id: number) =>
+    projectReadIsAccessible(queryClient, identityKey, id), [identityKey, queryClient]);
+  const isCurrentProjectRead = useCallback((project: object) => {
+    const candidate = project as ProjectDetail;
+    return queryClient.getQueryData<ProjectDetail>(queryKey(candidate.id)) === project &&
+      projectReadIsAccessible(queryClient, identityKey, candidate.id);
+  }, [identityKey, queryClient, queryKey]);
+  const fetchProject = useCallback(async (
+    id: number,
+    signal?: AbortSignal,
+    onCurrentError?: (cause: unknown) => void,
+    read = captureTargetRead(id),
+  ) => {
     try {
-      const value = await api.getProject(id);
-      mutations.trackTargetRead(read, value);
-      return { read, value };
+      const result = await api.getProject(id, signal);
+      if (!mutations.isCurrentScope(mutations.scopeToken) || !projectReadIsCurrent(queryClient, read)) {
+        throw new Error(strings.workflowTargetUnavailable);
+      }
+      const current = queryClient.getQueryData<ProjectWithActions>(queryKey(id));
+      if (!projectRevisionIsPublishable(current, result)) {
+        throw new ProjectReadRevisionRegressionError();
+      }
+      return result;
     } catch (cause) {
-      if (!mutations.isCurrentTargetRead(read)) throw new Error(strings.workflowTargetUnavailable);
-      // Report this operation's failure while its original generation is current.
-      onCurrentError?.(cause);
-      if (isWorkItemAccessError(cause)) mutations.invalidateConfirmed(id, read);
+      if (!signal?.aborted && mutations.isCurrentScope(mutations.scopeToken) && projectReadIsCurrent(queryClient, read)) {
+        onCurrentError?.(cause);
+        if (isWorkItemAccessError(cause)) {
+          setProjectReadState(queryClient, read, true);
+          mutations.release(id);
+          mutations.clearError(id);
+        }
+      }
       throw cause;
     }
-  }, [mutations.captureTargetRead, mutations.invalidateConfirmed, mutations.trackTargetRead, mutations.isCurrentTargetRead, strings]);
-  const getProject = useCallback(async (id: number, onCurrentError?: (cause: unknown) => void) => {
-    const result = await readProject(id, onCurrentError);
-    if (!mutations.isCurrentTargetRead(result.read)) throw new Error(strings.workflowTargetUnavailable);
-    return result.value;
-  }, [readProject, mutations.isCurrentTargetRead, strings]);
+  }, [captureTargetRead, identityKey, mutations.clearError, mutations.isCurrentScope, mutations.release, mutations.scopeToken, queryClient, queryKey, strings]);
+  const getCachedProject = useCallback((id: number) => {
+    const value = getCachedStory(id);
+    return value && isProjectDetail(value) ? value : undefined;
+  }, [getCachedStory]);
+  const reconcileProjectSnapshot = useCallback((snapshot: ProjectRevisionSnapshot) => {
+    if (!mutations.isCurrentScope(mutations.scopeToken)) return;
+    reconcileProjectMetadata(queryClient, queryKey(snapshot.id), snapshot);
+  }, [mutations.isCurrentScope, mutations.scopeToken, queryClient, queryKey]);
+  const readProject = useCallback(async (
+    id: number,
+    onCurrentError?: (cause: unknown) => void,
+  ): Promise<ProjectRead<ProjectDetail>> => {
+    const read = captureTargetRead(id);
+    await queryClient.cancelQueries({ queryKey: queryKey(id), exact: true }, { silent: true });
+    let acceptedFullRead = false;
+    const unsubscribe = queryClient.getQueryCache().subscribe(event => {
+      if (event.type !== "updated" || event.query !== read.query ||
+        event.action.type !== "success" || event.action.manual === true) return;
+      const data = event.query.state.data as ProjectWithActions | undefined;
+      if (data && isProjectDetail(data)) acceptedFullRead = true;
+    });
+    try {
+      const fetched = await queryClient.fetchQuery({
+        queryKey: queryKey(id),
+        queryFn: ({ signal }) => fetchProject(id, signal, onCurrentError, read),
+        staleTime: 0,
+        retry: false,
+        gcTime: Infinity,
+        structuralSharing: projectStructuralSharing,
+        meta: queryMeta(id),
+      });
+      if (!acceptedFullRead || !isProjectDetail(fetched) ||
+        queryClient.getQueryData<ProjectWithActions>(queryKey(id)) !== fetched ||
+        !projectReadIsCurrent(queryClient, read) ||
+        !projectReadIsAccessible(queryClient, identityKey, id) ||
+        !mutations.isCurrentScope(mutations.scopeToken)) {
+        throw new ProjectReadRevisionRegressionError();
+      }
+      return { read, value: fetched };
+    } finally {
+      unsubscribe();
+    }
+  }, [captureTargetRead, fetchProject, identityKey, mutations.isCurrentScope, mutations.scopeToken, queryClient, queryKey, queryMeta]);
+  const getProject = useCallback((id: number, onCurrentError?: (cause: unknown) => void) =>
+    readProject(id, onCurrentError).then(result => result.value),
+  [readProject]);
+
+  const mutateProject = useCallback(async <T,>(
+    id: number,
+    mutate: () => Promise<T>,
+    removeDetail = false,
+    projectResult?: (result: T) => ProjectWithActions,
+  ): Promise<T> => {
+    const read = captureTargetRead(id);
+    await queryClient.cancelQueries({ queryKey: queryKey(id), exact: true }, { silent: true });
+    if (!mutations.isCurrentScope(mutations.scopeToken) ||
+      !isCurrentTargetRead(read) || !isTargetReadable(id)) {
+      throw new Error(strings.workflowTargetUnavailable);
+    }
+    try {
+      const result = await mutate();
+      if (!mutations.isCurrentScope(mutations.scopeToken) || !isCurrentTargetRead(read)) {
+        throw new Error(strings.workflowTargetUnavailable);
+      }
+      if (removeDetail) {
+        queryClient.removeQueries({ queryKey: queryKey(id), exact: true });
+      } else if (projectResult) {
+        reconcileProjectMetadata(queryClient, queryKey(id), projectMetadata(projectResult(result)));
+      }
+      return result;
+    } catch (cause) {
+      if (mutations.isCurrentScope(mutations.scopeToken)) {
+        if (!isCurrentTargetRead(read)) {
+          void queryClient.invalidateQueries({ queryKey: queryKey(id), exact: true });
+        } else if (isWorkItemAccessError(cause)) {
+          void queryClient.refetchQueries({ queryKey: queryKey(id), exact: true, type: "all" });
+        }
+      }
+      throw cause;
+    }
+  }, [captureTargetRead, isCurrentTargetRead, isTargetReadable, mutations.isCurrentScope, mutations.scopeToken, queryClient, queryKey, strings]);
+  const moveProject = useCallback(async (id: number, input: Parameters<typeof api.moveProject>[1]) => {
+    const result = await mutateProject(id, () => api.moveProject(id, input), false, project => project);
+    bump();
+    return result;
+  }, [bump, mutateProject]);
+  const convertProjectToTask = useCallback(async (id: number, input: ConvertStoryToTaskInput) => {
+    const result = await mutateProject(id, () => api.convertStoryToTask(id, input), true);
+    bump();
+    return result;
+  }, [bump, mutateProject]);
+  const createProjectTaskBatch = useCallback(async (id: number, input: CreateTaskStepBatchInput) => {
+    const result = await mutateProject(id, () => api.createTaskStepBatchForProject(id, input), false, batch => batch.project);
+    const current = getCachedProject(id);
+    if (current && current.revision <= result.project.revision) {
+      queryClient.setQueryData<ProjectDetail>(queryKey(id), {
+        ...current,
+        ...projectMetadata(result.project),
+        tasks: [...new Map([...current.tasks, ...result.tasks].map(task => [task.id, task])).values()],
+      });
+    }
+    bump();
+    return result;
+  }, [bump, getCachedProject, mutateProject, queryClient, queryKey]);
+  const deleteProject = useCallback(async (id: number, deleteTasks: boolean) => {
+    const result = await mutateProject(id, () => api.deleteProject(id, { deleteTasks }), true);
+    bump();
+    return result;
+  }, [bump, mutateProject]);
+
+  const invalidationVersion = useRef(version);
+  useEffect(() => {
+    if (invalidationVersion.current === version) return;
+    invalidationVersion.current = version;
+    void queryClient.invalidateQueries({ queryKey: projectQueryKeys.identity(identityKey) });
+  }, [identityKey, queryClient, version]);
 
   useEffect(() => {
     setAcknowledgedReviewIds(current => {
@@ -174,12 +365,11 @@ function useProjectActionsState() {
       return run({
         id: story.id,
         optimistic: { story: optimistic, action },
-        mutate: () => call(story, action, ownerMemberId, activationResolution, expectedRevision, workflowInput),
-        confirmed: (confirmed) => ({ story: projectMetadata(confirmed), action }),
+        mutate: () => mutateProject(story.id, () => call(story, action, ownerMemberId, activationResolution, expectedRevision, workflowInput), false, project => project),
         throwOnError,
       });
     },
-    [call, run],
+    [call, mutateProject, run],
   );
 
   /** Right-swipe / primary-button activation, optionally assigning the driver in the same call. */
@@ -211,22 +401,20 @@ function useProjectActionsState() {
           },
         },
         mutate: () =>
-          api.updateProject(story.id, {
+          mutateProject(story.id, () => api.updateProject(story.id, {
             ...patch,
             expectedRevision: patch.expectedRevision ?? story.revision,
-          }),
-        confirmed: (confirmed) => ({ story: projectMetadata(confirmed) }),
-          retainUntilRefresh: true,
+          }), false, project => project),
           refreshImmediately: true,
           throwOnError,
       }),
-    [run],
+    [mutateProject, run],
   );
 
   const appendNotes = useCallback((story: ProjectWithActions, content: string) => run({
-    id: story.id, optimistic: { story }, mutate: () => api.appendProjectNotes(story.id, content),
-    confirmed: confirmed => ({ story: projectMetadata(confirmed) }), retainUntilRefresh: true, refreshImmediately: true, throwOnError: true,
-  }), [run]);
+    id: story.id, optimistic: { story }, mutate: () => mutateProject(story.id, () => api.appendProjectNotes(story.id, content), false, project => project),
+    refreshImmediately: true, throwOnError: true,
+  }), [mutateProject, run]);
 
   const assignDriver = useCallback(
     (story: ProjectWithActions, ownerMemberId: number | null) =>
@@ -260,16 +448,15 @@ function useProjectActionsState() {
           action: "return_to_backlog",
         },
         mutate: () =>
-          api.returnProjectToBacklog(story.id, {
+          mutateProject(story.id, () => api.returnProjectToBacklog(story.id, {
             expectedRevision: story.revision,
             revisitAt,
             withdrawCommitments,
             ...(expectedTaskRevisions !== undefined ? { expectedTaskRevisions } : {}),
-          }),
-        confirmed: (confirmed) => ({ story: projectMetadata(confirmed), action: "return_to_backlog" }),
+          }), false, project => project),
         throwOnError: true,
       }),
-    [run],
+    [mutateProject, run],
   );
 
   const setContexts = useCallback(
@@ -290,29 +477,36 @@ function useProjectActionsState() {
           },
         },
         mutate: () =>
-          api.acknowledgeProjectReview(story.id, {
+          mutateProject(story.id, () => api.acknowledgeProjectReview(story.id, {
             expectedRevision: story.revision,
-          }),
-        confirmed: (confirmed) => ({ story: projectMetadata(confirmed) }),
+          }), false, project => project),
         refreshImmediately: true,
       });
       if (result) setAcknowledgedReviewIds(current => new Set(current).add(story.id));
       return result;
     },
-    [run],
+    [mutateProject, run],
   );
 
   return {
     acknowledgedReviewIds,
-    getConfirmedStory,
-    observeConfirmedStory,
+    identityKey,
+    queryKey,
+    queryMeta,
+    fetchProject,
+    getCachedProject,
+    getCachedStory,
+    reconcileProjectSnapshot,
     readProject,
     getProject,
-    captureTargetRead: mutations.captureTargetRead,
-    isCurrentTargetRead: mutations.isCurrentTargetRead,
-    isCurrentProjectRead: mutations.isCurrentTargetValue,
-    isTargetReadable: mutations.isTargetReadable,
-    invalidateConfirmedStory: mutations.invalidateConfirmed,
+    moveProject,
+    convertProjectToTask,
+    createProjectTaskBatch,
+    deleteProject,
+    captureTargetRead,
+    isCurrentTargetRead,
+    isCurrentProjectRead,
+    isTargetReadable,
     scopeToken: mutations.scopeToken,
     isCurrentScope: mutations.isCurrentScope,
     projectStory,
@@ -338,6 +532,56 @@ function useProjectActionsState() {
 }
 
 type ProjectActionsValue = ReturnType<typeof useProjectActionsState>;
+
+export function useProjectDetailQuery(id: number, enabled = true) {
+  const actions = useProjectActions();
+  const strings = useStrings();
+  const queryClient = useQueryClient();
+  const queryKey = actions.queryKey(id);
+  const queryHash = JSON.stringify(queryKey);
+  const [stickyError, setStickyError] = useState<{ key: string; cause: unknown } | null>(null);
+  const query = useQuery<ProjectWithActions>({
+    queryKey,
+    queryFn: ({ signal }) => actions.fetchProject(id, signal),
+    enabled,
+    retry: false,
+    gcTime: Infinity,
+    structuralSharing: projectStructuralSharing,
+    meta: actions.queryMeta(id),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  useEffect(() => {
+    setStickyError(previous => previous?.key === queryHash ? previous : null);
+    const existing = queryClient.getQueryCache().find({ queryKey, exact: true });
+    if (existing?.state.error) setStickyError({ key: queryHash, cause: existing.state.error });
+    return queryClient.getQueryCache().subscribe(event => {
+      if (JSON.stringify(event.query.queryKey) !== queryHash || event.type !== "updated") return;
+      if (event.action.type === "error") {
+        setStickyError({ key: queryHash, cause: event.action.error });
+      } else if (event.action.type === "success" && event.action.manual !== true) {
+        const data = event.query.state.data as ProjectWithActions | undefined;
+        if (data && isProjectDetail(data)) {
+          setStickyError(previous => previous?.key === queryHash ? null : previous);
+        }
+      }
+    });
+  }, [queryClient, queryHash]);
+  const denied = !actions.isTargetReadable(id);
+  const visibleData = !denied && query.data && isProjectDetail(query.data) ? query.data : null;
+  const errorCause = query.error ?? (stickyError?.key === queryHash ? stickyError.cause : null);
+  return {
+    ...query,
+    data: visibleData,
+    loading: query.isPending,
+    refreshing: query.isFetching && visibleData !== null,
+    errorCause: visibleData === null ? errorCause : null,
+    refreshErrorCause: visibleData === null ? null : errorCause,
+    error: visibleData === null && errorCause ? localizedErrorMessage(errorCause, strings) : null,
+    refreshError: visibleData !== null && errorCause ? localizedErrorMessage(errorCause, strings) : null,
+    reload: () => { void query.refetch(); },
+  };
+}
 
 const ProjectActionsContext = createContext<ProjectActionsValue | null>(null);
 

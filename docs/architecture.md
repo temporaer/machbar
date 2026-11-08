@@ -651,14 +651,13 @@ After a successful mutating API response commits, the single application
 process publishes a coarse invalidation through an authenticated SSE stream.
 Each browser tab identifies its own writes so their echo does not interrupt
 local optimistic-retention UI. Other tabs/devices refetch through the existing
-frontend refresh bus. `useAsync` treats these same-query refetches as
+frontend refresh bus. Legacy `useAsync` reads treat same-query refetches as
 stale-while-revalidate: successful data remains rendered, `loading` stays
-false, and background failures do not replace the page with its foreground
-error state. Dependency changes start a new logical query generation and hide
-old-query data immediately. Each logical query generation allows one in-flight
-request; additional invalidations queue one trailing revalidation and do not
-cancel the pending result, so initial loading can settle. Generation checks and
-effect cancellation prevent stale or unmounted requests from committing.
+false, and background failures do not replace the foreground error state.
+Dependency changes start a new logical query generation and hide old-query data
+immediately. Each logical generation allows one in-flight request; additional
+invalidations queue one trailing revalidation and do not cancel the pending
+result. These semantics remain for non-migrated resources.
 Remote SSE, focus, visibility, online, and disconnected-poll invalidations use
 a leading/trailing one-second cadence, including a final refresh after a burst.
 Explicit mutation refreshes remain immediate; hidden-tab polling and visible
@@ -675,55 +674,65 @@ task tree. Context-owned opening identity guards stale close/retry/handoff
 callbacks before React renders; optional sheet presentation props retain the
 original opener and unregister suspended sheets without discarding drafts.
 
-The existing retained-mutation primitive also owns opt-in confirmed command
-snapshots independently of optimistic values, holding IDs and visual expiry.
-Task actions publish receipts from every successful canonical funnel, including
-non-retaining external-wait follow-up and reference promotion. Task/project
-projectors choose newer receipts while equal-revision authoritative input owns
-derived fields. Focused hosts use confirmed lookups through read outages and
-failed Save, preserving the same editor and its draft/save error. Raw successful
-target GETs can upgrade these snapshots, including during a pending command;
-arbitrary presentation/hierarchy observations cannot certify an optimistic
-input. Project snapshots strip detail collections and never satisfy completion
-or commitment-withdrawal prerequisites.
+The initial project-detail read migration uses TanStack Query v5 as the sole
+fetched and confirmed detail owner for `ProjectDetailPage`, its focused project
+workflows, and imperative project-detail reads. Keys include an opaque identity
+generation and project ID, so returning A→B→A cannot reuse an old identity's
+data. `useProjectActions` reconciles successful project responses into that
+cache without lowering revisions; metadata-only results cannot synthesize a
+detail tree. A 401/403/404 detail result masks cached data, while network/5xx
+failures preserve usable detail and visible error feedback. Queries do not
+silently retry or refetch on focus/reconnect; recovery is an explicit GET.
+Project read tokens capture the Query cache entry and its access epoch before
+transport. Denial state and epoch are stored on that entry's metadata and
+preserved by subsequent query options; an old token cannot become current after
+access is restored. The revision rule is enforced at actual Query publication
+for both full and metadata-only data: lower arrivals reject without replacing
+the cache, while equal revisions preserve the exact incoming object and fresh
+derived hierarchy. Only an accepted current full GET clears denial; metadata
+mutation reconciliation is not read recovery. Confirmed detail is not
+time-collected within its identity scope, and changing identity removes the old
+scope. Shared action consumers subscribe to project cache changes, including
+ancestor denial, without storing another copy of the fetched data.
+Metadata-only mutation results and task-batch project revision snapshots update
+that same cache entry. Full-detail selectors require actual task-tree data.
+Mutation success and the existing SSE/refresh invalidations refresh these
+queries. Project optimism and row placement remain presentation state, not a
+second fetched snapshot store. Task detail, project-list collections, and
+other resources are intentionally not migrated in this initial slice.
 
-Receipt, pending/error, holding and lease/timer ownership share an effective
-member/authentication generation. A-to-B-to-A changes and StrictMode effect
-replay invalidate older continuations without remounting all consumers.
-The existing workflow/detail providers own this lifetime, clearing openings,
-inspection stacks, queued detail IDs and focus/suspension state before expired
-callbacks can act. This also covers authentication-gate host remounts.
+The existing retained-mutation primitive still owns task-side confirmed
+snapshots independently of optimistic values and visual retention. Task actions
+publish receipts from every successful canonical funnel, including
+non-retaining external-wait follow-up and reference promotion. Task projectors
+prefer newer receipts while equal-revision authoritative input owns derived
+fields. Project detail no longer uses this receipt/provenance store.
+
+Identity and workflow lifetimes still protect task continuations and focused
+openings. A-to-B-to-A changes and StrictMode effect replay invalidate older
+continuations without remounting all consumers. The existing workflow/detail
+providers own opening identity, inspection stacks, queued detail IDs and
+focus/suspension state. The identity gate waits for a stored, unresolved
+member's initial catalog before mounting routes; known server-bound identities
+may mount while their member catalog is loading.
 The existing identity gate waits for a stored, unresolved member's initial
 catalog before mounting routes. Otherwise a task deep link opens in the
 provisional identity and the later scope reset incorrectly navigates to Today.
 A known server-bound member may still mount while its catalog is loading.
-Typed HTTP 401/403/404 target GET
-failures suppress fetched/confirmed/retained fallback and invalidate older
-target results. The action-owned target readers capture the retained primitive's
-stable `{ id, scopeToken, targetToken }` before GET, invalidate matching denials
-in the transport catch, and return `{ read, value }`. `useAsync` still owns
-dependency/unmount acceptance; only accepted, leased query data is observed.
-Detail pages and foreground/suspended hosts check the token on every render,
-before projection, text baselines, breadcrumbs or tree prerequisites. A stale
-success produces the existing unavailable/retry state, not silent success or
-endless loading. A successful GET started after denial can restore readability;
-a command receipt cannot. Both command and first-read capture initialize the
-same stable per-ID epoch, including a first read during a pending write.
-Network/5xx failures keep usable inputs. Access-related write errors request authoritative
-revalidation rather than equating a destination/write denial with source read
-revocation. Raw `useAsync` causes remain query-qualified and sticky through
-retries alongside existing localized feedback. Read-only snapshots expire when
-their last interaction lease closes; command-touched IDs retain one latest
-input for other consumers that may still be offline. Weak observation keys do
-not retain raw project detail. Snapshots never create list membership and are
-discarded on target invalidation, identity change or unmount. Confirmed task
-scalar overlays preserve current child membership and merge matching child
-values by revision, independently of the parent's revision.
-The workflow host uses that same `projectTaskValue` confirmed-only merge rather
-than choosing a higher parent receipt wholesale, then applies pending display
-separately. Conversion also selects the higher actual host/local baseline;
-pending composition cannot certify a revision, and project metadata cannot
-replace qualified conversion detail.
+Typed HTTP 401/403/404 task GET failures suppress fetched/confirmed/retained
+fallback and invalidate older task results. Task action-owned target readers
+capture the retained primitive's stable `{ id, scopeToken, targetToken }` before
+GET; `useAsync` owns dependency/unmount acceptance and only accepted, leased
+task data is observed. A stale success produces the existing unavailable/retry
+state. Network/5xx failures keep usable task inputs. Access-related write errors
+request authoritative revalidation rather than equating a destination/write
+denial with source read revocation. Raw `useAsync` causes remain query-qualified
+and sticky through retries alongside existing localized feedback. Task
+confirmed scalar overlays preserve current child membership and merge matching
+child values by revision independently of the parent's revision.
+The task workflow host applies `projectTaskValue`'s confirmed-only merge before
+pending presentation separately. Conversion selects the higher actual
+host/local baseline; pending composition cannot certify a revision.
 Recursive matching also reuses the existing descendant-terminal helper for
 parent policies; equal-revision children retain fresh non-lifecycle fields
 without losing completion/cancellation outcomes.
@@ -741,10 +750,27 @@ host detail or their existing GET-only runner, using the target-scoped snapshot
 decision merge to retain relevant driver and next-action choices. The first
 detail after metadata initialization and equal-revision derived changes count;
 lower target revisions never replace newer requirements/provenance. Recovery
-never submits. Project-entry and split use their own read runner's retry without
-remounting step/decision drafts. Route-owned project entry stays mounted from the
-original page read envelope during denial, while old source steps remain hidden.
-Preview-derived requirements also retain their original task/project epoch:
+never submits. Explicit activation/reopening uses the direct target decision
+snapshot; deadline changes use the commitment snapshot. They are not
+interchangeable, and omission must not fall back to the other snapshot.
+Command routing carries known story ancestor IDs into the opening so the host
+captures their tokens before its GET. Those ancestor tokens remain available
+for chain-dependent operations, but do not by themselves gate explicit
+activation: activation checks its source-read provenance and IDs named by the
+direct target snapshot only. Requirements naming additional IDs need their
+original qualified reads and cannot receive response-time stamps. Deadline
+continues to require the full commitment chain. Every recovery result pairs its
+value with that run's immutable affected-read tokens; a queued retry cannot
+qualify an older result with newer tokens. Rejected lower snapshots retain
+their original provenance. Post-await command continuations recheck those
+original tokens.
+Project-entry and split use their own read runner's retry without
+remounting step/decision drafts. Route-owned project entry remains mounted for
+the same actor/opening/project identity during page loading, error, and denial,
+but derives nullable authority from the canonical Query rather than retaining
+the original page read envelope. Protected source fields and old preview
+requirements stay hidden while authored steps remain. Preview-derived
+requirements also retain their original task/project epoch:
 denial hides server labels without discarding authored choices. GET-only
 restoration does not recertify them. An explicit subsequent submission requests
 a fresh preview and merges applicable choices, without automatically committing
@@ -776,7 +802,9 @@ Equivalent reads retain divergent conflicts and choices use current authority.
 Its pre-existing local stale-refresh slot remains opening-bound; new query data
 releases that slot without letting an older baseline replace newer authority.
 Equal-revision qualified host detail takes precedence for derived ancestry and
-prerequisites; ordinary selected host/query data is not copied into that slot.
+prerequisites; metadata-only host input still allows a qualified equal-revision
+local full detail to supply required hierarchy data. Ordinary selected
+host/query data is not copied into that slot.
 The canonical reader's optional current-error callback runs before matching
 access denial invalidates its original epoch, allowing the affected operation to
 show a recoverable read error. Obsolete reads never invoke it. The existing
@@ -805,12 +833,13 @@ obsolete success or failure cannot close/navigate away from a recovered opening.
 Canonical selection/completion callbacks distinguish unpublished results with
 `false`; explicit Close/Cancel remains independent of command acceptance.
 
-This retained snapshot/provenance/identity runtime is transitional. The intended
-next architecture makes TanStack Query the sole fetched-state, revision and
-confirmed-result owner, separates optimism from UI interaction lifetime, and
-replaces rather than ports this machinery. Preserve the recovery contracts,
-delete superseded code and revise architecture enforcement during that migration;
-this correctness PR does not begin the migration or establish another store.
+This retained snapshot/provenance/identity runtime is transitional. The initial
+project-detail migration above makes TanStack Query the fetched and confirmed
+owner for that slice; task reads and list collections retain their existing
+ownership. Further migration must separate server-state reconciliation from
+optimism and UI interaction lifetime, replacing rather than porting the old
+machinery. Preserve the recovery contracts, delete superseded code and revise
+architecture enforcement for each explicitly scoped migration.
 
 Week keeps an authoritative query base plus narrow task-date intents, rather
 than copied agendas or whole-snapshot rollback. Member/scope/window selection

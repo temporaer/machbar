@@ -40,12 +40,16 @@ export function TaskConvertToProjectSheet({ task, authoritativeTask = task, onCl
   const [taskRead, setCurrentTask] = useState<TaskDetail | null>(null);
   const localTask = taskRead && taskActions.isCurrentTaskRead(taskRead) ? taskRead : null;
   const hostTask = authoritativeTask?.id === task.id ? authoritativeTask : null;
-  const authority = localTask && (!hostTask || localTask.revision >= hostTask.revision)
+  const hostHasQualifiedHierarchy = hostTask !== null &&
+    "hierarchyRevisions" in hostTask && Array.isArray(hostTask.hierarchyRevisions);
+  const authority = localTask && (!hostTask || localTask.revision > hostTask.revision ||
+    (localTask.revision === hostTask.revision && !hostHasQualifiedHierarchy))
     ? localTask : hostTask;
   const currentTask: TaskDetail = authority ?? task;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedProjectRead, setFailedProjectRead] = useState<{ id: number; error: string } | null>(null);
+  const [containingProjectChain, setContainingProjectChain] = useState<{ projectId: number; ids: number[] } | null>(null);
   const [preservedStepTitle, setPreservedStepTitle] = useState(task.title);
   const [preservedStepTitleEdited, setPreservedStepTitleEdited] = useState(false);
   const [dependencyTargets, setDependencyTargets] = useState<Record<number, number>>({});
@@ -87,6 +91,15 @@ export function TaskConvertToProjectSheet({ task, authoritativeTask = task, onCl
   useEffect(() => { setActivationPrompt(null); setPreviewIntent(null); }, [preservedStepTitle, dependencyTargets, currentTask.revision]);
 
   const hierarchyPending = (currentTask.parentTaskId !== null || currentTask.projectId !== null) && !currentTask.hierarchyRevisions;
+  const hostProjectIds = projectActivationTargetIds(currentTask.projectId, currentTask.ancestors);
+  const hasContainingProject = currentTask.projectId === null ||
+    currentTask.ancestors?.some(ancestor => ancestor.role === "story" && ancestor.id === currentTask.projectId) === true;
+  const cachedChain = !hasContainingProject && containingProjectChain?.projectId === currentTask.projectId
+    ? containingProjectChain.ids : null;
+  const projectChainKnown = !hierarchyPending && (hasContainingProject || cachedChain !== null);
+  const qualifiedProjectIds = new Set([...hostProjectIds, ...(cachedChain ?? [])]);
+  const relevantProjectReadFailure = failedProjectRead &&
+    (!projectChainKnown || qualifiedProjectIds.has(failedProjectRead.id)) ? failedProjectRead : null;
 
   const retryProjectRead = async () => {
     if (!failedProjectRead || busy || !authority) return;
@@ -107,7 +120,7 @@ export function TaskConvertToProjectSheet({ task, authoritativeTask = task, onCl
     const projectContinuations = [...affectedIds].map(projectActions.captureTargetRead);
     const isCurrent = () => taskActions.isCurrentTargetRead(continuation) &&
       projectContinuations.every(projectActions.isCurrentTargetRead);
-    if (!authority || busy || failedProjectRead !== null || blockReason || hierarchyPending) return;
+    if (!authority || busy || relevantProjectReadFailure !== null || blockReason || hierarchyPending) return;
     setBusy(true);
     setError(null);
     try {
@@ -116,7 +129,9 @@ export function TaskConvertToProjectSheet({ task, authoritativeTask = task, onCl
           if (isCurrent()) setFailedProjectRead({ id: currentTask.projectId!, error: localizedErrorMessage(cause, strings) });
         });
         if (!isCurrent() || !projectActions.isCurrentProjectRead(containing)) return;
-        for (const id of projectActivationTargetIds(containing.id, containing.ancestors)) {
+        const containingIds = projectActivationTargetIds(containing.id, containing.ancestors);
+        setContainingProjectChain({ projectId: containing.id, ids: containingIds });
+        for (const id of containingIds) {
           if (!affectedIds.has(id)) { affectedIds.add(id); projectContinuations.push(projectActions.captureTargetRead(id)); }
         }
       }
@@ -231,8 +246,8 @@ export function TaskConvertToProjectSheet({ task, authoritativeTask = task, onCl
             ))}
             {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
             <div className="capture-shape-actions">
-              <button type="button" className="btn btn-primary capture-shape-action" disabled={!authority || busy || failedProjectRead !== null || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "backlog" && activationPrompt !== null && !activationUnavailable && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
-              <button type="button" className="btn capture-shape-action" disabled={!authority || busy || failedProjectRead !== null || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "active" && activationPrompt !== null && !activationUnavailable && activationResolution === null)} onClick={() => void convert("active")}>{previewIntent === "active" && activationPrompt ? strings.activateStory : strings.convertToProjectActive}</button>
+              <button type="button" className="btn btn-primary capture-shape-action" disabled={!authority || busy || relevantProjectReadFailure !== null || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "backlog" && activationPrompt !== null && !activationUnavailable && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
+              <button type="button" className="btn capture-shape-action" disabled={!authority || busy || relevantProjectReadFailure !== null || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "active" && activationPrompt !== null && !activationUnavailable && activationResolution === null)} onClick={() => void convert("active")}>{previewIntent === "active" && activationPrompt ? strings.activateStory : strings.convertToProjectActive}</button>
             </div>
           </>
         )}
@@ -241,7 +256,7 @@ export function TaskConvertToProjectSheet({ task, authoritativeTask = task, onCl
             {error}
           </div>
         ) : null}
-        {failedProjectRead ? <ErrorState message={failedProjectRead.error} onRetry={() => void retryProjectRead()} pending={busy} /> : null}
+        {relevantProjectReadFailure ? <ErrorState message={relevantProjectReadFailure.error} onRetry={() => void retryProjectRead()} pending={busy} /> : null}
         <button type="button" className="btn" disabled={busy} onClick={onClose}>
           {strings.cancel}
         </button>

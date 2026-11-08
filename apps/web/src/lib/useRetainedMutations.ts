@@ -31,6 +31,7 @@ interface MutationOptions<TStored> {
   immediateRefresh?: boolean;
   identityKey?: string | object;
   receiptRevision?: (value: TStored) => number;
+  captureTargetGuard?: (id: number) => () => boolean;
 }
 
 function mutationState<TStored>() {
@@ -48,6 +49,7 @@ export function useRetainedMutations<TStored>({
   immediateRefresh = false,
   identityKey,
   receiptRevision,
+  captureTargetGuard,
 }: MutationOptions<TStored> = {}) {
   const strings = useStrings();
   const { bump } = useRefresh();
@@ -264,8 +266,11 @@ export function useRetainedMutations<TStored>({
     }: RetainedMutation<TStored, TResult>): Promise<TResult | undefined> => {
       const token = scopeToken;
       if (!isCurrentScope(token)) return undefined;
-      const { targetToken } = captureTargetRead(id);
-      const canPublish = () => isCurrentScope(token) && runtime.targetTokens.get(id) === targetToken;
+      const targetRead = captureTargetGuard ? undefined : captureTargetRead(id);
+      const canPublishTarget = captureTargetGuard
+        ? captureTargetGuard(id)
+        : () => runtime.targetTokens.get(id) === targetRead?.targetToken;
+      const canPublish = () => isCurrentScope(token) && canPublishTarget();
       if (runtime.inFlight.has(id)) {
         const error = new Error("An update for this item is already in progress.");
         change((current) => ({
@@ -333,7 +338,7 @@ export function useRetainedMutations<TStored>({
         }
       }
     },
-    [bump, change, clearError, release, retain, schedule, strings, immediateRefresh, isCurrentScope, captureTargetRead, receiptRevision, recordConfirmed, runtime, scopeToken],
+    [bump, change, clearError, release, retain, schedule, strings, immediateRefresh, isCurrentScope, captureTargetRead, captureTargetGuard, receiptRevision, recordConfirmed, runtime, scopeToken],
   );
 
   const { pendingIds, holdingIds, retained, errors } = runtime.state;

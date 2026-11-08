@@ -49,11 +49,12 @@ export type ProjectWorkflowKind =
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;
   projectId: number;
+  ancestorProjectIds?: number[];
 }
 
 interface ProjectWorkflowContextValue {
   current: ProjectWorkflowState | null;
-  open: (kind: ProjectWorkflowKind, projectId: number) => void;
+  open: (kind: ProjectWorkflowKind, projectId: number, ancestorProjectIds?: readonly number[]) => void;
   close: (opening?: ProjectWorkflowState) => void;
   isCurrent: (opening: ProjectWorkflowState) => boolean;
   closeCurrent: () => void;
@@ -81,9 +82,9 @@ export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
       };
       return {
         current,
-        open: (kind, projectId) => {
+        open: (kind, projectId, ancestorProjectIds) => {
           if (currentScope.current !== scope) return;
-          const next = { kind, projectId };
+          const next = { kind, projectId, ...(ancestorProjectIds?.length ? { ancestorProjectIds: [...new Set(ancestorProjectIds)] } : {}) };
           currentRef.current = next;
           setCurrent(next);
         },

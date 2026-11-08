@@ -1,8 +1,7 @@
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useEffect, useRef } from "react";
 import { type ProjectDetail } from "../lib/api";
-import { useAsync } from "../lib/useAsync";
-import { useProjectActions } from "../lib/useProjectActions";
+import { useProjectActions, useProjectDetailQuery } from "../lib/useProjectActions";
 import { useProjectWorkflow, type ProjectWorkflowState } from "../lib/projectWorkflowContext";
 import { useIdentity } from "../lib/identity";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
@@ -23,7 +22,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { WorkRefinementOrigin } from "../lib/taskDetailContext";
 import { BottomSheet } from "./BottomSheet";
 import { ErrorState, LoadingState, ReadErrorState } from "./AsyncStates";
-import { isWorkItemAccessError } from "../lib/errorMessage";
+import type { ProjectReadToken } from "../lib/projectQueries";
 
 function flattenTaskRevisions(tasks: ProjectDetail["tasks"]): Array<{ taskId: number; revision: number }> {
   return tasks.flatMap((task) => [{ taskId: task.id, revision: task.revision }, ...flattenTaskRevisions(task.children)]);
@@ -44,28 +43,29 @@ export function ProjectWorkflowHost() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = workflow.current;
-  const opening = useRef<{ state: ProjectWorkflowState | null; opener: HTMLElement | null }>({ state: null, opener: null });
+  const opening = useRef<{ state: ProjectWorkflowState | null; opener: HTMLElement | null; key: number; reads: ReadonlyMap<number, ProjectReadToken> }>({ state: null, opener: null, key: 0, reads: new Map() });
   if (opening.current.state !== state) {
-    opening.current = { state, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+    const knownAncestors = state?.kind === "deadline"
+      ? state.ancestorProjectIds ??
+        projectActions.getCachedProject(state.projectId)?.ancestors?.filter(ancestor => ancestor.role === "story").map(ancestor => ancestor.id) ?? []
+      : [];
+    opening.current = {
+      state,
+      opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+      key: opening.current.key + 1,
+      reads: new Map<number, ProjectReadToken>([...new Set(knownAncestors)].map(id => [id, projectActions.captureTargetRead(id)])),
+    };
   }
   const projectId = state?.projectId ?? null;
   const frameRead = projectId === null ? null : projectActions.captureTargetRead(projectId);
-  const projectRead = useAsync(
-    () => (projectId !== null ? projectActions.readProject(projectId) : Promise.resolve(null)),
-    [state, projectActions.scopeToken],
-  );
-  const fetchedProject = projectRead.data && projectActions.isCurrentTargetRead(projectRead.data.read) ? projectRead.data.value : null;
+  const projectRead = useProjectDetailQuery(projectId ?? -1, projectId !== null);
+  const fetchedProject = projectRead.data && projectActions.isCurrentProjectRead(projectRead.data) ? projectRead.data : null;
   useRetentionInteraction(projectId, projectActions.pauseRetention, projectId !== null);
   const retained = projectId !== null ? projectActions.retained.get(projectId)?.story : undefined;
-  const accessLost = isWorkItemAccessError(projectRead.errorCause) || isWorkItemAccessError(projectRead.refreshErrorCause);
-  const confirmed = projectId !== null ? projectActions.getConfirmedStory(projectId) : undefined;
-  const input = fetchedProject ?? confirmed;
+  const accessLost = projectId !== null && !projectActions.isTargetReadable(projectId);
+  const input = fetchedProject ?? (projectId !== null ? projectActions.getCachedStory(projectId) : undefined);
   const story = accessLost ? undefined : input ? projectActions.projectStory(input)
     : projectId !== null && projectActions.isTargetReadable(projectId) ? retained : undefined;
-  useEffect(() => {
-    if (projectId === null) return;
-    if (fetchedProject && projectRead.data && projectRead.error === null && projectRead.refreshError === null) projectActions.observeConfirmedStory(fetchedProject, projectRead.data.read);
-  }, [projectId, fetchedProject, projectRead.data, projectRead.error, projectRead.refreshError, projectActions.observeConfirmedStory]);
 
   if (!state) return null;
   const close = () => workflow.close(state);
@@ -88,7 +88,7 @@ export function ProjectWorkflowHost() {
       deadline: strings.projectDeadlineTitle, tags: strings.tags, contexts: strings.physicalContexts,
       activateWithDriver: strings.activateStory, reopenWithDriver: strings.reopen,
     };
-    return <BottomSheet {...sheetProps} title={titles[state.kind]}>
+    return <BottomSheet key={opening.current.key} {...sheetProps} title={titles[state.kind]}>
       {!projectRead.loading && projectRead.error === null && projectRead.refreshError === null
         ? <ErrorState message={strings.workflowTargetUnavailable} onRetry={reload} /> : null}
     </BottomSheet>;
@@ -98,6 +98,7 @@ export function ProjectWorkflowHost() {
     case "defer":
       return (
         <ProjectDeferSheet
+          key={opening.current.key}
           {...sheetProps}
           story={story}
           onRefresh={reload}
@@ -121,17 +122,18 @@ export function ProjectWorkflowHost() {
         />
       );
     case "structure":
-      return <ProjectStructureSheet {...sheetProps} story={story} />;
+      return <ProjectStructureSheet key={opening.current.key} {...sheetProps} story={story} />;
     case "refinement":
       return <WorkClarificationSheet {...sheetProps} targetType="project" targetId={story.id} revision={story.revision} title={story.title} onStarted={(intakeId) => {
         if (!workflow.isCurrent(state) || !frameRead || !projectActions.isCurrentTargetRead(frameRead)) return;
         const refinementOrigin: WorkRefinementOrigin = { targetType: "project", targetId: story.id, originPath: `${location.pathname}${location.search}`, entry: "page" };
         close();
         navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });
-      }} />;
+      }} key={opening.current.key} />;
     case "assignDriver":
       return (
         <MemberSelectionSheet
+          key={opening.current.key}
           {...sheetProps}
           title={`${strings.assignDriver}: ${story.title}`}
           label={strings.driver}
@@ -148,15 +150,16 @@ export function ProjectWorkflowHost() {
         />
       );
     case "editOutcome":
-      return <StoryCriteriaSheet {...sheetProps} story={story} />;
+      return <StoryCriteriaSheet key={opening.current.key} {...sheetProps} story={story} />;
     case "move":
-      return <MoveProjectSheet {...sheetProps} story={story} />;
+      return <MoveProjectSheet key={opening.current.key} {...sheetProps} story={story} />;
     case "convertToTask":
-      return <ProjectConvertToTaskSheet {...sheetProps} story={story} authoritativeProject={fetchedProject} />;
+      return <ProjectConvertToTaskSheet key={opening.current.key} {...sheetProps} story={story} />;
     case "completeWithDecisions":
       if (!fetchedProject) return null;
       return (
         <CompleteWithOpenTasksSheet
+          key={opening.current.key}
           {...sheetProps}
           story={fetchedProject}
           onRefresh={reload}
@@ -170,9 +173,11 @@ export function ProjectWorkflowHost() {
     case "deadline":
       return (
         <ProjectDeadlineSheet
+          key={opening.current.key}
           {...sheetProps}
           story={story}
           authoritativeProject={fetchedProject}
+          qualifiedReads={opening.current.reads}
           onSave={async (patch) => {
             await projectActions.schedule(story, patch);
           }}
@@ -181,6 +186,7 @@ export function ProjectWorkflowHost() {
     case "tags":
       return (
         <ProjectTagsSheet
+          key={opening.current.key}
           {...sheetProps}
           story={story}
           onSave={async (tagIds) => {
@@ -189,12 +195,13 @@ export function ProjectWorkflowHost() {
         />
       );
     case "contexts":
-      return <ProjectContextsSheet {...sheetProps} story={story} />;
+      return <ProjectContextsSheet key={opening.current.key} {...sheetProps} story={story} />;
     case "activateWithDriver":
     case "reopenWithDriver": {
       const action = state.kind === "reopenWithDriver" ? "reopen" : "activate";
       return (
         <ProjectActivationSheet
+          key={opening.current.key}
           {...sheetProps}
           story={story}
           action={action}

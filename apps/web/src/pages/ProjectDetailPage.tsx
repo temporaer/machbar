@@ -9,15 +9,14 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { api } from "../lib/api";
-import { useAsync } from "../lib/useAsync";
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useStrings } from "../lib/strings";
-import { LoadingState, ErrorState } from "../components/AsyncStates";
+import { LoadingState, ErrorState, ReadErrorState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { QuickAdd } from "../components/QuickAdd";
 import { countTasks, flattenTasks } from "../lib/taskHelpers";
-import { useIdentity } from "../lib/identity";
+import { identityQueryKey, useIdentity, useIdentityScope } from "../lib/identity";
 import { formatDate, formatDateTime } from "../lib/format";
 import { formatRevisitAt } from "../lib/relativeDate";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
@@ -44,7 +43,7 @@ import { useLocale } from "../lib/locale";
 import { recordRecentlyViewed } from "../lib/recentlyViewed";
 import type { ProjectWithActions } from "../lib/api";
 import { useTaskActions } from "../lib/useTaskActions";
-import { useProjectActions } from "../lib/useProjectActions";
+import { useProjectActions, useProjectDetailQuery } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
 import { MarkdownEditor, type MarkdownEditorHandle } from "../components/MarkdownEditor";
@@ -76,6 +75,7 @@ export function ProjectDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const focus = searchParams.get("focus");
   const { members } = useIdentity();
+  const identityKey = identityQueryKey(useIdentityScope());
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -116,13 +116,11 @@ export function ProjectDetailPage() {
   openTaskIdRef.current = planningWorkflowTaskId;
   closeTaskDetailRef.current = taskWorkflow.close;
   const projectActions = useProjectActions();
-  const {
-    data: projectResult,
-    loading: projectLoading,
-    error: projectError,
-    reload: reloadProject,
-  } = useAsync(() => projectActions.readProject(projectId), [projectId, projectActions.scopeToken]);
-  const loadedProject = projectResult && projectActions.isCurrentTargetRead(projectResult.read) ? projectResult.value : null;
+  const projectRead = useProjectDetailQuery(projectId);
+  const projectLoading = projectRead.loading;
+  const projectError = projectRead.error;
+  const reloadProject = projectRead.reload;
+  const loadedProject = projectRead.data;
   useRetentionInteraction(projectId, projectActions.pauseRetention, Number.isFinite(projectId));
   useTaskActions(flattenTasks(loadedProject?.tasks ?? []));
   // Recency is a soft ranking boost for search/pickers, not domain state —
@@ -130,9 +128,6 @@ export function ProjectDetailPage() {
   useEffect(() => {
     if (Number.isFinite(projectId)) recordRecentlyViewed("project", projectId);
   }, [projectId]);
-  useEffect(() => {
-    if (loadedProject && projectResult) projectActions.observeConfirmedStory(loadedProject, projectResult.read);
-  }, [loadedProject, projectResult, projectActions.observeConfirmedStory]);
   const baseProject = loadedProject;
   useProjectActions(
     loadedProject ? [loadedProject, ...(loadedProject.childStories ?? [])] : [],
@@ -224,7 +219,7 @@ export function ProjectDetailPage() {
     setDeleting(true);
     setContentError(null);
     try {
-      await api.deleteProject(project.id, { deleteTasks });
+      await projectActions.deleteProject(project.id, deleteTasks);
       setConfirmingDelete(false);
       navigate(reviewReturn ? "/more/review" : "/projects", {
         ...(reviewReturn ? { state: { reviewReturn } } : {}),
@@ -380,8 +375,8 @@ export function ProjectDetailPage() {
         </Link>
         {project?.ancestors?.length ? <WorkItemBreadcrumbs ancestors={project.ancestors} /> : null}
         {projectLoading ? <LoadingState /> : null}
-        {projectError ? (
-          <ErrorState message={projectError} onRetry={reloadProject} />
+        {projectError || projectRead.refreshError ? (
+          <ReadErrorState resource={strings.project} {...projectRead} reload={reloadProject} />
         ) : null}
         {!project && !projectLoading && !projectError ? <ErrorState message={strings.workflowTargetUnavailable} onRetry={reloadProject} /> : null}
         {project ? (
@@ -778,8 +773,11 @@ export function ProjectDetailPage() {
           />
         ) : null}
         <QuickAdd />
-        {focus === "next-action" && projectResult ? <ProjectTaskEntrySheet key={projectResult.value.id}
-          project={projectResult.value} initialRead={projectResult.read} onClose={clearRouteFocus} /> : null}
+        {focus === "next-action" ? <ProjectTaskEntrySheet
+          key={`${identityKey}-${projectId}`}
+          projectId={projectId}
+          onClose={clearRouteFocus}
+        /> : null}
         {attachmentOpen && project ? (
           <MarkdownAttachmentSheet
             onClose={() => setAttachmentOpen(false)}

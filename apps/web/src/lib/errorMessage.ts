@@ -14,6 +14,13 @@ function isApiError(
   return error instanceof Error && error.name === "ApiError";
 }
 
+export class ProjectReadRevisionRegressionError extends Error {
+  constructor() {
+    super("A project read returned an older revision.");
+    this.name = "ProjectReadRevisionRegressionError";
+  }
+}
+
 export function hasApiErrorCode(
   error: unknown,
   code: ApiErrorCode,
@@ -132,6 +139,9 @@ export function localizedErrorMessage(
   error: unknown,
   strings: Strings,
 ): string {
+  if (error instanceof ProjectReadRevisionRegressionError) {
+    return strings.workflowTargetUnavailable;
+  }
   if (isApiError(error)) {
     if (error.code === "intake_draft_invalid") {
       const refinementConflict = stringDetail(error.details, "refinementConflict");

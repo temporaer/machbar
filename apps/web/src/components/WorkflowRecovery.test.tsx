@@ -7,7 +7,7 @@ import { api, ApiError, type ProjectDetail } from "../lib/api";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { useTaskActions } from "../lib/useTaskActions";
-import { useProjectActions } from "../lib/useProjectActions";
+import { useProjectActions, useProjectDetailQuery } from "../lib/useProjectActions";
 import { useRefresh } from "../lib/refresh";
 import { useIdentity } from "../lib/identity";
 import { useTaskDetail, type TaskDetailHandoff } from "../lib/taskDetailContext";
@@ -27,7 +27,7 @@ vi.mock("../lib/api", async (importOriginal) => ({ ...await importOriginal<typeo
   searchTasks: vi.fn().mockResolvedValue([]),
   getProjects: vi.fn().mockResolvedValue([]),
   previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-  updateTask: vi.fn(), updateProject: vi.fn(), completeProject: vi.fn(),
+  updateTask: vi.fn(), updateProject: vi.fn(), activateProject: vi.fn(), completeProject: vi.fn(),
   returnProjectToBacklog: vi.fn(),
   createTaskStepBatchForTask: vi.fn(),
 } }));
@@ -143,9 +143,10 @@ function InspectionControls() {
 
 function ProjectReceiptProbe({ detail }: { detail: ProjectDetail }) {
   const actions = useProjectActions();
+  const query = useProjectDetailQuery(detail.id);
   return <output data-testid="project-receipt">{JSON.stringify({
-    confirmed: actions.getConfirmedStory(project.id),
-    projected: actions.projectStory(detail),
+    cached: query.data,
+    projected: actions.projectStory(query.data ?? detail),
   })}</output>;
 }
 
@@ -162,6 +163,101 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("focused workflow read recovery", () => {
+  it.each(["defer", "deadline", "activation"] as const)(
+    "%s isolates each project opening from a cached next-target receipt and a late prior save",
+    async kind => {
+      const a = makeProject({ id: 42, title: "Opening A", status: kind === "defer" ? "active" : "backlog",
+        dueDate: "2027-01-01", ownerMemberId: 1 });
+      const b = makeProject({ id: 43, title: "Opening B", status: kind === "defer" ? "active" : "backlog",
+        dueDate: "2027-02-01", ownerMemberId: 2 });
+      const requirement = (id: number, title: string) => ({
+        targetRevision: 1, expectedProjects: [{ projectId: id, revision: 1 }],
+        projects: [{ projectId: id, title, revision: 1, ownerMemberId: null,
+          required: ["driver", "progressPath"] as Array<"driver" | "progressPath"> }],
+      });
+      const aDetail: ProjectDetail = { ...a, tasks: [],
+        activationDecisionSnapshot: requirement(42, "A activation requirements"),
+        directActivationDecisionSnapshot: requirement(42, "A activation requirements") };
+      const bSnapshot = { ...requirement(43, "B activation requirements"), targetRevision: 2,
+        expectedProjects: [{ projectId: 43, revision: 2 }],
+        projects: [{ ...requirement(43, "B activation requirements").projects[0]!, revision: 2 }] };
+      const bDetail: ProjectDetail = { ...b, revision: 2, tasks: [],
+        activationDecisionSnapshot: bSnapshot, directActivationDecisionSnapshot: bSnapshot };
+      const projectsById = new Map([[42, aDetail], [43, bDetail]]);
+      mocked.getProject.mockImplementation(async id => projectsById.get(id)!);
+      mocked.updateProject.mockImplementation(async id => ({ ...projectsById.get(id)!, revision: 2, notes: "confirmed B" }));
+      const priorSave = deferred<never>();
+      const actionKind = kind === "activation" ? "activateWithDriver" : kind;
+
+      function Openings() {
+        const actions = useProjectActions();
+        const workflow = useProjectWorkflow();
+        return <>
+          <button onClick={() => void actions.update(b, { notes: "receipt" }, { notes: "receipt" }, true)}>Cache B receipt</button>
+          <output data-testid="opening-b-receipt">{actions.getCachedProject(43)?.notes ?? "none"}</output>
+          <button onClick={() => workflow.open(actionKind, 42)}>Open A</button>
+          <button onClick={() => workflow.open(actionKind, 43)}>Open B</button>
+          <ProjectWorkflowHost />
+        </>;
+      }
+
+      if (kind === "defer") mocked.returnProjectToBacklog.mockReturnValueOnce(priorSave.promise);
+      if (kind === "deadline") mocked.updateProject.mockImplementation(async id =>
+        id === 42 ? priorSave.promise : ({ ...projectsById.get(id)!, revision: 2, notes: "confirmed B" }));
+      if (kind === "activation") mocked.activateProject.mockReturnValueOnce(priorSave.promise);
+      renderWithProviders(<Openings />, { locale: "en" });
+      await userEvent.click(screen.getByRole("button", { name: "Cache B receipt" }));
+      await waitFor(() => expect(screen.getByTestId("opening-b-receipt")).toHaveTextContent("none"));
+      await userEvent.click(screen.getByRole("button", { name: "Open A" }));
+      await screen.findByText("Opening A");
+
+      if (kind === "defer") {
+        const withdraw = await screen.findByLabelText(/withdraw plans/i);
+        await userEvent.click(withdraw);
+        expect(withdraw).toBeChecked();
+        await userEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+      } else if (kind === "deadline") {
+        const due = await screen.findByLabelText("Due");
+        const aInitialDate = (due as HTMLInputElement).value;
+        await userEvent.clear(due);
+        await userEvent.type(due, "2027-03-01{Enter}");
+        await waitFor(() => expect(mocked.updateProject).toHaveBeenCalled());
+        expect((due as HTMLInputElement).value).toBe("03/01/2027");
+        expect(aInitialDate).not.toBe("");
+      } else {
+        await userEvent.selectOptions(await screen.findByLabelText("Lead for “A activation requirements”"), "1");
+        await userEvent.type(screen.getByLabelText(/concrete next/i), "A-only next action");
+        await userEvent.click(screen.getByRole("button", { name: "Start project" }));
+        await waitFor(() => expect(mocked.activateProject).toHaveBeenCalled());
+      }
+
+      await userEvent.click(screen.getByRole("button", { name: "Open B" }));
+      if (kind === "defer") {
+        const withdraw = await screen.findByLabelText(/withdraw plans/i);
+        expect(withdraw).not.toBeChecked();
+        expect(within(screen.getByRole("dialog")).getByText("Opening B")).toBeInTheDocument();
+      } else if (kind === "deadline") {
+        const due = await screen.findByLabelText("Due");
+        expect(due).toHaveValue("02/01/2027");
+        expect(due).toBeEnabled();
+      } else {
+        await waitFor(() => expect(mocked.getProject).toHaveBeenCalledWith(43, expect.any(AbortSignal)));
+        expect(await screen.findByLabelText("Lead for “B activation requirements”")).toHaveValue("");
+        expect(screen.getByLabelText(/concrete next/i)).toHaveValue("");
+      }
+
+      await act(async () => {
+        if (kind === "defer") priorSave.resolve({} as never);
+        else if (kind === "deadline") priorSave.resolve({ ...aDetail, revision: 2 } as never);
+        else priorSave.resolve({ ...aDetail, revision: 2 } as never);
+      });
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      if (kind === "defer") expect(screen.getByLabelText(/withdraw plans/i)).not.toBeChecked();
+      if (kind === "deadline") expect(screen.getByLabelText("Due")).toHaveValue("02/01/2027");
+      if (kind === "activation") expect(screen.getByLabelText(/concrete next/i)).toHaveValue("");
+    },
+  );
+
   it("fifth review: a newer parent receipt preserves fetched child membership and newer child revisions in the actual host", async () => {
     const oldChild = makeTask({ id: 81, parentTaskId: task.id, title: "Receipt-only child" });
     const staleChild = makeTask({ id: 82, parentTaskId: task.id, title: "Old receipt child", revision: 1 });
@@ -333,7 +429,7 @@ describe("focused workflow read recovery", () => {
     if (role === "task") mocked.getTask.mockReturnValue(taskRetry.promise);
     else mocked.getProject.mockReturnValue(projectRetry.promise);
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(screen.getByRole("button", { name: "Try again" })).toBeDisabled();
+    expect(screen.getByRole("status")).toBeInTheDocument();
     await act(async () => {
       if (role === "task") taskRetry.resolve(task);
       else projectRetry.resolve({ ...project, tasks: [] });
@@ -613,12 +709,16 @@ describe("focused workflow read recovery", () => {
     const actualChild = makeTask({ id: 91, title: "Actual read child" });
     const receipt = { ...project, revision: 2, tasks: [mutationOnlyChild], hierarchyRevisions: [{ id: 90, revision: 1 }] };
     mocked.updateProject.mockResolvedValue(receipt);
+    mocked.getProject.mockResolvedValue({ ...project, tasks: [actualChild] });
     renderWithProviders(<><Controls /><ProjectReceiptProbe detail={{ ...project, tasks: [actualChild] }} /></>);
     await userEvent.click(screen.getByRole("button", { name: "Retain project" }));
-    const values = JSON.parse(screen.getByTestId("project-receipt").textContent ?? "");
-    expect(values.confirmed).not.toHaveProperty("tasks");
-    expect(values.confirmed).not.toHaveProperty("hierarchyRevisions");
-    expect(values.projected.tasks.map((child: { id: number }) => child.id)).toEqual([actualChild.id]);
+    await waitFor(() => expect(
+      JSON.parse(screen.getByTestId("project-receipt").textContent ?? "").cached?.tasks.map((child: { id: number }) => child.id),
+    ).toEqual([actualChild.id]));
+    const updated = JSON.parse(screen.getByTestId("project-receipt").textContent ?? "");
+    expect(updated.cached.tasks.map((child: { id: number }) => child.id)).toEqual([actualChild.id]);
+    expect(updated.cached.hierarchyRevisions ?? []).not.toContainEqual({ id: 90, revision: 1 });
+    expect(updated.projected.tasks.map((child: { id: number }) => child.id)).toEqual([actualChild.id]);
   });
 
   it("does not treat retained project metadata as a complete empty task tree", async () => {
