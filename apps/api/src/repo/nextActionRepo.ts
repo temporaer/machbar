@@ -28,7 +28,8 @@ import type { Db } from "../db/client.js";
  * one map. A blocked/waiting parent still does not prevent an eligible
  * descendant from being reached, and a parent whose actionable descendants
  * have all become terminal is free to become a candidate again. Tasks with a
- * non-null `revisit_at` are likewise deferred until explicitly cleared.
+ * future `revisit_at` are deferred; reached ordinary revisits are available
+ * without acknowledging or clearing their attention date.
  */
 export interface NextActionTaskIdsByProject {
   openProjectContainers: Set<number>;
@@ -109,7 +110,7 @@ export function getNextActionTaskIdsByProjectProjection(
     eligible AS (
       SELECT c.project_id, c.task_id, c.key,
         CASE
-         WHEN t.revisit_at IS NULL
+         WHEN t.revisit_at IS NULL OR julianday(t.revisit_at) <= julianday(${now})
            THEN 'available'
          ELSE 'deferred'
         END AS availability

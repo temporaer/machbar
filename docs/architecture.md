@@ -1118,6 +1118,13 @@ A reached external-wait revisit remains a task-level attention signal and
 returns to Today. It does not make an otherwise valid waiting project
 structurally stuck.
 
+An ordinary actionable, unblocked leaf is available again when its revisit
+instant is reached, including equality; offsets are compared as instants.
+It supplies executable progress and a canonical next action without clearing
+or acknowledging the stored revisit. Today still surfaces the reached revisit
+for attention. Only future ordinary revisits intentionally pause execution;
+captured and Someday dates do not classify work automatically.
+
 Shared tasks without an effective owner are valid actionable work. They do not
 make their project structurally stuck.
 

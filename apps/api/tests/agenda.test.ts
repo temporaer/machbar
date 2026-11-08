@@ -6,6 +6,9 @@ import {
 } from "@machbar/shared";
 import { buildAgenda } from "../src/domain/agenda.js";
 import { Graph } from "../src/domain/graph.js";
+import { insertTestProject, insertTestTask } from "./database.js";
+import * as schema from "../src/db/schema.js";
+import { ChangeNotifier } from "../src/changeNotifier.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 const TEST_NOW = "2026-10-09T12:00:00+02:00";
@@ -33,13 +36,17 @@ function addDaysIso(dateIso: string, days: number): string {
 
 describe("Heute agenda: query-derived planned + blocked revisit reminders", () => {
   let ctx: TestContext;
+  const onChange = vi.fn();
   const today = todayIso();
   const yesterday = addDaysIso(today, -1);
   const tomorrow = addDaysIso(today, 1);
   const afterDueSoonWindow = addDaysIso(today, 4);
 
   beforeEach(() => {
-    ctx = createTestContext();
+    onChange.mockClear();
+    const changeNotifier = new ChangeNotifier();
+    changeNotifier.subscribe(onChange);
+    ctx = createTestContext({ changeNotifier });
   });
 
   afterEach(async () => {
@@ -121,6 +128,134 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     "unscheduled",
     "revisit",
   ] as const;
+
+  it.each([
+    ["2026-10-09T09:59:59.000Z", true],
+    ["2026-10-09T10:00:00.000Z", true],
+    ["2026-10-09T12:00:00.000+02:00", true],
+    ["2026-10-09T05:00:01.000-05:00", false],
+  ])("reads ordinary project revisit %s without false stuck state or writes", async (revisitAt, reached) => {
+    const owner = ctx.handle.db.insert(schema.members).values({ name: "Revisit driver", color: "#123456" }).returning().get();
+    const project = insertTestProject(ctx.handle.db, {
+      title: "Revisit project", status: "active", ownerMemberId: owner.id, dueDate: today,
+    });
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Ordinary leaf", projectId: project.id, revisitAt,
+    });
+    const sibling = insertTestTask(ctx.handle.db, {
+      title: "Ordinary sibling", projectId: project.id, revisitAt, position: 1,
+    });
+    const before = ctx.handle.sqlite.serialize();
+    const graph = Graph.load(ctx.handle.db, today, undefined, new Date(TEST_NOW).toISOString());
+    expect(graph.projectWithComputed(project.id)).toMatchObject({
+      stuckReason: null,
+      nextAction: reached ? { id: task.id } : null,
+      activationReadiness: {
+        ready: true,
+        hasViableProgressPath: reached,
+        hasHealthyFutureRevisit: !reached,
+      },
+    });
+    const detail = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({
+      status: "active",
+      stuckReason: null,
+      nextAction: reached ? { id: task.id } : null,
+      activationReadiness: { ready: true, hasViableProgressPath: reached },
+    });
+    const taskDetail = await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` });
+    expect(taskDetail.statusCode).toBe(200);
+    expect(taskDetail.json()).toMatchObject({
+      status: "actionable", executable: reached, blocked: false,
+      revisitAt, scheduledDate: null, revision: task.revision,
+    });
+    const agenda = await getAgenda();
+    expect(agenda.revisit.map((item: { id: number }) => item.id)).toEqual(reached ? [task.id, sibling.id] : []);
+    expect(agenda.projects).toEqual([
+      expect.objectContaining({
+        project: expect.objectContaining({ id: project.id, stuckReason: null }),
+        stuck: null,
+        nextAction: reached ? expect.objectContaining({ id: task.id }) : null,
+      }),
+    ]);
+    const review = await ctx.app.inject({ method: "GET", url: "/api/review" });
+    expect(review.statusCode).toBe(200);
+    expect(review.json()).toEqual([]);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("retains canonical order across future and reached ordinary revisit leaves", async () => {
+    const owner = ctx.handle.db.insert(schema.members).values({ name: "Mixed driver", color: "#123456" }).returning().get();
+    const project = insertTestProject(ctx.handle.db, {
+      title: "Mixed project", status: "active", ownerMemberId: owner.id,
+    });
+    insertTestTask(ctx.handle.db, { title: "Deferred first", projectId: project.id, position: 0, revisitAt: `${tomorrow}T10:00:00Z` });
+    const reached = insertTestTask(ctx.handle.db, { title: "Reached second", projectId: project.id, position: 1, revisitAt: TEST_NOW });
+    const available = insertTestTask(ctx.handle.db, { title: "Undated third", projectId: project.id, position: 2 });
+    const before = ctx.handle.sqlite.serialize();
+    const graph = Graph.load(ctx.handle.db, today, undefined, new Date(TEST_NOW).toISOString());
+    expect(graph.nextActionCandidatesFor(project.id).map(item => item.id)).toEqual([reached.id, available.id]);
+    const response = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ stuckReason: null, nextAction: { id: reached.id } });
+    expect((await getAgenda()).revisit.map((item: { id: number }) => item.id)).toEqual([reached.id]);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["empty", "captured", "someday", "dependency", "wait-missing", "wait-reached"] as const)(
+    "preserves %s project diagnosis and classification on read",
+    async (kind) => {
+      const owner = ctx.handle.db.insert(schema.members).values({ name: "Control driver", color: "#123456" }).returning().get();
+      const project = insertTestProject(ctx.handle.db, {
+        title: "Control project", status: "active", ownerMemberId: owner.id,
+      });
+      const leaf = kind === "empty" ? null : insertTestTask(ctx.handle.db, {
+        title: "Control leaf", projectId: project.id,
+        status: kind === "captured" || kind === "someday" ? kind : "actionable",
+        revisitAt: kind === "wait-missing" ? null : TEST_NOW,
+      });
+      if (kind === "dependency") {
+        const prerequisite = insertTestTask(ctx.handle.db, { title: "Unclarified prerequisite", status: "captured" });
+        ctx.handle.db.insert(schema.taskDependencies).values({ taskId: leaf!.id, dependsOnTaskId: prerequisite.id }).run();
+      }
+      if (kind === "wait-missing" || kind === "wait-reached") {
+        ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: leaf!.id, waitingFor: "Reply" }).run();
+      }
+      const before = ctx.handle.sqlite.serialize();
+      const stuckReason = kind === "wait-reached" ? null
+        : kind === "wait-missing" ? "waiting_without_followup"
+        : kind === "dependency" ? "blocked_without_clear_path" : "no_next_action";
+      const response = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ stuckReason, nextAction: null, activationReadiness: { ready: false } });
+      if (leaf) {
+        const detail = await ctx.app.inject({ method: "GET", url: `/api/tasks/${leaf.id}` });
+        expect(detail.statusCode).toBe(200);
+        expect(detail.json()).toMatchObject({ status: leaf.status, revisitAt: leaf.revisitAt, executable: false });
+      }
+      const agenda = await getAgenda();
+      expect(agenda.revisit.map((item: { id: number }) => item.id)).toEqual(
+        kind === "dependency" || kind === "wait-reached" ? [leaf!.id] : [],
+      );
+      const review = await ctx.app.inject({ method: "GET", url: "/api/review" });
+      expect(review.statusCode).toBe(200);
+      const projectItems = review.json().filter((item: { entityType: string; entityId: number }) => item.entityType === "project" && item.entityId === project.id);
+      if (kind === "dependency" || kind === "wait-missing") {
+        expect(projectItems).toEqual([]);
+        expect(review.json()).toContainEqual(expect.objectContaining({
+          entityType: "task", entityId: leaf!.id,
+          reason: kind === "dependency" ? "broken_blocker_path" : "waiting_without_followup",
+        }));
+      } else {
+        expect(projectItems.length).toBe(kind === "wait-reached" ? 0 : 1);
+      }
+      expect(ctx.handle.sqlite.serialize()).toEqual(before);
+      expect(onChange).not.toHaveBeenCalled();
+    },
+  );
 
   async function bucketsContaining(title: string) {
     const agenda = await getAgenda();

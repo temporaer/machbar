@@ -37,6 +37,37 @@ function analyze(
 }
 
 describe("canonical blocker analysis", () => {
+  it.each([
+    ["2026-08-30T11:59:59.000Z", true],
+    ["2026-08-30T12:00:00.000Z", true],
+    ["2026-08-30T14:00:00.000+02:00", true],
+    ["2026-08-30T07:00:01.000-05:00", false],
+  ])("keeps ordinary revisit %s healthy with executable=%s", (revisitAt, executable) => {
+    const result = analyze([task(1, { revisitAt })]);
+    expect(result.get(1)).toMatchObject({
+      blocked: false,
+      executable,
+      healthyProgressPath: true,
+      diagnoses: [],
+    });
+  });
+
+  it("does not let a reached ordinary revisit erase an unresolved prerequisite", () => {
+    const result = analyze([
+      task(1, {
+        revisitAt: `${today}T00:00:00.000Z`,
+        dependencies: [{ dependsOnTaskId: 2, resolved: false }],
+      }),
+      task(2, { status: "captured" }),
+    ]);
+    expect(result.get(1)).toMatchObject({
+      blocked: true,
+      executable: false,
+      healthyProgressPath: false,
+      diagnoses: [expect.objectContaining({ reason: "captured", targetTaskId: 2 })],
+    });
+  });
+
   it("separates lifecycle status from blocked and executable state", () => {
     const result = analyze([
       task(1),
