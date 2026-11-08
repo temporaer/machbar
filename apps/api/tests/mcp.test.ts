@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
@@ -1394,6 +1394,41 @@ describe("MCP integration", () => {
 
     await client.close();
     await server.close();
+  });
+
+  it("keeps a future plan out of MCP Today despite a reached revisit", async () => {
+    const member = await createMember();
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Future planned reconsideration",
+      ownerMemberId: member.id,
+      ownerInheritanceMode: "explicit",
+      scheduledDate: "2026-11-09",
+      revisitAt: "2026-11-06T10:00:00.000Z",
+    });
+    const { client, server } = await connectMcp(member.id);
+    const before = ctx.handle.sqlite.serialize();
+    vi.setSystemTime(new Date("2026-11-07T12:00:00.000Z"));
+    try {
+      const today = await client.callTool({
+        name: "machbar_today",
+        arguments: { date: "2026-11-07", memberId: member.id },
+      });
+      expect(today.isError).not.toBe(true);
+      expect(JSON.stringify(today.structuredContent)).not.toContain(task.title);
+      vi.setSystemTime(new Date("2026-11-09T12:00:00.000Z"));
+      const plannedDay = await client.callTool({
+        name: "machbar_today",
+        arguments: { date: "2026-11-09", memberId: member.id },
+      });
+      expect(plannedDay.structuredContent).toMatchObject({
+        result: { planned: [{ id: task.id }], revisit: [] },
+      });
+      expect(ctx.handle.sqlite.serialize()).toEqual(before);
+    } finally {
+      vi.useRealTimers();
+      await client.close();
+      await server.close();
+    }
   });
 
   it("filters Today by a selected household member and validates calendar dates", async () => {
