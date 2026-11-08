@@ -107,6 +107,9 @@ export function createAgendaSelection(
     contextAvailability(task).status !== "unavailable";
   const isExecutionAvailable = (task: TaskRecord) =>
     isContextAvailable(task) && isWindowAvailable(task);
+  const isScheduledDateEligible = (task: TaskRecord) =>
+    options.executionDate === undefined ||
+    task.scheduledDate === null || task.scheduledDate <= options.executionDate;
   const matchesOwnerId = (ownerId: number | null) =>
     memberId === undefined ||
     ownerId === null ||
@@ -138,10 +141,8 @@ export function createAgendaSelection(
     matchesScope(task);
   const isExecutionSuggestion = (task: TaskRecord) =>
     isAgendaTask(task) && task.executable && isExecutionAvailable(task) &&
-    (options.executionDate === undefined || (
-      !graph.taskContainsUnfinishedWork(task.id) &&
-      (task.scheduledDate === null || task.scheduledDate <= options.executionDate)
-    ));
+    isScheduledDateEligible(task) &&
+    (options.executionDate === undefined || !graph.taskContainsUnfinishedWork(task.id));
   const isCandidateAvailable = options.executionDate === undefined
     ? isExecutionAvailable : isExecutionSuggestion;
   const selectedProjectTaskIds = new Set(
@@ -197,6 +198,7 @@ export function createAgendaSelection(
     isContextAvailable,
     isWindowAvailable,
     isExecutionAvailable,
+    isScheduledDateEligible,
     isExecutionSuggestion,
     matchesOwnerId,
     matchesOwner,

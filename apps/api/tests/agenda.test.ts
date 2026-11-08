@@ -129,6 +129,81 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     "revisit",
   ] as const;
 
+  it.each(["retained", "recurring"])(
+    "does not let a reached %s revisit override a future work plan",
+    async (origin) => {
+      const now = "2026-11-07T12:00:00.000Z";
+      const scheduledDate = "2026-11-09";
+      const revisitAt = "2026-11-06T10:00:00.000Z";
+      vi.setSystemTime(new Date(now));
+      try {
+        const values = { title: "Monday work", scheduledDate, revisitAt };
+        const task = origin === "retained"
+          ? insertTestTask(ctx.handle.db, values)
+          : await (async () => {
+              const response = await ctx.app.inject({
+                method: "POST",
+                url: "/api/tasks",
+                payload: {
+                  ...values, status: "actionable",
+                  repeatAfterDays: 7, allowedDeviationDays: 2,
+                },
+              });
+              expect(response.statusCode).toBe(201);
+              return response.json();
+            })();
+        onChange.mockClear();
+        const before = ctx.handle.sqlite.serialize();
+        const graph = Graph.load(ctx.handle.db, "2026-11-07", undefined, now);
+        const compiled = buildAgenda(graph, {
+          now, today: "2026-11-07", householdTimezone: "Europe/Berlin",
+        });
+        expect(bucketKeys.flatMap(key => compiled[key].map(item => item.id)))
+          .not.toContain(task.id);
+        for (let read = 0; read < 2; read += 1) {
+          const agenda = await getAgenda();
+          expect(bucketKeys.flatMap(key => agenda[key].map((item: { id: number }) => item.id)))
+            .not.toContain(task.id);
+        }
+        vi.setSystemTime(new Date("2026-11-09T12:00:00.000Z"));
+        const plannedDay = await getAgenda();
+        expect(plannedDay.planned.map((item: { id: number }) => item.id)).toEqual([task.id]);
+        expect(bucketKeys.flatMap(key => plannedDay[key].map((item: { id: number }) => item.id)))
+          .toEqual([task.id]);
+        expect(ctx.handle.sqlite.serialize()).toEqual(before);
+        expect(onChange).not.toHaveBeenCalled();
+      } finally {
+        vi.setSystemTime(new Date(TEST_NOW));
+      }
+    },
+  );
+
+  it("releases a retained plan at household midnight without clearing its revisit", async () => {
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Midnight work",
+      scheduledDate: "2026-11-08",
+      revisitAt: "2026-11-06T10:00:00.000Z",
+    });
+    const before = ctx.handle.sqlite.serialize();
+    try {
+      for (const [instant, reached] of [
+        ["2026-11-07T22:59:59.000Z", false],
+        ["2026-11-07T23:00:00.000Z", true],
+      ] as const) {
+        vi.setSystemTime(new Date(instant));
+        const agenda = await getAgenda();
+        expect(agenda.planned.map((item: { id: number }) => item.id))
+          .toEqual(reached ? [task.id] : []);
+        expect(bucketKeys.flatMap(key => agenda[key].map((item: { id: number }) => item.id)))
+          .toEqual(reached ? [task.id] : []);
+      }
+      expect(ctx.handle.sqlite.serialize()).toEqual(before);
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      vi.setSystemTime(new Date(TEST_NOW));
+    }
+  });
+
   it.each([
     ["2026-10-09T09:59:59.000Z", true],
     ["2026-10-09T10:00:00.000Z", true],
