@@ -895,6 +895,11 @@ post-conversion task-entry dialog remains. Explicit Start uses the server's
 activation snapshot and the canonical activation command, collecting only missing
 decisions before confirmation. Proposed task creation/planning uses a rollback-only
 preview of that same canonical mutation to account for the actual proposed graph.
+The canonical `ProjectWorkflowHost` read remains the authority for the activation
+sheet. A 403/404 clears its retained project detail from `useAsync`; the mounted
+sheet keeps only authored choices and exposes a GET-only retry, then rebuilds
+requirements and revisions from the newly accepted server snapshot. Other
+refresh errors retain usable content.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.

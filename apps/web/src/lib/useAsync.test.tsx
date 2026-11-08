@@ -135,6 +135,28 @@ describe("useAsync", () => {
     });
   });
 
+  it("discards retained data for a caller-designated revocation error", async () => {
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockResolvedValueOnce("protected")
+      .mockRejectedValueOnce(new Error("revoked"));
+    const { result } = renderHook(
+      () => useAsync(fetcher, [], {
+        clearDataOnError: (error) => error instanceof Error && error.message === "revoked",
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.data).toBe("protected"));
+
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.error).toBe("revoked"));
+    expect(result.current).toMatchObject({
+      data: null,
+      loading: false,
+      refreshing: false,
+      refreshError: null,
+    });
+  });
+
   it("exposes initial errors as foreground errors", async () => {
     const { result } = renderHook(
       () => useAsync(() => Promise.reject(new Error("initial failure"))),

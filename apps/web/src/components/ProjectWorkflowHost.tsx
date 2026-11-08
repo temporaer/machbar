@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
-import { api, type ProjectDetail } from "../lib/api";
+import { api, ApiError, type ProjectDetail } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
@@ -39,17 +40,160 @@ export function ProjectWorkflowHost() {
   const projectActions = useProjectActions();
   const location = useLocation();
   const navigate = useNavigate();
+  const lastOpening = useRef(workflow.current);
+  const openingSequence = useRef(0);
+  if (lastOpening.current !== workflow.current) {
+    lastOpening.current = workflow.current;
+    openingSequence.current += 1;
+  }
+  const openingId = workflow.current ? openingSequence.current : 0;
+  const openingIdRef = useRef(openingId);
+  openingIdRef.current = openingId;
+  const workflowRef = useRef(workflow.current);
+  workflowRef.current = workflow.current;
+  const [activationReadState, setActivationReadState] = useState<{
+    openingId: number;
+    denied: boolean;
+    authorityVersion: number;
+    readVersion: number;
+  }>({ openingId: 0, denied: false, authorityVersion: 0, readVersion: 0 });
+  const activationReadStateRef = useRef(activationReadState);
+  const activationOpening = workflow.current?.kind === "activateWithDriver" ||
+    workflow.current?.kind === "reopenWithDriver";
   const projectId = workflow.current?.projectId ?? null;
-  const { data: fetchedProject, reload } = useAsync(
-    () => (projectId !== null ? api.getProject(projectId) : Promise.resolve(null)),
-    [projectId],
+  const {
+    data: fetchedProject,
+    loading: projectLoading,
+    refreshing: projectRefreshing,
+    error: projectError,
+    refreshError: projectRefreshError,
+    reload,
+  } = useAsync(
+    async () => {
+      if (projectId === null) return null;
+      try {
+        const project = await api.getProject(projectId);
+        return project;
+      } catch (error) {
+        if (
+          activationOpening &&
+          openingIdRef.current === openingId &&
+          error instanceof ApiError &&
+          (error.status === 403 || error.status === 404)
+        ) {
+          const current = activationReadStateRef.current;
+          if (current.openingId !== openingId || !current.denied) {
+            const denied = {
+              openingId,
+              denied: true,
+              authorityVersion: current.openingId === openingId
+                ? current.authorityVersion + 1
+                : 1,
+              readVersion: current.openingId === openingId ? current.readVersion : 0,
+            };
+            activationReadStateRef.current = denied;
+            setActivationReadState(denied);
+          }
+        }
+        throw error;
+      }
+    },
+    activationOpening ? [projectId, openingId] : [projectId],
+    {
+      clearDataOnError: (error) =>
+        activationOpening &&
+        error instanceof ApiError &&
+        (error.status === 403 || error.status === 404),
+    },
   );
+  useEffect(() => {
+    if (
+      !activationOpening ||
+      openingIdRef.current !== openingId ||
+      !fetchedProject ||
+      projectLoading ||
+      projectRefreshing ||
+      projectError ||
+      projectRefreshError
+    ) return;
+    const current = activationReadStateRef.current;
+    const readable = {
+      openingId,
+      denied: false,
+      authorityVersion: current.openingId === openingId ? current.authorityVersion : 0,
+      readVersion: current.openingId === openingId ? current.readVersion + 1 : 1,
+    };
+    activationReadStateRef.current = readable;
+    setActivationReadState(readable);
+  }, [
+    activationOpening,
+    fetchedProject,
+    openingId,
+    projectError,
+    projectLoading,
+    projectRefreshError,
+    projectRefreshing,
+  ]);
   useRetentionInteraction(projectId, projectActions.pauseRetention, projectId !== null);
   const retained = projectId !== null ? projectActions.retained.get(projectId)?.story : undefined;
   const story = fetchedProject ? projectActions.projectStory(fetchedProject) : retained;
 
-  if (!workflow.current || !story) return null;
+  if (!workflow.current) return null;
   const close = workflow.close;
+  if (activationOpening) {
+    const action = workflow.current.kind === "reopenWithDriver" ? "reopen" : "activate";
+    const readState = activationReadState.openingId === openingId
+      ? activationReadState
+      : { openingId, denied: false, authorityVersion: 0, readVersion: 0 };
+    const activationStory = readState.denied || !fetchedProject
+      ? null
+      : projectActions.projectStory(fetchedProject);
+    const openingState = workflow.current;
+    const sameOpeningAtVersion = (authorityVersion: number) => {
+      const currentRead = activationReadStateRef.current.openingId === openingId
+        ? activationReadStateRef.current
+        : null;
+      return workflowRef.current === openingState &&
+        openingIdRef.current === openingId &&
+        (currentRead?.authorityVersion ?? 0) === authorityVersion;
+    };
+    const isCurrentAuthority = (authorityVersion: number) => {
+      const currentRead = activationReadStateRef.current.openingId === openingId
+        ? activationReadStateRef.current
+        : null;
+      return sameOpeningAtVersion(authorityVersion) && currentRead?.denied !== true;
+    };
+    const closeActivation = () => {
+      if (workflowRef.current === openingState && openingIdRef.current === openingId) close();
+    };
+    const completeActivation = () => {
+      if (isCurrentAuthority(readState.authorityVersion)) close();
+    };
+    return (
+      <ProjectActivationSheet
+        key={openingId}
+        story={activationStory}
+        action={action}
+        loading={activationStory === null && projectLoading}
+        readError={projectRefreshError ?? projectError}
+        onRetry={() => {
+          if (sameOpeningAtVersion(readState.authorityVersion)) reload();
+        }}
+        openingId={openingId}
+        authorityVersion={readState.authorityVersion}
+        readVersion={readState.readVersion}
+        isCurrentAuthority={isCurrentAuthority}
+        onClose={closeActivation}
+        onActivationSuccess={completeActivation}
+        onActivate={(ownerMemberId, resolution, expectedRevision) =>
+          activationStory
+            ? projectActions.runAction(activationStory, action, ownerMemberId, resolution, true, expectedRevision).then(() => undefined)
+            : Promise.reject(new Error("Project is not currently readable."))
+        }
+      />
+    );
+  }
+  if (!story) return null;
 
   switch (workflow.current.kind) {
     case "defer":
@@ -137,19 +281,8 @@ export function ProjectWorkflowHost() {
     case "contexts":
       return <ProjectContextsSheet story={story} onClose={close} />;
     case "activateWithDriver":
-    case "reopenWithDriver": {
-      const action = workflow.current.kind === "reopenWithDriver" ? "reopen" : "activate";
-      return (
-        <ProjectActivationSheet
-          story={story}
-          action={action}
-          onClose={close}
-          onActivate={(ownerMemberId, resolution, expectedRevision) =>
-            projectActions.runAction(story, action, ownerMemberId, resolution, true, expectedRevision).then(() => undefined)
-          }
-        />
-      );
-    }
+    case "reopenWithDriver":
+      return null;
     default:
       return null;
   }

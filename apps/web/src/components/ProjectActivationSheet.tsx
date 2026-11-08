@@ -1,20 +1,30 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Project, ProjectActivationResolution } from "@machbar/shared";
-import type { ProjectDetail, ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
+import { ApiError, type ProjectDetail, type ProjectWorkflowAction } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import {
   projectActivationPromptFromSnapshot,
+  projectActivationPromptFromError,
   projectActivationResolutionFromPrompt,
-  refreshProjectActivationPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import { BottomSheet } from "./BottomSheet";
 
-function activationPrompt(story: ProjectWithActions & Pick<ProjectDetail, "directActivationDecisionSnapshot">): ProjectActivationPrompt {
-  if (story.directActivationDecisionSnapshot) return projectActivationPromptFromSnapshot(story.directActivationDecisionSnapshot);
+type ActivationDraft = Pick<ProjectActivationPrompt, "selectedDrivers" | "nextActionTitle">;
+
+function activationPrompt(story: ProjectDetail, draft: ActivationDraft): ProjectActivationPrompt {
+  const previous = {
+    projects: [],
+    expectedProjects: [],
+    ...draft,
+  } satisfies ProjectActivationPrompt;
+  if (story.directActivationDecisionSnapshot) {
+    return projectActivationPromptFromSnapshot(story.directActivationDecisionSnapshot, previous);
+  }
   const required = story.activationReadiness.requiredDecisions ?? [];
+  const requiredDriver = required.includes("driver");
   return {
     projects: required.length > 0 ? [{
       projectId: story.id,
@@ -24,8 +34,10 @@ function activationPrompt(story: ProjectWithActions & Pick<ProjectDetail, "direc
       required,
     }] : [],
     expectedProjects: [{ projectId: story.id, revision: story.revision }],
-    selectedDrivers: {},
-    nextActionTitle: "",
+    selectedDrivers: requiredDriver && draft.selectedDrivers[story.id] !== undefined
+      ? { [story.id]: draft.selectedDrivers[story.id]! }
+      : {},
+    nextActionTitle: draft.nextActionTitle,
   };
 }
 
@@ -36,35 +48,81 @@ function selectedDriver(story: Project, prompt: ProjectActivationPrompt): number
 export function ProjectActivationSheet({
   story,
   action,
+  loading,
+  readError,
+  onRetry,
+  openingId,
+  authorityVersion,
+  readVersion,
+  isCurrentAuthority,
   onClose,
+  onActivationSuccess,
   onActivate,
 }: {
-  story: ProjectWithActions & Pick<ProjectDetail, "directActivationDecisionSnapshot">;
+  story: ProjectDetail | null;
   action: Extract<ProjectWorkflowAction, "activate" | "reopen">;
+  loading: boolean;
+  readError: string | null;
+  onRetry: () => void;
+  openingId: number;
+  authorityVersion: number;
+  readVersion: number;
+  isCurrentAuthority: (authorityVersion: number) => boolean;
   onClose: () => void;
+  onActivationSuccess: () => void;
   onActivate: (ownerMemberId: number | null, resolution: ProjectActivationResolution, expectedRevision?: number) => Promise<void>;
 }) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState(() => activationPrompt(story));
-  const resolution = useMemo(() => projectActivationResolutionFromPrompt(prompt), [prompt]);
+  const [draft, setDraft] = useState<ActivationDraft>({ selectedDrivers: {}, nextActionTitle: "" });
+  const [promptOverride, setPromptOverride] = useState<{
+    readVersion: number;
+    prompt: ProjectActivationPrompt;
+  } | null>(null);
+  const authorityRef = useRef({ openingId, authorityVersion, readVersion, hasAuthority: story !== null });
+  authorityRef.current = { openingId, authorityVersion, readVersion, hasAuthority: story !== null };
+  const currentPrompt = story ? activationPrompt(story, draft) : null;
+  const prompt = story
+    ? promptOverride?.readVersion === readVersion
+      ? promptOverride.prompt
+      : currentPrompt
+    : null;
+  const resolution = useMemo(
+    () => prompt ? projectActivationResolutionFromPrompt(prompt) : null,
+    [prompt],
+  );
 
   const submit = async () => {
-    if (saving) return;
+    if (saving || !story || !prompt) return;
     if (!resolution) {
       setError(strings.commitmentResolutionHint);
       return;
     }
+    const startedWith = authorityRef.current;
     setSaving(true);
     setError(null);
     try {
       const targetRevision = prompt.expectedProjects.find((entry) => entry.projectId === story.id)?.revision ?? prompt.targetRevision;
       await onActivate(selectedDriver(story, prompt), resolution, targetRevision);
-      onClose();
+      const currentAuthority = authorityRef.current;
+      if (
+        currentAuthority.openingId === startedWith.openingId &&
+        currentAuthority.authorityVersion === startedWith.authorityVersion &&
+        currentAuthority.hasAuthority &&
+        isCurrentAuthority(startedWith.authorityVersion)
+      ) onActivationSuccess();
     } catch (cause) {
-      const refreshedPrompt = await refreshProjectActivationPrompt(cause, story.id, prompt, "explicit_activation");
-      if (refreshedPrompt) setPrompt(refreshedPrompt);
+      if (!isCurrentAuthority(startedWith.authorityVersion)) return;
+      const commandPrompt = projectActivationPromptFromError(cause, prompt);
+      if (commandPrompt) {
+        setPromptOverride({ readVersion: authorityRef.current.readVersion, prompt: commandPrompt });
+        setDraft({
+          selectedDrivers: commandPrompt.selectedDrivers,
+          nextActionTitle: commandPrompt.nextActionTitle,
+        });
+      }
+      if (cause instanceof ApiError && cause.code === "stale_write_conflict") onRetry();
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -76,12 +134,44 @@ export function ProjectActivationSheet({
       if (!saving) onClose();
     }}>
       <div className="stack">
-        <p className="text-muted">{story.title}</p>
-        <ProjectActivationDecisionFields prompt={prompt} disabled={saving} onChange={setPrompt} />
-        {error ? <p role="alert" className="task-row-error">{error}</p> : null}
+        {story && prompt ? (
+          <>
+            <p className="text-muted">{story.title}</p>
+            <ProjectActivationDecisionFields
+              prompt={prompt}
+              disabled={saving}
+              onChange={(next) => {
+                setDraft({
+                  selectedDrivers: next.selectedDrivers,
+                  nextActionTitle: next.nextActionTitle,
+                });
+                setPromptOverride(null);
+              }}
+            />
+            {readError ? (
+              <>
+                <p role="alert" className="task-row-error">{readError}</p>
+                <button type="button" className="btn" onClick={onRetry}>
+                  {strings.retry}
+                </button>
+              </>
+            ) : null}
+            {error ? <p role="alert" className="task-row-error">{error}</p> : null}
+          </>
+        ) : (
+          <div className="stack">
+            {readError ? <p role="alert" className="task-row-error">{readError}</p> : null}
+            {loading ? <p role="status" className="text-muted">{strings.loading}</p> : null}
+            {readError ? (
+              <button type="button" className="btn" onClick={onRetry}>
+                {strings.retry}
+              </button>
+            ) : null}
+          </div>
+        )}
         <div className="row">
           <button type="button" className="btn" disabled={saving} onClick={onClose}>{strings.cancel}</button>
-          <button type="button" className="btn btn-primary" disabled={saving || resolution === null} onClick={() => void submit()}>
+          <button type="button" className="btn btn-primary" disabled={saving || !story || resolution === null} onClick={() => void submit()}>
             {action === "reopen" ? strings.reopen : strings.activateStory}
           </button>
         </div>
