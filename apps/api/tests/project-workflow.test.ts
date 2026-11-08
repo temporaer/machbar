@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DbHandle } from "../src/db/client.js";
-import { createTestDatabase } from "./database.js";
+import { createTestDatabase, insertTestProject, insertTestTask } from "./database.js";
 import * as schema from "../src/db/schema.js";
+import { ChangeNotifier, type ChangeEvent } from "../src/changeNotifier.js";
 import { createMember } from "../src/domain/members.js";
 import { createProject as createProjectMutation, updateProject } from "../src/domain/storyCrud.js";
 import {
@@ -1350,6 +1351,261 @@ describe("project workflow (HTTP routes)", () => {
       expect(response.json().revision).toBe(project.revision + 1);
       project = response.json();
     }
+  });
+});
+
+describe("project progress projections on GET", () => {
+  let ctx: TestContext;
+  let events: ChangeEvent[];
+
+  beforeEach(() => {
+    const notifier = new ChangeNotifier();
+    events = [];
+    notifier.subscribe((event) => events.push(event));
+    ctx = createTestContext({ changeNotifier: notifier });
+  });
+
+  afterEach(async () => closeTestContext(ctx));
+
+  function createActiveProject(title: string) {
+    const owner = createMember(ctx.handle.db, `${title} owner`);
+    return insertTestProject(ctx.handle.db, {
+      title,
+      status: "active",
+      ownerMemberId: owner.id,
+    });
+  }
+
+  function createTask(input: Parameters<typeof insertTestTask>[1]) {
+    return insertTestTask(ctx.handle.db, input);
+  }
+
+  async function expectProjectRead(
+    projectId: number,
+    expected: Record<string, unknown>,
+  ) {
+    const before = ctx.handle.sqlite.serialize();
+    events = [];
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}`,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject(expected);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+    expect(events).toEqual([]);
+  }
+
+  it.each([
+    {
+      label: "reached",
+      revisitAt: "2026-11-08T22:38:00.000Z",
+      expected: {
+        stuckReason: null,
+        nextAction: { id: expect.any(Number) },
+        activationReadiness: {
+          ready: true,
+          hasViableProgressPath: true,
+          hasHealthyFutureRevisit: false,
+        },
+      },
+    },
+    {
+      label: "equal",
+      revisitAt: "2026-11-08T22:39:00.000Z",
+      expected: {
+        stuckReason: null,
+        nextAction: { id: expect.any(Number) },
+        activationReadiness: {
+          ready: true,
+          hasViableProgressPath: true,
+          hasHealthyFutureRevisit: false,
+        },
+      },
+    },
+    {
+      label: "future",
+      revisitAt: "2026-11-08T22:40:00.000Z",
+      expected: {
+        stuckReason: null,
+        nextAction: null,
+        deferredNextAction: { id: expect.any(Number) },
+        activationReadiness: {
+          ready: true,
+          hasViableProgressPath: false,
+          hasHealthyFutureRevisit: true,
+        },
+      },
+    },
+  ])("$label ordinary leaf revisit has consistent project progress", async ({ revisitAt, expected }) => {
+    const originalNow = Date.now();
+    vi.setSystemTime(new Date("2026-11-08T22:39:00.000Z"));
+    try {
+      const project = createActiveProject(`Revisit ${revisitAt}`);
+      const task = createTask({
+        projectId: project.id,
+        title: "Ordinary next action",
+        status: "actionable",
+        revisitAt,
+      });
+      await expectProjectRead(project.id, {
+        ...expected,
+        ...(expected.nextAction ? { nextAction: { id: task.id } } : {}),
+        ...(expected.deferredNextAction ? { deferredNextAction: { id: task.id } } : {}),
+      });
+    } finally {
+      vi.setSystemTime(originalNow);
+    }
+  });
+
+  it.each(["captured", "someday", "nested-someday", "embedded-captured"] as const)(
+    "does not count an actionable container with %s work as progress",
+    async (childKind) => {
+      const project = createActiveProject(`Container ${childKind}`);
+      const parent = createTask({
+        projectId: project.id,
+        title: "Reached parent",
+        status: "actionable",
+      });
+      if (childKind === "captured" || childKind === "someday") {
+        createTask({
+          parentTaskId: parent.id,
+          title: "Open child",
+          status: childKind,
+        });
+      } else if (childKind === "nested-someday") {
+        const intermediate = createTask({
+          parentTaskId: parent.id,
+          title: "Intermediate",
+          status: "actionable",
+        });
+        createTask({
+          parentTaskId: intermediate.id,
+          title: "Someday descendant",
+          status: "someday",
+        });
+      } else {
+        const embedded = insertTestProject(ctx.handle.db, {
+          title: "Embedded project",
+          parentId: parent.id,
+          ownerMemberId: project.ownerMemberId,
+          status: "active",
+        });
+        insertTestTask(ctx.handle.db, {
+          title: "Captured project task",
+          projectId: embedded.id,
+          status: "captured",
+        });
+      }
+
+      await expectProjectRead(project.id, {
+        stuckReason: "no_next_action",
+        nextAction: null,
+        activationReadiness: {
+          ready: false,
+          hasViableProgressPath: false,
+          hasHealthyFutureRevisit: false,
+        },
+      });
+    },
+  );
+
+  it("does not turn a reached container revisit into project progress", async () => {
+    const project = createActiveProject("Reached container revisit");
+    const parent = createTask({
+      projectId: project.id,
+      title: "Reached parent",
+      status: "actionable",
+      revisitAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    createTask({
+      parentTaskId: parent.id,
+      title: "Captured child",
+      status: "captured",
+    });
+
+    await expectProjectRead(project.id, {
+      stuckReason: "no_next_action",
+      nextAction: null,
+      activationReadiness: {
+        ready: false,
+        hasViableProgressPath: false,
+        hasHealthyFutureRevisit: false,
+      },
+    });
+  });
+
+  it("preserves a future container revisit as an intentional waiting point", async () => {
+    const project = createActiveProject("Future container revisit");
+    const parent = createTask({
+      projectId: project.id,
+      title: "Future parent",
+      status: "actionable",
+      revisitAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    createTask({
+      parentTaskId: parent.id,
+      title: "Captured child",
+      status: "captured",
+    });
+
+    await expectProjectRead(project.id, {
+      stuckReason: null,
+      nextAction: null,
+      activationReadiness: {
+        ready: true,
+        hasViableProgressPath: false,
+        hasHealthyFutureRevisit: true,
+      },
+    });
+  });
+
+  it("uses an eligible descendant instead of its reached container for project progress", async () => {
+    const project = createActiveProject("Descendant progress");
+    const parent = createTask({
+      projectId: project.id,
+      title: "Reached parent",
+      status: "actionable",
+      revisitAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const child = createTask({
+      parentTaskId: parent.id,
+      title: "Eligible child",
+      status: "actionable",
+    });
+
+    await expectProjectRead(project.id, {
+      stuckReason: null,
+      nextAction: { id: child.id },
+      activationReadiness: { ready: true, hasViableProgressPath: true },
+    });
+  });
+
+  it("keeps a reached parent eligible after its embedded project becomes terminal", async () => {
+    const project = createActiveProject("Terminal project boundary");
+    const parent = createTask({
+      projectId: project.id,
+      title: "Reached parent",
+      status: "actionable",
+      revisitAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const embedded = insertTestProject(ctx.handle.db, {
+      title: "Completed embedded project",
+      parentId: parent.id,
+      ownerMemberId: project.ownerMemberId,
+      status: "completed",
+    });
+    insertTestTask(ctx.handle.db, {
+      title: "Historical captured task",
+      projectId: embedded.id,
+      status: "captured",
+    });
+
+    await expectProjectRead(project.id, {
+      stuckReason: null,
+      nextAction: { id: parent.id },
+      activationReadiness: { ready: true, hasViableProgressPath: true },
+    });
   });
 });
 

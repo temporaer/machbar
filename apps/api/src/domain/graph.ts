@@ -896,9 +896,14 @@ export class Graph {
           );
         const hasHealthyPath = openTasks.some((task) => {
           const analysis = blockerAnalysis.get(task.id);
+          const availableNow =
+            analysis?.executable ||
+            (task.revisitAt !== null &&
+              Date.parse(task.revisitAt) <= Date.parse(now));
           return (
             task.status === "actionable" &&
-            (analysis?.executable || analysis?.healthyProgressPath)
+            (analysis?.executable || analysis?.healthyProgressPath) &&
+            !(availableNow && graph.taskContainsUnfinishedWork(task.id))
           );
         });
         if (!hasHealthyPath) {
@@ -955,8 +960,7 @@ export class Graph {
   nextActionFor(projectId: number): TaskRecord | null {
     for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
       const task = this.tasksById.get(id);
-      if (!task) continue;
-      if (task.executable) return task;
+      if (task) return task;
     }
     return null;
   }

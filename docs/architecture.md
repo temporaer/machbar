@@ -25,10 +25,13 @@ deadline can trigger project activation, but is never itself a progress path.
 Missing drivers or a concrete next action return structured decisions before
 the source mutation is committed.
 
-Revisit dates remain reconsideration, not execution commitments. Adding a
-reminder while a revisit is present does not promote the task. Healthy waits
-and future revisits retain their readiness meaning. Project activation does
-not bypass task blockers or future-date agenda eligibility.
+Revisit dates remain reconsideration, not execution commitments. A reached
+ordinary revisit on an actionable, unblocked leaf counts as currently available
+project progress, but reads never clear it or turn it into a work plan. Future
+ordinary revisits remain intentional future pauses; adding a reminder while a
+revisit is present does not promote the task. Healthy waits retain their
+readiness meaning. Project activation does not bypass task blockers or
+future-date agenda eligibility.
 
 ## AI clarification and reviewed application
 
@@ -492,7 +495,7 @@ Projects additionally carry:
 | `notes` | Free-form project context, independent from completion criteria |
 | `acceptanceCriteria` | Ordered “Erledigt, wenn …” rows with `checked` state |
 | `openCount` / `doneCount` | Task rollups |
-| `nextAction` | First actionable, unblocked, *leaf* task in canonical outline order — a task with any open (not `done`/`cancelled`) child is a container and is skipped in favor of its subtree |
+| `nextAction` | First currently available actionable, unblocked, *leaf* task in canonical outline order; a reached ordinary revisit qualifies, a future revisit stays deferred, and a task with any open (not `done`/`cancelled`) child is skipped in favor of its subtree |
 | `stuckReason` | Diagnosis for `active` projects only (see §6) |
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.

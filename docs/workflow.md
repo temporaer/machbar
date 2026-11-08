@@ -248,14 +248,17 @@ not acknowledge or clear a revisit.
 An execution plan, deadline, or execution reminder makes an open Inbox or
 Someday task actionable. When that commitment is inside a backlog project,
 Machbar starts the affected project and any necessary backlog ancestors in the
-same transaction. Existing actionable work, a healthy external wait, or a
-deliberate future revisit can provide the progress path; a deadline by itself
-cannot. If a driver or concrete next action is missing, the focused editor keeps
-the user's draft while collecting those decisions. Nothing is saved until the
-complete operation is ready. A revisit and a notification attached to that
-reconsideration remain intentional deferral and do not promote or activate the
-work. Activation changes project lifecycle only; a task scheduled for a future
-date remains out of Heute until its normal agenda eligibility is reached.
+same transaction. Existing actionable work, a reached ordinary revisit on an
+actionable, unblocked leaf, a healthy external wait, or a deliberate future
+revisit can provide the progress path; a deadline by itself cannot. If a
+driver or concrete next action is missing, the focused editor keeps the user's
+draft while collecting those decisions. Nothing is saved until the complete
+operation is ready. A revisit and a notification attached to that
+reconsideration do not promote the task. A reached ordinary revisit counts only
+as currently available project progress; reads leave it unchanged. A future
+revisit remains an intentional pause and does not activate the task. Activation
+changes project lifecycle only; a task scheduled for a future date remains out
+of Heute until its normal agenda eligibility is reached.
 
 The compact **Meine | Alle** toggle can broaden this to the whole household
 without changing who is signed in or who is recorded as making changes.

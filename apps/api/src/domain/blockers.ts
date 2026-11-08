@@ -158,26 +158,7 @@ export function analyzeTaskBlockers(
     const branchResults: PathAnalysis[] = [];
     if (revisitAt !== null && !task.externalWait) {
       const attentionDate = calendarDateForInstant(revisitAt, householdTimezone);
-      const reached = Date.parse(revisitAt) <= Date.parse(now);
-      branchResults.push(
-        reached
-          ? {
-              healthy: false,
-              attentionDate,
-              diagnoses: [
-                {
-                  reason: "followup_due",
-                  targetTaskId: task.id,
-                  path,
-                },
-              ],
-            }
-          : {
-              healthy: true,
-              attentionDate,
-              diagnoses: [],
-            },
-      );
+      branchResults.push({ healthy: true, attentionDate, diagnoses: [] });
     }
     if (task.externalWait) {
       if (!revisitAt) {
