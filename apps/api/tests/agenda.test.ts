@@ -6,7 +6,8 @@ import {
 } from "@machbar/shared";
 import { buildAgenda } from "../src/domain/agenda.js";
 import { Graph } from "../src/domain/graph.js";
-import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+import { ChangeNotifier } from "../src/changeNotifier.js";
+import { closeTestContext, createTestContext, insertTestTask, type TestContext } from "./helpers.js";
 
 const TEST_NOW = "2026-10-09T12:00:00+02:00";
 
@@ -33,13 +34,17 @@ function addDaysIso(dateIso: string, days: number): string {
 
 describe("Heute agenda: query-derived planned + blocked revisit reminders", () => {
   let ctx: TestContext;
+  const onChange = vi.fn();
   const today = todayIso();
   const yesterday = addDaysIso(today, -1);
   const tomorrow = addDaysIso(today, 1);
   const afterDueSoonWindow = addDaysIso(today, 4);
 
   beforeEach(() => {
-    ctx = createTestContext();
+    onChange.mockClear();
+    const notifier = new ChangeNotifier();
+    notifier.subscribe(onChange);
+    ctx = createTestContext({ changeNotifier: notifier });
   });
 
   afterEach(async () => {
@@ -126,6 +131,83 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     const agenda = await getAgenda();
     return bucketKeys.filter((key) => titlesOf(agenda[key]).includes(title));
   }
+
+  it.each(["retained", "recurring"])(
+    "does not let a reached %s revisit override a future work plan",
+    async (origin) => {
+      const now = "2026-11-07T12:00:00.000Z";
+      vi.setSystemTime(new Date(now));
+      try {
+        const values = {
+          title: "Monday work",
+          scheduledDate: "2026-11-09",
+          revisitAt: "2026-11-06T10:00:00.000Z",
+        };
+        const task = origin === "retained"
+          ? insertTestTask(ctx.handle.db, values)
+          : await (async () => {
+              const response = await ctx.app.inject({
+                method: "POST",
+                url: "/api/tasks",
+                payload: {
+                  ...values, status: "actionable",
+                  repeatAfterDays: 7, allowedDeviationDays: 2,
+                },
+              });
+              expect(response.statusCode).toBe(201);
+              return response.json();
+            })();
+        onChange.mockClear();
+        const before = ctx.handle.sqlite.serialize();
+        const compiled = buildAgenda(
+          Graph.load(ctx.handle.db, "2026-11-07", undefined, now),
+          { now, today: "2026-11-07", householdTimezone: "Europe/Berlin" },
+        );
+        expect(bucketKeys.flatMap(key => compiled[key].map(item => item.id)))
+          .not.toContain(task.id);
+        for (let read = 0; read < 2; read += 1) {
+          const agenda = await getAgenda();
+          expect(bucketKeys.flatMap(key => agenda[key].map((item: { id: number }) => item.id)))
+            .not.toContain(task.id);
+        }
+        vi.setSystemTime(new Date("2026-11-09T12:00:00.000Z"));
+        const plannedDay = await getAgenda();
+        expect(plannedDay.planned.map((item: { id: number }) => item.id)).toEqual([task.id]);
+        expect(bucketKeys.flatMap(key => plannedDay[key].map((item: { id: number }) => item.id)))
+          .toEqual([task.id]);
+        expect(ctx.handle.sqlite.serialize()).toEqual(before);
+        expect(onChange).not.toHaveBeenCalled();
+      } finally {
+        vi.setSystemTime(new Date(TEST_NOW));
+      }
+    },
+  );
+
+  it("releases a retained plan at household midnight without clearing its revisit", async () => {
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Midnight work",
+      scheduledDate: "2026-11-08",
+      revisitAt: "2026-11-06T10:00:00.000Z",
+    });
+    const before = ctx.handle.sqlite.serialize();
+    try {
+      for (const [instant, reached] of [
+        ["2026-11-07T22:59:59.000Z", false],
+        ["2026-11-07T23:00:00.000Z", true],
+      ] as const) {
+        vi.setSystemTime(new Date(instant));
+        const agenda = await getAgenda();
+        expect(agenda.planned.map((item: { id: number }) => item.id))
+          .toEqual(reached ? [task.id] : []);
+        expect(bucketKeys.flatMap(key => agenda[key].map((item: { id: number }) => item.id)))
+          .toEqual(reached ? [task.id] : []);
+      }
+      expect(ctx.handle.sqlite.serialize()).toEqual(before);
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      vi.setSystemTime(new Date(TEST_NOW));
+    }
+  });
 
   it("has no manual marked_today flag left on the task shape", async () => {
     const task = await createTask({ title: "Reine Query-Aufgabe" });

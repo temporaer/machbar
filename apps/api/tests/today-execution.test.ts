@@ -62,13 +62,14 @@ describe("Today execution eligibility across task and project containers", () =>
     }
   });
 
-  it.each(["scheduled", "revisit", "window", "waiting", "dependency", "clarification", "parked", "context"])(
+  it.each(["scheduled", "scheduled-revisit", "revisit", "window", "waiting", "dependency", "clarification", "parked", "context"])(
     "does not leak %s descendants through attention parents, while deeper ready work remains reachable", reason => {
       const parent = task({ title: "Deadline parent", dueDate: today });
       const unavailable = task({
         title: "Unavailable", parentTaskId: parent.id,
-        ...(reason === "scheduled" ? { scheduledDate: tomorrow } : {}),
-        ...(reason === "revisit" ? { revisitAt: "2026-07-13T10:01:00Z" } : {}),
+        ...(reason === "scheduled" || reason === "scheduled-revisit" ? { scheduledDate: tomorrow } : {}),
+        ...(reason === "revisit" ? { revisitAt: "2026-07-13T10:01:00Z" } :
+          reason === "scheduled-revisit" ? { revisitAt: now } : {}),
         ...(reason === "window" ? { availabilityRule: outside } : {}),
         ...(reason === "clarification" ? { status: "captured" as const } : {}),
         ...(reason === "parked" ? { status: "someday" as const } : {}),

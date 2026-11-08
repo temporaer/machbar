@@ -21,6 +21,35 @@ async function task(page: Page, extra: object = {}) {
   return result.json();
 }
 
+test("Today keeps a future recurring plan out despite its reached revisit", async ({ page }) => {
+  const item = await task(page, {
+    scheduledDate: "2030-12-01",
+    revisitAt: "2020-01-01T10:00:00.000Z",
+    repeatAfterDays: 7,
+    allowedDeviationDays: 2,
+  });
+  let writes = 0;
+  page.on("request", request => {
+    if (request.url().endsWith(`/api/tasks/${item.id}`) &&
+      !["GET", "HEAD"].includes(request.method())) writes += 1;
+  });
+  const read = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/agenda/today" &&
+    response.request().method() === "GET",
+  );
+  await page.goto("/#/today");
+  expect((await read).status()).toBe(200);
+  await expect(page.locator(".today-page .loading-state")).toHaveCount(0);
+  await expect(page.getByText(item.title, { exact: true })).toHaveCount(0);
+  const stored = await (await page.request.get(`/api/tasks/${item.id}`)).json();
+  expect(stored).toMatchObject({
+    scheduledDate: item.scheduledDate,
+    revisitAt: item.revisitAt,
+    revision: item.revision,
+  });
+  expect(writes).toBe(0);
+});
+
 test("detail completion control is visible on touch and desktop", async ({ page }) => {
   const item = await task(page);
   await page.goto(`/#/tasks/${item.id}`);

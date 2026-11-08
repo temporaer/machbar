@@ -154,7 +154,7 @@ export function buildAgenda(
     (t) =>
       t.status === "actionable" &&
       !!t.scheduledDate &&
-      t.scheduledDate <= today &&
+      selection.isScheduledDateEligible(t) &&
       t.externalWait === null && selection.isWindowAvailable(t),
     sortByScheduledThenPriorityTitleId,
     { requireExecutable: false, requireContextAvailable: false },
@@ -173,7 +173,9 @@ export function buildAgenda(
             t.revisitAt !== undefined &&
             Date.parse(t.revisitAt) <= now));
       return selection.isAgendaTask(t) && reached &&
-        (t.externalWait !== null || selection.isWindowAvailable(t)) && !seen.has(t.id);
+        (t.externalWait !== null ||
+          (selection.isScheduledDateEligible(t) && selection.isWindowAvailable(t))) &&
+        !seen.has(t.id);
     })
     .sort(sortByRevisitThenPriorityTitleId);
   for (const task of revisit) seen.add(task.id);
