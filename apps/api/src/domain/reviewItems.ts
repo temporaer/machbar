@@ -6,7 +6,6 @@ import type {
 } from "@machbar/shared";
 import { calendarDateForInstant } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
-import type { TaskBlockerAnalysis } from "./blockers.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 export const ACTIVE_REVIEW_DAYS = 14;
@@ -53,13 +52,17 @@ function attentionAt(entity: {
 // covered separately via `canonicalCandidates`.
 function isViableProgressTask(
   task: TaskRecord,
-  analysis: TaskBlockerAnalysis,
+  graph: Graph,
+  now: number,
 ): boolean {
-  if (analysis.blocked) return analysis.healthyProgressPath;
+  const analysis = graph.blockerAnalysisFor(task.id);
+  if (!analysis) return false;
+  if (analysis.blocked) {
+    return graph.hasHealthyProjectProgressPath(task.id, now);
+  }
   return (
-    task.status === "actionable" &&
     !analysis.executable &&
-    analysis.healthyProgressPath
+    graph.hasHealthyProjectProgressPath(task.id, now)
   );
 }
 
@@ -297,11 +300,10 @@ export function buildReviewItems(
     if (project.status === "active") {
       const openTasks = tasks.filter(isOpen);
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
-      const hasHealthyProgressPath = openTasks.some((task) => {
-        const analysis = graph.blockerAnalysisFor(task.id);
-        return analysis !== null && isViableProgressTask(task, analysis);
-      });
       const now = Date.parse(options.now ?? new Date().toISOString());
+      const hasHealthyProgressPath = openTasks.some((task) => {
+        return isViableProgressTask(task, graph, now);
+      });
       const hasIntentionalWait = openTasks.some(
         (task) =>
           task.externalWait !== null &&

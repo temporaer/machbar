@@ -894,18 +894,9 @@ export class Graph {
           .flatMap(
             (task) => blockerAnalysis.get(task.id)?.diagnoses ?? [],
           );
-        const hasHealthyPath = openTasks.some((task) => {
-          const analysis = blockerAnalysis.get(task.id);
-          const availableNow =
-            analysis?.executable ||
-            (task.revisitAt !== null &&
-              Date.parse(task.revisitAt) <= Date.parse(now));
-          return (
-            task.status === "actionable" &&
-            (analysis?.executable || analysis?.healthyProgressPath) &&
-            !(availableNow && graph.taskContainsUnfinishedWork(task.id))
-          );
-        });
+        const hasHealthyPath = openTasks.some((task) =>
+          graph.hasHealthyProjectProgressPath(task.id, Date.parse(now)),
+        );
         if (!hasHealthyPath) {
           reason = stuckReasonForDiagnoses(blockedDiagnoses);
         }
@@ -929,6 +920,23 @@ export class Graph {
   /** Unfinished action/project descendants, independent of execution availability. */
   taskContainsUnfinishedWork(taskId: number): boolean {
     return this.unfinishedWorkContainers.has(taskId);
+  }
+
+  hasHealthyProjectProgressPath(taskId: number, now: number): boolean {
+    const task = this.tasksById.get(taskId);
+    const analysis = this.blockerAnalysisFor(taskId);
+    if (
+      !task ||
+      !analysis ||
+      task.status !== "actionable" ||
+      !(analysis.executable || analysis.healthyProgressPath)
+    ) {
+      return false;
+    }
+    const availableNow =
+      analysis.executable ||
+      (task.revisitAt !== null && Date.parse(task.revisitAt) <= now);
+    return !(availableNow && this.taskContainsUnfinishedWork(taskId));
   }
 
   /** All tasks belonging to a project, flattened regardless of depth,

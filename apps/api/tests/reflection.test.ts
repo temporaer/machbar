@@ -75,6 +75,65 @@ describe("historical reflection briefing", () => {
     expect(briefing.markdown).toContain("Das belegt ein erfasstes Ergebnis, nicht das Erreichen eines übergeordneten Ziels.");
   });
 
+  it.each(["household", "work"] as const)("selects the first execution-eligible project leaf after a reached revisit with a preceding %s candidate", (firstScope) => {
+    const mira = member("Mira");
+    const project = insertTestProject(ctx.handle.db, {
+      title: "Mixed project",
+      status: "active",
+      scope: "household",
+    });
+    const reached = insertTestTask(ctx.handle.db, {
+      title: "Reached revisit",
+      projectId: project.id,
+      status: "actionable",
+      revisitAt: "2025-02-28T12:00:00.000Z",
+      position: 0,
+    });
+    const future = insertTestTask(ctx.handle.db, {
+      title: "Future revisit",
+      projectId: project.id,
+      status: "actionable",
+      revisitAt: "2025-03-02T12:00:00.000Z",
+      position: 1,
+    });
+    const firstEligible = insertTestTask(ctx.handle.db, {
+      title: "First executable leaf",
+      projectId: project.id,
+      status: "actionable",
+      position: 2,
+      scope: firstScope,
+      ownerMemberId: mira.id,
+      ownerInheritanceMode: "explicit",
+    });
+    const laterEligible = insertTestTask(ctx.handle.db, {
+      title: "Later executable leaf",
+      projectId: project.id,
+      status: "actionable",
+      position: 3,
+    });
+
+    const briefing = buildReflectionBriefing(ctx.handle.db, {
+      subjectMemberId: mira.id,
+      days: 30,
+      scope: "household",
+      now: new Date("2025-03-01T12:00:00.000Z"),
+    });
+    expect(briefing.current.executableNextActions.map((item) => item.id)).toEqual([
+      firstScope === "household" ? firstEligible.id : laterEligible.id,
+    ]);
+    expect(briefing.current.executableNextActions.map((item) => item.id)).not.toContain(
+      reached.id,
+    );
+    expect(briefing.current.executableNextActions.map((item) => item.id)).not.toContain(
+      future.id,
+    );
+    expect(briefing.current.executableNextActions.map((item) => item.id)).not.toContain(
+      firstScope === "household" ? laterEligible.id : firstEligible.id,
+    );
+    if (firstScope === "work") expect(JSON.stringify(briefing)).not.toContain(firstEligible.title);
+    expect(briefing.current.waitingItems.map((item) => item.id)).toContain(future.id);
+  });
+
   it("omits other members' private work and rejects cross-member work-scope requests", async () => {
     const mira = member("Mira");
     const sam = member("Sam");

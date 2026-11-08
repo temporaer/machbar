@@ -322,6 +322,178 @@ describe("review queue", () => {
     ).toBe(false);
   });
 
+  it.each([
+    ["captured", "captured"],
+    ["Someday", "backlog"],
+  ] as const)(
+    "reports no viable progress for a reached revisit container with %s work",
+    async (_label, childStatus) => {
+      const owner = ctx.handle.db
+        .insert(schema.members)
+        .values({ name: "Container owner", color: "#123456" })
+        .returning()
+        .get();
+      const project = ctx.handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "story",
+          title: "Container project",
+          status: "active",
+          ownerMemberId: owner.id,
+        })
+        .returning()
+        .get();
+      const parent = ctx.handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "task",
+          parentId: project.id,
+          title: "Reached parent",
+          status: "active",
+          revisitAt: "2026-08-30T12:00:00.000Z",
+        })
+        .returning()
+        .get();
+      ctx.handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "task",
+          parentId: parent.id,
+          title: `${_label} child`,
+          status: childStatus,
+        })
+        .run();
+
+      const projectRead = await ctx.app.inject({
+        method: "GET",
+        url: `/api/projects/${project.id}`,
+      });
+      expect(projectRead.json()).toMatchObject({
+        stuckReason: "no_next_action",
+        nextAction: null,
+        activationReadiness: {
+          ready: false,
+          hasViableProgressPath: false,
+        },
+      });
+      const review = await ctx.app.inject({
+        method: "GET",
+        url: "/api/review",
+      });
+      expect(review.json()).toContainEqual(
+        expect.objectContaining({
+          entityType: "project",
+          entityId: project.id,
+          reason: "no_viable_progress_path",
+          suggestedAction: { code: "add_next_action" },
+        }),
+      );
+    },
+  );
+
+  it("keeps a future container revisit as a healthy pause in Review", async () => {
+    const owner = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Future owner", color: "#123456" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        title: "Future container project",
+        status: "active",
+        ownerMemberId: owner.id,
+      })
+      .returning()
+      .get();
+    const parent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: project.id,
+        title: "Future parent",
+        status: "active",
+        revisitAt: "2099-01-01T12:00:00.000Z",
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: parent.id,
+        title: "Captured child",
+        status: "captured",
+      })
+      .run();
+
+    const projectRead = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}`,
+    });
+    expect(projectRead.json()).toMatchObject({
+      stuckReason: null,
+      nextAction: null,
+      activationReadiness: {
+        ready: true,
+        hasViableProgressPath: false,
+        hasHealthyFutureRevisit: true,
+      },
+    });
+    const review = await ctx.app.inject({ method: "GET", url: "/api/review" });
+    expect(
+      review.json().some(
+        (item: { projectId: number; reason: string }) =>
+          item.projectId === project.id &&
+          item.reason === "no_viable_progress_path",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps an eligible descendant as healthy project progress in Review", async () => {
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", status: "active", title: "Descendant progress" })
+      .returning()
+      .get();
+    const parent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: project.id,
+        title: "Reached parent",
+        status: "active",
+        revisitAt: "2026-08-30T12:00:00.000Z",
+      })
+      .returning()
+      .get();
+    const child = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: parent.id,
+        title: "Eligible descendant",
+        status: "active",
+      })
+      .returning()
+      .get();
+
+    const projectRead = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}`,
+    });
+    expect(projectRead.json().nextAction.id).toBe(child.id);
+    const review = await ctx.app.inject({ method: "GET", url: "/api/review" });
+    expect(
+      review.json().some(
+        (item: { projectId: number; reason: string }) =>
+          item.projectId === project.id &&
+          item.reason === "no_viable_progress_path",
+      ),
+    ).toBe(false);
+  });
+
   it("accepts an executable cross-project dependency as a healthy progress path", () => {
     const member = ctx.handle.db
       .insert(schema.members)

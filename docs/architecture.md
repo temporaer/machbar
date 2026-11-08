@@ -31,7 +31,10 @@ project progress, but reads never clear it or turn it into a work plan. Future
 ordinary revisits remain intentional future pauses; adding a reminder while a
 revisit is present does not promote the task. Healthy waits retain their
 readiness meaning. Project activation does not bypass task blockers or
-future-date agenda eligibility.
+future-date agenda eligibility. Reflection's executable-next-actions section
+is narrower than project progress: it lists the first execution-eligible
+canonical candidate per project and does not treat a reached revisit as
+executable work.
 
 ## AI clarification and reviewed application
 
