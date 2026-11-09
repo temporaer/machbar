@@ -222,6 +222,86 @@ test("project task entry precedes context and returns focus after an atomic batc
   ]);
 });
 
+test("project activation removes denied requirements and recovers with a GET-only retry", async ({ page }) => {
+  const title = `Activation recovery ${randomUUID()}`;
+  const created = await page.request.post("/api/projects", {
+    data: { title, status: "backlog" },
+  });
+  expect(created.status()).toBe(201);
+  const project = await created.json();
+  const initialDetail = await (await page.request.get(`/api/projects/${project.id}`)).json();
+  expect(initialDetail.directActivationDecisionSnapshot).toMatchObject({
+    projects: [{
+      projectId: project.id,
+      required: ["driver", "progressPath"],
+    }],
+    expectedProjects: [{ projectId: project.id, revision: initialDetail.revision }],
+    targetRevision: initialDetail.revision,
+  });
+
+  await page.goto(`/#/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  let phase: "initial" | "denied" | "retry" | "restored" = "initial";
+  let requests = 0;
+  let retryRequests = 0;
+  await page.route(`**/api/projects/${project.id}`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    requests += 1;
+    if (phase === "initial") {
+      phase = "denied";
+      return route.fulfill({ status: 200, json: initialDetail });
+    }
+    if (phase === "denied") {
+      return route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "forbidden", message: "Access denied." } }),
+      });
+    }
+    if (phase === "retry") {
+      retryRequests += 1;
+      if (retryRequests === 1) {
+        return route.fulfill({ status: 503, body: "Temporarily unavailable." });
+      }
+      phase = "restored";
+    }
+    return route.continue();
+  });
+
+  await page.locator(".detail-meta-status-button").click();
+  await page.locator('[data-workflow-action="activate"]').click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel(/Verantwortlich für/)).toBeVisible();
+  const memberId = await page.evaluate(() => localStorage.getItem("machbar:identity-member-id"));
+  await dialog.locator('select[id^="commitment-driver-"]').selectOption(memberId!);
+  await dialog.locator("#commitment-next-action").fill("Confirm the insurance details");
+
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => requests).toBeGreaterThan(1);
+  await expect(dialog.getByRole("button", { name: "Erneut versuchen" })).toBeVisible();
+  await expect(dialog).not.toContainText(title);
+  expect(await dialog.locator("input, select, textarea").count()).toBe(0);
+  expect(await dialog.locator("input, select, textarea").evaluateAll((controls) =>
+    controls.flatMap((control) => Array.from(control.attributes, (attribute) => attribute.value)),
+  )).toEqual([]);
+
+  phase = "retry";
+  await dialog.getByRole("button", { name: "Erneut versuchen" }).click();
+  await expect(dialog.getByRole("button", { name: "Erneut versuchen" })).toBeVisible();
+  await expect(dialog).not.toContainText(title);
+  expect((await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("backlog");
+
+  await dialog.getByRole("button", { name: "Erneut versuchen" }).click();
+  await expect(dialog.getByText(title, { exact: true })).toBeVisible();
+  await expect(dialog.locator('select[id^="commitment-driver-"]')).toHaveValue(memberId!);
+  await expect(dialog.locator("#commitment-next-action")).toHaveValue("Confirm the insurance details");
+  expect(retryRequests).toBe(2);
+  expect((await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("backlog");
+
+  await dialog.getByRole("button", { name: "Projekt starten", exact: true }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("active");
+});
+
 test("captured work opens the existing subtask composer without choosing a project", async ({ page }, testInfo) => {
   const item = await task(page, { status: "captured" });
   await page.goto(`/#/tasks/${item.id}`);

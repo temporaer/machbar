@@ -88,6 +88,17 @@ cannot starve initial loading. Only logical dependency changes and unmount
 invalidate a request's result. External events use a bounded leading/trailing
 cadence; explicit mutation refreshes remain immediate. Do not add per-component
 throttles or another fetching layer to compensate for shared refresh behavior.
+`useAsync` callers may designate errors that revoke the current read and must
+discard retained data; harmless refresh failures continue retaining usable data.
+Project activation uses this for 403/404 so its editor can retain authored
+choices without rendering a stale project snapshot.
+Accepted-read authority uses `useAsync`'s qualified `onAcceptedResult`, before
+queued revalidation; runner idle/error flags are not evidence of acceptance.
+Activation command errors are qualified against that read authority: an error
+from the same read may update its requirements, while a delayed error after a
+newer accepted read may replace them only when its target revision is strictly
+newer than the accepted project's revision. Older or equal-revision errors must
+not overwrite the newer read's requirements.
 
 ### Task mutations
 
@@ -203,7 +214,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` (method-aware facts and citation selection), `ObservationPlanSummary` in `ObservationPlanEditor.tsx`, and `InterventionAssessSheet`; existing reflection evidence is reused |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
-| Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts` |
+| Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts`; `onAcceptedResult` publishes qualified reads before queued revalidation. Project activation discards its retained detail on 403/404 while preserving the editor's authored choices |
 | Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |

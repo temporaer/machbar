@@ -60,6 +60,10 @@ approved. Search and maintenance work should not delay correctness repair.
   acceptance scenarios and verification requirements.
 - [Review decisions](review-decisions.md): critic challenges, reconciliations,
   rejected alternatives and unresolved decisions.
+- [Reimplementation context](reimplementation-context.md): lessons from the
+  subsequent recovery effort and the 2026-11-08 decision to restart from merged
+  #252. Preserves regression evidence and rejected approaches, with a narrow
+  backend/Activation tranche; the original audit above remains unchanged.
 
 ## Evidence limits
 

@@ -22,6 +22,11 @@ interface AsyncSnapshot<T> {
   refreshErrorCause: unknown | null;
 }
 
+interface UseAsyncOptions<T> {
+  clearDataOnError?: (error: unknown) => boolean;
+  onAcceptedResult?: (result: T) => void;
+}
+
 function sameDependencies(
   previous: ReadonlyArray<unknown>,
   next: ReadonlyArray<unknown>,
@@ -39,7 +44,11 @@ function sameDependencies(
  * Same-query invalidations queue one revalidation without discarding the pending
  * result. Query changes and unmount still discard obsolete results.
  */
-export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unknown> = []): AsyncState<T> {
+export function useAsync<T>(
+  fetcher: () => Promise<T>,
+  deps: ReadonlyArray<unknown> = [],
+  options: UseAsyncOptions<T> = {},
+): AsyncState<T> {
   const strings = useStrings();
   const { version } = useRefresh();
   const dependencies = useRef<ReadonlyArray<unknown>>(deps);
@@ -61,6 +70,8 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
   const snapshotRef = useRef(snapshot);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
   const requestRefresh = useRef<(() => void) | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -103,6 +114,7 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
       try {
         const result = await fetcherRef.current();
         if (cancelled || generation.current !== currentGeneration) return;
+        optionsRef.current.onAcceptedResult?.(result);
         const next: AsyncSnapshot<T> = {
           generation: currentGeneration,
           data: result,
@@ -116,7 +128,8 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
         setSnapshot(next);
       } catch (err: unknown) {
         if (cancelled || generation.current !== currentGeneration) return;
-        const next: AsyncSnapshot<T> = background
+        const retainCurrentData = background && !(optionsRef.current.clearDataOnError?.(err) ?? false);
+        const next: AsyncSnapshot<T> = retainCurrentData
           ? {
               ...snapshotRef.current,
               loading: false,

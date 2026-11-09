@@ -135,6 +135,28 @@ describe("useAsync", () => {
     });
   });
 
+  it("discards retained data for a caller-designated revocation error", async () => {
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockResolvedValueOnce("protected")
+      .mockRejectedValueOnce(new Error("revoked"));
+    const { result } = renderHook(
+      () => useAsync(fetcher, [], {
+        clearDataOnError: (error) => error instanceof Error && error.message === "revoked",
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.data).toBe("protected"));
+
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.error).toBe("revoked"));
+    expect(result.current).toMatchObject({
+      data: null,
+      loading: false,
+      refreshing: false,
+      refreshError: null,
+    });
+  });
+
   it("exposes initial errors as foreground errors", async () => {
     const { result } = renderHook(
       () => useAsync(() => Promise.reject(new Error("initial failure"))),
@@ -153,11 +175,13 @@ describe("useAsync", () => {
   it("does not let a slower previous request overwrite a newer result", async () => {
     const first = deferred<string>();
     const second = deferred<string>();
+    const onAcceptedResult = vi.fn();
     const { result, rerender } = renderHook(
       ({ query }) =>
         useAsync(
           () => (query === "first" ? first.promise : second.promise),
           [query],
+          { onAcceptedResult },
         ),
       { wrapper, initialProps: { query: "first" } },
     );
@@ -169,6 +193,8 @@ describe("useAsync", () => {
     act(() => first.resolve("older"));
     await act(async () => Promise.resolve());
     expect(result.current.data).toBe("newer");
+    expect(onAcceptedResult).toHaveBeenCalledOnce();
+    expect(onAcceptedResult).toHaveBeenCalledWith("newer");
   });
   it.each(["resolve", "reject"] as const)(
     "serializes repeated invalidations and settles after initial %s",
