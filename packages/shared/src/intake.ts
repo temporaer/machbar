@@ -139,6 +139,8 @@ export interface IntakeWorkItem {
   title: string;
   notes: string | null;
   parentKey: string | null;
+  /** Persisted destination for a new root action; never a proposal-local key. */
+  existingProjectId?: number | null;
   ownerName: string | null;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -201,9 +203,11 @@ export interface IntakeDraftWorkItem
   extends Omit<IntakeWorkItem, "ownerName"> {
   enabled: boolean;
   ownerMemberId: number | null;
+  existingProjectRevision?: number | null;
 }
 
 export interface IntakeDraft {
+  existingProjectIndexComplete?: boolean;
   summary: string;
   calendarEvents: IntakeDraftCalendarEvent[];
   workItems: IntakeDraftWorkItem[];
@@ -560,6 +564,12 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     if (item.scheduledDate && item.dueDate && item.scheduledDate > item.dueDate) {
       issues.push(issue(path, "scheduling_order", "Scheduled date must not be after the due date."));
     }
+    if (item.existingProjectId != null && (
+      !Number.isSafeInteger(item.existingProjectId) || item.existingProjectId <= 0 ||
+      item.kind !== "action" || item.parentKey !== null
+    )) {
+      issues.push(issue([...path, "existingProjectId"], "invalid_parent", "Only a root action can target an existing project."));
+    }
     if (item.kind === "project") {
       if (item.scheduledDate !== null) {
         issues.push(issue([...path, "scheduledDate"], "project_field_not_allowed", "Projects cannot have an intended work date. Put execution dates on concrete child actions and keep the project timing intention in notes."));
@@ -769,6 +779,9 @@ export function intakeDraftIssues(
   });
   const enabledItems = new Map(draft.workItems.filter((item) => item.enabled).map((item) => [item.key, item]));
   draft.workItems.forEach((item, index) => {
+    if (item.existingProjectId != null && (!Number.isSafeInteger(item.existingProjectRevision) || (item.existingProjectRevision ?? 0) <= 0)) {
+      issues.push(issue(["workItems", index, "existingProjectId"], "invalid_parent", "Choose an available destination again to confirm its current revision."));
+    }
     if (item.ownerMemberId !== null && !options.memberIds.includes(item.ownerMemberId)) {
       issues.push(issue(["workItems", index, "ownerMemberId"], "owner_not_member", "Owner is not a household member."));
     }
@@ -860,6 +873,9 @@ export function intakeSelectedDraftIssues(
   });
   enabledWork.forEach((item, selectedIndex) => {
     const originalIndex = workIndices[selectedIndex]!;
+    if (item.existingProjectId != null && (!Number.isSafeInteger(item.existingProjectRevision) || (item.existingProjectRevision ?? 0) <= 0)) {
+      issues.push(issue(["workItems", originalIndex, "existingProjectId"], "invalid_parent", "Choose an available destination again to confirm its current revision."));
+    }
     if (item.ownerMemberId !== null && !options.memberIds.includes(item.ownerMemberId)) {
       issues.push(issue(["workItems", originalIndex, "ownerMemberId"], "owner_not_member", "Owner is not a household member."));
     }
@@ -1334,6 +1350,8 @@ export interface IntakeApplyResults {
   paperlessDocumentIds: number[];
 }
 export interface IntakeRecord {
+  existingProjects?: Array<{ id: number; title: string; status: "active" | "backlog"; revision: number }>;
+  existingProjectIndexComplete?: boolean;
   /** Present for proposals that edit an existing task rather than create a new root. */
   breakdown?: {
     taskId: number;

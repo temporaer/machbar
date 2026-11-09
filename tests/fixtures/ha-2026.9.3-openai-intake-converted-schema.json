@@ -148,6 +148,14 @@
               "description": "Machbar intake field parentKey",
               "default": null
             },
+            "existingProjectId": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "nullable": true,
+              "description": "Persisted positive destination id for a NEW root action only"
+            },
             "ownerName": {
               "type": [
                 "string",
@@ -284,6 +292,7 @@
             "relatedCalendarKeys",
             "notes",
             "parentKey",
+            "existingProjectId",
             "ownerName",
             "dueDate",
             "scheduledDate",

@@ -21,6 +21,59 @@ async function task(page: Page, extra: object = {}) {
   return result.json();
 }
 
+test("ordinary intake reviews and changes an existing project destination in the real app", async ({ page }) => {
+  await page.goto("/#/today");
+  const memberId = await page.evaluate(() => localStorage.getItem("machbar:identity-member-id")!);
+  const actorHeaders = { "x-machbar-actor-member-id": memberId };
+  const first = await (await page.request.post("/api/projects", {
+    headers: actorHeaders, data: { title: `Intake original ${randomUUID()}` },
+  })).json();
+  const second = await (await page.request.post("/api/projects", {
+    headers: actorHeaders, data: { title: `Intake destination ${randomUUID()}` },
+  })).json();
+  const code = await (await page.request.post("/api/integrations/home-assistant/pairing-code")).json();
+  const paired = await (await page.request.post("/api/integrations/home-assistant/pair", {
+    data: { pairingCode: code.code, protocolVersion: 3 },
+  })).json();
+  const haHeaders = { authorization: `Bearer ${paired.token}` };
+  expect((await page.request.post("/api/integrations/home-assistant/context", {
+    headers: haHeaders, data: { protocolVersion: 3, observedAt: new Date().toISOString(), contexts: [], people: [],
+      intake: { aiTask: { entityId: "ai_task.browser", state: "ok", supportsAttachments: true },
+        calendar: { entityId: "calendar.browser", state: "ok" } } },
+  })).ok()).toBe(true);
+  const created = await page.request.post("/api/intake", { headers: actorHeaders, multipart: { text: "A new step for my project" } });
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  const lease = await (await page.request.get("/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
+    { headers: haHeaders })).json();
+  const title = `Reviewed intake action ${randomUUID()}`;
+  expect((await page.request.post(`/api/integrations/home-assistant/requests/${lease.id}/complete`, {
+    headers: haHeaders, data: { leaseToken: lease.leaseToken, outcome: "succeeded", result: {
+      summary: "New work only", calendarEvents: [], warnings: [],
+      workItems: [{ key: "step", kind: "action", title, existingProjectId: first.id }],
+    } },
+  })).status()).toBe(204);
+  await page.goto(`/#/intake/${id}`);
+  await expect(page.getByText(`Bestehendes Projekt: ${first.title} · Später / noch nicht aktiv`, { exact: true })).toBeVisible();
+  const edit = page.getByRole("button", { name: `Bearbeiten: ${title}`, exact: true });
+  await edit.click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Kein bestehendes Projekt", exact: true }).click();
+  await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
+  await expect(edit).toBeFocused();
+  await expect(page.getByText(`Bestehendes Projekt: ${first.title} · Später / noch nicht aktiv`, { exact: true })).toHaveCount(0);
+  await edit.click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: new RegExp(second.title) }).click();
+  await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
+  await page.getByRole("button", { name: /^1 (?:Element|Vorschlag) übernehmen$/ }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/intake/${id}`, { headers: actorHeaders })).json()).status).toBe("applied");
+  const record = await (await page.request.get(`/api/intake/${id}`, { headers: actorHeaders })).json();
+  const result = await (await page.request.get(`/api/tasks/${record.applyResults.work[0].workItemId}`, { headers: actorHeaders })).json();
+  expect(result).toMatchObject({ title, projectId: second.id });
+  expect((await (await page.request.get(`/api/projects/${second.id}`, { headers: actorHeaders })).json()).status).toBe("backlog");
+});
+
 test("Today keeps a future recurring plan out despite its reached revisit", async ({ page }) => {
   const item = await task(page, {
     scheduledDate: "2030-12-01",

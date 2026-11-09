@@ -11,6 +11,7 @@ import {
 } from "@machbar/shared";
 import {
   intakeSelectedDraftIssues,
+  intakeErrorIssues,
   intakeCanonicalPlanning,
   paperlessMarkdownReference,
   prepareIncompleteIntakeDraft,
@@ -23,7 +24,7 @@ import { AppError } from "../errors.js";
 import { activeHomeAssistantIntegration } from "../integrations/homeAssistant.js";
 import { enqueueHomeAssistantRequest, type HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
 import { appendProjectNotes, createProject, updateProject } from "../domain/storyCrud.js";
-import { appendTaskNotes, createChildTask, createTask } from "../domain/taskCrud.js";
+import { appendTaskNotes, createChildTaskInTransaction, createTaskInTransaction } from "../domain/taskCrud.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import type { PaperlessClient } from "../paperless/client.js";
 import { uploadAndResolveDocument } from "../paperless/upload.js";
@@ -31,6 +32,7 @@ import { nowIso } from "../domain/workItemShared.js";
 import { attachmentPath } from "./storage.js";
 import { normalizeStoredIntakeDraft, recoverExpiredApplyClaim } from "./jobs.js";
 import { applyBreakdown, assertBreakdownDraft } from "./breakdown.js";
+import { assertIntakeDestinations } from "./existingProjects.js";
 
 const APPLY_CLAIM_MS = 10 * 60 * 1000;
 
@@ -44,12 +46,12 @@ function failApplyClaim(
   claimToken: string,
   claimRevision: number,
   error: IntakeErrorInfo,
-  hasEffects: boolean,
+  keepAcceptedDraft: boolean,
   draft: IntakeDraft,
 ): void {
   db.update(schema.intakeJobs).set({
-    status: hasEffects ? "partially_applied" : "ready",
-    ...(!hasEffects ? { acceptedDraftJson: null, draftJson: JSON.stringify(draft) } : {}),
+    status: keepAcceptedDraft ? "partially_applied" : "ready",
+    ...(!keepAcceptedDraft ? { acceptedDraftJson: null, draftJson: JSON.stringify(draft) } : {}),
     applyClaimToken: null,
     applyClaimExpiresAt: null,
     errorJson: JSON.stringify(error),
@@ -98,6 +100,7 @@ export async function applyIntake(
   if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (stored.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (stored.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
+  if (stored.refinementTargetType !== null) throw AppError.conflict("intake_state_conflict", "Use the refinement endpoint for this intake.");
   const revisionBeforeRecovery = stored.revision;
   if (revisionBeforeRecovery !== input.expectedRevision) {
     throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
@@ -140,7 +143,8 @@ export async function applyIntake(
   const validationIssues = incompletePreparation
     ? incompletePreparation.blockingIssues
     : intakeSelectedDraftIssues(draftToValidate, validationOptions);
-  const committedWork = initialAcceptance ? [] : parse<IntakeApplyResults>(stored.applyResultsJson)?.work ?? [];
+  const previousResults = parse<IntakeApplyResults>(stored.applyResultsJson);
+  const committedWork = initialAcceptance ? [] : previousResults?.work ?? [];
   const issues = validationIssues.filter((issue) => {
     // Old immutable partial drafts may contain planning now rejected for new
     // acceptance. Only grandfather the new checks on ledger-confirmed work
@@ -157,6 +161,26 @@ export async function applyIntake(
   });
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
   if (stored.breakdownTaskId !== null) assertBreakdownDraft(draftToValidate);
+  else {
+    try {
+      assertIntakeDestinations(db, draftToValidate, stored.scope, viewerMemberId, new Set(committedWork.map((work) => work.key)));
+    } catch (error) {
+      if (error instanceof AppError && error.code === "intake_draft_invalid"
+        && stored.status === "partially_applied" && previousResults
+        && previousResults.work.length === 0 && previousResults.calendar.length === 0) {
+        const reopened = db.update(schema.intakeJobs).set({
+          status: "ready", acceptedDraftJson: null, draftJson: JSON.stringify(draftToValidate),
+          applyClaimToken: null, applyClaimExpiresAt: null, errorJson: JSON.stringify(applyFailureInfo(error)),
+          revision: stored.revision + 1, updatedAt: nowIso(),
+        }).where(and(
+          eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, stored.revision),
+          eq(schema.intakeJobs.status, "partially_applied"),
+        )).run();
+        if (reopened.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+      }
+      throw error;
+    }
+  }
 
   const enabledEvents = draftToValidate.calendarEvents.filter((event) => event.enabled);
   const integration = enabledEvents.length > 0 ? activeHomeAssistantIntegration(db) : null;
@@ -173,6 +197,7 @@ export async function applyIntake(
     if (!current) throw AppError.notFound("intake_not_found", "The intake was not found.");
     if (current.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (current.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (current.refinementTargetType !== null) throw AppError.conflict("intake_state_conflict", "Use the refinement endpoint for this intake.");
     if (current.revision !== effectiveExpectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     if (current.status !== "ready" && current.status !== "partially_applied") {
       throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
@@ -183,6 +208,10 @@ export async function applyIntake(
     const claimDraft = normalizeStoredIntakeDraft(parse<unknown>(current.acceptedDraftJson))
       ?? draftToValidate;
     if (claimDraft === undefined) throw AppError.badRequest("intake_draft_invalid", "A draft is required for the initial apply.");
+    if (current.breakdownTaskId === null) {
+      const ledger = parse<IntakeApplyResults>(current.applyResultsJson)?.work ?? [];
+      assertIntakeDestinations(tx as unknown as Db, claimDraft, current.scope, viewerMemberId, new Set(ledger.map((work) => work.key)));
+    }
     const claimToken = randomUUID();
     const claimNow = nowIso();
     const updated = tx.update(schema.intakeJobs)
@@ -207,13 +236,20 @@ export async function applyIntake(
   const fail = (error: unknown) => {
     const current = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
     const committed = parse<IntakeApplyResults>(current?.applyResultsJson ?? null);
-    const hasEffects = Boolean(committed && (committed.work.length || committed.calendar.length || committed.paperlessDocumentIds.length));
+    const hasWorkOrCalendar = Boolean(committed && (committed.work.length || committed.calendar.length));
+    const hasEffects = hasWorkOrCalendar || Boolean(committed?.paperlessDocumentIds.length);
     const info = applyFailureInfo(error, logger);
+    const issues = intakeErrorIssues(info);
+    const destinationFailure = info.code === "intake_draft_invalid" && issues.length > 0
+      && issues.every((issue) => issue.code === "invalid_parent"
+        && issue.path[0] === "workItems" && issue.path.at(-1) === "existingProjectId");
     if (!hasEffects && info.code === "intake_apply_partial") {
       info.code = "intake_apply_failed";
       info.message = "Nothing was applied. Review the proposal and retry.";
     }
-    failApplyClaim(db, id, claim.claimToken, claim.claimRevision, info, hasEffects, claim.acceptedDraft);
+    // Source-only destination recovery keeps uploaded IDs and stale reviewed revisions for explicit correction.
+    const keepAcceptedDraft = hasEffects && !(destinationFailure && !hasWorkOrCalendar);
+    failApplyClaim(db, id, claim.claimToken, claim.claimRevision, info, keepAcceptedDraft, claim.acceptedDraft);
   };
 
   try {
@@ -224,6 +260,9 @@ export async function applyIntake(
     try {
       for (const attachment of attachments.slice(results.paperlessDocumentIds.length)) {
         const bytes = await readFile(attachmentPath(env, id, attachment.id));
+        if (stored.breakdownTaskId === null) {
+          assertIntakeDestinations(db, draft, stored.scope, viewerMemberId, new Set(results.work.map((work) => work.key)));
+        }
         const document = await uploadAndResolveDocument(paperless, {
           filename: attachment.filename,
           contentType: attachment.mimeType,
@@ -246,7 +285,7 @@ export async function applyIntake(
         if (saved.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake apply claim was lost.");
       }
     } catch (error) {
-      if (error instanceof AppError && error.code === "stale_write_conflict") throw error;
+      if (error instanceof AppError && (error.code === "stale_write_conflict" || error.code === "intake_draft_invalid")) throw error;
       if (logger) logger.error({ err: error }, "Intake Paperless retention failed.");
       else console.error("Intake Paperless retention failed.", error);
       throw new AppError(502, "intake_source_retention_failed", "The source could not be retained in Paperless.");
@@ -258,6 +297,7 @@ export async function applyIntake(
     if (!jobNow) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (jobNow.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (jobNow.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (jobNow.refinementTargetType !== null) throw AppError.conflict("intake_state_conflict", "Use the refinement endpoint for this intake.");
     if (jobNow.status !== "applying") throw AppError.conflict("intake_state_conflict", "The intake apply claim was lost.");
     if (jobNow.revision !== claim.claimRevision || jobNow.applyClaimToken !== claim.claimToken) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     if (jobNow.breakdownTaskId !== null) {
@@ -278,6 +318,7 @@ export async function applyIntake(
       return;
     }
     const existingKeys = new Set(results.work.map((item) => item.key));
+    assertIntakeDestinations(tx as unknown as Db, draft, jobNow.scope, viewerMemberId, existingKeys);
     const enabled = draft.workItems.filter((item) => item.enabled);
     const byKey = new Map(enabled.map((item) => [item.key, item]));
     const sorted: typeof enabled = [];
@@ -308,6 +349,11 @@ export async function applyIntake(
       const planning = intakeCanonicalPlanning(item);
       const notes = [item.notes, planning.availabilityContext].filter(Boolean).join("\n\n");
       const isRoot = item.parentKey === null;
+      let destinationRoot = item;
+      while (destinationRoot.parentKey && byKey.has(destinationRoot.parentKey)) {
+        destinationRoot = byKey.get(destinationRoot.parentKey)!;
+      }
+      const existingProjectId = destinationRoot.existingProjectId ?? null;
       let created: { id: number; title: string; kind?: string; role?: string };
       if (item.kind === "project") {
         const driverMemberId = item.ownerMemberId ?? (
@@ -350,9 +396,12 @@ export async function applyIntake(
           createdByMemberId: jobNow.createdByMemberId,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         };
+        const options = { activateCommitment: existingProjectId === null };
         const task = parent?.kind === "action" && parentId !== null
-          ? createChildTask(tx as unknown as Db, parentId, base, context)
-          : createTask(tx as unknown as Db, { ...base, projectId: parent?.kind === "project" ? parentId : null }, context);
+          ? createChildTaskInTransaction(tx as unknown as Db, parentId, base, context, options)
+          : createTaskInTransaction(tx as unknown as Db, {
+            ...base, projectId: existingProjectId ?? (parent?.kind === "project" ? parentId : null),
+          }, context, options);
         created = { id: task.id, title: task.title, kind: item.kind, role: "task" };
       }
       ids.set(item.key, created.id);

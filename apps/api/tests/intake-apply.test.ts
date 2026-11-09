@@ -101,6 +101,325 @@ describe("intake apply", () => {
     };
   }
 
+  function action(key: string, extra: Partial<IntakeDraftWorkItem> = {}): IntakeDraftWorkItem {
+    return { key, kind: "action", title: key, notes: null, parentKey: null, ownerMemberId: null,
+      dueDate: null, scheduledDate: null, revisitAt: null, notBeforeDate: null, notBeforeAt: null,
+      reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ...extra };
+  }
+
+  it("adds mixed new work and nested actions to existing active/backlog destinations without activation or Today leakage", async () => {
+    const setup = await prepare();
+    const active = createProject(ctx.handle.db, { title: "Active", ownerMemberId: setup.member.id });
+    const backlog = createProject(ctx.handle.db, { title: "Backlog", ownerMemberId: setup.member.id });
+    const waiting = createTask(ctx.handle.db, { title: "Already waiting", projectId: active.id, status: "actionable" });
+    ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: waiting.id, waitingFor: "Permit", revisitDate: "2099-01-01" }).run();
+    const originalWait = ctx.handle.db.select().from(schema.taskExternalWaits).all();
+    ctx.handle.db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, active.id)).run();
+    const d = draft([
+      action("active-step", { existingProjectId: active.id, existingProjectRevision: active.revision }),
+      action("backlog-step", { existingProjectId: backlog.id, existingProjectRevision: backlog.revision, scheduledDate: "2020-01-01" }),
+      action("nested", { parentKey: "backlog-step", dueDate: "2020-01-01" }),
+      action("standalone"),
+      action("new-project", { kind: "project" }),
+      action("new-child", { parentKey: "new-project" }),
+    ]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
+      { expectedRevision: setup.revision, draft: d }, { actorMemberId: setup.member.id }, setup.member.id);
+    const record = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(record.status).toBe("applied");
+    const rows = ctx.handle.db.select().from(schema.workItems).all();
+    const byTitle = new Map(rows.map((row) => [row.title, row]));
+    expect(byTitle.get("active-step")?.parentId).toBe(active.id);
+    expect(byTitle.get("backlog-step")?.parentId).toBe(backlog.id);
+    expect(byTitle.get("nested")?.parentId).toBe(byTitle.get("backlog-step")?.id);
+    expect(byTitle.get("standalone")?.parentId).toBeNull();
+    expect(byTitle.get("new-child")?.parentId).toBe(byTitle.get("new-project")?.id);
+    expect(byTitle.get("Backlog")?.status).toBe("backlog");
+    expect(byTitle.get("Active")?.status).toBe("active");
+    expect(byTitle.get("Already waiting")?.status).toBe("active");
+    expect(ctx.handle.db.select().from(schema.taskExternalWaits).all()).toEqual(originalWait);
+    const today = await ctx.app.inject({ method: "GET", url: "/api/agenda/today" });
+    expect(today.statusCode).toBe(200);
+    expect(today.body).not.toContain('"title":"backlog-step"');
+    expect(today.body).not.toContain('"title":"nested"');
+    // Lost result: replay the immutable accepted work after its destination revision/lifecycle changed.
+    ctx.handle.db.update(schema.workItems).set({ revision: 99, status: "done" }).where(eq(schema.workItems.id, backlog.id)).run();
+    ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied" }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
+      { expectedRevision: record.revision, draft: draft([action("FORGED RETRY")]) }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(rows.length);
+    expect(JSON.parse(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!.acceptedDraftJson!)).toEqual(d);
+  });
+
+  it.each(["unknown", "private", "other-work", "out-of-scope", "done", "cancelled", "archived", "stale", "missing-revision", "wrong-kind", "both-parents"] as const)(
+    "rejects %s destinations through the real API without partial work or title disclosure", async (failure) => {
+      const setup = await prepare();
+      const valid = createProject(ctx.handle.db, { title: "Eligible" });
+      const target = createProject(ctx.handle.db, { title: "DO NOT DISCLOSE", ownerMemberId: setup.member.id,
+        ...(failure === "other-work" || failure === "out-of-scope" ? { scope: "work" as const } : {}) });
+      const patch = failure === "private" ? { privacyOwnerMemberId: setup.member.id }
+        : failure === "done" || failure === "cancelled" ? { status: failure }
+        : failure === "archived" ? { archivedAt: new Date().toISOString() }
+        : failure === "stale" ? { revision: target.revision + 1 } : {};
+      ctx.handle.db.update(schema.workItems).set({ ...patch, updatedAt: new Date().toISOString() }).where(eq(schema.workItems.id, target.id)).run();
+      // Unknown initiating member can see shared household projects, but never private/work targets.
+      ctx.handle.db.update(schema.intakeJobs).set({ createdByMemberId: null }).where(eq(schema.intakeJobs.id, setup.id)).run();
+      const d = draft([
+        action("valid-first", { existingProjectId: valid.id, existingProjectRevision: valid.revision }),
+        action("invalid-last", { existingProjectId: failure === "unknown" ? 987654 : target.id,
+          existingProjectRevision: failure === "missing-revision" ? null : target.revision,
+          ...(failure === "wrong-kind" ? { kind: "project" as const } : {}),
+          ...(failure === "both-parents" ? { parentKey: "valid-first" } : {}) }),
+      ]);
+      const before = {
+        work: ctx.handle.db.select().from(schema.workItems).all(),
+        activity: ctx.handle.db.select().from(schema.activityEvents).all(),
+        outbox: ctx.handle.db.select().from(schema.notificationEvents).all(),
+      };
+      const response = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`,
+        payload: { expectedRevision: setup.revision, draft: d } });
+      expect(response.statusCode, response.body).toBe(400);
+      expect(response.json().error.code).toBe("intake_draft_invalid");
+      expect(response.body).not.toContain("DO NOT DISCLOSE");
+      expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(before.work);
+      expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(before.activity);
+      expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual(before.outbox);
+      expect(getIntake(ctx.handle.db, setup.id, null).existingProjects?.some((project) => project.id === target.id))
+        .toBe(!["private", "other-work", "out-of-scope", "done", "cancelled", "archived"].includes(failure));
+    },
+  );
+
+  it("rolls back existing-destination writes when a later canonical create fails", async () => {
+    const setup = await prepare();
+    const project = createProject(ctx.handle.db, { title: "Existing" });
+    const before = ctx.handle.db.select().from(schema.workItems).all();
+    const activity = ctx.handle.db.select().from(schema.activityEvents).all();
+    const outbox = ctx.handle.db.select().from(schema.notificationEvents).all();
+    const d = draft([
+      action("existing-step", { existingProjectId: project.id, existingProjectRevision: project.revision }),
+      action("new-project", { kind: "project", dueDate: "2099-01-01" }),
+    ]);
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
+      { expectedRevision: setup.revision, draft: d }, { actorMemberId: null }, setup.member.id))
+      .rejects.toMatchObject({ code: "project_commitment_resolution_required" });
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(before);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(activity);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual(outbox);
+    expect(getIntake(ctx.handle.db, setup.id, setup.member.id).applyResults).toBeNull();
+  });
+
+  it("keeps committed work immutable when another destination changes during source retention", async () => {
+    let changeDestination!: () => void;
+    const upload = vi.fn(async () => ({ taskId: "upload" }));
+    const paperless = { upload, awaitDocumentId: async () => { changeDestination(); return 111; },
+      getDocument: async () => ({ id: 111, title: "Source", originalFileName: "source.txt", mimeType: "text/plain" }),
+    } as unknown as PaperlessClient;
+    await closeTestContext(ctx);
+    ctx = createTestContext({ paperlessClient: paperless });
+    const setup = await prepare();
+    const headers = { "x-machbar-actor-member-id": String(setup.member.id) };
+    const committedProject = createProject(ctx.handle.db, { title: "Committed project" });
+    const pendingProject = createProject(ctx.handle.db, { title: "Pending project" });
+    const committed = createTask(ctx.handle.db, { title: "Committed step", projectId: committedProject.id });
+    const accepted = { ...draft([
+      action("committed", { existingProjectId: committedProject.id, existingProjectRevision: committedProject.revision }),
+      action("pending", { existingProjectId: pendingProject.id, existingProjectRevision: pendingProject.revision }),
+    ]), retainSourceInPaperless: true };
+    const sourceId = randomUUID();
+    await writeAttachment(env(ctx.dataDir), setup.id, sourceId, Buffer.from("source"));
+    ctx.handle.db.insert(schema.intakeAttachments).values({ id: sourceId, intakeJobId: setup.id, filename: "source.txt",
+      mimeType: "text/plain", sizeBytes: 6, sha256: "hash", createdAt: new Date().toISOString() }).run();
+    ctx.handle.db.update(schema.workItems).set({ status: "done", revision: 99 }).where(eq(schema.workItems.id, committedProject.id)).run();
+    changeDestination = () => {
+      ctx.handle.db.update(schema.workItems).set({ revision: 2 }).where(eq(schema.workItems.id, pendingProject.id)).run();
+    };
+    ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied", acceptedDraftJson: JSON.stringify(accepted),
+      applyResultsJson: JSON.stringify({ work: [{ key: "committed", kind: "action", workItemId: committed.id, role: "task" }],
+        calendar: [], paperlessDocumentIds: [] }) }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const beforeActivity = ctx.handle.db.select().from(schema.activityEvents).all();
+    const beforeOutbox = ctx.handle.db.select().from(schema.notificationEvents).all();
+    const failed = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: setup.revision, draft: draft([action("replacement")]) } });
+    expect(failed.statusCode, failed.body).toBe(400);
+    expect(failed.json().error).toMatchObject({ code: "intake_draft_invalid", details: { issues: [
+        expect.objectContaining({ path: ["workItems", 1, "existingProjectId"] }),
+    ] } });
+    const partial = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(partial.status).toBe("partially_applied");
+    expect(partial.applyResults).toMatchObject({ work: [{ workItemId: committed.id }], paperlessDocumentIds: [111] });
+    expect(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()?.acceptedDraftJson)
+      .toBe(JSON.stringify(accepted));
+    const corrected = draft([action("replacement")]);
+    const saved = await ctx.app.inject({ method: "PATCH", url: `/api/intake/${setup.id}/plan`, headers,
+      payload: { expectedRevision: partial.revision, draft: corrected } });
+    expect(saved.statusCode, saved.body).toBe(409);
+    const retried = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: partial.revision, draft: corrected } });
+    expect(retried.statusCode, retried.body).toBe(400);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(3);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(beforeActivity);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual(beforeOutbox);
+    expect(getIntake(ctx.handle.db, setup.id, setup.member.id).status).toBe("partially_applied");
+    expect(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()?.acceptedDraftJson)
+      .toBe(JSON.stringify(accepted));
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["household", "work"] as const)("preserves owner-only private %s destinations and nested child visibility", async (scope) => {
+    const setup = await prepare();
+    const other = ctx.handle.db.insert(schema.members).values({ name: "Other", color: "#123456" }).returning().get();
+    const project = createProject(ctx.handle.db, { title: "Private", scope, ownerMemberId: setup.member.id });
+    ctx.handle.db.update(schema.workItems).set({ privacyOwnerMemberId: setup.member.id }).where(eq(schema.workItems.id, project.id)).run();
+    ctx.handle.db.update(schema.intakeJobs).set({ scope }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const d = draft([
+      action("private-step", { existingProjectId: project.id, existingProjectRevision: project.revision }),
+      action("private-nested", { parentKey: "private-step" }),
+    ]);
+    const ownerHeaders = { "x-machbar-actor-member-id": String(setup.member.id) };
+    const response = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`,
+      headers: ownerHeaders, payload: { expectedRevision: setup.revision, draft: d } });
+    expect(response.statusCode, response.body).toBe(200);
+    for (const work of response.json().applyResults.work) {
+      const ownerRead = await ctx.app.inject({ method: "GET", url: `/api/tasks/${work.workItemId}`, headers: ownerHeaders });
+      expect(ownerRead.statusCode).toBe(200);
+      expect(ownerRead.json()).toMatchObject({ scope, privacyOwnerMemberId: setup.member.id });
+      for (const headers of [{}, { "x-machbar-actor-member-id": String(other.id) }]) {
+        expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${work.workItemId}`, headers })).statusCode).toBe(404);
+      }
+    }
+  });
+
+  it.each(["revision", "access", "lifecycle"] as const)("reopens source-only destination failure after a held upload (%s) and applies explicit correction without duplicate retention", async (change) => {
+    let uploaded!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => { uploaded = resolve; });
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const upload = vi.fn(async () => { uploaded(); await held; return { taskId: "upload" }; });
+    const paperless = {
+      upload, awaitDocumentId: vi.fn(async () => 111),
+      getDocument: async () => ({ id: 111, title: "Source", originalFileName: "source.txt", mimeType: "text/plain" }),
+    } as unknown as PaperlessClient;
+    await closeTestContext(ctx);
+    ctx = createTestContext({ paperlessClient: paperless });
+    const setup = await prepare();
+    const headers = { "x-machbar-actor-member-id": String(setup.member.id) };
+    const other = ctx.handle.db.insert(schema.members).values({ name: "Other", color: "#123456" }).returning().get();
+    const first = createProject(ctx.handle.db, { title: "First" });
+    const last = createProject(ctx.handle.db, { title: "Last" });
+    const sourceId = randomUUID();
+    await writeAttachment(env(ctx.dataDir), setup.id, sourceId, Buffer.from("source"));
+    ctx.handle.db.insert(schema.intakeAttachments).values({ id: sourceId, intakeJobId: setup.id, filename: "source.txt",
+      mimeType: "text/plain", sizeBytes: 6, sha256: "hash", createdAt: new Date().toISOString() }).run();
+    const d = { ...draft([
+      action("first-step", { existingProjectId: first.id, existingProjectRevision: first.revision }),
+      action("last-step", { existingProjectId: last.id, existingProjectRevision: last.revision }),
+    ]), retainSourceInPaperless: true };
+    const beforeActivity = ctx.handle.db.select().from(schema.activityEvents).all();
+    const beforeOutbox = ctx.handle.db.select().from(schema.notificationEvents).all();
+    const beforeRequests = ctx.handle.db.select().from(schema.homeAssistantRequests).all();
+    const applying = ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: setup.revision, draft: d } }).then((response) => response);
+    await started;
+    ctx.handle.db.update(schema.workItems).set(change === "revision" ? { revision: last.revision + 1 }
+      : change === "access" ? { privacyOwnerMemberId: other.id } : { status: "done" }).where(eq(schema.workItems.id, last.id)).run();
+    const changedWork = ctx.handle.db.select().from(schema.workItems).all();
+    release();
+    const failed = await applying;
+    expect(failed.statusCode, failed.body).toBe(400);
+    expect(failed.json().error.code).toBe("intake_draft_invalid");
+    expect(failed.body).not.toContain("First");
+    expect(failed.body).not.toContain("Last");
+    const recovered = (await ctx.app.inject({ method: "GET", url: `/api/intake/${setup.id}`, headers })).json();
+    expect(recovered.status).toBe("ready");
+    expect(recovered.draft).toEqual(d);
+    if (change !== "revision") expect(recovered.existingProjects.some((project: { id: number }) => project.id === last.id)).toBe(false);
+    expect(recovered.applyResults).toEqual({ work: [], calendar: [], paperlessDocumentIds: [111] });
+    expect(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()).toMatchObject({
+      acceptedDraftJson: null, applyClaimToken: null, applyClaimExpiresAt: null,
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(changedWork);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(beforeActivity);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual(beforeOutbox);
+    expect(ctx.handle.db.select().from(schema.homeAssistantRequests).all()).toEqual(beforeRequests);
+    const stale = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: recovered.revision, draft: d } });
+    expect(stale.statusCode, stale.body).toBe(400);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(changedWork);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const destinationId = change === "access" ? null : change === "revision" ? last.id : first.id;
+    const destination = recovered.existingProjects.find((project: { id: number }) => project.id === destinationId);
+    const corrected = { ...d, workItems: d.workItems.map((item, index) => index === 1 ? {
+      ...item, existingProjectId: destinationId, existingProjectRevision: destination?.revision ?? null,
+    } : item) };
+    const saved = await ctx.app.inject({ method: "PATCH", url: `/api/intake/${setup.id}/plan`, headers,
+      payload: { expectedRevision: recovered.revision, draft: corrected } });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json().applyResults.paperlessDocumentIds).toEqual([111]);
+    const applied = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: saved.json().revision, draft: corrected } });
+    expect(applied.statusCode, applied.body).toBe(200);
+    expect(applied.json().status).toBe("applied");
+    const created = ctx.handle.db.select().from(schema.workItems).all();
+    expect(created).toHaveLength(changedWork.length + 2);
+    expect(created.find((row) => row.title === "last-step")?.parentId).toBe(destinationId);
+    expect(created.find((row) => row.title === "first-step")?.notes).toContain("paperless:111");
+    const activityAfter = ctx.handle.db.select().from(schema.activityEvents).all();
+    // Lost result: the accepted work remains immutable and its ledger prevents duplicate creation/upload.
+    ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied" }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const replay = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: applied.json().revision, draft: draft([action("replacement")]) } });
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json().status).toBe("applied");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(created);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(activityAfter);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(paperless.awaitDocumentId).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!.acceptedDraftJson!)).toEqual(corrected);
+  });
+
+  it("reopens an already-stranded source-only partial and preserves its ledger across explicit reanalysis", async () => {
+    const upload = vi.fn();
+    await closeTestContext(ctx);
+    ctx = createTestContext({ paperlessClient: { upload } as unknown as PaperlessClient });
+    const setup = await prepare();
+    const headers = { "x-machbar-actor-member-id": String(setup.member.id) };
+    const project = createProject(ctx.handle.db, { title: "Existing" });
+    const stale = { ...draft([action("step", { existingProjectId: project.id, existingProjectRevision: project.revision })]),
+      retainSourceInPaperless: true };
+    const sourceId = randomUUID();
+    await writeAttachment(env(ctx.dataDir), setup.id, sourceId, Buffer.from("source"));
+    ctx.handle.db.insert(schema.intakeAttachments).values({ id: sourceId, intakeJobId: setup.id, filename: "source.txt",
+      mimeType: "text/plain", sizeBytes: 6, sha256: "hash", createdAt: new Date().toISOString() }).run();
+    ctx.handle.db.update(schema.workItems).set({ revision: project.revision + 1 }).where(eq(schema.workItems.id, project.id)).run();
+    const results = { work: [], calendar: [], paperlessDocumentIds: [111] };
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "partially_applied", acceptedDraftJson: JSON.stringify(stale), applyResultsJson: JSON.stringify(results),
+    }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const failed = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: setup.revision, draft: draft([action("unconfirmed correction")]) } });
+    expect(failed.statusCode, failed.body).toBe(400);
+    expect(failed.json().error.code).toBe("intake_draft_invalid");
+    const recovered = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(recovered).toMatchObject({ status: "ready", draft: stale, applyResults: results });
+    expect(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()?.acceptedDraftJson).toBeNull();
+    const retried = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/retry`, headers });
+    expect(retried.statusCode, retried.body).toBe(200);
+    expect(retried.json()).toMatchObject({ status: "queued", draft: stale, applyResults: results });
+    const leased = await ctx.app.inject({ method: "GET",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
+      headers: { authorization: `Bearer ${setup.token}` } });
+    const completed = await ctx.app.inject({ method: "POST",
+      url: `/api/integrations/home-assistant/requests/${leased.json().id}/complete`,
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: { leaseToken: leased.json().leaseToken, outcome: "succeeded",
+        result: { summary: "Reanalyzed source", calendarEvents: [], workItems: [], warnings: [] } } });
+    expect(completed.statusCode, completed.body).toBe(204);
+    const reviewed = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(reviewed).toMatchObject({ status: "ready", applyResults: results, draft: { summary: "Reanalyzed source" } });
+    expect(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()?.acceptedDraftJson).toBeNull();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
   it("applies the reported work date and early reminder without inventing a revisit", async () => {
     const setup = await prepare();
     const d = draft([{ key: "register", kind: "action", title: "Register", notes: null, parentKey: null,

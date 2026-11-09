@@ -199,6 +199,101 @@ function authoredField(editor: ReturnType<typeof within>, label: string) {
 }
 
 describe("IntakeReviewPage", () => {
+  it.each(["ready", "partially_applied"] as const)("keeps source-only destination recovery from %s editable without automatically reconfirming the stale destination", async (status) => {
+    const proposal = structuredClone(draft);
+    proposal.calendarEvents = [];
+    proposal.workItems = proposal.workItems.map((item) => ({ ...item, relatedCalendarKeys: [] }));
+    proposal.workItems[0] = { ...proposal.workItems[0]!, existingProjectId: 10, existingProjectRevision: 2 };
+    proposal.retainSourceInPaperless = true;
+    const initial = { ...record(status), draft: proposal,
+      existingProjects: [{ id: 10, title: "Existing active", status: "active", revision: 2 }] };
+    const recovered = { ...initial, status: "ready", revision: 4,
+      existingProjects: [{ id: 10, title: "Existing active", status: "active", revision: 3 }],
+      applyResults: { work: [], calendar: [], paperlessDocumentIds: [111] }, error: {
+      code: "intake_draft_invalid", message: "Review project destinations.", retryable: true,
+      details: { issues: [{ path: ["workItems", 0, "existingProjectId"], code: "invalid_parent", message: "Unavailable" }] },
+    } };
+    mockedApi.getIntake.mockResolvedValueOnce(initial as never).mockResolvedValue(recovered as never);
+    const failure = Object.assign(new Error("Review project destinations."), { code: "intake_draft_invalid" });
+    mockedApi.applyIntake.mockRejectedValueOnce(failure).mockRejectedValueOnce(failure);
+    mockedApi.updateIntakeDraft.mockImplementation(async (_id, body) => ({
+      ...recovered, revision: body.expectedRevision + 1, draft: body.draft,
+    } as never));
+    renderPage();
+    if (status === "ready") {
+      await screen.findByRole("heading", { name: proposal.workItems[0]!.title });
+      fireEvent.click(applyButton());
+    } else {
+      fireEvent.click(await screen.findByRole("button", { name: "Erneut versuchen" }));
+    }
+    await waitFor(() => expect(mockedApi.getIntake).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(applyButton()).not.toBeDisabled());
+    expect(screen.getByRole("button", { name: `Bearbeiten: ${proposal.workItems[0]!.title}` })).toBeEnabled();
+    expect(screen.queryByText(/Starte die übrigen Schritte aus der Quelle neu/)).not.toBeInTheDocument();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.getIntake).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(applyButton()).not.toBeDisabled());
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({
+      expectedRevision: 4, draft: { workItems: [expect.objectContaining({ existingProjectRevision: 2 }), expect.anything()] },
+    });
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    const editor = await openEditor(proposal.workItems[0]!.title);
+    fireEvent.click(editor.getByRole("button", { name: /Existing active/ }));
+    await waitFor(() => expect(mockedApi.updateIntakeDraft).toHaveBeenCalledWith("i1",
+      expect.objectContaining({ expectedRevision: 4, draft: expect.objectContaining({
+        retainSourceInPaperless: true,
+        workItems: expect.arrayContaining([expect.objectContaining({ existingProjectId: 10, existingProjectRevision: 3 })]),
+      }) })), { timeout: 2_000 });
+    closeEditor(editor);
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(3));
+    expect(mockedApi.applyIntake.mock.calls[2]?.[1]).toMatchObject({
+      expectedRevision: 5, draft: { workItems: [expect.objectContaining({ existingProjectRevision: 3 }), expect.anything()] },
+    });
+  });
+
+  it("shows inherited project destinations and explicitly reconfirms, removes, or replaces them through existing editors", async () => {
+    const proposal = structuredClone(draft);
+    proposal.calendarEvents = [];
+    proposal.workItems = proposal.workItems.map((item) => ({ ...item, relatedCalendarKeys: [] }));
+    proposal.workItems[0] = { ...proposal.workItems[0]!, kind: "action",
+      existingProjectId: 10, existingProjectRevision: 2 };
+    const initial = { ...record(), draft: proposal, existingProjectIndexComplete: false,
+      existingProjects: [
+        { id: 10, title: "Existing active", status: "active", revision: 3 },
+        { id: 11, title: "Existing backlog", status: "backlog", revision: 8 },
+      ] };
+    mockedApi.getIntake.mockResolvedValue(initial as never);
+    mockedApi.updateIntakeDraft.mockImplementation(async (_id, body) => ({ ...initial,
+      revision: body.expectedRevision + 1, draft: body.draft } as never));
+    renderPage();
+    expect(await screen.findAllByText("Bestehendes Projekt: Existing active · Aktiv")).toHaveLength(2);
+    expect(screen.getByText(/Zu viele Projekte für den KI-Kontext/)).toBeInTheDocument();
+    const title = proposal.workItems[0]!.title;
+    let editor = await openEditor(title);
+    fireEvent.click(editor.getByRole("button", { name: /Existing backlog/ }));
+    await waitFor(() => expect(mockedApi.updateIntakeDraft).toHaveBeenCalledWith("i1",
+      expect.objectContaining({ draft: expect.objectContaining({ workItems: expect.arrayContaining([
+        expect.objectContaining({ existingProjectId: 11, existingProjectRevision: 8 }),
+      ]) }) })), { timeout: 2_000 });
+    fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
+    expect(screen.getAllByText("Bestehendes Projekt: Existing backlog · Später / noch nicht aktiv")).toHaveLength(2);
+    editor = await openEditor(title);
+    fireEvent.click(editor.getByRole("button", { name: "Kein bestehendes Projekt" }));
+    fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
+    expect(screen.queryByText("Bestehendes Projekt: Existing backlog · Später / noch nicht aktiv")).not.toBeInTheDocument();
+    editor = await openEditor(title);
+    fireEvent.click(editor.getByRole("button", { name: /Existing active/ }));
+    fireEvent.change(editor.getByRole("combobox", { name: "Art" }), { target: { value: "project" } });
+    fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
+    expect(screen.queryByText("Bestehendes Projekt: Existing active · Aktiv")).not.toBeInTheDocument();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
+    expect(mockedApi.applyIntake.mock.calls[0]![1].draft?.workItems[0]).toMatchObject({
+      kind: "project", existingProjectId: null, existingProjectRevision: null,
+    });
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });

@@ -61,6 +61,7 @@ const CALENDAR_FIELDS = new Set([
   "startDateTime", "endDateTime", "relatedWorkKeys",
 ]);
 const WORK_FIELDS = new Set([
+  "existingProjectId",
   "key", "kind", "title", "notes", "parentKey", "ownerName", "dueDate",
   "scheduledDate", "notBeforeDate", "notBeforeAt", "reminders",
   "revisitAt",

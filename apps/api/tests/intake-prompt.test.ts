@@ -3,6 +3,19 @@ import type { IntakePlan } from "@machbar/shared";
 import { buildIntakeInstructions } from "../src/intake/prompt.js";
 
 describe("intake AI instructions", () => {
+  it("limits the destination index to new ordinary actions, not reconciliation or refinement authority", () => {
+    const input = { today: "2026-10-10", memberNames: [], hasText: false, attachmentCount: 1,
+      existingProjectIndex: '{"complete":true,"projects":[{"id":42,"title":"Permit","status":"active"}]}' };
+    const prompt = buildIntakeInstructions(input);
+    expect(prompt).toContain(input.existingProjectIndex);
+    expect(prompt).toContain("not task outlines, duplicate/completion evidence");
+    expect(prompt).toContain("For ambiguous matches leave existingProjectId null");
+    expect(prompt).toContain("waiting is not a project status");
+    expect(buildIntakeInstructions({ ...input, breakdownInstruction: "" })).not.toContain(input.existingProjectIndex);
+    expect(buildIntakeInstructions({ ...input, refinement: { targetType: "task", intent: "improve", context: "{}" } }))
+      .not.toContain(input.existingProjectIndex);
+  });
+
   it("lets breakdown run without instructions and return no unnecessary children", () => {
     const prompt = buildIntakeInstructions({
       today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,

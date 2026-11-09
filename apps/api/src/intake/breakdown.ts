@@ -54,6 +54,7 @@ export function assertBreakdownDraft(draft: IntakeDraft, source?: ReturnType<typ
     || enabled.length > 31
     || enabled.some((item) => item !== root && (item.kind !== "action" || item.parentKey !== root.key))
     || enabled.some((item) => item.needsClarification)
+    || enabled.some((item) => item.existingProjectId != null)
     || draft.calendarEvents.some((item) => item.enabled) || draft.retainSourceInPaperless) {
     throw AppError.badRequest("intake_draft_invalid", "Keep the existing root and up to 30 immediate action steps; calendar events, references, and nested projects are not supported in a breakdown.");
   }

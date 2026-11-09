@@ -56,6 +56,7 @@ def _work_schema() -> vol.Schema:
             _field("title", str): str,
             _optional_field("notes", None, _NULL): _NULL,
             _optional_field("parentKey", None, _NULL): _NULL,
+            vol.Optional("existingProjectId", description="Persisted positive destination id for a NEW root action only"): vol.Any(None, int),
             _optional_field("ownerName", None, _NULL): _NULL,
             _optional_field("dueDate", None, _NULL): _NULL,
             _optional_field("scheduledDate", None, _NULL): _NULL,
@@ -400,7 +401,7 @@ def _compact_plan(value: Any) -> Any:
         "endDate", "startDateTime", "endDateTime", "relatedWorkKeys",
     }
     work_fields = {
-        "key", "kind", "title", "notes", "parentKey", "ownerName", "dueDate",
+        "key", "kind", "title", "notes", "parentKey", "existingProjectId", "ownerName", "dueDate",
         "scheduledDate", "revisitAt", "notBeforeDate", "notBeforeAt", "reminders",
         "needsClarification", "relatedCalendarKeys",
     }
@@ -603,6 +604,11 @@ def normalize_plan(data: Any) -> dict[str, Any]:
             clarification = _required(raw, "needsClarification", item_path, "a boolean")
             if not isinstance(clarification, bool):
                 raise _invalid(item_path + ["needsClarification"], "a boolean", value=clarification)
+            destination = raw.get("existingProjectId")
+            if destination is not None and (
+                isinstance(destination, bool) or not isinstance(destination, int) or destination <= 0
+            ):
+                raise _invalid(item_path + ["existingProjectId"], "a positive integer or null", value=destination)
             work.append(
                 {
                     "key": _normalize_string(_required(raw, "key", item_path, "a string"), False, path=item_path + ["key"]),
@@ -610,6 +616,7 @@ def normalize_plan(data: Any) -> dict[str, Any]:
                     "title": _normalize_string(_required(raw, "title", item_path, "a string"), False, path=item_path + ["title"]),
                     "notes": _normalize_string(_required(raw, "notes", item_path, "a string or null"), path=item_path + ["notes"]),
                     "parentKey": _normalize_string(_required(raw, "parentKey", item_path, "a string or null"), path=item_path + ["parentKey"], absence=True),
+                    **({"existingProjectId": destination} if "existingProjectId" in raw else {}),
                     "ownerName": _normalize_string(_required(raw, "ownerName", item_path, "a string or null"), path=item_path + ["ownerName"], absence=True),
                     "dueDate": _normalize_string(_required(raw, "dueDate", item_path, "a date or null"), path=item_path + ["dueDate"], absence=True),
                     "scheduledDate": _normalize_string(_required(raw, "scheduledDate", item_path, "a date or null"), path=item_path + ["scheduledDate"], absence=True),

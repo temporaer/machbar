@@ -638,6 +638,7 @@ export function IntakeReviewPage() {
         state.reload();
       } else {
         setApplyError(localizedErrorMessage(cause, strings));
+        state.reload();
       }
     } finally {
       applyingRef.current = false;
@@ -776,7 +777,9 @@ export function IntakeReviewPage() {
         </section>
       ) : null}
       <fieldset disabled={busy || record.status !== "ready"} className="intake-review-fields">
+        {record.existingProjectIndexComplete === false ? <p role="status">{strings.intakeProjectIndexOverflow}</p> : null}
         <IntakeProposalReview
+          existingProjects={record.existingProjects ?? []}
           draft={draft}
           members={members}
           issues={issues}

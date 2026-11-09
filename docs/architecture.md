@@ -265,6 +265,48 @@ to repair compact AI representations before strict structural and semantic
 validation; canonical mutations remain strict. API Zod schemas provide
 structural validation around the same contract.
 
+Ordinary intake sends an all-or-nothing existing-project destination index:
+stable persisted id, title and real active/backlog status, filtered by initiating
+member visibility and intake scope. The complete JSON envelope is bounded to
+16 KiB of serialized UTF-8. Overflow sends `{complete:false,projects:[]}` and
+review explains the manual-selection fallback; titles are untrusted data.
+No task outline or task-reconciliation authority is supplied. Breakdown and
+typed refinement do not receive ordinary destination semantics.
+Ordinary `/plan` and `/apply` reject typed-refinement jobs with
+`intake_state_conflict` before accepting a draft or acquiring a claim. Typed
+refinements use only their dedicated review/Apply endpoints. Ordinary draft
+projection, retry context, and interrupted ordinary-Apply claim recovery also
+exclude typed-refinement jobs, including legacy rows containing ordinary JSON.
+
+`existingProjectId` is optional (old stored plans remain valid) and belongs only
+to a proposal root action. Descendants inherit through proposal-local `parentKey`.
+The generated draft binds `existingProjectRevision` at analysis completion;
+read/save/Apply never silently refresh this reviewed expectation. Review options
+are current visible same-scope eligible projects and use `DestinationPicker`.
+Choosing again explicitly reconfirms the returned server revision.
+Intake reads explicitly carry the committed selected-member header in
+unauthenticated deployments, just as their writes do; they never read raw
+cross-tab local storage as an identity authority.
+`intake/existingProjects.ts` owns this focused index and destination validation.
+Apply checks every pending destination before external effects, after file reads,
+and again before any work writes in the existing SQLite transaction. Ledger-confirmed
+work is skipped on partial replay. Canonical transactional task creation disables
+commitment activation only for these existing-destination subtrees, preserving
+backlog lifecycle and Today eligibility; new-project creation is unchanged.
+If destination validation fails after source retention but before any work/calendar
+has committed, review becomes editable again. The uploaded-source ledger is retained,
+acceptance is cleared, and the draft keeps its stale reviewed destination revisions:
+the user must explicitly reselect or remove the association. Saving and applying the
+corrected draft reuse retained uploads. Retrying an already-stranded source-only partial
+also reopens review when its accepted destination fails pre-claim validation; an unreviewed
+replacement submitted with that retry is not applied. Other source-effect failures and partials with
+committed work/calendar remain immutable. Already committed work still replays without
+checking its old destination revision.
+The optional HA structured-output field requires installing the updated custom
+integration for automatic suggestions; an old adapter remains compatible but
+does not forward the new field. HACS publication/versioning and HA restart are
+independent of server deployment.
+
 ### Shared household AI context
 
 The optional household AI context is durable background information, not an

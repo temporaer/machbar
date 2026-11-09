@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { calendarDateForInstant, intakeCanonicalPlanning, INTAKE_TIMEZONE, type IntakeDraftWorkItem, type IntakeIssue, type Member } from "@machbar/shared";
+import { calendarDateForInstant, intakeCanonicalPlanning, INTAKE_TIMEZONE, type IntakeDraftWorkItem, type IntakeIssue, type Member, type IntakeRecord } from "@machbar/shared";
 import { useLocale } from "../lib/locale";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import { taskAvailabilityClock } from "../lib/taskAvailability";
@@ -37,6 +37,9 @@ export function IntakeWorkItemCard({
   onKindChange,
   breakdownRole,
   onMove,
+  existingProjects = [],
+  workItems = [],
+  destinationProjectId,
 }: {
   item: IntakeDraftWorkItem;
   index: number;
@@ -56,6 +59,9 @@ export function IntakeWorkItemCard({
   onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void;
   breakdownRole?: "root" | "step" | undefined;
   onMove?: ((delta: -1 | 1) => void) | undefined;
+  existingProjects?: IntakeRecord["existingProjects"];
+  workItems?: IntakeDraftWorkItem[];
+  destinationProjectId?: number | null | undefined;
 }) {
   const strings = useStrings();
   const editableMetadata = breakdownRole !== "root";
@@ -91,6 +97,7 @@ export function IntakeWorkItemCard({
   const reminders = item.reminders.map((reminder) =>
     formatReminderLabel(reminder, item.dueDate, strings, locale));
   const availabilityTime = taskAvailabilityClock(planning.revisitAt);
+  const destination = existingProjects.find((project) => project.id === destinationProjectId);
 
   return (
     <>
@@ -168,6 +175,11 @@ export function IntakeWorkItemCard({
             {strings.intakeChildOf(parentTitle)}
           </p>
         ) : null}
+        {destinationProjectId != null ? <p className="intake-parent-context">
+          {strings.intakeExistingProject}: {destination
+            ? `${destination.title} · ${strings.projectStatusLabels[destination.status]}`
+            : strings.intakeDestinationUnavailable}
+        </p> : null}
         {item.notes?.trim() ? (
           <MarkdownNotes
             value={item.notes}
@@ -260,6 +272,9 @@ export function IntakeWorkItemCard({
           onClose={closeEditor}
           allowedKinds={breakdownRole === "root" ? ["action", "project"] : breakdownRole === "step" ? ["action"] : undefined}
           allowClarification={!breakdownRole}
+          allowDestination={!breakdownRole}
+          existingProjects={existingProjects}
+          workItems={workItems}
         />
       ) : null}
       {editor === "owner" ? (
