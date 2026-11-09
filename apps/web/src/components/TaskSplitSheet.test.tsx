@@ -86,7 +86,6 @@ describe("TaskSplitSheet", () => {
         <button onClick={() => void actions.update(parent, { title: renamed.title })}>Rename workflow parent</button>
         <button onClick={() => dispatch({ type: "task.split", taskId: parent.id })}>Open split workflow</button>
         <button onClick={() => { changed = true; bump(); }}>Refresh workflow children</button>
-        <output data-testid="workflow-parent-held">{String(actions.holdingIds.has(parent.id))}</output>
       </>;
     }
     renderWithProviders(<><Controls /><TaskWorkflowHost /></>);
@@ -95,14 +94,9 @@ describe("TaskSplitSheet", () => {
     await waitFor(() => expect(saved).toBe(true));
     await userEvent.click(screen.getByRole("button", { name: "Open split workflow" }));
     await screen.findByText(oldChild.title);
-    vi.useFakeTimers();
     fireEvent.click(refresh);
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getByText(newChild.title)).toBeInTheDocument();
+    await screen.findByText(newChild.title);
     expect(screen.queryByText(oldChild.title)).not.toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
-    expect(screen.getByTestId("workflow-parent-held")).toHaveTextContent("true");
-    expect(screen.getByText(newChild.title)).toBeInTheDocument();
   });
 
   it("submits all filled rows in one atomic request and keeps one empty trailing row", async () => {
@@ -223,6 +217,7 @@ describe("TaskSplitSheet", () => {
 
   it("retains the dated batch while collecting server-required activation decisions", async () => {
     const project = makeProject({ id: 12, revision: 5, title: "Sommerfest", status: "backlog", ownerMemberId: null });
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 7, revision: 4, projectId: 12 }));
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [], ancestors: [] });
     mockedApi.createTaskStepBatchForTask
@@ -281,6 +276,7 @@ describe("TaskSplitSheet", () => {
 
   it("drops activation decisions when the user changes the batch after a requirement response", async () => {
     const project = makeProject({ id: 13, revision: 6, title: "Garten", status: "backlog", ownerMemberId: null });
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 7, revision: 4, projectId: 13 }));
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [], ancestors: [] });
     mockedApi.createTaskStepBatchForTask
       .mockRejectedValueOnce(Object.assign(new Error("Treiber fehlt"), {

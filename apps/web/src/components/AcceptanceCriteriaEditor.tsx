@@ -23,6 +23,7 @@ export function AcceptanceCriteriaEditor({
   workItemId,
   criteria: criteriaProp,
   onError,
+  onFailure,
   autoFocusNewCriterion = false,
 }: {
   ownerType: "project" | "task";
@@ -30,6 +31,7 @@ export function AcceptanceCriteriaEditor({
   criteria: AcceptanceCriterion[];
   /** Reports a failed mutation to the surrounding sheet (`null` clears it). */
   onError: (message: string | null) => void;
+  onFailure?: (cause: unknown) => void;
   autoFocusNewCriterion?: boolean;
 }) {
   const strings = useStrings();
@@ -43,7 +45,7 @@ export function AcceptanceCriteriaEditor({
     check: checkCriterion,
     pendingId: checkingCriterionId,
     error: criterionCheckError,
-  } = useCriterionCheck(ownerType, workItemId);
+  } = useCriterionCheck(ownerType, workItemId, onFailure);
 
   const criteria = sortByPosition(criteriaProp);
   const total = criteria.length;
@@ -65,6 +67,7 @@ export function AcceptanceCriteriaEditor({
       bump();
       return true;
     } catch (err) {
+      onFailure?.(err);
       onError(localizedErrorMessage(err, strings));
       return false;
     } finally {

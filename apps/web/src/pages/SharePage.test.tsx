@@ -254,7 +254,7 @@ describe("SharePage", () => {
 
     expect(await screen.findByText("Fällig: 15.09.2026")).toBeInTheDocument();
     await userEvent.type(
-      screen.getByLabelText("Aufgaben und Projekte durchsuchen"),
+      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
       "Elternabend vorbereiten",
     );
     await userEvent.click(
@@ -432,7 +432,7 @@ describe("SharePage", () => {
 
     expect(await screen.findByText("2 geteilte Anhänge")).toBeInTheDocument();
     await userEvent.type(
-      screen.getByLabelText("Aufgaben und Projekte durchsuchen"),
+      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
       "Belege",
     );
     await userEvent.click(screen.getByRole("button", { name: /Belege/ }));

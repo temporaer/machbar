@@ -8,7 +8,7 @@ import { BottomSheet } from "./BottomSheet";
 const PRIORITIES = [1, 2, 3, 4, 5] as const;
 
 /** Focused `task.priority` editor — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskPrioritySheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskPrioritySheet({ task, onClose, onFailure }: { task: Task; onClose: () => void; onFailure?: (cause: unknown) => void }) {
   const strings = useStrings();
   const taskActions = useTaskActions();
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -17,9 +17,10 @@ export function TaskPrioritySheet({ task, onClose }: { task: Task; onClose: () =
   const choose = async (priority: number | null) => {
     setSaveError(null);
     try {
-      await taskActions.update(task, { priority }, { priority }, true);
+      await taskActions.update(task, { priority }, true);
       onClose();
     } catch (cause) {
+      onFailure?.(cause);
       setSaveError(localizedErrorMessage(cause, strings));
     }
   };

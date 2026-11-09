@@ -9,6 +9,7 @@ import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { makeTask } from "../test/fixtures";
 import { GuidedCapturePage } from "./GuidedCapturePage";
 import { CaptureForm } from "../components/CaptureForm";
+import { RefreshProvider } from "../lib/refresh";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -22,9 +23,6 @@ vi.mock("../lib/api", () => ({
 vi.mock("../lib/identity", () => ({
   useIdentity: () => ({ currentMemberId: member.id, members: [{ id: member.id, name: "Mira" }] }),
 }));
-vi.mock("../lib/refresh", () => ({
-  useRefresh: () => ({ bump: vi.fn() }),
-}));
 
 const createTask = vi.mocked(api.createTask);
 const de = getCatalog("de");
@@ -34,6 +32,7 @@ function renderJourney(entry = "/capture/guided", locale: "de" | "en" = "de") {
   localStorage.setItem(LOCALE_STORAGE_KEY, locale);
   const tree = () => (
     <LocaleProvider>
+      <RefreshProvider>
       <MemoryRouter initialEntries={[entry]}>
         <Link to="/inbox">Bottom navigation</Link>
         <Link to="/capture/guided?area=travel">Travel area link</Link>
@@ -42,6 +41,7 @@ function renderJourney(entry = "/capture/guided", locale: "de" | "en" = "de") {
           <Route path="/inbox" element={<h1>Inbox destination</h1>} />
         </Routes>
       </MemoryRouter>
+      </RefreshProvider>
     </LocaleProvider>
   );
   const result = render(tree());
@@ -580,7 +580,7 @@ describe("guided capture", () => {
   });
 
   it("still requests metadata for standard capture", async () => {
-    render(<CaptureForm onCancel={vi.fn()} onCaptured={vi.fn()} />);
+    render(<RefreshProvider><CaptureForm onCancel={vi.fn()} onCaptured={vi.fn()} /></RefreshProvider>);
     await waitFor(() => expect(api.getTags).toHaveBeenCalled());
     expect(api.getProjects).toHaveBeenCalled();
     expect(api.getHomeAssistantStatus).toHaveBeenCalled();

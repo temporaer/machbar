@@ -105,6 +105,123 @@ test("two real app sessions converge after another client saves", async ({ page,
   } finally { await second.close(); }
 });
 
+test("changing identity retires a held read in the real app provider tree", async ({ page }) => {
+  const created = await page.request.post("/api/projects", {
+    data: { title: `Old identity read ${randomUUID()}` },
+  });
+  expect(created.status()).toBe(201);
+  const project = await created.json();
+  const memberResponse = await page.request.post("/api/members", {
+    data: { name: `Replacement identity ${randomUUID()}` },
+  });
+  expect(memberResponse.status()).toBe(201);
+  const member = await memberResponse.json();
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let started = false;
+  let finished = false;
+  let reads = 0;
+  await page.route(`**/api/projects/${project.id}`, async route => {
+    if (route.request().method() !== "GET" || ++reads !== 1) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    started = true;
+    await held;
+    await route.fulfill({ response });
+    finished = true;
+  });
+  try {
+    await page.goto(`/#/projects/${project.id}`);
+    await expect.poll(() => started).toBe(true);
+    const title = `Current identity read ${randomUUID()}`;
+    expect((await page.request.patch(`/api/projects/${project.id}`, {
+      data: { title, expectedRevision: project.revision },
+    })).ok()).toBeTruthy();
+    await page.evaluate(id => {
+      const key = "machbar:identity-member-id";
+      localStorage.setItem(key, String(id));
+      window.dispatchEvent(new StorageEvent("storage", {
+        key, newValue: String(id), storageArea: localStorage,
+      }));
+    }, member.id);
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    release();
+    await expect.poll(() => finished).toBe(true);
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: project.title, exact: true })).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
+
+for (const targetType of ["task", "project"] as const) {
+  test(`changing identity retires a held ${targetType} refinement continuation`, async ({ page }) => {
+    const created = await page.request.post(`/api/${targetType}s`, {
+      data: { title: `Refinement identity ${randomUUID()}` },
+    });
+    expect(created.status()).toBe(201);
+    const item = await created.json();
+    const memberResponse = await page.request.post("/api/members", {
+      data: { name: `Replacement refinement identity ${randomUUID()}` },
+    });
+    expect(memberResponse.status()).toBe(201);
+    const member = await memberResponse.json();
+    const jobId = randomUUID();
+    const path = `/api/intake/refinement/${targetType}/${item.id}`;
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    let started = false;
+    let staleJobReads = 0;
+    page.on("request", request => {
+      if (new URL(request.url()).pathname === `/api/intake/${jobId}`) staleJobReads += 1;
+    });
+    await page.route(`**${path}`, async route => {
+      started = true;
+      await held;
+      await route.fulfill({ status: 201, json: { id: jobId } });
+    });
+    try {
+      await page.goto(`/#/${targetType}s/${item.id}`);
+      await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+      if (targetType === "project") {
+        await page.getByRole("button", { name: "Struktur", exact: true }).click();
+      }
+      await page.getByRole("dialog").getByRole("button", { name: "Mit KI klären…", exact: true }).click();
+      await page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true }).click();
+      await expect.poll(() => started).toBe(true);
+      const newScopeRead = page.waitForResponse(response =>
+        new URL(response.url()).pathname === `/api/${targetType}s/${item.id}` &&
+        response.request().method() === "GET",
+      );
+      await page.evaluate(id => {
+        const key = "machbar:identity-member-id";
+        localStorage.setItem(key, String(id));
+        window.dispatchEvent(new StorageEvent("storage", {
+          key, newValue: String(id), storageArea: localStorage,
+        }));
+      }, member.id);
+      expect((await newScopeRead).status()).toBe(200);
+      await expect(page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+      const response = page.waitForResponse(response =>
+        new URL(response.url()).pathname === path && response.request().method() === "POST",
+      );
+      release();
+      await (await response).finished();
+      await page.evaluate(() => new Promise<void>(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }));
+      await expect(page).toHaveURL(new RegExp(`#/${targetType}s/${item.id}$`));
+      expect(staleJobReads).toBe(0);
+      await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+    } finally {
+      release();
+    }
+  });
+}
+
 test("Discussion renders real tasks/projects and live changes", async ({ page }) => {
   let item = await task(page);
   item = await (await page.request.patch(`/api/tasks/${item.id}`, { data: { discussionRequested: true, expectedRevision: item.revision } })).json();
@@ -222,7 +339,7 @@ test("project task entry precedes context and returns focus after an atomic batc
   ]);
 });
 
-test("project activation removes denied requirements and recovers with a GET-only retry", async ({ page }) => {
+test("project activation ends on denial and an explicit reopen starts with empty choices", async ({ page }) => {
   const title = `Activation recovery ${randomUUID()}`;
   const created = await page.request.post("/api/projects", {
     data: { title, status: "backlog" },
@@ -241,9 +358,13 @@ test("project activation removes denied requirements and recovers with a GET-onl
 
   await page.goto(`/#/projects/${project.id}`);
   await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
-  let phase: "initial" | "denied" | "retry" | "restored" = "initial";
+  let phase: "initial" | "denied" | "restored" = "initial";
   let requests = 0;
-  let retryRequests = 0;
+  let activationWrites = 0;
+  page.on("request", request => {
+    if (request.url().endsWith(`/api/projects/${project.id}/activate`) &&
+      request.method() === "POST") activationWrites += 1;
+  });
   await page.route(`**/api/projects/${project.id}`, async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     requests += 1;
@@ -258,13 +379,6 @@ test("project activation removes denied requirements and recovers with a GET-onl
         body: JSON.stringify({ error: { code: "forbidden", message: "Access denied." } }),
       });
     }
-    if (phase === "retry") {
-      retryRequests += 1;
-      if (retryRequests === 1) {
-        return route.fulfill({ status: 503, body: "Temporarily unavailable." });
-      }
-      phase = "restored";
-    }
     return route.continue();
   });
 
@@ -278,28 +392,34 @@ test("project activation removes denied requirements and recovers with a GET-onl
 
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect.poll(() => requests).toBeGreaterThan(1);
-  await expect(dialog.getByRole("button", { name: "Erneut versuchen" })).toBeVisible();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Erneut versuchen" })).toHaveCount(0);
   await expect(dialog).not.toContainText(title);
   expect(await dialog.locator("input, select, textarea").count()).toBe(0);
   expect(await dialog.locator("input, select, textarea").evaluateAll((controls) =>
     controls.flatMap((control) => Array.from(control.attributes, (attribute) => attribute.value)),
   )).toEqual([]);
 
-  phase = "retry";
-  await dialog.getByRole("button", { name: "Erneut versuchen" }).click();
-  await expect(dialog.getByRole("button", { name: "Erneut versuchen" })).toBeVisible();
-  await expect(dialog).not.toContainText(title);
+  expect(activationWrites).toBe(0);
   expect((await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("backlog");
 
-  await dialog.getByRole("button", { name: "Erneut versuchen" }).click();
-  await expect(dialog.getByText(title, { exact: true })).toBeVisible();
-  await expect(dialog.locator('select[id^="commitment-driver-"]')).toHaveValue(memberId!);
-  await expect(dialog.locator("#commitment-next-action")).toHaveValue("Confirm the insurance details");
-  expect(retryRequests).toBe(2);
+  await dialog.getByRole("button", { name: "Schließen", exact: true }).last().click();
+  await expect(dialog).toHaveCount(0);
+  phase = "restored";
+  await page.getByRole("button", { name: "Erneut versuchen", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await page.locator(".detail-meta-status-button").click();
+  await page.locator('[data-workflow-action="activate"]').click();
+  await expect(dialog.locator('select[id^="commitment-driver-"]')).toHaveValue("");
+  await expect(dialog.locator("#commitment-next-action")).toHaveValue("");
+  expect(activationWrites).toBe(0);
   expect((await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("backlog");
 
+  await dialog.locator('select[id^="commitment-driver-"]').selectOption(memberId!);
+  await dialog.locator("#commitment-next-action").fill("Confirm the insurance details");
   await dialog.getByRole("button", { name: "Projekt starten", exact: true }).click();
   await expect.poll(async () => (await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("active");
+  expect(activationWrites).toBe(1);
 });
 
 test("captured work opens the existing subtask composer without choosing a project", async ({ page }, testInfo) => {

@@ -205,6 +205,10 @@ describe("IntakeReviewPage", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedApi.getIntake.mockReset();
+    mockedApi.updateIntakeDraft.mockReset();
+    mockedApi.applyIntake.mockReset();
+    mockedApi.retryIntake.mockReset();
     mockedApi.getIntake.mockResolvedValue(record() as never);
     mockedApi.updateIntakeDraft.mockImplementation(async (_id, body) => ({ ...record(), revision: 3, draft: body.draft } as never));
     mockedApi.applyIntake.mockResolvedValue({ ...record("applied"), draft: null } as never);
@@ -1122,8 +1126,7 @@ describe("IntakeReviewPage", () => {
     await changeTitle(editor, "Local update");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
-      await Promise.resolve();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(mockedApi.getIntake).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("heading", { name: "Server update" })).toBeInTheDocument();
@@ -1394,10 +1397,12 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.retryIntake).toHaveBeenCalled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(screen.getByText("Der Inhalt wird analysiert …")).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(screen.getByText("Ersetzte Analyse")).toBeInTheDocument();
   });
@@ -1423,6 +1428,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(screen.getByText("Analyse fehlgeschlagen")).toBeInTheDocument();
   });
@@ -1443,6 +1449,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByText("Wird übernommen …")).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(screen.getByText(text)).toBeInTheDocument();
   });
@@ -1460,6 +1467,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(screen.getByText("Der Inhalt wird analysiert …")).toBeInTheDocument();
   });

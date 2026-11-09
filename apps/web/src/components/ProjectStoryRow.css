@@ -196,11 +196,6 @@
   padding-right: 0;
 }
 
-/* See `.task-row-content.retained` in `styles/index.css` for the rationale. */
-.story-row-content.retained {
-  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
-}
-
 .story-row-quiet {
   box-shadow: none;
   background: color-mix(in srgb, var(--color-surface-alt) 55%, var(--color-surface));

@@ -41,8 +41,6 @@ import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
 import { recordRecentlyViewed } from "../lib/recentlyViewed";
-import type { ProjectWithActions } from "../lib/api";
-import { useTaskActions } from "../lib/useTaskActions";
 import { useProjectActions } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
@@ -90,8 +88,6 @@ export function ProjectDetailPage() {
     notes: string;
   } | null>(null);
   const notesRef = useRef<MarkdownEditorHandle>(null);
-  const [confirmedProject, setConfirmedProject] =
-    useState<ProjectWithActions | null>(null);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const planningTaskRef = useRef<number | null>(null);
@@ -122,31 +118,13 @@ export function ProjectDetailPage() {
     error: projectError,
     reload: reloadProject,
   } = useAsync(() => api.getProject(projectId), [projectId]);
-  useTaskActions(flattenTasks(loadedProject?.tasks ?? []));
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
   useEffect(() => {
     if (Number.isFinite(projectId)) recordRecentlyViewed("project", projectId);
   }, [projectId]);
-  useEffect(() => {
-    setConfirmedProject((current) => {
-      if (!current || current.id !== loadedProject?.id) return null;
-      if (loadedProject.revision >= current.revision) return null;
-      return current;
-    });
-  }, [loadedProject]);
-  const baseProject =
-    loadedProject &&
-    confirmedProject?.id === loadedProject.id &&
-    confirmedProject.revision > loadedProject.revision
-      ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks, childStories: loadedProject.childStories ?? [] }
-      : loadedProject;
-  const projectActions = useProjectActions(
-    loadedProject ? [loadedProject, ...(loadedProject.childStories ?? [])] : [],
-  );
-  const project = baseProject
-    ? { ...projectActions.projectStory(baseProject), tasks: baseProject.tasks, childStories: baseProject.childStories ?? [] }
-    : baseProject;
+  const projectActions = useProjectActions();
+  const project = loadedProject;
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
 
   const owner = project
@@ -174,7 +152,16 @@ export function ProjectDetailPage() {
   // Authored text is the only thing this page edits itself; every scalar
   // property is a semantic command (see docs/architecture-rules.md).
   useEffect(() => {
-    if (!project) return;
+    if (!project) {
+      contentBaselineRef.current = null;
+      setTitleDraft("");
+      setNotesDraft("");
+      setTitleEditing(false);
+      setNotesEditing(false);
+      setAttachmentOpen(false);
+      setConfirmingDelete(false);
+      return;
+    }
     const baseline = contentBaselineRef.current;
     if (baseline?.id !== project.id) {
       contentBaselineRef.current = {
@@ -212,11 +199,9 @@ export function ProjectDetailPage() {
       const confirmed = await projectActions.update(
         project,
         { [field]: value },
-        { [field]: value },
         true,
       );
       if (!confirmed) return false;
-      setConfirmedProject(confirmed);
       return true;
     } catch (cause) {
       if (isStaleWriteConflict(cause)) reloadProject();
@@ -459,9 +444,7 @@ export function ProjectDetailPage() {
                         onClick: () => dispatch(storyWorkflowCommand(project, action)),
                       })),
                       { key: "discussion", icon: "followUp", label: project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
-                        onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.then((confirmed) => {
-                          if (confirmed && "availableActions" in confirmed) setConfirmedProject(confirmed);
-                        })?.catch(() => {}); } },
+                        onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.catch(() => {}); } },
                       { key: "structure", icon: "split", label: strings.actionTileLabels["task.structure"], onClick: () => dispatch({ type: "story.structure", story: project }) },
                       { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => { setAttachmentError(null); setAttachmentOpen(true); } },
                     ]}>
@@ -580,7 +563,6 @@ export function ProjectDetailPage() {
                               scope: project.scope === "work" ? "household" : "work",
                               expectedRevision: project.revision,
                             },
-                            undefined,
                             true,
                           );
                         } catch (cause) {
@@ -646,7 +628,6 @@ export function ProjectDetailPage() {
               </div>
               <NotesAppend disabled={notesEditing || projectMutationPending} onAppend={async content => {
                 const updated = await projectActions.appendNotes(project, content);
-                if (updated) { setConfirmedProject(updated); setNotesDraft(updated.notes); }
                 return updated;
               }} />
             {notesEditing ? (
@@ -801,13 +782,11 @@ export function ProjectDetailPage() {
               const nextNotes = appendTextBlock(project.notes, markdown);
               setAttachmentError(null);
               try {
-                const updated = await projectActions.update(
+                await projectActions.update(
                   project,
-                  { notes: nextNotes },
                   { notes: nextNotes },
                   true,
                 );
-                if (updated) setConfirmedProject(updated);
               } catch (cause) {
                 if (isStaleWriteConflict(cause)) reloadProject();
                 setAttachmentError(localizedErrorMessage(cause, strings));

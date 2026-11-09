@@ -14,7 +14,7 @@ import {
 } from "../lib/projectActivationResolution";
 import { BottomSheet } from "./BottomSheet";
 import { TaskOutline } from "./TaskOutline";
-import { StepComposer, type StepDraft } from "./StepComposer";
+import { discardStepDraft, StepComposer, type StepDraft } from "./StepComposer";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import { useNavigate } from "react-router-dom";
 import { useIdentity } from "../lib/identity";
@@ -33,6 +33,10 @@ function projectRevisions(project: ProjectRevisionSnapshot) {
 
 /** The shared task-step workflow combines the existing outline organizer with
  * one atomic, revision-checked batch creation. */
+export function discardTaskSplitDraft(taskId: number, memberId: number | null) {
+  discardStepDraft(`task-${taskId}-member-${memberId ?? "shared"}`);
+}
+
 export function TaskSplitSheet({
   parentId,
   parentTitle,
@@ -41,6 +45,8 @@ export function TaskSplitSheet({
   projectId = null,
   existingChildren = [],
   onClose,
+  onFailure,
+  isCurrent = () => true,
 }: {
   parentId: number;
   parentTitle?: string;
@@ -49,6 +55,8 @@ export function TaskSplitSheet({
   projectId?: number | null;
   existingChildren?: Task[];
   onClose: () => void;
+  onFailure?: (cause: unknown) => void;
+  isCurrent?: () => boolean;
 }) {
   const strings = useStrings();
   const navigate = useNavigate();
@@ -75,6 +83,7 @@ export function TaskSplitSheet({
         }
       }).catch((cause) => {
         if (current) {
+          onFailure?.(cause);
           setCurrentProject(null);
           setSnapshotError(localizedErrorMessage(cause, strings));
         }
@@ -123,12 +132,14 @@ export function TaskSplitSheet({
     try {
       if (!activationPrompt && (currentProjectId !== null || convertParent)) {
         const preview = await api.previewTaskSteps(parentId, input);
+        if (!isCurrent()) return false;
         if (preview.activatingProjects.length) {
           setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt: projectActivationPromptFromSnapshot(preview.decision) });
           return false;
         }
       }
       const result = await api.createTaskStepBatchForTask(parentId, input);
+      if (!isCurrent()) return false;
       if (result.parent) {
         setCurrentParentRevision(result.parent.revision);
         setCurrentParentStatus(result.parent.status);
@@ -143,11 +154,17 @@ export function TaskSplitSheet({
         navigate(`/projects/${result.convertedProject.id}`, { state: { createdProjectId: result.convertedProject.id } });
       }
     } catch (cause) {
-      const prompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (prompt) setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt });
-      else if ((cause as { code?: string })?.code === "stale_write_conflict") {
+      if (!isCurrent()) return false;
+      onFailure?.(cause);
+      const requiredPrompt = projectActivationPromptFromError(cause);
+      if ((cause as { code?: string })?.code === "stale_write_conflict" ||
+        (cause as { code?: string })?.code === "project_commitment_resolution_required") {
         setActivationState(null);
-        try { await refreshSnapshots(); } catch (refreshCause) {
+        try {
+          await refreshSnapshots();
+          if (requiredPrompt && isCurrent()) setActivationState({ fingerprint: fingerprint(steps, convertParent, currentProjectId), prompt: requiredPrompt });
+        } catch (refreshCause) {
+          onFailure?.(refreshCause);
           setSnapshotError(localizedErrorMessage(refreshCause, strings));
         }
       }

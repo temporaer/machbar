@@ -589,8 +589,8 @@ There are three distinct source attention dates for a card:
 timezone for date-based views. It is not a separate task status or workflow
 store.
 
-From these task dates, `projectWeekAttention` (in `@machbar/shared`, reused by both the
-backend projection and the frontend's optimistic drag/clear recompute)
+From these task dates, `projectWeekAttention` (in `@machbar/shared`, used by the
+backend projection; the frontend no longer recomputes optimistic placements)
 derives one explicit `attentionDate` + `placement` per item: the earliest
 applicable candidate date, clamped forward to today when it is in the past.
 Ties between candidates landing on the same clamped date break
@@ -667,16 +667,20 @@ decision. Project dates never become task dates.
 
 After a successful mutating API response commits, the single application
 process publishes a coarse invalidation through an authenticated SSE stream.
-Each browser tab identifies its own writes so their echo does not interrupt
-local optimistic-retention UI. Other tabs/devices refetch through the existing
-frontend refresh bus. `useAsync` treats these same-query refetches as
-stale-while-revalidate: successful data remains rendered, `loading` stays
-false, and background failures do not replace the page with its foreground
-error state. Dependency changes start a new logical query generation and hide
-old-query data immediately. Each logical query generation allows one in-flight
-request; additional invalidations queue one trailing revalidation and do not
-cancel the pending result, so initial loading can settle. Generation checks and
-effect cancellation prevent stale or unmounted requests from committing.
+Each browser tab identifies its own writes to avoid duplicate invalidation.
+Other tabs/devices refetch through the existing frontend refresh bus.
+`useAsync` now presents native TanStack Query results: successful data remains
+rendered during ordinary revalidation, and background failures do not replace
+the page with its foreground error state. Each mounted read and its logical
+dependencies identify a cache entry; no normalized entity graph is maintained.
+Entries are collected on unmount rather than reused across navigation.
+Successful local writes cancel obsolete reads and refetch active results;
+mutation DTOs are not published across list/detail/aggregate caches. External
+events join an in-flight initial read and share one trailing revalidation.
+Consumed cancellation signals prevent an obsolete request from publishing.
+Changing actor/authentication remounts the read/action/editor scope with a fresh
+Query client. Bootstrap identity and independent explicit polling remain
+outside this read facade.
 Remote SSE, focus, visibility, online, and disconnected-poll invalidations use
 a leading/trailing one-second cadence, including a final refresh after a burst.
 Explicit mutation refreshes remain immediate; hidden-tab polling and visible
@@ -910,18 +914,12 @@ post-conversion task-entry dialog remains. Explicit Start uses the server's
 activation snapshot and the canonical activation command, collecting only missing
 decisions before confirmation. Proposed task creation/planning uses a rollback-only
 preview of that same canonical mutation to account for the actual proposed graph.
-The canonical `ProjectWorkflowHost` read remains the authority for the activation
-sheet. A 403/404 clears its retained project detail from `useAsync`; the mounted
-sheet keeps only authored choices and exposes a GET-only retry, then rebuilds
-requirements and revisions from the newly accepted server snapshot. Other
-refresh errors retain usable content.
-Acceptance is published by the canonical runner, not inferred from idle state:
-a successful read remains authoritative when its queued successor fails harmlessly.
-Error-supplied activation requirements survive authored edits. A command error
-from the same accepted read can update them; after a newer accepted read, only
-an error with a strictly newer target revision can replace that read's
-requirements. Older and equal-revision errors leave the current read intact.
-Choices remain normalized to current requirements.
+The canonical `ProjectWorkflowHost` read supplies the activation sheet.
+Access loss removes protected content and ends the editor; reopening starts
+with current requirements and no restored choices. Other refresh failures keep
+usable content and drafts. Stale compound decisions require a fresh read and
+explicit reconfirmation, never an automatic second mutation. Delayed responses
+cannot affect a replacement opening or identity.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
@@ -1037,7 +1035,7 @@ for active projects, 30 for backlog projects, and 90 for standalone Someday
 tasks. Healthy future waiting suppresses generic active inactivity.
 
 Review decisions execute through `useProjectActions` and `useTaskActions`.
-Expected revisions, optimistic retention, stale conflicts, and refresh remain
+Expected revisions, pending/errors, stale conflicts, and refresh remain
 inside those canonical hooks. Focused repair reuses project/task detail,
 `TaskOwnerSheet`, `MemberSelectionSheet`, `StepComposer`, and
 `AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
@@ -1183,7 +1181,7 @@ nicht aktiv** section, and completed/archived stories remain folded.
   `CompleteWithCriteriaSheet`, then dispatch the same `task.toggleDone`
   command after the criteria are checked. The API independently validates
   criteria inside the canonical task completion transaction.
-- Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
+- Every row shows its server-confirmed status; pending actions disable conflicting controls.
 
 #### Filtering and ordering the list
 
@@ -1195,13 +1193,13 @@ nicht aktiv** section, and completed/archived stories remain folded.
   (`completion_review`), active & `stuckReason`, active with a future-scheduled
   next action, active waiting, backlog, completed, archived; ties break on
   `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is
-  stable across reloads and retentions.
+  stable across reloads.
 - Active rows form the primary list. Backlog rows form a visible **Später /
   noch nicht aktiv** disclosure that starts closed by default. Completed and
   archived rows keep that same deterministic order inside the folded
   **Abgeschlossen & archiviert** section. A non-empty search reveals matching
   terminal rows automatically.
-- Filtering runs **before** sorting, and retained (optimistic) rows are merged into the same input list, so a retained row obeys the current search/scope and can never render twice next to its refetched counterpart.
+- Filtering runs **before** sorting on the current server response; no retained copies are merged into the list.
 - `ProjectsPage` distinguishes *no stories at all* (`noProjects`) from *nothing matches* (`noMatchingProjects`) by testing the unfiltered list first.
 
 #### Status accents and a single progress bar
@@ -1253,14 +1251,14 @@ backed by `GET /api/refinement/owners` and `GET /api/refinement/tasks`.
   `inherit` / `explicit` / `none` storage terms: inherited owner (when one
   exists), deliberate shared/unassigned, or an explicit member. Standalone
   tasks omit a meaningless inherit option. `useRefinementActions.assignOwner`
-  optimistically retains the row and rethrows on failure so the still-open
-  sheet renders the error.
+  waits for the server and rethrows on failure so the still-open sheet renders
+  the error.
 
 Task metadata execution and owner-assignment semantics live in the non-React
 `lib/taskMutations.ts`. `useTaskActions` and `useRefinementActions` both use
-that revision-safe executor, but deliberately keep separate optimistic
-projections: normal task lists retain a `Task`, while the planning tools retain their
-owner × effort row so regrouping waits until the retention window elapses.
+that revision-safe executor and the same pending/error mutation primitive.
+Fresh reads regroup normal lists and the owner-by-effort matrix without a
+retention window.
 
 ---
 
@@ -1286,85 +1284,37 @@ implementation. Task metadata and external-wait execution flow through
 
 Shared domain semantics live in small explicit modules rather than a generic
 repository or command bus. `taskMutations.ts` owns revision-safe task metadata
-execution and owner assignment semantics. React action hooks add the optimistic
-projection appropriate to their view. `useRetainedMutations` supplies common
-per-entity pending state, localized errors, stale-conflict refresh, confirmed
-result handling, and optional retention.
+execution and owner assignment semantics. `useItemMutations` supplies common
+per-item pending state, localized errors, duplicate-in-flight protection and
+successful-write/stale-conflict invalidation. Actions do not predict domain
+state or retain confirmed server-value overlays.
 
 Presentation components call those paths instead of rebuilding revision,
 refresh, and error handling. Unique workflows such as SharePage's append/date
 conflict behavior stay local because they do not duplicate an established
 action contract.
 
-### Optimistic retention
+### Server-confirmed interactions
 
-`useRetainedMutations` separates confirmed/optimistic values from `holdingIds`.
-Task and project controllers opt into immediate refresh on success. Their
-confirmed overlays outlive the four-second display window and are reconciled
-by revision, preventing stale reads from restoring old controls. Query owners
-feed raw flattened task responses into reconciliation, including project
-details, task details, Waiting and Review; projected row props are never
-authoritative. The window
-starts after confirmation; failures roll back without a pending expiry.
-The shared `TaskActions.projectTask`/`taskHelpers.projectTaskValue` projection
-prefers authoritative equal-revision task fields after confirmation while
-preserving pending optimistic values. Rows, placement projectors, details,
-Review and workflow hosts all use it, since
-child changes can leave the parent's own revision unchanged. Task workflow
-hosts apply the same equal-revision preference; project detail keeps raw tasks
-and child stories independently from retained parent metadata.
-Refinement's existing matrix projection still uses delayed refresh.
+The approved simplification deliberately removes optimistic domain updates,
+confirmed DTO overlays, timed row retention and interaction leases. A command
+shows pending feedback and prevents another command for that item until its
+request settles. Failure leaves server data unchanged and displays the error;
+success invalidates reads. Backend revisions still reject stale writes.
 
-`useRetainedPlacement` owns view-local placement, not domain state. Today,
-Inbox, Waiting, discussion, inventory, Review, project groups and task outlines retain observed
-rows (including their ancestor path) at their old position while holdingIds
-contains them. Current values are indexed across every response bucket and
-descendant, independently of their retained location. Removed ancestors carry
-only retained paths, while held subtrees own their displayed descendants.
-Each merge filters only its sibling level and projects descendants once,
-rather than recursively cloning each remaining subtree at every depth.
-Frozen sibling anchors are precomputed and merged through a linked list,
-avoiding repeated sibling scans and array insertion copies for wide subtrees.
-Authoritative child membership is independent of retained scalar values;
-equal-revision authoritative child fields win over inherited snapshots.
-The optional domain projection uses `taskHelpers.applyDescendantTerminalOutcome`
-to apply only an actual completion/cancellation outcome (lifecycle fields),
-preserving fresh derived values and unrelated future fields. Descendant
-outcomes propagate recursively without replacing authoritative membership.
-Authoritative sibling ordering is established recursively before placement;
-TaskRow renders the projected order. Explicit outline keyboard/pointer moves
-(and rollback) advance the local placement generation, making structural
-commands immediately visible without discarding confirmed values.
-Project placement includes lifecycle sections and rendered tag-group nodes,
-so tag edits cannot unmount a held row by changing its group.
-Review uses stable issue keys and entity-specific holding predicates, preserving
-each card in its original group until its task/project hold ends. Explicit
-project Review acknowledgement acquires the same timed hold as task decisions;
-ordinary project metadata edits retain their existing until-refresh behavior. Card focus
-and gestures use the same interaction leases as ordinary rows; details and
-workflow hosts continue the lease across the transition.
-This keeps the last item and its section mounted during an
-immediate refresh, suppresses copies in destination buckets, and resets on
-explicit filter/identity changes. Rows removed from structural outlines do
-not become drag targets.
+Lists, Review cards, tag groups and outlines immediately adopt the next server
+result's values, membership and ordering. Rows may move or disappear after a
+successful action; there is no four-second undo/reopen placement window.
+Focused editors live in the canonical workflow/detail hosts rather than in the
+row they were opened from. Ordinary refreshes/network errors preserve drafts;
+access revocation deliberately ends the workflow and discards its choices.
+Stale compound operations require explicit reconfirmation.
 
-`useRetentionInteraction` leases the display window while row menus,
-workflows, details, keyboard focus or pointer gestures are active. Task leases
-protect both directions: a child's interaction holds its placement ancestors,
-and an ancestor's interaction holds the descendants keeping it mounted.
-Raw query owners and outlines observe task trees without acknowledging projected
-rows. At transition start the controller snapshots relevant ancestor/subtree
-relations through the display lifetime, even if a later response omits them.
-New observations union newly attached descendants into active ownership.
-The controller's live interaction registry acquires additional owner leases for
-already-open interactions, without dropping removed paths; cleanup releases
-all leases together. `taskHelpers.indexTaskDescendants`
-memoizes each task's descendant set once per observation, reusing it across
-ancestors and repeated flattened entries rather than retraversing subtrees. Child-policy prompts hold the pending
-task until the decision closes or its transition finishes. The last
-lease's release provides at least two seconds of orientation time. Pointer
-focus alone does not hold a row indefinitely. Only an in-flight request
-disables mutation controls; retained rows remain readable and actionable.
+`queryClient.ts` contains the small native Query cancellation/invalidation
+adapter and access-error cache eviction. It does not merge revisions, traverse
+nested project copies or publish metadata as full detail. View-specific endpoint
+results refetch independently. This trades immediate cross-view consistency for
+less client coordination while leaving backend authority unchanged.
 
 ### Focused quick sheets
 
@@ -1474,7 +1424,7 @@ The old global "Sortiermodus" and its seven-button panel under *every* row — a
 | Module | Responsibility |
 |--------|----------------|
 | `lib/taskTreeMove.ts` | Pure, React-free geometry and tree maths: `slotFromPointer`, `projectDrop`, `locateTask`, `planMove`, `applyMove`, `outlineRootGroup`. Unit-tested on its own |
-| `lib/useOutlineOrganize.tsx` | The drag session, the equivalent keyboard moves, the optimistic tree and its rollback; publishes an `OutlineOrganizeValue` through context |
+| `lib/useOutlineOrganize.tsx` | Drag/keyboard destination calculation, live drag geometry and pending/error feedback; publishes `OutlineOrganizeValue` through context |
 
 `TaskRow` renders exactly one structural control — the ⠿ handle. Pressing it starts a drag (a row long-press is the touch shortcut into the same drag); arrow keys on the focused handle move the task directly, and `Alt+ArrowUp/Down/Left/Right` moves the interaction scope's active task the same way from anywhere in the row (`lib/useWorkItemKeyboardNav.ts`). A plain click/tap on the handle opens no separate mode. `consumeDragClick()` swallows the click a real drag ends with, so a drag never also fires a stray click.
 
@@ -1482,14 +1432,19 @@ The old global "Sortiermodus" and its seven-button panel under *every* row — a
 
 **Command mapping.** `planMove` returns either no-op or one concrete
 destination (`parentTaskId`, optional root `projectId`, `position`, and the
-rendered `expectedRevision`). `useOutlineOrganize` always sends that destination
-to `POST /api/tasks/:id/move`; indent/outdent are geometry, not API operations.
+rendered `expectedRevision`). `useOutlineOrganize` executes that destination through `useTaskActions.move`
+and `POST /api/tasks/:id/move`; indent/outdent are geometry, not API operations.
 `targetIndex` is always counted inside the destination sibling group excluding
 the moved task, matching the backend contract.
 
-**Optimism and rollback.** `applyMove` renumbers `position` in both affected groups the same way the server's `reindexGroup` does, otherwise the position-sorted render would snap straight back. Position normalization is group bookkeeping and does not advance sibling revisions; the explicitly moved task advances exactly once, so the optimistic tree can carry its deterministic next revision and safely accept another move immediately. The override survives unrelated older refresh responses and drops only when authoritative data reaches that revision. A rejected move restores the previous tree **in place** and shows `Verschieben fehlgeschlagen` plus the server message on that row. A stale rejection refreshes authoritative data and blocks only that stale task until its revision advances; other hierarchy edits remain available.
+**Server-confirmed movement.** Drag geometry previews the destination before
+submission, but a submitted move does not install an optimistic task tree.
+Pending feedback blocks conflicting commands through the shared task-ID gate.
+Success invalidates reads and the returned server hierarchy supplies order and
+positions; failure leaves the displayed hierarchy unchanged and shows the
+localized move error. Stale failures refresh before another explicit attempt.
 
-**Where it is offered.** `TaskOutline` takes an explicit `organizable` prop and only `ProjectDetailPage` passes it: `GET /api/projects/:id` returns `graph.rootsByProject`, the complete stored sibling group. Compiled views (`TodayPage`, `InboxPage`, `AllPage`) show a filtered slice of tasks from unrelated groups, where a position read off the screen would be applied to the *full* group on the server and silently shuffle rows the user never saw. `outlineRootGroup` is then applied on top as a structural second guard (all roots must share `parentTaskId` **and** `projectId`). Retention ghosts are rendered outside the organize provider, so they get no handle and never shift a drop index.
+**Where it is offered.** `TaskOutline` takes an explicit `organizable` prop and only `ProjectDetailPage` passes it: `GET /api/projects/:id` returns `graph.rootsByProject`, the complete stored sibling group. Compiled views (`TodayPage`, `InboxPage`, `AllPage`) show a filtered slice of tasks from unrelated groups, where a position read off the screen would be applied to the *full* group on the server and silently shuffle rows the user never saw. `outlineRootGroup` is then applied on top as a structural second guard (all roots must share `parentTaskId` **and** `projectId`).
 
 ### Compact descendant presentation (Today)
 
@@ -1509,10 +1464,8 @@ children are all likewise entirely terminal) collapse behind an inline
 "N erledigt anzeigen" affordance instead of rendering by default; expanding it
 reveals them inline and it can be collapsed again. The prune is recursive but
 never hides a path to open work: a terminal task with a still-open descendant
-stays visible so that descendant remains reachable. A task currently held by
-`useTaskActions`'s `retained` map is always exempt from the prune, so a
-just-completed child stays visible through its existing retention window
-instead of vanishing straight into the summary. The parent's `done/total`
+stays visible so that descendant remains reachable. Freshly completed children
+follow this same rule immediately, without a retention exception. The parent's `done/total`
 progress count is always computed against the full, unpruned `children` array.
 
 **Details that are easy to get wrong, and are covered by tests:**
@@ -2009,13 +1962,11 @@ promoted descendants may belong to different original parents, so comparing
 their stored positions would reverse branch traversal. Original positions and
 parent IDs remain intact, and full outlines still sort actual sibling groups.
 
-`TaskOutline` owns current IDs, including nested rows, plus removed rows with an
-active optimistic retention. Rows that leave without active retention lose
-ownership before a later completion in another section. Today keys every
-outline by the member/scope selection so ownership cannot survive a logical
-selection change. Completion-triggered removal still retains the row in its
-owning section for the existing retention window. This is presentation
-ownership, not another eligibility rule or timer.
+`TaskOutline` renders current server membership, including nested rows.
+Completion-triggered removal and regrouping take effect on the next read.
+Today keys every outline by member/scope selection so local fold/interaction
+state cannot survive a logical selection change. No removed-row ownership or
+retention timer participates in eligibility.
 
 ### Intervention-generated task privacy
 

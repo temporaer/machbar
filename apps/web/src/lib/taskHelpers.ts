@@ -31,32 +31,6 @@ export function hasOpenDescendants(task: Task): boolean {
 }
 
 /**
- * Mirrors a parent terminal command's descendant policy in an optimistic tree.
- * Closed nodes stay unchanged, but traversal continues because they can contain
- * open descendants.
- */
-export function markOpenDescendantsTerminal(
-  children: Task[],
-  status: Extract<Task["status"], "done" | "cancelled">,
-  at: string,
-): Task[] {
-  return children.map((child) => {
-    const alreadyClosed = child.status === "done" || child.status === "cancelled";
-    return {
-      ...child,
-      ...(child.kind !== "action" || alreadyClosed
-        ? {}
-        : {
-            status,
-            completedAt: status === "done" ? at : null,
-            cancelledAt: status === "cancelled" ? at : null,
-          }),
-      children: markOpenDescendantsTerminal(child.children, status, at),
-    };
-  });
-}
-
-/**
  * Returns the highest open task on each descendant branch. Closed tasks may
  * still contain open descendants, so their branches must keep being searched.
  */
@@ -104,44 +78,7 @@ export function flattenTasks(tasks: Task[]): Task[] {
   return out;
 }
 
-/** Index each unique task once, reusing cached descendant sets for ancestors
- * and for callers supplying an already flattened tree. */
-export function indexTaskDescendants(tasks: readonly Task[]): Map<number, Set<number>> {
-  const index = new Map<number, Set<number>>();
-  const visit = (task: Task): Set<number> => {
-    const cached = index.get(task.id);
-    if (cached) return cached;
-    const descendants = new Set<number>();
-    index.set(task.id, descendants);
-    for (const child of task.children) {
-      descendants.add(child.id);
-      for (const id of visit(child)) descendants.add(id);
-    }
-    return descendants;
-  };
-  tasks.forEach(visit);
-  return index;
-}
-
-/** A parent's terminal policy may change a child's lifecycle, not its other
- * authoritative fields or hierarchy. Equal-revision derived values stay fresh. */
-export function applyDescendantTerminalOutcome<T extends Task>(current: T, inherited: Task): T {
-  if (inherited.kind !== "action" || inherited.revision < current.revision ||
-      (inherited.status !== "done" && inherited.status !== "cancelled") ||
-      inherited.status === current.status) return current;
-  return { ...current, revision: inherited.revision, status: inherited.status,
-    completedAt: inherited.completedAt, cancelledAt: inherited.cancelledAt,
-    needsClarification: inherited.needsClarification };
-}
-
-/** Confirmed equal-revision reads own derived fields. Pending writes keep
- * their optimistic values until the request settles. */
-export function projectTaskValue(current: Task, retained: Task | undefined, pending = false): Task {
-  return retained && (retained.revision > current.revision || (pending && retained.revision === current.revision))
-    ? retained : current;
-}
-
-/** Sort authoritative siblings before placement; rendered placement is final. */
+/** Sort authoritative siblings, preserving compiled-view order where requested. */
 export function orderTaskTree(tasks: Task[], preserveRoots = false, preserveDescendants = false): Task[] {
   const roots = preserveRoots ? tasks : sortByPosition(tasks);
   return roots.map(task => ({ ...task,

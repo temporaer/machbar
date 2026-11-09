@@ -1,195 +1,61 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { RefreshProvider, useRefresh } from "../lib/refresh";
+import { RefreshProvider, useRefresh } from "./refresh";
 import { api } from "./api";
-import { REFINEMENT_RETENTION_MS, useRefinementActions } from "./useRefinementActions";
-import type { RefinementListItem } from "./useRefinementActions";
+import { useRefinementActions, type RefinementListItem } from "./useRefinementActions";
+import { makeTask } from "../test/fixtures";
+import { TaskActionsProvider } from "./useTaskActions";
 
-vi.mock("./api", () => ({
-  api: {
-    updateTask: vi.fn(),
-  },
-}));
-
+vi.mock("./api", () => ({ api: { updateTask: vi.fn() } }));
 const mockedApi = vi.mocked(api, true);
-
 function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListItem {
-  return {
-    id: 1,
-    revision: 1,
-    parentTaskId: null,
-    title: "Beispielaufgabe",
-    status: "actionable",
-    size: null,
-    projectId: null,
-    projectTitle: null,
-    ownerMemberId: null,
-    ownerInheritanceMode: "inherit",
-    effectiveOwnerId: null,
-    effectiveOwnerSource: "none",
-    inheritedOwnerId: null,
-    position: 0,
-    updatedAt: "2026-01-01T09:00:00.000Z",
-    blocked: false,
-    executable: true,
-    effectiveTags: [],
-    externalWait: null,
-    nextBlockerAttentionDate: null,
-    blockers: [],
-    dependencies: [],
-    ...overrides,
-  };
+  return { ...makeTask(), projectTitle: null, inheritedOwnerId: null, ...overrides };
 }
-
 function wrapper({ children }: { children: ReactNode }) {
-  return <RefreshProvider>{children}</RefreshProvider>;
+  return <RefreshProvider><TaskActionsProvider>{children}</TaskActionsProvider></RefreshProvider>;
 }
-
-describe("useRefinementActions", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("keeps a ~4s retention window, matching the 'about 4s' requirement", () => {
-    expect(REFINEMENT_RETENTION_MS).toBeGreaterThanOrEqual(3000);
-    expect(REFINEMENT_RETENTION_MS).toBeLessThanOrEqual(5000);
-  });
-
-  it("optimistically retains a task's new size immediately, then releases it (and bumps refresh) once retention elapses", async () => {
-    vi.useFakeTimers();
+describe("server-confirmed refinement commands", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("cycles size with the current revision and invalidates immediately", async () => {
     const task = makeItem({ id: 10, size: "M" });
-    mockedApi.updateTask.mockResolvedValue({ ...task, size: "L" } as never);
-
-    const { result } = renderHook(
-      () => ({ actions: useRefinementActions(), refresh: useRefresh() }),
-      { wrapper },
-    );
-
-    await act(async () => {
-      await result.current.actions.cycleSize(task);
-    });
-
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(10, {
-      size: "L",
-      expectedRevision: 1,
-    });
-    expect(result.current.actions.retained.get(10)?.size).toBe("L");
-    const versionAfterMutation = result.current.refresh.version;
-
-    // Not yet expired: still retained, and no refresh bump yet (the
-    // compiled list must not reshuffle mid-window).
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(REFINEMENT_RETENTION_MS - 500);
-    });
-    expect(result.current.actions.retained.has(10)).toBe(true);
-    expect(result.current.refresh.version).toBe(versionAfterMutation);
-
-    // Past the window: released, and exactly one deferred bump fires.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    expect(result.current.actions.retained.has(10)).toBe(false);
-    expect(result.current.refresh.version).toBe(versionAfterMutation + 1);
+    mockedApi.updateTask.mockResolvedValue({ ...makeTask(), size: "L" });
+    const { result } = renderHook(() => ({ actions: useRefinementActions(), refresh: useRefresh() }), { wrapper });
+    const before = result.current.refresh.version;
+    await act(async () => { await result.current.actions.cycleSize(task); });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(10, { size: "L", expectedRevision: task.revision });
+    expect(result.current.refresh.version).toBe(before + 1);
+    expect(task.size).toBe("M");
   });
-
-  it("rolls back and records an inline error when the size mutation fails, without retaining a bad optimistic state", async () => {
-    const task = makeItem({ id: 11, size: "S" });
-    mockedApi.updateTask.mockRejectedValue(new Error("Netzwerkfehler"));
-
-    const { result } = renderHook(() => useRefinementActions(), { wrapper });
-
-    await act(async () => {
-      await result.current.setSize(task, "L");
-    });
-
-    expect(result.current.retained.has(11)).toBe(false);
-    expect(result.current.errors[11]).toBe("Netzwerkfehler");
-
-    act(() => result.current.clearError(11));
-    expect(result.current.errors[11]).toBeUndefined();
+  it("records and clears a failed size command without invalidation", async () => {
+    const task = makeItem({ id: 11 });
+    mockedApi.updateTask.mockRejectedValue(new Error("Network failed"));
+    const { result } = renderHook(() => ({ actions: useRefinementActions(), refresh: useRefresh() }), { wrapper });
+    const before = result.current.refresh.version;
+    await act(async () => { await result.current.actions.setSize(task, "L"); });
+    expect(result.current.actions.errors[11]).toBe("Network failed");
+    expect(result.current.refresh.version).toBe(before);
+    act(() => result.current.actions.clearError(11));
+    expect(result.current.actions.errors[11]).toBeUndefined();
   });
-
-  it("clearSize sets size to null", async () => {
+  it("clears size through the canonical task mutation", async () => {
     const task = makeItem({ id: 12, size: "XL" });
-    mockedApi.updateTask.mockResolvedValue({ ...task, size: null } as never);
-
+    mockedApi.updateTask.mockResolvedValue(makeTask({ size: null }));
     const { result } = renderHook(() => useRefinementActions(), { wrapper });
-    await act(async () => {
-      await result.current.clearSize(task);
-    });
-
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(12, {
-      size: null,
-      expectedRevision: 1,
-    });
-    expect(result.current.retained.get(12)?.size).toBe(null);
+    await act(async () => { await result.current.clearSize(task); });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(12, { size: null, expectedRevision: task.revision });
   });
-
-  it("shares revision-safe owner semantics while retaining the matrix projection", async () => {
-    const task = makeItem({ id: 13, revision: 4 });
-    mockedApi.updateTask.mockResolvedValue({
-      ...task,
-      ownerMemberId: 7,
-      ownerInheritanceMode: "explicit",
-    } as never);
-
+  it.each([
+    { owner: 7, mode: "explicit" as const },
+    { owner: null, mode: "inherit" as const },
+    { owner: null, mode: "none" as const },
+  ])("preserves revision-safe $mode ownership without client-derived owner projection", async ({ owner, mode }) => {
+    const task = makeItem({ id: 13, revision: 4, inheritedOwnerId: 5 });
+    mockedApi.updateTask.mockResolvedValue(makeTask());
     const { result } = renderHook(() => useRefinementActions(), { wrapper });
-    await act(async () => {
-      await result.current.assignOwner(task, 7);
-    });
-
+    await act(async () => { await result.current.assignOwner(task, owner, mode); });
     expect(mockedApi.updateTask).toHaveBeenCalledWith(13, {
-      ownerMemberId: 7,
-      ownerInheritanceMode: "explicit",
-      expectedRevision: 4,
-    });
-    expect(result.current.retained.get(13)).toMatchObject({
-      ownerMemberId: 7,
-      ownerInheritanceMode: "explicit",
-      effectiveOwnerId: 7,
-      effectiveOwnerSource: "task",
-    });
-  });
-
-  it("restores inherited ownership without flattening it to 'none'", async () => {
-    const task = makeItem({
-      id: 14,
-      revision: 2,
-      projectId: 9,
-      ownerMemberId: 7,
-      ownerInheritanceMode: "explicit",
-      effectiveOwnerId: 7,
-      effectiveOwnerSource: "task",
-      inheritedOwnerId: 5,
-    });
-    mockedApi.updateTask.mockResolvedValue({
-      ...task,
-      ownerMemberId: null,
-      ownerInheritanceMode: "inherit",
-      effectiveOwnerId: 5,
-      effectiveOwnerSource: "project",
-    } as never);
-
-    const { result } = renderHook(() => useRefinementActions(), { wrapper });
-    await act(async () => {
-      await result.current.assignOwner(task, null, "inherit");
-    });
-
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(14, {
-      ownerMemberId: null,
-      ownerInheritanceMode: "inherit",
-      expectedRevision: 2,
-    });
-    expect(result.current.retained.get(14)).toMatchObject({
-      ownerMemberId: null,
-      ownerInheritanceMode: "inherit",
-      effectiveOwnerId: 5,
-      effectiveOwnerSource: "project",
+      ownerMemberId: owner, ownerInheritanceMode: mode, expectedRevision: 4,
     });
   });
 });

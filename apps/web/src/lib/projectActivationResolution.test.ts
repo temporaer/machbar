@@ -9,7 +9,7 @@ import {
 } from "./projectActivationResolution";
 
 describe("project activation decisions from the server", () => {
-  beforeEach(() => getProject.mockReset());
+  beforeEach(() => { getProject.mockReset(); });
 
   it("does not reconstruct the chain or requirements from local project state", async () => {
     const error = Object.assign(new Error("stale"), { code: "stale_write_conflict" });
@@ -26,15 +26,10 @@ describe("project activation decisions from the server", () => {
     };
     getProject.mockResolvedValue({ directActivationDecisionSnapshot: serverSnapshot });
 
-    await expect(refreshProjectActivationPrompt(error, 7, {
-      projects: [],
-      expectedProjects: [],
-      selectedDrivers: { 3: 9, 8: 2 },
-      nextActionTitle: "Erste Aktion",
-    }, "explicit_activation")).resolves.toEqual({
+    await expect(refreshProjectActivationPrompt(error, 7, "explicit_activation")).resolves.toEqual({
       ...serverSnapshot,
-      selectedDrivers: { 3: 9 },
-      nextActionTitle: "Erste Aktion",
+      selectedDrivers: {},
+      nextActionTitle: "",
     });
     expect(getProject).toHaveBeenCalledWith(7);
   });
@@ -54,6 +49,7 @@ describe("project activation decisions from the server", () => {
         targetRevision: 8,
       },
     });
+
     expect(projectActivationPromptFromError(error, {
       projects: [],
       expectedProjects: [],
@@ -64,5 +60,16 @@ describe("project activation decisions from the server", () => {
       selectedDrivers: { 5: 4 },
       nextActionTitle: "Schritt",
     });
+  });
+
+  it("forwards a denied requirements read instead of returning previous decisions", async () => {
+    const denied = Object.assign(new Error("Denied"), { name: "ApiError", status: 403 });
+    const onFailure = vi.fn();
+    getProject.mockRejectedValue(denied);
+    await expect(refreshProjectActivationPrompt(
+      Object.assign(new Error("Stale"), { code: "stale_write_conflict" }),
+      7, "commitment", onFailure,
+    )).resolves.toBeNull();
+    expect(onFailure).toHaveBeenCalledWith(denied);
   });
 });

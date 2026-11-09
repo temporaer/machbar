@@ -19,7 +19,7 @@ export function ProjectActivationDecisionFields({
     <section className="card stack" aria-label={strings.commitmentResolutionTitle}>
       <h3>{strings.commitmentResolutionTitle}</h3>
       <p className="text-muted">{strings.activationWillStart}</p>
-      {prompt.projects.length ? <p className="text-muted">{strings.commitmentResolutionHint}</p> : null}
+      {prompt.projects.length ? <p className="text-muted">{strings.activationDecisionHint}</p> : null}
       {prompt.projects.filter((project) => project.required.includes("driver")).map((project) => (
         <div className="field" key={project.projectId}>
           <label htmlFor={`commitment-driver-${project.projectId}`}>

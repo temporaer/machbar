@@ -1,10 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { makeProject, makeTask } from "../test/fixtures";
 import { api } from "../lib/api";
 import { MoveTaskSheet } from "./MoveTaskSheet";
+import { useTaskActions } from "../lib/useTaskActions";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
@@ -16,6 +17,7 @@ vi.mock("../lib/api", async (importOriginal) => {
       getProjects: vi.fn(),
       getProject: vi.fn(),
       moveTask: vi.fn(),
+      updateTask: vi.fn(),
     },
   };
 });
@@ -46,6 +48,34 @@ describe("MoveTaskSheet", () => {
     within(group)
       .getAllByRole("button")
       .map((b) => b.textContent);
+
+  it("does not bypass another editor's task gate or remember an unaccepted destination", async () => {
+    const task = makeTask({ id: 42, projectId: 1, revision: 7 });
+    const onClose = vi.fn();
+    let finish!: (value: typeof task) => void;
+    mockedApi.updateTask.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    function OtherEditor() {
+      const actions = useTaskActions();
+      return <button onClick={() => void actions.update(task, { title: "Edited" })}>Save elsewhere</button>;
+    }
+    renderWithProviders(<><OtherEditor /><MoveTaskSheet task={task} onClose={onClose} /></>);
+    await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save elsewhere" }));
+    await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
+
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(window.localStorage.getItem("machbar:recent-destinations:project")).toBeNull();
+
+    await act(async () => { finish(task); });
+    await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(mockedApi.moveTask).toHaveBeenCalledExactlyOnceWith(task.id, {
+      projectId: 2, parentTaskId: null, expectedRevision: 7,
+    });
+    expect(window.localStorage.getItem("machbar:recent-destinations:project")).toBe("[2]");
+  });
 
   it("filters projects case-insensitively as you type — no native select", async () => {
     const task = makeTask({ id: 40, title: "Kartons besorgen", projectId: 1 });

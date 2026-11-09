@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "./locale";
 import { RefreshProvider, useRefresh } from "./refresh";
 import { useAsync } from "./useAsync";
+import { ApiError } from "./api";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -135,20 +136,18 @@ describe("useAsync", () => {
     });
   });
 
-  it("discards retained data for a caller-designated revocation error", async () => {
+  it("discards protected data on an access error", async () => {
     const fetcher = vi.fn<() => Promise<string>>()
       .mockResolvedValueOnce("protected")
-      .mockRejectedValueOnce(new Error("revoked"));
+      .mockRejectedValueOnce(new ApiError(403, "revoked"));
     const { result } = renderHook(
-      () => useAsync(fetcher, [], {
-        clearDataOnError: (error) => error instanceof Error && error.message === "revoked",
-      }),
+      () => useAsync(fetcher),
       { wrapper },
     );
     await waitFor(() => expect(result.current.data).toBe("protected"));
 
     act(() => result.current.reload());
-    await waitFor(() => expect(result.current.error).toBe("revoked"));
+    await waitFor(() => expect(result.current.error).toBeTruthy());
     expect(result.current).toMatchObject({
       data: null,
       loading: false,
@@ -175,13 +174,11 @@ describe("useAsync", () => {
   it("does not let a slower previous request overwrite a newer result", async () => {
     const first = deferred<string>();
     const second = deferred<string>();
-    const onAcceptedResult = vi.fn();
     const { result, rerender } = renderHook(
       ({ query }) =>
         useAsync(
           () => (query === "first" ? first.promise : second.promise),
           [query],
-          { onAcceptedResult },
         ),
       { wrapper, initialProps: { query: "first" } },
     );
@@ -193,11 +190,9 @@ describe("useAsync", () => {
     act(() => first.resolve("older"));
     await act(async () => Promise.resolve());
     expect(result.current.data).toBe("newer");
-    expect(onAcceptedResult).toHaveBeenCalledOnce();
-    expect(onAcceptedResult).toHaveBeenCalledWith("newer");
   });
   it.each(["resolve", "reject"] as const)(
-    "serializes repeated invalidations and settles after initial %s",
+    "shares repeated explicit read retries and settles after initial %s",
     async (outcome) => {
       const first = deferred<string>();
       const trailing = deferred<string>();
@@ -207,7 +202,6 @@ describe("useAsync", () => {
         query: useAsync(fetcher), refresh: useRefresh(),
       }), { wrapper });
       for (let index = 0; index < 5; index++) {
-        act(() => result.current.refresh.bump());
         act(() => result.current.query.reload());
       }
       expect(fetcher).toHaveBeenCalledTimes(1);
@@ -217,14 +211,14 @@ describe("useAsync", () => {
       });
       expect(fetcher).toHaveBeenCalledTimes(2);
       if (outcome === "resolve") {
-        expect(result.current.query).toMatchObject({
+        await waitFor(() => expect(result.current.query).toMatchObject({
           data: "initial", loading: false, refreshing: true,
-        });
+        }));
       }
       await act(async () => trailing.resolve("final"));
-      expect(result.current.query).toMatchObject({
+      await waitFor(() => expect(result.current.query).toMatchObject({
         data: "final", loading: false, refreshing: false, error: null,
-      });
+      }));
       await act(async () => Promise.resolve());
       expect(fetcher).toHaveBeenCalledTimes(2);
     },
@@ -244,9 +238,9 @@ describe("useAsync", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     await act(async () => failed.reject(new Error("offline")));
     expect(fetcher).toHaveBeenCalledTimes(3);
-    expect(result.current).toMatchObject({ data: "stable", loading: false, refreshing: true });
+    await waitFor(() => expect(result.current).toMatchObject({ data: "stable", loading: false, refreshing: true }));
     await act(async () => trailing.resolve("updated"));
-    expect(result.current).toMatchObject({ data: "updated", refreshing: false, refreshError: null });
+    await waitFor(() => expect(result.current).toMatchObject({ data: "updated", refreshing: false, refreshError: null }));
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
@@ -263,7 +257,7 @@ describe("useAsync", () => {
     expect(result.current).toMatchObject({ data: null, loading: true });
     expect(fetcher).toHaveBeenCalledTimes(2);
     await act(async () => current.resolve("current"));
-    expect(result.current.data).toBe("current");
+    await waitFor(() => expect(result.current.data).toBe("current"));
   });
 
   it.each(["resolve", "reject"] as const)("drops queued refreshes after unmount on %s", async (outcome) => {
@@ -290,12 +284,12 @@ describe("useAsync", () => {
     await act(async () => requests[0]!.resolve("first"));
     for (let index = 0; index < 5; index++) act(() => result.current.reload());
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(result.current.data).toBe("first");
+    await waitFor(() => expect(result.current.data).toBe("first"));
     await act(async () => requests[1]!.resolve("second"));
-    expect(result.current.data).toBe("second");
+    await waitFor(() => expect(result.current.data).toBe("second"));
     expect(fetcher).toHaveBeenCalledTimes(3);
     await act(async () => requests[2]!.resolve("final"));
-    expect(result.current).toMatchObject({ data: "final", refreshing: false, loading: false });
+    await waitFor(() => expect(result.current).toMatchObject({ data: "final", refreshing: false, loading: false }));
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
@@ -309,7 +303,7 @@ describe("useAsync", () => {
     });
     await act(async () => current.resolve("current"));
     await act(async () => obsolete.resolve("obsolete"));
-    expect(result.current).toMatchObject({ data: "current", loading: false, refreshing: false });
+    await waitFor(() => expect(result.current).toMatchObject({ data: "current", loading: false, refreshing: false }));
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 

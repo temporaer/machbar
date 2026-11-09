@@ -969,8 +969,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Known steps");
     const opener = screen.getByRole("button", { name: strings.splitTaskAddHeading });
     await userEvent.click(screen.getByRole("button", { name: strings.classifyAsAction }));
-    expect(opener).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: strings.splitTaskAddHeading })).not.toBeInTheDocument();
+    expect(opener).toBeDisabled();
     expect(screen.queryByRole("dialog", { name: strings.splitTask })).not.toBeInTheDocument();
     await act(async () => rejectClassification(new Error("Classification failed")));
     await waitFor(() => expect(screen.getByRole("button", { name: strings.splitTaskAddHeading })).toBeEnabled());
@@ -2015,9 +2014,29 @@ describe("TaskDetailSheet", () => {
   // row rail's Struktur sheet, not from the task detail's own commands — see
   // `TaskStructureSheet.test.tsx` for its conversion-flow coverage.
 
+  it.each([401, 403, 404])("ends inline task editing when a %s read revokes access", async status => {
+    const task = makeTask({ id: 209, title: "Protected task" });
+    mockedApi.getTask.mockResolvedValue(task);
+    function RefreshControl() {
+      const { bump } = useRefresh();
+      return <button onClick={bump}>Refresh protected task</button>;
+    }
+    renderWithProviders(<OpenerHarness taskId={task.id}><TaskDetailSheet /><RefreshControl /></OpenerHarness>);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    const input = await openTitleEditor();
+    await userEvent.type(input, " private draft");
+    mockedApi.getTask.mockRejectedValue(Object.assign(new Error("Access denied"), { name: "ApiError", status }));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh protected task" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent(strings.error);
+    expect(screen.queryByDisplayValue(/private draft/)).not.toBeInTheDocument();
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+  });
+
   it.each(["action", "reference"] as const)("edits %s discussion nomination from details through the canonical task command", async (kind) => {
     const task = makeTask({ id: 209, title: "Gemeinsam besprechen", kind });
-    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.getTask.mockResolvedValueOnce(task).mockResolvedValue({ ...task, revision: 2, discussionRequested: true });
     mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, discussionRequested: true });
     renderSheet(209);
     await userEvent.click(screen.getByText("open"));

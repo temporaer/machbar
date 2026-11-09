@@ -44,15 +44,12 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
   const navigate = useNavigate();
   const { open } = useTaskDetail();
   const { members } = useIdentity();
-  const { isPending, retained, errors, clearError, setSize, cycleSize, clearSize, assignOwner } = actions;
-
-  const retainedTask = retained.get(taskProp.id);
-  const task = retainedTask ?? taskProp;
-  const isRetained = Boolean(retainedTask);
+  const { isPending, errors, clearError, setSize, cycleSize, clearSize, assignOwner } = actions;
+  const task = taskProp;
   const rowError = errors[taskProp.id];
   const busy = isPending(task.id);
   const swipe = useHorizontalSwipe<HTMLDivElement>({
-    disabled: isRetained,
+    disabled: busy,
     onPrimary: () => cycleSize(task),
     onSecondary: () => scope.setOpenRail(taskProp.id),
   });
@@ -93,7 +90,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
         {strings.moreActions}
       </div>
       <div
-        className={`refinement-row-content${isRetained ? " retained" : ""}`}
+        className="refinement-row-content"
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
         {...swipe.handlers}
       >
@@ -105,7 +102,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
         <button
           type="button"
           className="refinement-row-size"
-          disabled={busy || isRetained}
+          disabled={busy}
           aria-label={`${strings.currentSize}: ${sizeLabel(task.size, strings)}. ${strings.swipeHintSize}`}
           onClick={() => cycleSize(task)}
         >
@@ -143,7 +140,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
           className="refinement-row-kebab"
           aria-label={strings.moreActions}
           aria-expanded={chipsOpen}
-          disabled={isRetained}
+          disabled={busy}
           onClick={() => scope.setOpenRail(chipsOpen ? null : taskProp.id)}
         >
           ⋯

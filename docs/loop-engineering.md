@@ -136,13 +136,14 @@ The fast loop now includes three complementary contracts:
   project using the API's shared migration template setup. Cross-package tests
   live outside production sources and have `tests/contracts/tsconfig.json`,
   included in the root typecheck command; application tsconfigs remain unchanged.
-- `apps/web/src/lib/useTaskActions.sequences.test.tsx` runs every ordering of
-  save response, refresh and interaction start for existing/new descendants.
-  The actual task controller and placement hook must preserve unique rows,
-  optimistic values, fresh equal-revision derived fields, authoritative child
-  membership, interaction protection and eventual destination placement. Network
-  and stale failures must roll back without discarding a newer refresh. Virtual
-  time and deferred promises replace wall-clock sleeps.
+- Server-confirmed action tests cover pending writes, duplicate commands,
+  unchanged values before confirmation, errors and successful invalidation.
+  `apps/web/src/lib/queryClient.test.ts` covers pre-write GET completion in both
+  orders, shared external trailing reads, removed/replaced query identity and
+  access-error eviction versus ordinary network errors. There is deliberately
+  no optimistic rollback, interaction lease or timed-placement acceptance
+  matrix: those product guarantees were explicitly removed. Fresh responses
+  remain authoritative for hierarchy, membership and derived fields.
 
 These tests run in the existing `npm test` and CI jobs, without a browser or a
 listening server. Database equality compares SHA-256 digests of the complete

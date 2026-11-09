@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { Project, Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
-import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
-import { useRefresh } from "../lib/refresh";
+import { localizedErrorMessage } from "../lib/errorMessage";
+import { useTaskActions } from "../lib/useTaskActions";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { rememberDestination } from "../lib/recentDestinations";
 import { BottomSheet } from "./BottomSheet";
@@ -28,10 +28,12 @@ import { sortProjectDestinations } from "../lib/sortOrder";
  * the whole subtree, so this is the only project-move path — a project
  * picker plus an optional parent picker ("Keine" meaning root).
  */
-export function MoveTaskSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function MoveTaskSheet({ task, onClose, onFailure, isCurrent = () => true }: {
+  task: Task; onClose: () => void; onFailure?: (cause: unknown) => void; isCurrent?: () => boolean;
+}) {
   const strings = useStrings();
   const { locale } = useLocale();
-  const { bump } = useRefresh();
+  const { move } = useTaskActions();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [projectTasks, setProjectTasks] = useState<Task[] | null>(null);
   const [parentProjectTitle, setParentProjectTitle] = useState<string | null>(null);
@@ -62,9 +64,10 @@ export function MoveTaskSheet({ task, onClose }: { task: Task; onClose: () => vo
       setParentProjectTitle(null);
     }
     Promise.all(jobs)
-      .catch((err: unknown) =>
-        setError(localizedErrorMessage(err, strings)),
-      )
+      .catch((err: unknown) => {
+        onFailure?.(err);
+        setError(localizedErrorMessage(err, strings));
+      })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProjectId]);
@@ -105,18 +108,19 @@ export function MoveTaskSheet({ task, onClose }: { task: Task; onClose: () => vo
     setSaving(true);
     setSubmitError(null);
     try {
-      await api.moveTask(task.id, {
+      await move(task, {
         projectId: selectedProjectId,
         parentTaskId: selectedParentId,
         expectedRevision: task.revision,
       });
+      if (!isCurrent()) return;
       // Only a move the server accepted is worth offering as a shortcut.
       rememberDestination("project", selectedProjectId);
       rememberDestination("parent", selectedParentId);
-      bump();
       onClose();
     } catch (err) {
-      if (isStaleWriteConflict(err)) bump();
+      if (!isCurrent()) return;
+      onFailure?.(err);
       setSubmitError(localizedErrorMessage(err, strings));
     } finally {
       setSaving(false);

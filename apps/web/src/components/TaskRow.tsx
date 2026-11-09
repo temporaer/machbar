@@ -1,4 +1,3 @@
-import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesTail } from "./NotesTail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -81,15 +80,11 @@ function primaryActionBgLabel(
 /**
  * A task's whole subtree is done/cancelled history: itself and every
  * descendant. Used to decide what the compact Today presentation may
- * collapse behind an "N erledigt anzeigen" affordance. A task that was
- * *just* completed/cancelled stays excluded (`retainedIds`) so the
- * existing optimistic-retention window (undo/Reopen) keeps it visible
- * instead of vanishing straight into the summary.
+ * collapse behind an "N erledigt anzeigen" affordance.
  */
-function isEntirelyTerminal(task: Task, retainedIds: ReadonlySet<number>): boolean {
-  if (retainedIds.has(task.id)) return false;
+function isEntirelyTerminal(task: Task): boolean {
   if (task.status !== "done" && task.status !== "cancelled") return false;
-  return task.children.every((child) => isEntirelyTerminal(child, retainedIds));
+  return task.children.every(isEntirelyTerminal);
 }
 
 export function TaskRow({
@@ -129,18 +124,11 @@ export function TaskRow({
   const organize = useOutlineOrganizeRow(taskProp.id);
   const dispatch = useWorkItemCommands();
   const taskActions = useTaskActions();
-  const { isPending, retained, errors, clearError } = taskActions;
+  const { isPending, errors, clearError } = taskActions;
   const outlineRefreshing = organize?.pendingId != null;
   const busy = isPending(taskProp.id) || outlineRefreshing;
 
-  // A row that just transitioned keeps rendering with its optimistic status
-  // (crossed out / muted) for a few seconds even once the compiled view
-  // (Heute/Eingang/Suche/…) no longer contains it — see `useTaskActions`'s
-  // `retained` map. Once the request is no longer busy, the optimistic row
-  // remains fully actionable so another swipe can immediately continue the
-  // state cycle (for example erledigt -> wieder offen).
-  const projectedTask = taskActions.projectTask(taskProp);
-  const task = projectedTask === taskProp ? taskProp : { ...projectedTask, children: taskProp.children };
+  const task = taskProp;
   const isReference = task.kind === "reference";
   const nextActionBadge = useNextActionBadge(task);
   const attachments = useMemo(
@@ -155,10 +143,9 @@ export function TaskRow({
     () => (isReference ? parseReferenceContent(task.notes) : null),
     [isReference, task.notes],
   );
-  const isRetained = taskActions.holdingIds.has(taskProp.id);
   const statusError = errors[taskProp.id];
   const organizeError = organize?.errors[taskProp.id];
-  const rowError = statusError ?? organizeError;
+  const rowError = organizeError ?? statusError;
   const showTodayRevisitActions =
     attentionTone === "revisit" &&
     depth === 0 &&
@@ -199,12 +186,11 @@ export function TaskRow({
   // Compact presentation applies to every row below the outline's own
   // root; the root itself (depth 0) always stays full-featured.
   const isCompact = compactDescendants && depth > 0;
-  const retainedIds = useMemo(() => new Set(retained.keys()), [retained]);
   const visibleChildren = compactDescendants
-    ? children.filter((child) => !isEntirelyTerminal(child, retainedIds))
+    ? children.filter((child) => !isEntirelyTerminal(child))
     : children;
   const hiddenTerminalChildren = compactDescendants
-    ? children.filter((child) => isEntirelyTerminal(child, retainedIds))
+    ? children.filter(isEntirelyTerminal)
     : [];
   const [showHiddenTerminal, setShowHiddenTerminal] = useState(false);
   const isDone = task.status === "done";
@@ -275,7 +261,6 @@ export function TaskRow({
   const showCompleteBg = !isReference && dragX > 0;
   const showCancelBg = !isReference && (dragX < 0 || chipsOpen);
   const lifecycleOpen = !isReference && scope.openLifecycleId === taskProp.id;
-  const retentionInteraction = useRetentionInteraction(task.id, taskActions.pauseRetention, chipsOpen || lifecycleOpen);
   // Live feedback that continuing the drag will open the status rail
   // instead of running the primary action, updated during the drag itself
   // (not just on release) so the switch is visible as it happens.
@@ -285,7 +270,7 @@ export function TaskRow({
     : primaryActionBgLabel(task, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
-    !isReference && !busy && !isRetained && !chipsOpen,
+    !isReference && !busy && !chipsOpen,
   );
 
   const handlePointerDown = useCallback(
@@ -336,8 +321,7 @@ export function TaskRow({
       />
       <div
         ref={contentRef}
-        {...retentionInteraction}
-        className={`task-row-content${!isReference ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}${isCompact ? " compact" : ""}`}
+        className={`task-row-content${!isReference ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}${isCompact ? " compact" : ""}`}
         style={
           dragX || dragDepthShift
             ? { transform: `translateX(${dragX + dragDepthShift}px)` }
@@ -495,7 +479,7 @@ export function TaskRow({
                           : strings.nextActionBadgeMarked}
                     </span>
                   ) : null}
-                  {(!isCompact || isRetained) && (task.status !== "actionable" || isRetained) ? (
+                  {!isCompact && task.status !== "actionable" ? (
                     <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
                       {strings.taskStatusLabels[task.status]}
                     </span>

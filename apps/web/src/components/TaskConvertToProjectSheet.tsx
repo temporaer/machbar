@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ProjectActivationResolution, Task } from "@machbar/shared";
 import { api, type TaskDetail } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
-import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
+import { hasApiErrorCode, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { projectActivationPromptFromSnapshot, projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { BottomSheet } from "./BottomSheet";
 import { useNavigate } from "react-router-dom";
@@ -25,7 +25,9 @@ function openActionDescendants(tasks: Task[]): Task[] {
 }
 
 /** Focused `task.convertToProject` workflow — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskConvertToProjectSheet({ task, onClose, onFailure, isCurrent = () => true }: {
+  task: Task; onClose: () => void; onFailure?: (cause: unknown) => void; isCurrent?: () => boolean;
+}) {
   const strings = useStrings();
   const navigate = useNavigate();
   const detail = useTaskDetail();
@@ -40,14 +42,14 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
 
   useEffect(() => {
-    setCurrentTask((previous) => previous.id === task.id && previous.revision === task.revision ? previous : task);
+    setCurrentTask(task);
   }, [task]);
   useEffect(() => {
     if (!preservedStepTitleEdited) setPreservedStepTitle(currentTask.title);
   }, [currentTask.title, preservedStepTitleEdited]);
   useEffect(() => {
     let cancelled = false;
-    api.getTask(task.id).then((latest) => { if (!cancelled) setCurrentTask(latest); }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); });
+    api.getTask(task.id).then((latest) => { if (!cancelled) setCurrentTask(latest); }).catch((cause) => { if (!cancelled) { onFailure?.(cause); setError(localizedErrorMessage(cause, strings)); } });
     return () => { cancelled = true; };
   }, [task.id, task.revision, strings]);
   const blockReason =
@@ -71,9 +73,7 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
     ? projectActivationResolutionFromPrompt(activationPrompt)
     : null;
 
-  const decisionDraft = useRef<ProjectActivationPrompt | null>(null);
-  useEffect(() => { if (activationPrompt) decisionDraft.current = activationPrompt; }, [activationPrompt]);
-  useEffect(() => { setActivationPrompt(null); setPreviewIntent(null); }, [preservedStepTitle, dependencyTargets, currentTask.revision]);
+  useEffect(() => { setActivationPrompt(null); setPreviewIntent(null); }, [preservedStepTitle, dependencyTargets]);
 
   const hierarchyPending = (currentTask.parentTaskId !== null || currentTask.projectId !== null) && !currentTask.hierarchyRevisions;
 
@@ -102,28 +102,36 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
       };
       if (!activationPrompt || previewIntent !== status) {
         const preview = await api.previewTaskConversion(task.id, input);
+        if (!isCurrent()) return;
         if (preview.activatingProjects.length) {
           setPreviewIntent(status);
-          setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision, decisionDraft.current));
+          setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision));
           return;
         }
       }
       const converted = await api.convertTaskToStory(task.id, input);
+      if (!isCurrent()) return;
       bump();
       onClose();
       detail.close();
       navigate(`/projects/${converted.id}`, { state: { createdProjectId: converted.id } });
 
     } catch (cause) {
-      const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (refreshedPrompt) { setPreviewIntent(status); setActivationPrompt(refreshedPrompt); }
-      if (isStaleWriteConflict(cause)) {
+      if (!isCurrent()) return;
+      onFailure?.(cause);
+      const requiredPrompt = projectActivationPromptFromError(cause);
+      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
+        setActivationPrompt(null);
+        setPreviewIntent(null);
+        setDependencyTargets({});
         bump();
         try {
           const latest = await api.getTask(task.id);
+          if (!isCurrent()) return;
           setCurrentTask(latest);
-        } catch {
-          // Keep the draft and let the next submission surface the current server error.
+          if (requiredPrompt) { setPreviewIntent(status); setActivationPrompt(requiredPrompt); }
+        } catch (refreshCause) {
+          onFailure?.(refreshCause);
         }
       }
       setError(localizedErrorMessage(cause, strings));

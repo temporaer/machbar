@@ -42,18 +42,20 @@ export function updateTask(
   });
 }
 
-/** Refresh only the optimistic revision after a stale-write response. Callers
+/** Reload the authoritative task after a stale-write response. Callers
  * keep their local edit draft and can offer an explicit retry in the same UI. */
 export async function refreshTaskAfterConflict(
   error: unknown,
   taskId: number,
+  onFailure?: (cause: unknown) => void,
 ): Promise<Task | null> {
   if (!(error instanceof Error) || (error as Error & { code?: unknown }).code !== "stale_write_conflict") {
     return null;
   }
   try {
     return await api.getTask(taskId);
-  } catch {
+  } catch (cause) {
+    onFailure?.(cause);
     return null;
   }
 }

@@ -6,6 +6,11 @@ import { IconActionButton } from "./IconActionButton";
 
 export type StepDraft = CreateTaskStepBatchInput["steps"][number];
 
+export function discardStepDraft(draftKey: string) {
+  try { sessionStorage.removeItem(`machbar:steps:${draftKey}`); }
+  catch { /* Browser storage may be unavailable. */ }
+}
+
 /** Shared authored step entry for task splitting, inline successors, and the
  * project task entry. The caller owns the canonical mutation. */
 export function StepComposer({
@@ -60,7 +65,7 @@ export function StepComposer({
     if (draftKey) {
       try {
         if (next.some(row => row.title.trim() || row.dueDate || row.scheduledDate)) sessionStorage.setItem(`machbar:steps:${draftKey}`, JSON.stringify(next));
-        else sessionStorage.removeItem(`machbar:steps:${draftKey}`);
+        else discardStepDraft(draftKey);
       } catch { /* The live draft remains available during this session. */ }
     }
     setRows(next);

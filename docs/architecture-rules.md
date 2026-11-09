@@ -58,8 +58,8 @@ affected by the shipped change.
 
 One domain operation has one canonical mutation path.
 
-Different UI contexts may use different presentation, navigation, and
-optimistic projections. They must not independently implement the same domain
+Different UI contexts may use different presentation and navigation.
+They must not independently implement the same domain
 mutation, revision handling, conflict behavior, or refresh policy.
 
 Presentation components call domain actions or commands. Those actions call API
@@ -76,46 +76,58 @@ API transport
 ```
 
 Presentation-only wrappers may differ when they do not duplicate mutation
-semantics. Shared optimistic mutations should use `useRetainedMutations` where
-its retention and conflict behavior fit.
+semantics. `useItemMutations` supplies pending/error handling and successful-write
+invalidation. Do not retain optimistic or confirmed DTO overlays, timed row
+holds, or interaction leases.
 
 ### Read invalidation
 
-`refresh.tsx` is the shared invalidation bus; `useAsync.ts` owns query execution.
-Same-query refreshes serialize into one in-flight request and one queued
-revalidation. They must accept the pending result so repeated invalidations
-cannot starve initial loading. Only logical dependency changes and unmount
-invalidate a request's result. External events use a bounded leading/trailing
-cadence; explicit mutation refreshes remain immediate. Do not add per-component
-throttles or another fetching layer to compensate for shared refresh behavior.
-`useAsync` callers may designate errors that revoke the current read and must
-discard retained data; harmless refresh failures continue retaining usable data.
-Project activation uses this for 403/404 so its editor can retain authored
-choices without rendering a stale project snapshot.
-Accepted-read authority uses `useAsync`'s qualified `onAcceptedResult`, before
-queued revalidation; runner idle/error flags are not evidence of acceptance.
-Activation command errors are qualified against that read authority: an error
-from the same read may update its requirements, while a delayed error after a
-newer accepted read may replace them only when its target revision is strictly
-newer than the accepted project's revision. Older or equal-revision errors must
-not overwrite the newer read's requirements.
+`refresh.tsx` owns invalidation transport and a scope-local Query client.
+`useAsync.ts` is the localized presentation facade over native `useQuery`, not
+another read runner or value store. Its keys identify each mounted read and its
+logical dependencies; responses are whole view/endpoint results, not a normalized
+client graph. Unmounted reads are not retained for navigation reuse.
+
+Successful writes cancel pre-write reads before invalidating and refetching
+active queries. Mutation DTOs do not patch other cached projections. Other views
+may briefly show their previous result while refetching. External events use the
+existing bounded leading/trailing cadence; an initial read may finish followed
+by one shared trailing revalidation, so repeated events cannot starve loading.
+`queryClient.ts` contains this native cancellation/invalidation integration.
+Do not add per-component throttles, revision floors, publication traversals or
+confirmed-result maps.
+
+Ordinary network/server errors preserve usable data and authored drafts with
+visible retry feedback. Access-denied/missing reads (401/403/404) remove cached
+content. Access loss ends the focused workflow; reopening starts a fresh
+decision. A stale compound command never auto-retries: refresh its prerequisites
+and require explicit reconfirmation. There is no cross-read activation authority
+or draft-restoration protocol after access revocation.
+
+The production read/action/workflow subtree is remounted when the effective
+actor or authentication state changes. Its Query client, pending/error state and
+editors cannot carry values or delayed callbacks into another identity.
+Authentication/member bootstrap and independent explicit polling retain their
+existing owners; this is not a claim that every imperative GET is cached.
+Query retries, focus/reconnect refetch and offline queuing are disabled; the
+existing transport and explicit retries own those triggers.
 
 ### Task mutations
 
 `taskMutations.ts` owns pure revision-safe task metadata execution and owner
-assignment semantics. `useTaskActions.ts` owns normal task optimistic
-projection, lifecycle commands, external-wait commands, and Review
+assignment semantics. `useTaskActions.ts` owns server-confirmed task
+lifecycle commands, external-wait commands, and Review
 acknowledgement.
 
-Screens needing a distinct optimistic projection may call the pure task
-mutation functions, as the optional Review planning tools do. They must not reproduce the raw
+The optional Review planning tools also call the pure task
+mutation functions. They must not reproduce the raw
 `api.updateTask` contract.
 
 ### Project mutations
 
 `useProjectActions.ts` owns project metadata updates and lifecycle commands,
-including Review acknowledgement, revision handling, optimistic retention, and
-confirmed overlays.
+including Review acknowledgement and revision handling. Successful commands
+invalidate reads; no client projection predicts legal lifecycle actions.
 Presentation code must not reproduce those raw API calls.
 
 `SharePage` is an explicit exception for its unique conflict-aware share/import
@@ -128,17 +140,17 @@ outdent, reparent, and cross-project movement are destination calculations, not
 separate backend commands.
 
 `taskTreeMove.ts` owns pure geometry and tree projection.
-`useOutlineOrganize.tsx` owns outline execution and rollback.
-`MoveTaskSheet.tsx` owns explicit destination moves. `QuickAdd.tsx` may use the
-same move command for post-create project correction.
+`useOutlineOrganize.tsx` owns drag/keyboard destination calculation and pending
+feedback; `MoveTaskSheet.tsx` owns explicit destination selection.
+Both execute through `useTaskActions.move`, sharing the same task-ID concurrency gate and invalidation
+as other task commands. Only that canonical action calls `api.moveTask`.
 
 `treeRepo.getDirectChildren` is the canonical mixed-role sibling query for
 creation, successor insertion, reindexing and project moves. Task moves normalize
 both direct-parent groups; every sibling whose position changes gets a revision
 increment, while the moved task keeps its single revision increment.
 
-Adding another direct move caller requires an explicit checker exception and an
-explanation of why an existing move surface cannot own the behavior.
+Do not add another direct transport caller for moves.
 
 `POST /api/projects/:id/move` extends `structuralMoves.ts` for atomic project
 reparenting to a project or top level. `story.move` routes through
@@ -185,7 +197,8 @@ chosen status and resolves centrally which lifecycle mutation that requires
 (complete, cancel, reopen, clarify, or a direct transition).
 
 Rows keep only genuinely row-specific behavior: gesture mechanics, folding,
-drag/outline manipulation, optimistic row presentation, and rail visibility.
+drag/outline manipulation and rail visibility. Lists regroup from fresh server
+results immediately; open editors must not depend on retaining their source row.
 
 `canonical-workflow-host` and `canonical-workflow-routing` in
 `scripts/check-architecture.mjs` enforce this. Its exception map is empty:
@@ -195,7 +208,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 
 | Need | Canonical primitive or path |
 |------|-----------------------------|
-| Status transition display lifetime | `useRetainedMutations` owns pending/confirmed values and independent holding IDs; `useRetainedPlacement`/`retainedPlacement` preserve view-local buckets and tree positions; `useRetentionInteraction` leases removal while an interaction is open, including task placement ancestors, held descendants keeping ancestors mounted, and pending child-policy prompts. TaskActions observes tree relations separately from authoritative value reconciliation using cached descendant sets in `taskHelpers.indexTaskDescendants`. Review reuses placement with stable issue keys and task/project holding predicates, including timed acknowledgements. Placement merges each sibling level once and keeps authoritative membership/fields separate from retained values; `taskHelpers.applyDescendantTerminalOutcome` is the narrow task lifecycle exception. A live task interaction registry refreshes owner leases when observations add descendants. Task rows/projectors use `TaskActions.projectTask`, and project views use `ProjectActions.projectStory`, for pending-aware value selection; confirmed equal-revision reads supply fresh derived fields. Ordering precedes placement; explicit outline commands reset its local generation. Linear sibling-anchor merging covers wide holds, and project placement includes tag groups. Successful task/project writes invalidate immediately. |
+| Mutation feedback and list placement | `useItemMutations` owns per-item pending/errors and duplicate-in-flight protection; canonical actions invalidate on success. Query results supply values, membership and ordering. No optimistic DTOs, confirmed overlays, retention timers, placement snapshots or interaction leases. |
 | AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakeCanonicalPlanning`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus boundary normalization in `packages/shared/src/inputNormalization.ts` and Zod structural schemas in `apps/api/src/schemas.ts` |
 | AI intake execution (jobs, prompt, apply) | `apps/api/src/intake/` (`jobs.ts`, `prompt.ts`, `apply.ts`, `storage.ts`, `cleanup.ts`), `apps/api/src/routes/intake.ts`, `apps/web/src/pages/IntakeReviewPage.tsx`, and `apps/web/src/lib/useStartIntake.ts`; Apply uses the domain create primitives |
 | AI clarification and reviewed application | `task.refine`/`story.refine` open the shared `WorkClarificationSheet` through the canonical workflow hosts. It offers general improvement, next action and structure intents for tasks/projects, plus a task-only smaller-steps intent when `canBreakDownTask` allows it. Smaller steps reuse `/api/intake/task/:taskId`; typed existing-work changes use `/api/intake/refinement/:targetType/:targetId`. Both use the existing intake job, Home Assistant `intake_analyze` bridge, `/intake/:id` review route, and transactional canonical domain mutations. Typed planning uses shared date/reminder contracts and canonical task mutations. `update_wait` starts or updates the existing external wait; `resolve_wait` calls `resolveExternalWait` without completing the action. `cancel_task` calls `cancelTask` and requires an explicit reviewed descendants policy when open work is affected. Nested `create_child` steps use proposal-local keys, validate accepted parent references, and are created topologically inside the same transaction. A task→project conversion can include a reviewed `update_task` title/notes edit only; the API applies it to the converted project through `updateProject`, while shared selected-change validation rejects incompatible same-item operations and duplicate text-field writes before Apply. `WorkRefinementReview` summarizes proposed differences by default, retains local edits on failure, focuses visible errors or activation requirements, and keeps existing editors mounted behind per-change disclosures. Launch from task details hands off to the existing intake route while suspending the live detail context and queue for return; it does not create a second review/polling path. |
@@ -214,8 +227,8 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` (method-aware facts and citation selection), `ObservationPlanSummary` in `ObservationPlanEditor.tsx`, and `InterventionAssessSheet`; existing reflection evidence is reused |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
-| Shared read invalidation and serialized query revalidation | `apps/web/src/lib/refresh.tsx` and `apps/web/src/lib/useAsync.ts`; `onAcceptedResult` publishes qualified reads before queued revalidation. Project activation discards its retained detail on 403/404 while preserving the editor's authored choices |
-| Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
+| Shared read ownership and invalidation | `refresh.tsx`, `queryClient.ts` and the `useAsync.ts` facade over TanStack Query; write invalidations cancel obsolete reads, external invalidations share trailing reads, and access errors remove cached content. |
+| Server-confirmed item mutation | `apps/web/src/lib/useItemMutations.ts` |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
@@ -231,13 +244,13 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
 | Agenda eligibility and available work selection | `apps/api/src/domain/agendaSelection.ts`; Today supplies `executionDate` and one refreshed instant for full execution eligibility. Its scheduled-date predicate is shared by execution suggestions, planned rows and ordinary reached revisits; a future plan suppresses reconsideration, not external-wait follow-ups or deadline attention. `agenda.ts` retains attention-root precedence. `compiledViewProjection.ts` filters embedded Today execution with that same predicate and promotes eligible deeper work through unavailable intermediates. Week/Waiting retain default projections. |
 | Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx` |
-| Week attention-date/placement projection | `projectWeekAttention` in `packages/shared/src/index.ts`, shared by backend `weekAgenda.ts` and frontend `WeekPage.tsx` optimistic updates |
+| Week attention-date projection | `projectWeekAttention` in `packages/shared/src/index.ts`, used by backend `weekAgenda.ts`; the web view renders the confirmed Week response |
 | Exhaustive inventory filtering | `apps/web/src/lib/allInventory.ts` |
 | Refinement sizing semantics | `apps/web/src/lib/refinementHelpers.ts` |
-| Refinement optimistic projection | `apps/web/src/lib/useRefinementActions.ts` |
+| Refinement mutations | `apps/web/src/lib/useRefinementActions.ts`, using server-confirmed writes and immediate invalidation |
 | Project metadata and lifecycle actions | `apps/web/src/lib/useProjectActions.ts` |
 | Task hierarchy planning | `apps/web/src/lib/taskTreeMove.ts` |
-| Task hierarchy execution | `apps/web/src/lib/useOutlineOrganize.tsx` and `api.moveTask` |
+| Task hierarchy execution | `useTaskActions.move` owns transport, revision input, pending/errors and invalidation; `useOutlineOrganize` and `MoveTaskSheet` calculate/select destinations |
 | Proposed activation decisions | `activationPreview.ts` evaluates the exact canonical mutation in a rollback-only transaction; the existing routes carry the preview header, and `projectActivationResolution.ts` adapts server snapshots. No preview writes or change notifications persist. |
 | Shared task-step entry and atomic batches | `apps/web/src/components/StepComposer.tsx` for authored rows; `POST /api/tasks/:id/children/batch` and `POST /api/projects/:id/tasks/batch` call the shared transactional task-step operation in `apps/api/src/domain/taskStepBatch.ts`. Inbox parent classification and commitment activation are part of that transaction. Inline successors still use the canonical successor mutation. |
 | Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |

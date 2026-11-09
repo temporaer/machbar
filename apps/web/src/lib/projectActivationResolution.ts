@@ -80,15 +80,14 @@ export function projectDriverRequirementFromError(
   return required ? { projectId: required.projectId, title: required.title } : null;
 }
 
-/** Reload current server requirements after a stale write, keeping only
- * decisions that still apply to the current transition. */
+/** Reload stale requirements without recertifying the previous decisions. */
 export async function refreshProjectActivationPrompt(
   error: unknown,
   targetProjectId: number,
-  previous?: ProjectActivationPrompt | null,
   intent: "commitment" | "explicit_activation" = "commitment",
+  onFailure?: (cause: unknown) => void,
 ): Promise<ProjectActivationPrompt | null> {
-  const fromError = projectActivationPromptFromError(error, previous);
+  const fromError = projectActivationPromptFromError(error);
   if (fromError) return fromError;
   if (!isStructuredApiError(error) || error.code !== "stale_write_conflict") return null;
 
@@ -98,22 +97,11 @@ export async function refreshProjectActivationPrompt(
     snapshot = intent === "explicit_activation"
       ? project.directActivationDecisionSnapshot
       : project.activationDecisionSnapshot;
-  } catch {
-    return previous ?? null;
+  } catch (cause) {
+    onFailure?.(cause);
+    return null;
   }
-  if (!snapshot) return previous ?? null;
-  const requiredDriverIds = new Set(
-    snapshot.projects.filter((project) => project.required.includes("driver")).map((project) => project.projectId),
-  );
-  return {
-    projects: snapshot.projects,
-    expectedProjects: snapshot.expectedProjects,
-    targetRevision: snapshot.targetRevision,
-    selectedDrivers: Object.fromEntries(
-      Object.entries(previous?.selectedDrivers ?? {}).filter(([id]) => requiredDriverIds.has(Number(id))),
-    ),
-    nextActionTitle: previous?.nextActionTitle ?? "",
-  };
+  return snapshot ? projectActivationPromptFromSnapshot(snapshot) : null;
 }
 
 export function projectActivationResolutionFromPrompt(

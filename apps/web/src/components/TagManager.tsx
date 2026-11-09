@@ -68,7 +68,6 @@ export function TagManager() {
     try {
       await api.createTag(trimmed, createKind);
       setName("");
-      reload();
       bump();
     } catch (cause) {
       setCreateError(errorMessage(cause, strings));
@@ -110,7 +109,6 @@ export function TagManager() {
             : targetPinned.length
           : null,
       });
-      reload();
       bump();
       setEditing(null);
     } catch (cause) {
@@ -126,7 +124,6 @@ export function TagManager() {
     setEditorError(null);
     try {
       await api.deleteTag(editing.id);
-      reload();
       bump();
       setEditing(null);
     } catch (cause) {
@@ -150,7 +147,6 @@ export function TagManager() {
       await api.updateTag(other.id, {
         sortPosition: tag.sortPosition ?? index,
       });
-      reload();
       bump();
     } catch (cause) {
       setActionError(errorMessage(cause, strings));

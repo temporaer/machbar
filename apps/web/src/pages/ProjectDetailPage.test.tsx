@@ -228,7 +228,40 @@ describe("ProjectDetailPage task explanations", () => {
 
   afterEach(() => { vi.useRealTimers(); });
 
-  it.each(["expired", "active", "interaction"] as const)("keeps same-revision child membership after a parent edit during %s retention", async mode => {
+  it.each([401, 403, 404])("ends inline project editing when a %s read revokes access", async status => {
+    function RefreshControl() {
+      const { bump } = useRefresh();
+      return <button onClick={bump}>Refresh protected project</button>;
+    }
+    renderWithProviders(<><ProjectDetailPage /><RefreshControl /></>);
+    const heading = await screen.findByRole("heading", { name: "Sommerfest planen" });
+    await userEvent.click(within(heading.closest(".page-header")!).getByRole("button", { name: "Bearbeiten" }));
+    await userEvent.type(screen.getByDisplayValue("Sommerfest planen"), " private draft");
+    mockedApi.getProject.mockRejectedValue(Object.assign(new Error("Access denied"), { name: "ApiError", status }));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh protected project" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent(strings.error);
+    expect(screen.queryByDisplayValue(/private draft/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Sommerfest planen")).not.toBeInTheDocument();
+  });
+
+  it("preserves authored project drafts on an ordinary network refresh failure", async () => {
+    function RefreshControl() {
+      const { bump } = useRefresh();
+      return <button onClick={bump}>Refresh draft project</button>;
+    }
+    renderWithProviders(<><ProjectDetailPage /><RefreshControl /></>);
+    const heading = await screen.findByRole("heading", { name: "Sommerfest planen" });
+    await userEvent.click(within(heading.closest(".page-header")!).getByRole("button", { name: "Bearbeiten" }));
+    const input = screen.getByDisplayValue("Sommerfest planen");
+    await userEvent.type(input, " authored draft");
+    mockedApi.getProject.mockRejectedValue(new Error("Offline"));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh draft project" }));
+    await waitFor(() => expect(mockedApi.getProject.mock.calls.length).toBeGreaterThan(1));
+    expect(input).toHaveValue("Sommerfest planen authored draft");
+  });
+
+  it("uses refreshed hierarchy membership after a parent edit", async () => {
     const parent = makeTask({ id: 71, title: "Parent before edit", projectId: 42 });
     const child = makeTask({ id: 72, title: "Moved sibling", projectId: 42 });
     const renamed = { ...parent, title: "Renamed parent", revision: 2 };
@@ -244,42 +277,19 @@ describe("ProjectDetailPage task explanations", () => {
       return <>
         <button onClick={() => void actions.update(parent, { title: renamed.title })}>Rename parent</button>
         <button onClick={() => { moved = true; bump(); }}>Load moved hierarchy</button>
-        <output data-testid="parent-overlay">{String(actions.retained.has(parent.id))}</output>
       </>;
     }
     renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
       { initialEntries: ["/projects/42"] });
     await screen.findByText(parent.title);
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Rename parent" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getByText(renamed.title)).toBeInTheDocument();
-    let menu: HTMLElement | null = null;
-    if (mode === "expired") {
-      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-      expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
-    } else if (mode === "interaction") {
-      menu = within(screen.getByText(renamed.title).closest("li")!).getByRole("button", { name: "Weitere Aktionen" });
-      fireEvent.click(menu);
-    }
+    await screen.findByText(renamed.title);
     fireEvent.click(screen.getByRole("button", { name: "Load moved hierarchy" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await waitFor(() => expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title));
     expect(screen.getAllByText(child.title)).toHaveLength(1);
-    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
-    if (mode === "interaction") {
-      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
-      expect(screen.getByTestId("parent-overlay")).toHaveTextContent("true");
-      expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
-      fireEvent.click(menu!);
-      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    } else if (mode === "active") {
-      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    }
-    expect(screen.getByTestId("parent-overlay")).toHaveTextContent("false");
-    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(renamed.title);
   });
 
-  it("preserves fresh child stories while a parent project hold remains active", async () => {
+  it("renders refreshed child projects after reviewing their parent", async () => {
     const child = makeProject({ id: 73, title: "Old child title", parentId: 42, openCount: 1, doneCount: 0 });
     const added = makeProject({ id: 74, title: "New child project", parentId: 42 });
     const parent = { ...makeProject({ id: 42, title: "Held project" }), childStories: [child] };
@@ -297,23 +307,18 @@ describe("ProjectDetailPage task explanations", () => {
       return <>
         <button onClick={() => void actions.acknowledgeReview(parent)}>Hold parent project</button>
         <button onClick={() => { changed = true; bump(); }}>Refresh child projects</button>
-        <output data-testid="parent-project-held">{String(actions.holdingIds.has(parent.id))}</output>
       </>;
     }
     renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Controls /></>,
       { initialEntries: ["/projects/42"] });
     await screen.findByText(child.title);
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Hold parent project" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await waitFor(() => expect(saved).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "Refresh child projects" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getByTestId("parent-project-held")).toHaveTextContent("true");
+    await screen.findByText(added.title);
     expect(screen.queryByText(child.title)).not.toBeInTheDocument();
     expect(screen.getByText("Fresh child title").closest("li")).toHaveTextContent("0/3");
     expect(screen.getByText(added.title)).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
-    expect(screen.getByTestId("parent-project-held")).toHaveTextContent("true");
     expect(screen.getByText(added.title)).toBeInTheDocument();
   });
 
@@ -346,8 +351,9 @@ describe("ProjectDetailPage task explanations", () => {
 
   it("edits discussion nomination in project details through the canonical command", async () => {
     const project = makeProject({ id: 5, title: "Gemeinsam besprechen" });
-    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
-    mockedApi.updateProject.mockResolvedValue({ ...project, revision: 2, discussionRequested: true });
+    const confirmed = { ...project, revision: 2, discussionRequested: true };
+    mockedApi.getProject.mockResolvedValueOnce({ ...project, tasks: [] }).mockResolvedValue({ ...confirmed, tasks: [] });
+    mockedApi.updateProject.mockResolvedValue(confirmed);
     renderProjectRoute("/projects/5");
     await openDetailActions();
     const button = await screen.findByRole("button", { name: strings.addDiscussion });
@@ -890,11 +896,15 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it("edits title and notes inline as separate explicit transactions", async () => {
-    mockedApi.updateProject.mockImplementation(async (id, input) => ({
-      ...makeProject({ id, title: "Sommerfest planen", ownerMemberId: 1 }),
-      ...input,
-      revision: 2,
-    }));
+    let current = {
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [makeTask({ title: "Ort reservieren" })],
+    };
+    mockedApi.getProject.mockImplementation(async () => current);
+    mockedApi.updateProject.mockImplementation(async (_id, input) => {
+      current = { ...current, ...input, revision: current.revision + 1 };
+      return current;
+    });
     renderWithProviders(<ProjectDetailPage />);
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
@@ -932,8 +942,7 @@ describe("ProjectDetailPage task explanations", () => {
       }),
     );
 
-    // The confirmed revision is reused, so a stale reload cannot resurrect
-    // the old text or force a conflicting second write.
+    await screen.findByRole("heading", { name: "Sommerfest 2027" });
     await userEvent.click(
       within(notesSection).getByRole("button", { name: "Bearbeiten" }),
     );
@@ -1277,15 +1286,17 @@ describe("ProjectDetailPage task explanations", () => {
       }),
       tasks: [],
     });
-    mockedApi.updateProject.mockResolvedValue(
-      makeProject({
+    mockedApi.updateProject.mockImplementation(async () => {
+      const confirmed = makeProject({
         id: 42,
         title: "Sommerfest planen",
         ownerMemberId: 1,
         notes: "Bestehende Notiz\n\n[plan.pdf](paperless:73)",
         revision: 2,
-      }),
-    );
+      });
+      mockedApi.getProject.mockResolvedValue({ ...confirmed, tasks: [] });
+      return confirmed;
+    });
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Sommerfest planen");
 

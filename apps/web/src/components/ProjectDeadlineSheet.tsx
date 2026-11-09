@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Project } from "@machbar/shared";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { hasApiErrorCode, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
@@ -17,9 +17,11 @@ export function ProjectDeadlineSheet({
   story,
   onClose,
   onSave,
+  onFailure,
 }: {
   story: Project;
   onClose: () => void;
+  onFailure?: (cause: unknown) => void;
   onSave: (patch: { dueDate: string | null; activationResolution?: ProjectActivationResolution; expectedRevision?: number }) => Promise<void>;
 }) {
   const strings = useStrings();
@@ -37,7 +39,9 @@ export function ProjectDeadlineSheet({
     try {
       await onSave(patch);
     } catch (cause) {
-      const prompt = await refreshProjectActivationPrompt(cause, story.id, activationPrompt);
+      onFailure?.(cause);
+      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) setActivationPrompt(null);
+      const prompt = await refreshProjectActivationPrompt(cause, story.id, "commitment", onFailure);
       if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {

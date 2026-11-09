@@ -158,6 +158,7 @@ describe("TodayPage", () => {
       contribution.resolve({ ...pulse, pulse: pulse.pulse.map((bucket) => ({ ...bucket, level: "high" as const })) });
       integration.resolve({ ...status, intakeReady: true });
     });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(screen.getByText(/Settled task/)).toBeInTheDocument();
     expect(rendered.container.querySelectorAll(".contribution-pulse-high")).toHaveLength(7);
     expect(screen.getByRole("link", { name: /Aufräumrunde/ })).toBeInTheDocument();
@@ -351,7 +352,7 @@ describe("TodayPage", () => {
     );
   });
 
-  it("refreshes immediately but keeps the last completed task in Today until its display window ends", async () => {
+  it("regroups a completed task into server-confirmed completed history immediately", async () => {
     const task = makeTask({ id: 9001, title: "Bleibt kurz in Today", status: "actionable" });
     const done = makeTask({ ...task, status: "done", revision: 2 });
     let completed = false;
@@ -362,22 +363,16 @@ describe("TodayPage", () => {
     renderWithProviders(<TodayPage />);
     const row = (await screen.findByText(task.title)).closest("li")!;
     const sourceSection = row.closest(".section")!;
-    vi.useFakeTimers();
     fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await screen.findByText("Heute erledigt (1)");
     expect(mockedApi.getAgenda.mock.calls.length).toBeGreaterThan(1);
-    expect(screen.getAllByText(task.title)).toHaveLength(1);
-    expect(screen.getByText(task.title).closest(".section")).toBe(sourceSection);
-    expect(within(row).getByRole("button", { name: "Wieder öffnen" })).not.toBeDisabled();
-    expect(screen.getByText(task.title)).toHaveClass("done");
-    expect(screen.queryByText("Heute erledigt (1)")).not.toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    fireEvent.click(screen.getByText("Heute erledigt (1)"));
     expect(screen.getAllByText(task.title)).toHaveLength(1);
     expect(screen.getByText(task.title).closest(".section")).not.toBe(sourceSection);
     expect(sourceSection).not.toBeInTheDocument();
   });
 
-  it.each([false, true])("retains open children under a completed parent, protecting an open child menu: %s", async openMenu => {
+  it.each([false, true])("regroups open children independently of a completed parent, menu open: %s", async openMenu => {
     const child = makeTask({ id: 9022, title: "Child left open", parentTaskId: 9021 });
     const parent = makeTask({ id: 9021, title: "Completed parent", children: [child] });
     const done = { ...parent, status: "done" as const, revision: 2, children: [] };
@@ -393,31 +388,16 @@ describe("TodayPage", () => {
     }
     renderWithProviders(<><TodayPage /><CompleteParent /></>);
     await screen.findByText(child.title);
-    vi.useFakeTimers();
+    if (openMenu) fireEvent.click(within(screen.getByText(child.title).closest("li")!).getByRole("button", { name: "Weitere Aktionen" }));
     fireEvent.click(screen.getByRole("button", { name: "Complete parent" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await waitFor(() => expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toBeNull());
     expect(mockedApi.completeTask).toHaveBeenCalledWith(parent.id, "leave_open", undefined, 1);
     expect(screen.getAllByText(child.title)).toHaveLength(1);
-    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent(parent.title);
-    if (openMenu) {
-      const childRow = screen.getByText(child.title).closest("li")!;
-      const toggle = within(childRow).getByRole("button", { name: "Weitere Aktionen" });
-      fireEvent.click(toggle);
-      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
-      expect(childRow).toBeInTheDocument();
-      expect(within(childRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
-      fireEvent.click(toggle);
-      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
-      expect(childRow).toBeInTheDocument();
-      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    } else {
-      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    }
     expect(screen.getAllByText(child.title)).toHaveLength(1);
     expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).toBeNull();
   });
 
-  it("protects a newly attached child's menu when its held parent moves between Today buckets", async () => {
+  it("renders newly attached children once in their new server attention bucket", async () => {
     const parent = makeTask({ id: 9031, title: "Parent before edit" });
     const renamed = { ...parent, title: "Held parent with new child", revision: 2 };
     const child = makeTask({ id: 9032, title: "Newly attached child" });
@@ -439,27 +419,22 @@ describe("TodayPage", () => {
     }
     renderWithProviders(<><TodayPage /><Controls /></>);
     const sourceSection = (await screen.findByText(parent.title)).closest(".section")!;
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Rename held parent" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await screen.findByText(renamed.title);
     fireEvent.click(screen.getByRole("button", { name: "Attach child and move bucket" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await waitFor(() => expect(sourceSection).not.toBeInTheDocument());
     const childRow = screen.getByText(child.title).closest("li")!;
     const toggle = within(childRow).getByRole("button", { name: "Weitere Aktionen" });
     fireEvent.click(toggle);
-    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(childRow).toBeInTheDocument();
-    expect(childRow.closest(".section")).toBe(sourceSection);
+    expect(childRow.closest(".section")).not.toBe(sourceSection);
     expect(within(childRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
     fireEvent.click(toggle);
-    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
-    expect(childRow).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(sourceSection).not.toBeInTheDocument();
     expect(screen.getAllByText(child.title)).toHaveLength(1);
   });
 
-  it.each([false, true])("keeps a held child and its ancestor while the ancestor menu is open: %s", async openParentMenu => {
+  it.each([false, true])("removes an omitted ancestor after child completion, menu open: %s", async openParentMenu => {
     const child = makeTask({ id: 9012, title: "Nested retained task" });
     const parent = makeTask({ id: 9011, title: "Retained ancestor", children: [child] });
     const done = makeTask({ ...child, status: "done", revision: 2 });
@@ -470,25 +445,9 @@ describe("TodayPage", () => {
     mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
     renderWithProviders(<TodayPage />);
     const row = (await screen.findByText(child.title)).closest("li")!;
-    vi.useFakeTimers();
+    if (openParentMenu) fireEvent.click(within(screen.getByText(parent.title).closest("li")!).getAllByRole("button", { name: "Weitere Aktionen" })[0]!);
     fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getAllByText(child.title)).toHaveLength(1);
-    expect(screen.getByText(parent.title)).toBeInTheDocument();
-    expect(screen.getByText(child.title).closest("li")?.parentElement?.closest("li")).not.toBeNull();
-    if (openParentMenu) {
-      const ancestor = screen.getByText(parent.title).closest("li")!;
-      const toggle = within(ancestor).getAllByRole("button", { name: "Weitere Aktionen" })[0]!;
-      fireEvent.click(toggle);
-      await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
-      expect(ancestor).toBeInTheDocument();
-      fireEvent.click(toggle);
-      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
-      expect(ancestor).toBeInTheDocument();
-      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    } else {
-      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    }
+    await waitFor(() => expect(screen.queryByText(parent.title)).not.toBeInTheDocument());
     expect(screen.queryByText(parent.title)).not.toBeInTheDocument();
   });
 
@@ -613,7 +572,7 @@ describe("TodayPage", () => {
       });
     renderWithProviders(<TodayPage />);
     await act(async () => {
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(
       screen.getByText("Für heute ist nichts geplant."),
@@ -622,6 +581,7 @@ describe("TodayPage", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TIMED_ELIGIBILITY_REFRESH_MS);
     });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
 
     expect(mockedApi.getAgenda).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Jetzt machbar")).toBeInTheDocument();

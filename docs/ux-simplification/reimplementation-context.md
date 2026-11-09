@@ -1,5 +1,113 @@
 # Reimplementation context
 
+## Superseding decision: server-confirmed simplification
+
+On 2026-11-09 the user explicitly approved simpler interaction guarantees after
+the second Query pilot failed its correctness and size gates. The rejected pilot
+is preserved locally at `279b12ba`; documentation-only PR #265 records its
+net +697 runtime lines and projected completed growth. It is not a foundation
+to patch or ship.
+
+The new implementation starts from merged main `2e923f23`, not that pilot:
+
+- Wait for mutation confirmation; show pending/errors without optimistic DTOs.
+- Invalidate and refetch whole view/endpoint responses instead of patching every
+  embedded copy or building a normalized client graph.
+- Let rows regroup/disappear on fresh results; delete timed holds and leases.
+- Preserve authored drafts during ordinary refreshes/network failures.
+- End focused workflows on access loss, discard choices, and reopen fresh.
+- Reload stale compound prerequisites and require explicit reconfirmation.
+- Permit one pending domain command per work item in this client.
+- Keep authorization, transactional writes, revision checks and identity isolation.
+
+Native Query owns the generic read facade's values and execution. Bootstrap
+identity and independent explicit polling are not silently claimed as migrated.
+Correctness and measured source reduction remain separate acceptance checks.
+The history below preserves earlier investigation; requirements for recovery
+across access revocation and timed placement are deliberately superseded.
+
+### Implementation contract and acceptance matrix
+
+The observable contract was established before changing production behavior.
+The implementation replaces machinery rather than layering another recovery
+protocol over it:
+
+1. Replace optimistic/retained actions with server-confirmed commands and a
+   shared per-item pending gate, including hierarchy moves and refinement.
+2. Replace the generic custom read runner with native Query, retaining the
+   existing localized read interface and invalidation transport.
+3. End denied editor openings and reset stale compound decisions; retain
+   authored text across ordinary outages and harmless refreshes.
+4. Verify the complete application, both browser projects and actual provider
+   identity replacement before publishing.
+
+| Observable invariant | Counterexamples and boundary evidence |
+| --- | --- |
+| Pending commands do not predict domain state | Metadata, completion, refinement and moves retain the old projection until an authoritative read; failed commands do not need rollback |
+| One pending task command is shared across entry points | Metadata-before-move and move-before-metadata; outline and destination picker use the same canonical task action |
+| Successful writes cannot publish a pre-write read | Held read completes before/after invalidation; canceled results cannot replace the post-write projection |
+| External events cannot starve the initial read | Initial and trailing reads, repeated invalidators, and removed/replaced same-key Query objects |
+| Ordinary outages retain useful data and authored drafts | Network failure, explicit retry, stale refresh and cancellation; no new timed row holds |
+| Denial removes protected controls and choices | Read denial and private mutation denial, including when a later GET would still succeed; notice dismissal and explicit fresh reopening |
+| Stale compound decisions require another explicit commit | Changed requirements, including equal target revisions with changed surrounding graph; no automatic command replay |
+| Another identity cannot receive old values or callbacks | Provider retirement and delayed reads; real App mount tree, not just provider-rich component fixtures |
+
+The integration pass exposed tests that mocked away the production read
+provider or assumed synchronous custom-runner notifications. Those fixtures now
+use the real provider and explicitly advance native notification timers; the
+scheduler was not replaced. Intake mock response queues are reset between tests
+so an early failure cannot contaminate later scenarios. Tag management and share
+conflict handling also had redundant local reload plus global invalidation:
+they now rely on the single global refresh, while explicit read retry remains.
+
+The measured application-source delta against
+`2e923f23` is **+870 / -2487, net -1617 lines across 64 runtime files**,
+including new untracked source and excluding tests/test support. Test source is
+separate: **+1489 / -2656, net -1167 lines across 43 files**. Deleted retention
+tests describe deliberately removed guarantees; replacement tests cover the
+approved server-confirmed behavior. These counts do not measure dependency
+implementation size or establish correctness.
+
+The first full verifier failed during integration; it is not acceptance
+evidence. The final frozen implementation, including the review correction
+below, passed:
+
+- `bash scripts/verify.sh`: architecture, shared build, all typechecks,
+  1,418 API tests, 1,803 web tests, production build and Python
+  (159 passed, 1 skipped).
+- `npm run build && npm run test:e2e`: production rebuild and 34 desktop/mobile
+  Chromium cases, including real-App read and refinement-continuation retirement.
+- `git diff --check`: passed.
+
+Verification used Node.js 22 and the existing Python test environment. These
+results do not prove physical touch/keyboard, assistive-technology,
+non-Chromium or live integration behavior.
+
+### Acceptance review and correction
+
+The simplification critic accepted the bounded design: the two small helpers
+have real consumers and the removed coordination is not recreated elsewhere.
+The source reduction is maintenance evidence, not proof of fewer taps or
+faster everyday use. Intake/refinement proposal generation remains a separate
+job with local pending state; the shared task gate covers domain mutations,
+including refinement-list edits and moves.
+
+The independent regression review found a missed identity ordering: production
+identity replacement unmounts workflow hosts, leaving render-updated opening
+refs frozen. A held refinement success could then navigate the replacement
+identity to the old opening's intake job. This is a client continuation defect,
+not evidence of an authorization bypass. Both hosts now retire their guards
+synchronously on unmount, including StrictMode lifecycle replay; task denial
+handling observes the same guard.
+
+Four focused tests rejected the old task/project refinement and move
+continuations. Both real-App browser refinement scenarios also rejected the
+previously built faulty bundle: after identity replacement, releasing the held
+POST navigated to the old intake URL. These browser tests use the production
+App/provider tree and real member/item reads; only the held successful intake
+response is supplied by the test. They do not establish Home Assistant
+integration or intake persistence behavior.
+
 ## Decision and baseline
 
 On 2026-11-08 the user approved preserving the previous effort and restarting

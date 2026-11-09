@@ -1,8 +1,7 @@
-import { useLayoutEffect, useMemo } from "react";
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
+import { useMemo } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
-import { applyDescendantTerminalOutcome, flattenTasks, orderTaskTree } from "../lib/taskHelpers";
+import { flattenTasks, orderTaskTree } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
@@ -63,14 +62,10 @@ export function TaskOutline({
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
-  // Structural editing (the drag gesture) keeps its own optimistic view of
-  // the tree, so render what it hands back rather than the raw prop.
   const organize = useOutlineOrganize(tasks, organizable);
 
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
-  useLayoutEffect(() => { taskActions.observeTasks(sorted); }, [sorted, taskActions.observeTasks]);
-  const { rows: roots } = useRetainedPlacement({ rows: sorted }, taskActions.holdingIds,
-    taskActions.projectTask, String(organize.placementVersion), applyDescendantTerminalOutcome);
+  const roots = sorted;
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
   if (roots.length === 0) return <EmptyState message={emptyMessage} />;
 

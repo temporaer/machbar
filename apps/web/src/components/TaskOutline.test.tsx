@@ -297,7 +297,7 @@ describe("TaskOutline", () => {
       expect(parent.children.map(task => task.position)).toEqual([7, 1]);
     });
 
-    it("transfers retention ownership when a task changes sections before completion", async () => {
+    it("moves a task between server sections and removes it when omitted", async () => {
       const moving = makeTask({ id: 181, title: "Moving action" });
       mockedApi.completeTask.mockResolvedValue(makeTask({ ...moving, status: "done" }));
       const outlines = (inA: boolean, inB: boolean) => <>
@@ -313,7 +313,7 @@ describe("TaskOutline", () => {
       await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
       expect(screen.getAllByText("Moving action")).toHaveLength(1);
       rerender(outlines(false, false));
-      expect(screen.getAllByText("Moving action")).toHaveLength(1);
+      expect(screen.queryByText("Moving action")).not.toBeInTheDocument();
       expect(screen.getByText("Empty A")).toBeInTheDocument();
     });
 
@@ -327,13 +327,13 @@ describe("TaskOutline", () => {
       await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
       await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
       rerender(outline(`${selection}-before`, []));
-      expect(screen.getAllByText("Previous selection action")).toHaveLength(1);
+      expect(screen.queryByText("Previous selection action")).not.toBeInTheDocument();
       rerender(outline(`${selection}-after`, []));
       expect(screen.queryByText("Previous selection action")).not.toBeInTheDocument();
       expect(screen.getByText("New selection empty")).toBeInTheDocument();
     });
 
-    it("retains a completed descendant once across multiple compiled outlines and refresh", async () => {
+    it("removes a completed descendant after server refresh without disturbing other outlines", async () => {
       const child = makeTask({ id: 161, title: "Completed child" });
       const parent = makeTask({ id: 160, title: "Attention parent", children: [child] });
       const other = makeTask({ id: 162, title: "Other ready work" });
@@ -349,12 +349,12 @@ describe("TaskOutline", () => {
       expect(screen.getAllByText("Completed child")).toHaveLength(1);
       // Today now filters terminal execution descendants out of refreshed trees.
       rerender(outlines([]));
-      expect(screen.getAllByText("Completed child")).toHaveLength(1);
+      expect(screen.queryByText("Completed child")).not.toBeInTheDocument();
       expect(screen.getByText("Attention parent")).toBeInTheDocument();
       expect(screen.getByText("Other ready work")).toBeInTheDocument();
     });
 
-    it("keeps a just-completed descendant visible while it is retained", async () => {
+    it("does not change a descendant's domain state before its server prop changes", async () => {
       const child = makeTask({ id: 151, title: "Frisch erledigt", status: "actionable" });
       const parent = makeTask({
         id: 150,
@@ -375,8 +375,6 @@ describe("TaskOutline", () => {
       await userEvent.click(checkboxes[1] as HTMLElement);
 
       await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
-      // Retained: the just-completed child keeps showing instead of
-      // instantly collapsing behind the "erledigt anzeigen" affordance.
       expect(screen.getByText("Frisch erledigt")).toBeInTheDocument();
     });
   });

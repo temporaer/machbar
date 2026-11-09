@@ -13,10 +13,12 @@ export function ProjectTagsSheet({
   story,
   onClose,
   onSave,
+  onFailure,
 }: {
   story: Project;
   onClose: () => void;
   onSave: (tagIds: number[]) => Promise<void>;
+  onFailure?: (cause: unknown) => void;
 }) {
   const strings = useStrings();
   const [selectedIds, setSelectedIds] = useState(
@@ -24,7 +26,10 @@ export function ProjectTagsSheet({
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const { data: tags, loading, error, reload } = useAsync(() => api.getTags(), []);
+  const { data: tags, loading, error, reload } = useAsync(async () => {
+    try { return await api.getTags(); }
+    catch (cause) { onFailure?.(cause); throw cause; }
+  }, []);
   const change = async (nextIds: number[]) => {
     if (saving) return;
     const previousIds = selectedIds;

@@ -1,4 +1,3 @@
-import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesAppend } from "./NotesAppend";
 import {
   useEffect,
@@ -21,7 +20,7 @@ import { useStrings } from "../lib/strings";
 import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
-import { flattenTasks, isCapturedInboxItem } from "../lib/taskHelpers";
+import { isCapturedInboxItem } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
@@ -132,9 +131,8 @@ export function TaskDetailSheet() {
     error,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
-  const taskActions = useTaskActions(flattenTasks(loadedTask ? [loadedTask] : []));
-  useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
-  const task = loadedTask ? taskActions.projectTask(loadedTask) : null;
+  const taskActions = useTaskActions();
+  const task = loadedTask;
 
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
@@ -174,7 +172,15 @@ export function TaskDetailSheet() {
   useEffect(() => {
     if (!loadedTask) {
       lastLoadedTaskIdRef.current = null;
+      revisionRef.current = null;
       setTextFieldsBaseline(null);
+      setTitleDraft("");
+      setNotesDraft("");
+      setTitleEditing(false);
+      setNotesEditing(false);
+      setAttachmentOpen(false);
+      setLifecycleOpen(false);
+      setConfirmingDelete(false);
       return;
     }
     revisionRef.current = loadedTask.revision;
@@ -302,7 +308,6 @@ export function TaskDetailSheet() {
     try {
       const updated = await taskActions.update(
         task,
-        { [field]: value },
         { [field]: value },
         true,
       );
@@ -650,7 +655,6 @@ export function TaskDetailSheet() {
                         scope: task.scope === "work" ? "household" : "work",
                         expectedRevision: task.revision,
                       },
-                      undefined,
                       true,
                     );
                   } catch (cause) {
@@ -1137,7 +1141,6 @@ export function TaskDetailSheet() {
           try {
             const updated = await taskActions.update(
               task,
-              { notes: nextNotes },
               { notes: nextNotes },
               true,
             );

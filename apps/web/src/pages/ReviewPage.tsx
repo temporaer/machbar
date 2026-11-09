@@ -1,5 +1,3 @@
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
-import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { flattenTasks } from "../lib/taskHelpers";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
@@ -47,14 +45,11 @@ function reviewItemKey(item: ReviewItem): string {
   return `${item.entityType}:${item.entityId}:${item.category}:${item.reason}`;
 }
 
-function ReviewCard({ item, cardRef, pause, children }: {
-  item: ReviewItem;
+function ReviewCard({ cardRef, children }: {
   cardRef: (element: HTMLElement | null) => void;
-  pause: (id: number) => () => void;
   children: ReactNode;
 }) {
-  const interaction = useRetentionInteraction(item.entityId, pause);
-  return <article className="card review-item" ref={cardRef} tabIndex={-1} {...interaction}>{children}</article>;
+  return <article className="card review-item" ref={cardRef} tabIndex={-1}>{children}</article>;
 }
 
 export function ReviewPage() {
@@ -87,9 +82,8 @@ export function ReviewPage() {
     error: tasksError,
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks({}), []);
-  const projectActions = useProjectActions(projects ?? []);
-  const rawTasks = flattenTasks(tasks ?? []);
-  const taskActions = useTaskActions(rawTasks);
+  const projectActions = useProjectActions();
+  const taskActions = useTaskActions();
   const projectById = useMemo(
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
@@ -99,11 +93,11 @@ export function ReviewPage() {
     [tasks],
   );
   const candidates = (items ?? []).map(item => ({ ...item, id: reviewItemKey(item) }));
-  const buckets = useRetainedPlacement({
+  const buckets = {
     clarification_repair: candidates.filter(item => item.category === "clarification_repair"),
     completion: candidates.filter(item => item.category === "completion"),
     reconsider: candidates.filter(item => item.category === "reconsider"),
-  }, item => (item.entityType === "task" ? taskActions : projectActions).holdingIds.has(item.entityId), item => item);
+  };
   const visibleItems = categoryOrder.flatMap(category => buckets[category]);
   const groups = categoryOrder.map(category => ({ category, items: buckets[category] }))
     .filter(group => group.items.length > 0);
@@ -334,9 +328,9 @@ export function ReviewPage() {
   };
 
   const projectDecisionButtons = (item: ReviewItem) => {
-    const project = projectById.get(item.entityId) ?? projectActions.retained.get(item.entityId)?.story;
+    const project = projectById.get(item.entityId);
     if (!project) return null;
-    const displayed = projectActions.projectStory(project);
+    const displayed = project;
     if (item.reason === "backlog_revisit_reached") {
       const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
       return (
@@ -437,9 +431,9 @@ export function ReviewPage() {
   };
 
   const taskDecisionButtons = (item: ReviewItem) => {
-    const task = taskById.get(item.entityId) ?? taskActions.retained.get(item.entityId);
+    const task = taskById.get(item.entityId);
     if (!task) return null;
-    const displayed: Task = taskActions.projectTask(task);
+    const displayed: Task = task;
     return (
       <>
         {displayed.status !== "actionable" ? (
@@ -479,14 +473,6 @@ export function ReviewPage() {
       </>
     );
   };
-  const isAcknowledged = (item: ReviewItem): boolean => {
-    if (item.entityType === "project") {
-      return projectActions.acknowledgedReviewIds.has(item.entityId) &&
-        projectActions.holdingIds.has(item.entityId);
-    }
-    return taskActions.acknowledgedReviewIds.has(item.entityId) &&
-      taskActions.holdingIds.has(item.entityId);
-  };
 
   const loading = itemsLoading || projectsLoading || tasksLoading;
   const error = itemsError ?? projectsError ?? tasksError;
@@ -516,6 +502,9 @@ export function ReviewPage() {
               <h3>{categoryLabel(group.category)}</h3>
               <div className="review-list">
                 {group.items.map((item) => {
+                  const actions = item.entityType === "task" ? taskActions : projectActions;
+                  const pending = actions.isPending(item.entityId);
+                  const mutationError = actions.errors[item.entityId];
                   const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
                   const equivalentInspection =
                     item.suggestedAction.code === (item.entityType === "task" ? "review_task" : "review_project") &&
@@ -524,8 +513,6 @@ export function ReviewPage() {
                     (item.entityType !== "project" || (item.projectId ?? item.entityId) === item.entityId);
                   return (
                   <ReviewCard
-                    item={item}
-                    pause={item.entityType === "task" ? taskActions.pauseRetention : projectActions.pauseRetention}
                     key={reviewItemKey(item)}
                     cardRef={(element) => {
                       if (element) itemRefs.current.set(reviewItemKey(item), element);
@@ -534,15 +521,13 @@ export function ReviewPage() {
                   >
                     <div className="review-item-heading">
                       <strong>{item.entityTitle}</strong>
-                      {isAcknowledged(item) ? (
-                        <span className="badge">{strings.reviewAcknowledged}</span>
-                      ) : null}
                       {item.projectTitle && item.entityType === "task" ? (
                         <span className="text-muted"> · {item.projectTitle}</span>
                       ) : null}
                     </div>
                     <p>{reasonText(item.reason)}</p>
-                    <div className="review-item-actions">
+                    <fieldset className="review-item-actions" disabled={pending} aria-busy={pending}
+                      style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
                       {!equivalentInspection ? (
                         <button
                           type="button"
@@ -562,7 +547,12 @@ export function ReviewPage() {
                       {item.entityType === "project"
                         ? projectDecisionButtons(item)
                         : taskDecisionButtons(item)}
-                    </div>
+                    </fieldset>
+                    {mutationError ? <div role="alert" className="capture-error">
+                      {mutationError}
+                      <button type="button" className="btn btn-sm btn-ghost"
+                        onClick={() => actions.clearError(item.entityId)}>{strings.close}</button>
+                    </div> : null}
                   </ReviewCard>
                   );
                 })}

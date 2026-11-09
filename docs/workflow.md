@@ -74,6 +74,18 @@ later.
 
 ## The basic loop
 
+### Saving and changing work
+
+Changes wait for the server rather than predicting their outcome. While a
+command is pending, conflicting actions for that item are disabled. After
+success, views reload and rows may move to another group or disappear from the
+current view immediately; there is no timed keep-in-place window.
+
+Ordinary refreshes and network failures preserve authored editor drafts.
+Losing access ends the focused editor and discards its choices; reopening
+starts fresh. If a compound decision is stale, review the refreshed
+requirements and confirm again. No mutation is retried automatically.
+
 ### 1. Capture
 
 Record an idea, request, link, or commitment without completing a form first.

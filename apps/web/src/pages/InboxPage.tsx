@@ -1,6 +1,3 @@
-import { flattenTasks } from "../lib/taskHelpers";
-import { useTaskActions } from "../lib/useTaskActions";
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useEffect, useRef, useState } from "react";
 import type { Task } from "@machbar/shared";
 import { api, type AgendaScope } from "../lib/api";
@@ -39,10 +36,7 @@ export function InboxPage() {
     () => api.getInbox(currentMemberId, scope),
     [currentMemberId, scope],
   );
-  const actions = useTaskActions(flattenTasks(loadedTasks ?? []));
-  const { rows } = useRetainedPlacement({ rows: loadedTasks ?? [] }, actions.holdingIds,
-    actions.projectTask, `${scope}:${currentMemberId}`);
-  const tasks = loadedTasks ? rows : null;
+  const tasks = loadedTasks;
   const { openQueue } = useTaskDetail();
   const location = useLocation();
 
