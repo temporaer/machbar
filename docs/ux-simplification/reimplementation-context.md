@@ -61,9 +61,9 @@ conflict handling also had redundant local reload plus global invalidation:
 they now rely on the single global refresh, while explicit read retry remains.
 
 The measured application-source delta against
-`2e923f23` is **+914 / -2528, net -1614 lines across 64 runtime files**,
+`2e923f23` is **+1007 / -2573, net -1566 lines across 66 runtime files**,
 including newly added source and excluding tests/test support. Test source is
-separate: **+1989 / -2658, net -669 lines across 44 test files**, including
+separate: **+2533 / -2661, net -128 lines across 48 test files**, including
 architecture-contract and browser tests. Deleted retention
 tests describe deliberately removed guarantees; replacement tests cover the
 approved server-confirmed behavior. These counts do not measure dependency
@@ -74,11 +74,12 @@ evidence. The final frozen implementation, including the independent and
 Copilot review corrections below, passed:
 
 - `bash scripts/verify.sh`: architecture, shared build, all typechecks,
-  1,418 API tests, 1,837 web tests, production build and Python
+  1,418 API tests, 1,877 web tests, production build and Python
   (159 passed, 1 skipped).
-- `npm run build && npm run test:e2e`: production rebuild and 42 desktop/mobile
+- `npm run build && npm run test:e2e`: production rebuild and 46 desktop/mobile
   Chromium cases, including real-App read and refinement-continuation retirement,
-  authored-write denial and canceled catalog-read callbacks.
+  authored-write/criterion denial, canceled catalog-read callbacks and
+  superseded dependency search.
 - `git diff --check`: passed.
 
 Verification used Node.js 22 and the existing Python test environment. These
@@ -151,6 +152,41 @@ confirm the tag was persisted through the real canonical mutation. Unit
 counterexamples cover both authored fields, 401/403/404, live read denials,
 obsolete openings and move-failure ordering. The browser denials are supplied
 serialized responses, not evidence that the server changed authorization.
+
+The second review confirmed those four corrections but identified two sibling
+paths omitted from that pass. Criterion text is a separate authored editor:
+denied add/update commands must discard its draft even when the item GET remains
+authorized, without discarding ordinary-outage or replacement-opening drafts.
+Dependency search is an imperative read outside the seven fetcher wrappers:
+an older search's denial after a newer success must not end the current
+planning draft. Its empty-query, live-denial and replacement-query exits need
+the same native read cancellation contract, not another generation store.
+
+Criterion mutations now discard current add/edit drafts on denial; task detail
+also revalidates the still-readable item. React keyed lifetimes retire obsolete
+editor callbacks. Auditing adjacent authoring found the same omission in note
+append and saved-notes attachment commands: these now discard/close on denied
+writes, retain ordinary-outage drafts and cannot close a replacement opening.
+Project criterion hosts were already guarded. Draft-only Markdown insertion
+and Paperless upload/search authorization are separate from task/project write
+denial; this does not claim an audit of those integration permissions.
+
+Dependency search now uses the existing native read facade, keyed by query,
+task and suspension state. Tests distinguish older-denial/newer-success,
+cleared/whitespace queries, pending supersession, live 401/403/404, replacement
+openings and explicit selection. Both new real-App browser cases reject the
+pre-correction bundle at the intended invariant: criterion text remains editable
+after denial/authorized refresh, or the obsolete search removes the current
+planning draft. Initial selector/setup failures were corrected before recording
+that sensitivity evidence.
+
+Command-bound planning previews/conflict reads remain imperative. An advisory
+source inspection noted an unchecked success continuation after a held planning
+preview, but same-identity replacement reachability and an unintended write
+were not reproduced; pending controls, identity retirement and revisions retain
+their existing guards. This is a separate unverified concern, not a confirmed
+regression from search cancellation or evidence of complete preview coverage.
+The merge remains gated on another current-head Copilot review and CI.
 
 ## Decision and baseline
 

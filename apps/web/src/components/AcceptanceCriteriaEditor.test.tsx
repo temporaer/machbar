@@ -1,10 +1,11 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { makeCriterion, makeProject } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
+import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -147,5 +148,71 @@ describe("AcceptanceCriteriaEditor", () => {
     await waitFor(() => expect(mockedApi.updateCriterion).toHaveBeenCalledWith(
       "task", 404, 10, "Kisten sind beschriftet",
     ));
+  });
+
+  it.each(["add", "update", "remove", "reorder", "check"] as const)(
+    "discards criterion drafts on denied %s without requiring a host to unmount it",
+    async operation => {
+      const cause = Object.assign(new Error("Raw denial"), { name: "ApiError", status: 403 });
+      const onError = vi.fn();
+      const onFailure = vi.fn();
+      mockedApi.addCriterion.mockRejectedValue(cause);
+      mockedApi.updateCriterion.mockRejectedValue(cause);
+      mockedApi.removeCriterion.mockRejectedValue(cause);
+      mockedApi.reorderCriteria.mockRejectedValue(cause);
+      mockedApi.checkCriterion.mockRejectedValue(cause);
+      renderWithProviders(<AcceptanceCriteriaEditor ownerType="project" workItemId={4}
+        criteria={[criterion, makeCriterion({ id: 11, workItemId: 4, text: "Second criterion", position: 1 })]}
+        onError={onError} onFailure={onFailure} />);
+      await userEvent.type(screen.getByPlaceholderText(strings.addCriterionPlaceholder), "Private add draft");
+      const row = screen.getByRole("checkbox", { name: criterion.text }).closest<HTMLElement>(".criterion-row")!;
+      if (operation === "update") {
+        await userEvent.click(within(row).getByRole("button", { name: strings.edit }));
+        await userEvent.type(within(row).getByRole("textbox"), " private edit");
+        await userEvent.click(within(row).getByRole("button", { name: strings.save }));
+      } else if (operation === "add") {
+        await userEvent.click(screen.getByRole("button", { name: strings.addCriterion }));
+      } else if (operation === "remove") {
+        await userEvent.click(within(row).getByRole("button", { name: strings.removeCriterion }));
+      } else if (operation === "reorder") {
+        await userEvent.click(within(row).getByRole("button", { name: strings.moveCriterionDown }));
+      } else {
+        await userEvent.click(within(row).getByRole("checkbox"));
+      }
+      await waitFor(() => expect(onError).toHaveBeenLastCalledWith(strings.error));
+      expect(onFailure).toHaveBeenCalledExactlyOnceWith(cause);
+      expect(screen.getByPlaceholderText(strings.addCriterionPlaceholder)).toHaveValue("");
+      expect(within(row).getByRole("textbox")).toHaveValue(criterion.text);
+      expect(within(row).getByRole("textbox")).toHaveAttribute("readonly");
+    },
+  );
+
+  it("does not forward a retired editor's denied write into a replacement identity", async () => {
+    let deny!: (cause: unknown) => void;
+    mockedApi.updateCriterion.mockReturnValue(new Promise((_resolve, reject) => { deny = reject; }));
+    const retiredError = vi.fn();
+    const retiredFailure = vi.fn();
+    const currentError = vi.fn();
+    const currentFailure = vi.fn();
+    const { rerender } = renderWithProviders(
+      <AcceptanceCriteriaEditor key="old-identity" ownerType="task" workItemId={4} criteria={[criterion]}
+        onError={retiredError} onFailure={retiredFailure} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: strings.edit }));
+    await userEvent.type(screen.getByDisplayValue(criterion.text), " old draft");
+    await userEvent.click(screen.getByRole("button", { name: strings.save }));
+    retiredError.mockClear();
+    rerender(
+      <AcceptanceCriteriaEditor key="new-identity" ownerType="task" workItemId={4} criteria={[criterion]}
+        onError={currentError} onFailure={currentFailure} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: strings.edit }));
+    await userEvent.type(screen.getByDisplayValue(criterion.text), " current draft");
+    await act(async () => { deny(Object.assign(new Error("Old denial"), { name: "ApiError", status: 403 })); });
+    expect(screen.getByDisplayValue(`${criterion.text} current draft`)).not.toHaveAttribute("readonly");
+    expect(retiredError).not.toHaveBeenCalled();
+    expect(retiredFailure).not.toHaveBeenCalled();
+    expect(currentError).not.toHaveBeenCalledWith(strings.error);
+    expect(currentFailure).not.toHaveBeenCalled();
   });
 });

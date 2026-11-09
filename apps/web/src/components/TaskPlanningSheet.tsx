@@ -11,6 +11,7 @@ import { calendarDateForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useAsync } from "../lib/useAsync";
 import { api, type UpdateTaskInput } from "../lib/api";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
@@ -189,8 +190,25 @@ export function TaskPlanningSheet({
     Partial<Record<"scheduledDate" | "dueDate", TemporalCaptionHint>>
   >({});
   const [dependencyQuery, setDependencyQuery] = useState("");
-  const [dependencyResults, setDependencyResults] = useState<Task[]>([]);
-  const [dependencyError, setDependencyError] = useState<string | null>(null);
+  const [dependencyMutationError, setDependencyError] = useState<string | null>(null);
+  const dependencySearch = useAsync(
+    async (signal) => {
+      if (!dependencyQuery.trim() || suspended) return [];
+      try {
+        return await api.searchTasks({ text: dependencyQuery, kinds: ["action"] });
+      } catch (cause) {
+        if (!signal.aborted) onFailure?.(cause);
+        throw cause;
+      }
+    },
+    [dependencyQuery, baselineTask.id, suspended],
+  );
+  const dependencyResults = useMemo(() =>
+    sortDependencyCandidates(dependencySearch.data ?? [], baselineTask, dependencyQuery, locale, {
+      recencyRank: recencyRankLookup("task"),
+    }).slice(0, 8),
+  [dependencySearch.data, baselineTask, dependencyQuery, locale]);
+  const dependencyError = dependencyMutationError ?? dependencySearch.error ?? dependencySearch.refreshError;
   const [dependencyBusy, setDependencyBusy] = useState<number | null>(null);
   const [followUpOutcome, setFollowUpOutcome] = useState("");
   const [followUpChoice, setFollowUpChoice] = useState<"continue" | "resolve">("continue");
@@ -561,27 +579,6 @@ export function TaskPlanningSheet({
     setNotBeforeTime(time);
   };
 
-  const searchDependencies = async (query: string) => {
-    setDependencyQuery(query);
-    setDependencyError(null);
-    if (!query.trim()) {
-      setDependencyResults([]);
-      return;
-    }
-    try {
-      const results = await api.searchTasks({ text: query, kinds: ["action"] });
-      setDependencyResults(
-        sortDependencyCandidates(results, baselineTask, query, locale, {
-          recencyRank: recencyRankLookup("task"),
-        }).slice(0, 8),
-      );
-    } catch (cause) {
-      onFailure?.(cause);
-      setDependencyError(localizedErrorMessage(cause, strings));
-      setDependencyResults([]);
-    }
-  };
-
   // All revision-conflict entry points share the same three-way reconciliation:
   // untouched fields refresh from the server, local-only edits remain drafts,
   // and divergent edits require an explicit choice before any retry is allowed.
@@ -691,7 +688,6 @@ export function TaskPlanningSheet({
         : await api.addDependency(baselineTask.id, dependsOnTaskId, expectedTaskRevision);
       setBaselineTask(updated);
       setExpectedTaskRevision(updated.revision);
-      setDependencyResults([]);
       setDependencyQuery("");
     } catch (cause) {
       onFailure?.(cause);
@@ -1311,7 +1307,10 @@ export function TaskPlanningSheet({
                 id={`planning-prerequisites-${baselineTask.id}`}
                 value={dependencyQuery}
                 disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
-                onChange={(event) => void searchDependencies(event.target.value)}
+                onChange={(event) => {
+                  setDependencyQuery(event.target.value);
+                  setDependencyError(null);
+                }}
                 placeholder={strings.prerequisitesSearchHint}
               />
               {dependencyError ? <p className="human-date-error" role="alert">{dependencyError}</p> : null}

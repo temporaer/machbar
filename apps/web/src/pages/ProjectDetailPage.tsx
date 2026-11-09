@@ -133,6 +133,8 @@ export function ProjectDetailPage() {
     contentOpeningRef.current += 1;
     setSavingContent(false);
     setContentError(null);
+    setAttachmentOpen(false);
+    setAttachmentError(null);
     return () => { contentOpeningRef.current += 1; };
   }, [projectId]);
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
@@ -644,7 +646,7 @@ export function ProjectDetailPage() {
                   />
                 ) : null}
               </div>
-              <NotesAppend disabled={notesEditing || projectMutationPending} onAppend={async content => {
+              <NotesAppend key={project.id} disabled={notesEditing || projectMutationPending} onAppend={async content => {
                 const updated = await projectActions.appendNotes(project, content);
                 return updated;
               }} />
@@ -790,8 +792,10 @@ export function ProjectDetailPage() {
         {focus === "next-action" && project ? <ProjectTaskEntrySheet key={project.id} project={project} onClose={clearRouteFocus} /> : null}
         {attachmentOpen && project ? (
           <MarkdownAttachmentSheet
+            key={project.id}
             onClose={() => setAttachmentOpen(false)}
             onInsert={async (markdown) => {
+              const opening = contentOpeningRef.current;
               if (notesEditing) {
                 notesRef.current?.insertMarkdown(markdown);
                 return;
@@ -806,6 +810,8 @@ export function ProjectDetailPage() {
                   true,
                 );
               } catch (cause) {
+                if (opening !== contentOpeningRef.current) throw cause;
+                if (isReadAccessError(cause)) setAttachmentOpen(false);
                 if (isStaleWriteConflict(cause)) reloadProject();
                 setAttachmentError(localizedErrorMessage(cause, strings));
                 throw cause;

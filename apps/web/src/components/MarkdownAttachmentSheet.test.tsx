@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
@@ -97,5 +97,23 @@ describe("MarkdownAttachmentSheet", () => {
     expect(
       await screen.findByRole("dialog", { name: "Foto aufnehmen" }),
     ).toBeInTheDocument();
+  });
+
+  it("does not close a replacement attachment opening after an old delivery succeeds", async () => {
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 42, title: "Receipt", originalFileName: "receipt.pdf", mimeType: "application/pdf",
+    });
+    let confirm!: () => void;
+    const oldInsert = vi.fn(() => new Promise<void>(resolve => { confirm = resolve; }));
+    const oldClose = vi.fn();
+    const currentClose = vi.fn();
+    const { rerender } = render(<MarkdownAttachmentSheet key="old" onInsert={oldInsert} onClose={oldClose} />);
+    await userEvent.upload(screen.getByLabelText("Datei auswählen"), new File(["pdf"], "receipt.pdf", { type: "application/pdf" }));
+    await waitFor(() => expect(oldInsert).toHaveBeenCalledOnce());
+    rerender(<MarkdownAttachmentSheet key="replacement" onInsert={vi.fn()} onClose={currentClose} />);
+    await act(async () => { confirm(); });
+    expect(oldClose).not.toHaveBeenCalled();
+    expect(currentClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Anhang" })).toBeVisible();
   });
 });

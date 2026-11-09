@@ -51,6 +51,7 @@ vi.mock("../lib/api", () => ({
     updateTask: vi.fn(),
     checkCriterion: vi.fn(),
     updateProject: vi.fn(),
+    appendProjectNotes: vi.fn(),
     completeProject: vi.fn(),
     returnProjectToBacklog: vi.fn(),
     activateProject: vi.fn(),
@@ -1382,6 +1383,38 @@ describe("ProjectDetailPage task explanations", () => {
       }),
     );
     expect(await screen.findByLabelText("1 Anhang")).toBeInTheDocument();
+  });
+
+  it.each(["append", "attachment"] as const)("ends project %s authoring on denied write while GET stays authorized", async kind => {
+    const project = { ...makeProject({ id: 42, title: "Saved project", notes: "Saved notes" }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    const cause = Object.assign(new Error("Raw denial"), { name: "ApiError", status: 403 });
+    mockedApi.appendProjectNotes.mockRejectedValue(cause);
+    mockedApi.updateProject.mockRejectedValue(cause);
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByRole("heading", { name: project.title });
+    if (kind === "append") {
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+      setMarkdownValue(screen.getByRole("textbox", { name: strings.appendNote }), "Private append");
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+    } else {
+      await openDetailActions();
+      await userEvent.click(screen.getByRole("button", { name: strings.attach }));
+      await userEvent.upload(screen.getByLabelText("Datei auswählen"), new File(["pdf"], "plan.pdf", { type: "application/pdf" }));
+    }
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Anhang" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: strings.appendNote })).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: project.title })).toBeVisible();
+    expect(screen.getByText(project.notes)).toBeVisible();
+    expect(screen.getAllByRole("alert").some(alert => alert.textContent?.includes(strings.error))).toBe(true);
+    if (kind === "append") {
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+      expect(markdownValue(screen.getByRole("textbox", { name: strings.appendNote }))).toBe("");
+    } else {
+      await openDetailActions();
+      await userEvent.click(screen.getByRole("button", { name: strings.attach }));
+      expect(screen.queryByRole("button", { name: strings.retry })).not.toBeInTheDocument();
+    }
   });
 
   it("returns full project details to the originating Review item", async () => {

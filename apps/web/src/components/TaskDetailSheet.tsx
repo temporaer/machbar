@@ -140,6 +140,7 @@ export function TaskDetailSheet() {
   useEffect(() => {
     contentOpeningRef.current += 1;
     setSavingTextFields(false);
+    setCriteriaError(null);
     return () => { contentOpeningRef.current += 1; };
   }, [openTaskId]);
 
@@ -834,8 +835,10 @@ export function TaskDetailSheet() {
                 />
               ) : null}
             </div>
-            <NotesAppend disabled={notesEditing || savingTextFields || taskMutationPending} onAppend={async content => {
+            <NotesAppend key={task.id} disabled={notesEditing || savingTextFields || taskMutationPending} onAppend={async content => {
+              const opening = contentOpeningRef.current;
               const updated = await taskActions.appendNotes(task, content);
+              if (opening !== contentOpeningRef.current) return false;
               if (updated) { revisionRef.current = updated.revision; setTextFieldsBaseline(current => current ? { ...current, notes: updated.notes } : current); setNotesDraft(updated.notes); }
               return updated;
             }} />
@@ -895,10 +898,12 @@ export function TaskDetailSheet() {
             >
               {criteriaError ? <p role="alert" className="capture-error">{criteriaError}</p> : null}
               <AcceptanceCriteriaEditor
+                key={task.id}
                 ownerType="task"
                 workItemId={task.id}
                 criteria={task.acceptanceCriteria}
                 onError={setCriteriaError}
+                onFailure={(cause) => { if (isReadAccessError(cause)) reload(); }}
               />
             </WorkItemDetailDisclosure>
           ) : null}
@@ -1146,8 +1151,10 @@ export function TaskDetailSheet() {
     </BottomSheet>
     {attachmentOpen && task ? (
       <MarkdownAttachmentSheet
+        key={task.id}
         onClose={() => setAttachmentOpen(false)}
         onInsert={async (markdown) => {
+          const opening = contentOpeningRef.current;
           if (notesEditing) {
             notesRef.current?.insertMarkdown(markdown);
             return;
@@ -1161,12 +1168,14 @@ export function TaskDetailSheet() {
               { notes: nextNotes },
               true,
             );
-            if (updated) {
+            if (updated && opening === contentOpeningRef.current) {
               revisionRef.current = updated.revision;
               setNotesDraft(updated.notes);
               setTextFieldsBaseline(textFieldsSnapshot(updated));
             }
           } catch (cause) {
+            if (opening !== contentOpeningRef.current) throw cause;
+            if (isReadAccessError(cause)) setAttachmentOpen(false);
             if (isStaleWriteConflict(cause)) reload();
             setSaveError(localizedErrorMessage(cause, strings));
             throw cause;

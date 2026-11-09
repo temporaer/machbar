@@ -3,7 +3,7 @@ import type { AcceptanceCriterion } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { isReadAccessError, localizedErrorMessage } from "../lib/errorMessage";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useCriterionCheck } from "../lib/useCriterionCheck";
 
@@ -41,11 +41,25 @@ export function AcceptanceCriteriaEditor({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const handleFailure = (cause: unknown) => {
+    if (!mounted.current) return;
+    if (isReadAccessError(cause)) {
+      setNewCriterionText("");
+      setDrafts({});
+      setEditingId(null);
+    }
+    onFailure?.(cause);
+  };
   const {
     check: checkCriterion,
     pendingId: checkingCriterionId,
     error: criterionCheckError,
-  } = useCriterionCheck(ownerType, workItemId, onFailure);
+  } = useCriterionCheck(ownerType, workItemId, handleFailure);
 
   const criteria = sortByPosition(criteriaProp);
   const total = criteria.length;
@@ -58,21 +72,23 @@ export function AcceptanceCriteriaEditor({
   }, [criterionCheckError, onError]);
 
   const run = async (job: () => Promise<unknown>) => {
-    if (pendingRef.current || checkingCriterionId !== null) return false;
+    if (!mounted.current || pendingRef.current || checkingCriterionId !== null) return false;
     pendingRef.current = true;
     setPending(true);
     onError(null);
     try {
       await job();
+      if (!mounted.current) return false;
       bump();
       return true;
     } catch (err) {
-      onFailure?.(err);
+      if (!mounted.current) return false;
+      handleFailure(err);
       onError(localizedErrorMessage(err, strings));
       return false;
     } finally {
       pendingRef.current = false;
-      setPending(false);
+      if (mounted.current) setPending(false);
     }
   };
 

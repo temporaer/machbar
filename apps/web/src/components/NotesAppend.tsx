@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
 import { stampNote } from "../lib/noteEntries";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { isReadAccessError, localizedErrorMessage } from "../lib/errorMessage";
 
 /** A draft-only composer; task/project actions own persistence and invalidation. */
 export function NotesAppend({
@@ -19,22 +19,33 @@ export function NotesAppend({
     [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false),
     [error, setError] = useState<string | null>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const submit = async () => {
-    if (pending || disabled || !draft.trim()) return;
+    if (!mounted.current || pending || disabled || !draft.trim()) return;
     setPending(true);
     setError(null);
     try {
       const result = await onAppend(
         stampNote(draft, currentMember?.name ?? "Unknown actor"),
       );
+      if (!mounted.current) return;
       if (result === false || result === null || result === undefined)
         throw new Error(strings.error);
       setDraft("");
       setOpen(false);
     } catch (cause) {
+      if (!mounted.current) return;
+      if (isReadAccessError(cause)) {
+        setDraft("");
+        setOpen(false);
+      }
       setError(localizedErrorMessage(cause, strings));
     } finally {
-      setPending(false);
+      if (mounted.current) setPending(false);
     }
   };
   return (
@@ -44,7 +55,7 @@ export function NotesAppend({
           type="button"
           className="btn btn-sm"
           disabled={disabled}
-          onClick={() => setOpen(true)}
+          onClick={() => { setError(null); setOpen(true); }}
         >
           {strings.appendNote}
         </button>
@@ -57,7 +68,6 @@ export function NotesAppend({
             rows={3}
             disabled={disabled || pending}
           />
-          {error ? <p role="alert">{error}</p> : null}
           <div className="row">
             <button
               type="button"
@@ -81,6 +91,7 @@ export function NotesAppend({
           </div>
         </>
       )}
+      {error ? <p role="alert">{error}</p> : null}
     </div>
   );
 }

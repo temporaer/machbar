@@ -156,6 +156,93 @@ test("changing identity retires a held read in the real app provider tree", asyn
   }
 });
 
+test("a denied criterion edit discards its draft despite an authorized task refresh", async ({ page }) => {
+  const item = await task(page);
+  const added = await page.request.post(`/api/tasks/${item.id}/criteria`, {
+    data: { text: "Saved criterion" },
+  });
+  expect(added.ok()).toBeTruthy();
+  const detail = await added.json();
+  const criterion = detail.acceptanceCriteria.find((entry: { text: string }) => entry.text === "Saved criterion");
+  expect(criterion).toBeDefined();
+  const path = `/api/tasks/${item.id}`;
+  await page.route(`**${path}/criteria/${criterion.id}`, route => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    return route.fulfill({ status: 403, json: { error: { code: "forbidden", message: "Write denied." } } });
+  });
+  await page.goto(`/#/tasks/${item.id}`);
+  const row = page.locator(".criterion-row").filter({
+    has: page.getByRole("checkbox", { name: criterion.text, exact: true }),
+  });
+  await page.getByPlaceholder("Erledigt, wenn …", { exact: true }).fill("Discard this new criterion too");
+  await row.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  const input = row.getByRole("textbox");
+  await input.fill("Discard this criterion draft");
+  const denied = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${path}/criteria/${criterion.id}` && response.status() === 403,
+  );
+  await row.getByRole("button", { name: "Speichern", exact: true }).click();
+  await (await denied).finished();
+  const refresh = page.waitForResponse(response =>
+    new URL(response.url()).pathname === path && response.request().method() === "GET",
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  expect((await refresh).status()).toBe(200);
+  await expect(input).toHaveAttribute("readonly", "");
+  await expect(input).toHaveValue(criterion.text);
+  await expect(page.getByPlaceholder("Erledigt, wenn …", { exact: true })).toHaveValue("");
+  await expect(page.locator(".capture-error[role=alert]")).toBeVisible();
+  await row.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  await expect(input).toHaveValue(criterion.text);
+});
+
+test("a superseded dependency search cannot discard the current planning draft", async ({ page }) => {
+  const item = await task(page);
+  const candidate = await task(page, { title: `New dependency ${randomUUID()}` });
+  const oldQuery = `Obsolete query ${randomUUID()}`;
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let started = false;
+  let writes = 0;
+  page.on("request", request => {
+    if (new URL(request.url()).pathname.startsWith("/api/tasks/") && request.method() !== "GET") writes += 1;
+  });
+  await page.route("**/api/search?**", async route => {
+    if (new URL(route.request().url()).searchParams.get("text") !== oldQuery) return route.continue();
+    started = true;
+    await held;
+    return route.fulfill({ status: 403, json: { error: { code: "forbidden", message: "Obsolete search denial." } } });
+  });
+  try {
+    await page.goto(`/#/tasks/${item.id}`);
+    await page.getByRole("button", { name: "Wartet auf …", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Planung", exact: true });
+    const waiting = dialog.getByRole("textbox", { name: "Wartet auf", exact: true });
+    await waiting.fill("Keep the current planning draft");
+    await dialog.locator(`[aria-controls="planning-editor-dependencies-${item.id}"]`).click();
+    const search = dialog.getByPlaceholder("Aufgabe suchen, die zuerst erledigt werden muss");
+    await search.fill(oldQuery);
+    await expect.poll(() => started).toBe(true);
+    await search.fill(candidate.title);
+    const result = dialog.getByRole("button", { name: `Abhängigkeit hinzufügen: ${candidate.title}`, exact: true });
+    await expect(result).toBeVisible();
+    const obsolete = page.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/search" && response.status() === 403,
+    );
+    release();
+    await (await obsolete).finished();
+    await page.evaluate(() => new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    await expect(waiting).toHaveValue("Keep the current planning draft");
+    await expect(result).toBeVisible();
+    expect(writes).toBe(0);
+    expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).externalWait).toBeNull();
+  } finally {
+    release();
+  }
+});
+
 for (const targetType of ["task", "project"] as const) {
   test(`a denied ${targetType} title write ends editing despite an authorized refresh`, async ({ page }) => {
     const created = await page.request.post(`/api/${targetType}s`, {

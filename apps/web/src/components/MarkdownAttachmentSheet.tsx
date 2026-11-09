@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { PaperlessDocumentSummary } from "@machbar/shared";
 import {
   api,
@@ -38,18 +38,24 @@ export function MarkdownAttachmentSheet({
   const [cameraFile, setCameraFile] = useState<File | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const deliver = async (markdown: string) => {
+    if (!mounted.current) return;
     setResolvedMarkdown(markdown);
     setDelivering(true);
     setError(null);
     try {
       await onInsert(markdown);
-      onClose();
+      if (mounted.current) onClose();
     } catch (cause) {
-      setError(localizedErrorMessage(cause, strings));
+      if (mounted.current) setError(localizedErrorMessage(cause, strings));
     } finally {
-      setDelivering(false);
+      if (mounted.current) setDelivering(false);
     }
   };
 
@@ -63,10 +69,10 @@ export function MarkdownAttachmentSheet({
       const attachment = await uploadPaperlessFile(file);
       await deliver(attachment.markdown);
     } catch (cause) {
-      setError(localizedErrorMessage(cause, strings));
+      if (mounted.current) setError(localizedErrorMessage(cause, strings));
     } finally {
       uploadingRef.current = false;
-      setUploading(false);
+      if (mounted.current) setUploading(false);
     }
   };
 
@@ -93,11 +99,12 @@ export function MarkdownAttachmentSheet({
     setResolvedMarkdown(null);
     setError(null);
     try {
-      setResults(await api.searchPaperlessDocuments(normalized));
+      const found = await api.searchPaperlessDocuments(normalized);
+      if (mounted.current) setResults(found);
     } catch (cause) {
-      setError(localizedErrorMessage(cause, strings));
+      if (mounted.current) setError(localizedErrorMessage(cause, strings));
     } finally {
-      setSearching(false);
+      if (mounted.current) setSearching(false);
     }
   };
 
