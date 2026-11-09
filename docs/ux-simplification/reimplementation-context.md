@@ -239,6 +239,42 @@ backend persistence. Existing scope-retirement tests distinguish a closed
 consumer from an identity-retired provider. This extends the successful-write
 matrix without adding another invalidation owner or weakening identity isolation.
 
+### Merged baseline and bounded continuation
+
+PR #266 merged as `bac8ce2a` after all five CI checks passed and exact-head
+Copilot review `5827670599` recommended approval with no active issues.
+The source reduction and verification above describe that merged implementation,
+not the rejected Query pilot.
+
+The next S04 slice is Discussion-only background read recovery. It uses the
+existing native read owner and localized `ErrorState`, with no new component,
+mutation path, translation or recovery protocol. The contract established before
+editing production code is:
+
+| Read path | Required outcome and verification |
+| --- | --- |
+| Initial network/server failure | Show an error and retry, not a fabricated empty list |
+| Background network/server failure after nonempty or empty success | Keep the last response and expose retry; repeated failure remains recoverable |
+| Successful explicit retry | GET only; replace the projection and clear the error without changing discussion nominations |
+| Live 401/403/404 | Remove protected task/project rows rather than retain them |
+| Background feedback in the actual App | Preserve focused rows; retry must not write or change stored revisions |
+
+Two real-Query tests rejected the old error-only rendering while five initial
+failure/access-error cases already passed. The desktop browser counterexample
+also rejected the previously built bundle at the absent alert after a supplied
+503. The correction exposes the existing `refreshError` beside the retained
+response; all seven focused cases pass. This was an existing Discussion feedback
+gap, not a backend authorization change. Other read surfaces remain out of scope.
+
+On the frozen root/web 0.36.1 implementation, `bash scripts/verify.sh` passed
+architecture, shared build, typechecks, 1,418 API tests, 1,912 web tests,
+production build and Python (159 passed, 1 skipped).
+`npm run build && npm run test:e2e` passed all 52 desktop/mobile Chromium cases.
+The new browser case retains the focused task and project rows through a
+supplied 503, retries with GET only, clears the error and confirms unchanged
+stored nominations and revisions. It does not establish a real server outage,
+physical input or non-Chromium behavior.
+
 ## Decision and baseline
 
 On 2026-11-08 the user approved preserving the previous effort and restarting

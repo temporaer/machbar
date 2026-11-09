@@ -10,7 +10,8 @@ import { ProjectStoryRow } from "../components/ProjectStoryRow";
 /** A quiet, shared list of work nominated for a future household discussion. */
 export function DiscussionPage() {
   const strings = useStrings();
-  const { data, loading, error, reload } = useAsync(() => api.getDiscussion(), []);
+  const { data, loading, error, refreshError, reload } = useAsync(() => api.getDiscussion(), []);
+  const readError = error ?? refreshError;
   const tasks = data?.tasks ?? [];
   const projects = data?.projects ?? [];
   const empty = data !== null && tasks.length === 0 && projects.length === 0;
@@ -20,7 +21,7 @@ export function DiscussionPage() {
     <div className="discussion-page">
       <PageHeader title={strings.discussionTitle} />
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={reload} /> : null}
+      {readError ? <ErrorState message={readError} onRetry={reload} /> : null}
       {empty ? <EmptyState message={strings.discussionEmpty} /> : null}
       {projects.length ? (
         <section className="section" aria-label={strings.projects}>
