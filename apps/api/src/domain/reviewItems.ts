@@ -53,16 +53,15 @@ function attentionAt(entity: {
 function isViableProgressTask(
   task: TaskRecord,
   graph: Graph,
-  now: number,
 ): boolean {
   const analysis = graph.blockerAnalysisFor(task.id);
   if (!analysis) return false;
   if (analysis.blocked) {
-    return graph.hasHealthyProjectProgressPath(task.id, now);
+    return graph.hasHealthyProjectProgressPath(task.id);
   }
   return (
     !analysis.executable &&
-    graph.hasHealthyProjectProgressPath(task.id, now)
+    graph.hasHealthyProjectProgressPath(task.id)
   );
 }
 
@@ -302,7 +301,7 @@ export function buildReviewItems(
       const openTasks = tasks.filter(isOpen);
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
       const hasHealthyProgressPath = openTasks.some((task) => {
-        return isViableProgressTask(task, graph, nowInstant);
+        return isViableProgressTask(task, graph);
       });
       const hasIntentionalWait = openTasks.some(
         (task) =>

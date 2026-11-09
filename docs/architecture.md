@@ -361,8 +361,10 @@ not a defined import protocol.
 
 History wait classifications use `Graph.hasHealthyProjectProgressPath()` so
 blocker clarification agrees with Review and project health. The graph derives
-that cycle-safe result once per evaluation instant and reuses it across roots
-and repeated projections of the same snapshot.
+that cycle-safe result once at the `Graph.load` snapshot instant and reuses it
+across roots and repeated projections of the same snapshot. Time-dependent
+blocker and progress facts remain coherent within one graph; evaluate a later
+instant by loading a new graph.
 
 ## 3. SQLite Data Model — Hierarchy and Inheritance
 

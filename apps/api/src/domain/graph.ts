@@ -246,10 +246,7 @@ export class Graph {
     number,
     TaskBlockerAnalysis
   >();
-  private healthyProjectProgressSnapshot: {
-    now: number;
-    taskIds: Set<number>;
-  } | null = null;
+  private healthyProjectProgressTaskIds: Set<number> | null = null;
   private readonly activationReadinessByProject = new Map<
     number,
     ProjectActivationReadiness
@@ -257,6 +254,7 @@ export class Graph {
   private readonly childStoryIdsByParent = new Map<number | null, number[]>();
 
   private constructor(
+    private readonly analysisNow: number,
     stuckReasonByProject: Map<number, StuckReason>,
     nextActionIdsByProject: Map<number, number[]>,
     orderedNextActionCandidatesByProject: Map<
@@ -303,6 +301,7 @@ export class Graph {
     const nextActionProjection = getNextActionTaskIdsByProjectProjection(db, now);
     const nextActionIdsByProject = nextActionProjection.available;
     const graph = new Graph(
+      Date.parse(now),
       new Map(),
       nextActionIdsByProject,
       nextActionProjection.ordered,
@@ -901,7 +900,7 @@ export class Graph {
             (task) => blockerAnalysis.get(task.id)?.diagnoses ?? [],
           );
         const hasHealthyPath = openTasks.some((task) =>
-          graph.hasHealthyProjectProgressPath(task.id, Date.parse(now)),
+          graph.hasHealthyProjectProgressPath(task.id),
         );
         if (!hasHealthyPath) {
           reason = stuckReasonForDiagnoses(blockedDiagnoses);
@@ -928,9 +927,10 @@ export class Graph {
     return this.unfinishedWorkContainers.has(taskId);
   }
 
-  hasHealthyProjectProgressPath(taskId: number, now: number): boolean {
-    let snapshot = this.healthyProjectProgressSnapshot;
-    if (!snapshot || snapshot.now !== now) {
+  hasHealthyProjectProgressPath(taskId: number): boolean {
+    let taskIds = this.healthyProjectProgressTaskIds;
+    if (!taskIds) {
+      const now = this.analysisNow;
       type ProgressNode = {
         remainingDependencies: number;
         requiresDescendant: boolean;
@@ -1028,11 +1028,11 @@ export class Graph {
         }
       }
 
-      snapshot = { now, taskIds: healthy };
-      this.healthyProjectProgressSnapshot = snapshot;
+      taskIds = healthy;
+      this.healthyProjectProgressTaskIds = taskIds;
     }
 
-    return snapshot.taskIds.has(taskId);
+    return taskIds.has(taskId);
   }
 
   /** All tasks belonging to a project, flattened regardless of depth,

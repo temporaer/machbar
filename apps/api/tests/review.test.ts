@@ -807,12 +807,14 @@ describe("review queue", () => {
       ])
       .run();
 
-    const graph = Graph.load(ctx.handle.db, today);
+    const graph = Graph.load(
+      ctx.handle.db,
+      today,
+      undefined,
+      `${today}T12:00:00.000Z`,
+    );
     expect(
-      graph.hasHealthyProjectProgressPath(
-        dependentTask.id,
-        Date.parse(`${today}T12:00:00.000Z`),
-      ),
+      graph.hasHealthyProjectProgressPath(dependentTask.id),
     ).toBe(independentWitness);
     expect(graph.nextActionFor(prerequisiteProject.id)?.id).toBe(
       healthyDescendant?.id,
@@ -853,13 +855,18 @@ describe("review queue", () => {
       })
       .run();
 
-    const graph = Graph.load(ctx.handle.db, today);
-    const pathExpansionSpy = vi.spyOn(graph, "taskContainsUnfinishedWork");
+    const pathExpansionSpy = vi.spyOn(
+      Graph.prototype,
+      "taskContainsUnfinishedWork",
+    );
+    const graph = Graph.load(
+      ctx.handle.db,
+      today,
+      undefined,
+      `${today}T12:00:00.000Z`,
+    );
     expect(
-      graph.hasHealthyProjectProgressPath(
-        rootId,
-        Date.parse(`${today}T12:00:00.000Z`),
-      ),
+      graph.hasHealthyProjectProgressPath(rootId),
     ).toBe(false);
     expect(pathExpansionSpy.mock.calls.length).toBeLessThanOrEqual(depth * 10);
   });
@@ -902,7 +909,7 @@ describe("review queue", () => {
     );
     const graph = Graph.load(ctx.handle.db, today, undefined, now);
     for (const task of graph.actionsForProject(project.id)) {
-      graph.hasHealthyProjectProgressPath(task.id, Date.parse(now));
+      graph.hasHealthyProjectProgressPath(task.id);
     }
     buildReviewItems(graph, { today, now });
     buildReviewItems(graph, { today, now });
@@ -910,7 +917,7 @@ describe("review queue", () => {
     expect(workAnalysisSpy.mock.calls.length).toBeLessThanOrEqual(depth * 2);
   });
 
-  it("recomputes the healthy-path snapshot when its evaluation instant changes", () => {
+  it("uses a fresh graph when the healthy-path evaluation instant changes", () => {
     const project = ctx.handle.db
       .insert(schema.workItems)
       .values({ role: "story", title: "Future revisit", status: "active" })
@@ -936,7 +943,7 @@ describe("review queue", () => {
         status: "captured",
       })
       .run();
-    const graph = Graph.load(
+    const beforeGraph = Graph.load(
       ctx.handle.db,
       today,
       undefined,
@@ -944,20 +951,61 @@ describe("review queue", () => {
     );
 
     expect(
-      graph.hasHealthyProjectProgressPath(
-        container.id,
-        Date.parse("2026-08-01T12:00:00.000Z"),
-      ),
+      beforeGraph.hasHealthyProjectProgressPath(container.id),
     ).toBe(true);
-    expect(
-      graph.hasHealthyProjectProgressPath(
-        container.id,
-        Date.parse("2026-09-01T12:00:00.000Z"),
-      ),
-    ).toBe(false);
+    const afterGraph = Graph.load(
+      ctx.handle.db,
+      today,
+      undefined,
+      "2026-09-01T12:00:00.000Z",
+    );
+    expect(beforeGraph.hasHealthyProjectProgressPath(container.id)).toBe(true);
+    expect(afterGraph.hasHealthyProjectProgressPath(container.id)).toBe(false);
   });
 
-  it("uses one advancing default instant across active projects", () => {
+  it("keeps external-wait and dependency progress aligned with the graph load instant", () => {
+    const revisitAt = `${today}T12:00:00.000Z`;
+    const waiting = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        title: "External reply",
+        status: "active",
+        revisitAt,
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.taskExternalWaits)
+      .values({ taskId: waiting.id, waitingFor: "Reply" })
+      .run();
+    const dependent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        title: "Continue after reply",
+        status: "active",
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.taskDependencies)
+      .values({ taskId: dependent.id, dependsOnTaskId: waiting.id })
+      .run();
+
+    const before = `${today}T11:59:59.999Z`;
+    const after = `${today}T12:00:00.001Z`;
+    const beforeGraph = Graph.load(ctx.handle.db, today, undefined, before);
+    expect(beforeGraph.hasHealthyProjectProgressPath(waiting.id)).toBe(true);
+    expect(beforeGraph.hasHealthyProjectProgressPath(dependent.id)).toBe(true);
+    const afterGraph = Graph.load(ctx.handle.db, today, undefined, after);
+    expect(beforeGraph.hasHealthyProjectProgressPath(waiting.id)).toBe(true);
+    expect(beforeGraph.hasHealthyProjectProgressPath(dependent.id)).toBe(true);
+    expect(afterGraph.hasHealthyProjectProgressPath(waiting.id)).toBe(false);
+    expect(afterGraph.hasHealthyProjectProgressPath(dependent.id)).toBe(false);
+  });
+
+  it("keeps Review progress on its graph snapshot as its default clock advances", () => {
     const projectCount = 4;
     for (let index = 0; index < projectCount; index += 1) {
       const project = ctx.handle.db
@@ -976,7 +1024,7 @@ describe("review queue", () => {
           parentId: project.id,
           title: `Reached container ${index}`,
           status: "active",
-          revisitAt: "2020-01-01T12:00:00.000Z",
+          revisitAt: `${today}T12:00:00.000Z`,
         })
         .returning()
         .get();
@@ -991,36 +1039,33 @@ describe("review queue", () => {
         .run();
     }
 
-    const graph = Graph.load(ctx.handle.db, today);
-    const healthInstants: number[] = [];
-    let workAnalysisCalls = 0;
-    const taskContainsUnfinishedWork =
-      graph.taskContainsUnfinishedWork.bind(graph);
-    graph.taskContainsUnfinishedWork = (taskId) => {
-      workAnalysisCalls += 1;
-      return taskContainsUnfinishedWork(taskId);
-    };
+    const graph = Graph.load(
+      ctx.handle.db,
+      today,
+      undefined,
+      `${today}T11:59:59.999Z`,
+    );
+    const healthResults: boolean[] = [];
     const hasHealthyProgressPath =
       graph.hasHealthyProjectProgressPath.bind(graph);
     vi.spyOn(graph, "hasHealthyProjectProgressPath").mockImplementation(
-      (taskId, now) => {
-        healthInstants.push(now);
-        const result = hasHealthyProgressPath(taskId, now);
+      (taskId) => {
+        const result = hasHealthyProgressPath(taskId);
+        healthResults.push(result);
         vi.setSystemTime(new Date(Date.now() + 1));
         return result;
       },
     );
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(`${today}T12:00:00.000Z`));
+    vi.setSystemTime(new Date(`${today}T12:00:00.001Z`));
     try {
       buildReviewItems(graph, { today });
     } finally {
       vi.useRealTimers();
     }
 
-    expect(healthInstants.length).toBeGreaterThan(projectCount);
-    expect.soft(new Set(healthInstants).size).toBe(1);
-    expect.soft(workAnalysisCalls).toBeLessThanOrEqual(projectCount * 2);
+    expect(healthResults.length).toBeGreaterThan(1);
+    expect(new Set(healthResults)).toEqual(new Set([true]));
   });
 
   it("leaves reached external-wait follow-ups to Today instead of Review", () => {
