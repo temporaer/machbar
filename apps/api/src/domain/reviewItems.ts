@@ -6,7 +6,6 @@ import type {
 } from "@machbar/shared";
 import { calendarDateForInstant } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
-import type { TaskBlockerAnalysis } from "./blockers.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 export const ACTIVE_REVIEW_DAYS = 14;
@@ -53,13 +52,16 @@ function attentionAt(entity: {
 // covered separately via `canonicalCandidates`.
 function isViableProgressTask(
   task: TaskRecord,
-  analysis: TaskBlockerAnalysis,
+  graph: Graph,
 ): boolean {
-  if (analysis.blocked) return analysis.healthyProgressPath;
+  const analysis = graph.blockerAnalysisFor(task.id);
+  if (!analysis) return false;
+  if (analysis.blocked) {
+    return graph.hasHealthyProjectProgressPath(task.id);
+  }
   return (
-    task.status === "actionable" &&
     !analysis.executable &&
-    analysis.healthyProgressPath
+    graph.hasHealthyProjectProgressPath(task.id)
   );
 }
 
@@ -138,6 +140,7 @@ export function buildReviewItems(
   const today =
     options.today ?? new Date().toISOString().slice(0, 10);
   const now = options.now ?? new Date().toISOString();
+  const nowInstant = Date.parse(now);
   const projectStatuses = new Map(
     [...graph.projectsById.values()].map((project) => [
       project.id,
@@ -298,15 +301,13 @@ export function buildReviewItems(
       const openTasks = tasks.filter(isOpen);
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
       const hasHealthyProgressPath = openTasks.some((task) => {
-        const analysis = graph.blockerAnalysisFor(task.id);
-        return analysis !== null && isViableProgressTask(task, analysis);
+        return isViableProgressTask(task, graph);
       });
-      const now = Date.parse(options.now ?? new Date().toISOString());
       const hasIntentionalWait = openTasks.some(
         (task) =>
           task.externalWait !== null &&
           task.revisitAt !== null &&
-          Date.parse(task.revisitAt) > now,
+          Date.parse(task.revisitAt) > nowInstant,
       );
       const hasViablePath = hasHealthyProgressPath || hasIntentionalWait;
       if (project.ownerMemberId === null) {
@@ -363,7 +364,7 @@ export function buildReviewItems(
           addDaysIso(today, -BACKLOG_REVIEW_DAYS);
       if (
         project.revisitAt !== null &&
-        Date.parse(project.revisitAt) <= Date.parse(now)
+        Date.parse(project.revisitAt) <= nowInstant
       ) {
         items.push(
           projectItem(project, "reconsider", "backlog_revisit_reached", {

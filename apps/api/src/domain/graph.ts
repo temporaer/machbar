@@ -246,6 +246,7 @@ export class Graph {
     number,
     TaskBlockerAnalysis
   >();
+  private healthyProjectProgressTaskIds: Set<number> | null = null;
   private readonly activationReadinessByProject = new Map<
     number,
     ProjectActivationReadiness
@@ -253,6 +254,7 @@ export class Graph {
   private readonly childStoryIdsByParent = new Map<number | null, number[]>();
 
   private constructor(
+    private readonly analysisNow: number,
     stuckReasonByProject: Map<number, StuckReason>,
     nextActionIdsByProject: Map<number, number[]>,
     orderedNextActionCandidatesByProject: Map<
@@ -261,6 +263,7 @@ export class Graph {
     >,
     private readonly openProjectContainers: Set<number>,
     private readonly unfinishedWorkContainers: Set<number>,
+    private readonly unfinishedWorkDescendantsByContainer: Map<number, number[]>,
   ) {
     this.stuckReasonByProject = stuckReasonByProject;
     this.nextActionIdsByProject = nextActionIdsByProject;
@@ -298,11 +301,13 @@ export class Graph {
     const nextActionProjection = getNextActionTaskIdsByProjectProjection(db, now);
     const nextActionIdsByProject = nextActionProjection.available;
     const graph = new Graph(
+      Date.parse(now),
       new Map(),
       nextActionIdsByProject,
       nextActionProjection.ordered,
       nextActionProjection.openProjectContainers,
       nextActionProjection.unfinishedWorkContainers,
+      nextActionProjection.unfinishedWorkDescendantsByContainer,
     );
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
@@ -607,7 +612,9 @@ export class Graph {
         project.id,
         evaluateProjectActivationReadiness({
           ownerMemberId: project.ownerMemberId,
-          candidateTaskIds: nextActionIdsByProject.get(project.id) ?? [],
+          candidateTaskIds: (
+            nextActionIdsByProject.get(project.id) ?? []
+          ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
           projectTaskIds: rawTasks
             .filter((task) => task.projectId === project.id)
             .map((task) => task.id),
@@ -737,18 +744,20 @@ export class Graph {
         .filter((context): context is PhysicalContext => context !== undefined);
 
       const depRefs = dependenciesByTask.get(raw.id) ?? [];
-      const dependencies: Dependency[] = depRefs.map((d) => {
-        const dependsOn = rawTasksById.get(d.dependsOnTaskId);
-        const resolved =
-          dependsOn?.status === "done" || dependsOn?.status === "cancelled";
-        return {
-          id: d.id,
-          taskId: raw.id,
-          dependsOnTaskId: d.dependsOnTaskId,
-          title: dependsOn?.title,
-          resolved,
-        };
-      });
+      const dependencies: Dependency[] = depRefs
+        .filter((dependency) => rawTasksById.has(dependency.dependsOnTaskId))
+        .map((d) => {
+          const dependsOn = rawTasksById.get(d.dependsOnTaskId)!;
+          const resolved =
+            dependsOn.status === "done" || dependsOn.status === "cancelled";
+          return {
+            id: d.id,
+            taskId: raw.id,
+            dependsOnTaskId: d.dependsOnTaskId,
+            title: dependsOn.title,
+            resolved,
+          };
+        });
       const incomingDependencies = incomingDependenciesByTask.get(raw.id) ?? [];
       const execution = blockerAnalysis.get(raw.id);
       const externalWait = externalWaitByTask.get(raw.id) ?? null;
@@ -894,13 +903,9 @@ export class Graph {
           .flatMap(
             (task) => blockerAnalysis.get(task.id)?.diagnoses ?? [],
           );
-        const hasHealthyPath = openTasks.some((task) => {
-          const analysis = blockerAnalysis.get(task.id);
-          return (
-            task.status === "actionable" &&
-            (analysis?.executable || analysis?.healthyProgressPath)
-          );
-        });
+        const hasHealthyPath = openTasks.some((task) =>
+          graph.hasHealthyProjectProgressPath(task.id),
+        );
         if (!hasHealthyPath) {
           reason = stuckReasonForDiagnoses(blockedDiagnoses);
         }
@@ -924,6 +929,114 @@ export class Graph {
   /** Unfinished action/project descendants, independent of execution availability. */
   taskContainsUnfinishedWork(taskId: number): boolean {
     return this.unfinishedWorkContainers.has(taskId);
+  }
+
+  hasHealthyProjectProgressPath(taskId: number): boolean {
+    let taskIds = this.healthyProjectProgressTaskIds;
+    if (!taskIds) {
+      const now = this.analysisNow;
+      type ProgressNode = {
+        remainingDependencies: number;
+        requiresDescendant: boolean;
+        hasHealthyDescendant: boolean;
+      };
+      const nodes = new Map<number, ProgressNode>();
+      const requiredByDependency = new Map<number, number[]>();
+      const containersByDescendant = new Map<number, number[]>();
+
+      for (const [id, task] of this.tasksById) {
+        const analysis = this.blockerAnalysisFor(id);
+        if (
+          !analysis ||
+          task.status !== "actionable" ||
+          !(analysis.executable || analysis.healthyProgressPath)
+        ) {
+          continue;
+        }
+
+        const availableNow =
+          analysis.executable ||
+          (task.revisitAt !== null && Date.parse(task.revisitAt) <= now);
+        const requiresDescendant =
+          availableNow && this.taskContainsUnfinishedWork(id);
+        const dependencies = task.dependencies
+          .filter((dependency) => !dependency.resolved)
+          .map((dependency) => dependency.dependsOnTaskId);
+        nodes.set(id, {
+          remainingDependencies: dependencies.length,
+          requiresDescendant,
+          hasHealthyDescendant: false,
+        });
+
+        for (const dependencyId of dependencies) {
+          const dependents = requiredByDependency.get(dependencyId) ?? [];
+          dependents.push(id);
+          requiredByDependency.set(dependencyId, dependents);
+        }
+        if (requiresDescendant) {
+          for (const descendantId of
+            this.unfinishedWorkDescendantsByContainer.get(id) ?? []) {
+            const descendant = this.tasksById.get(descendantId);
+            if (
+              descendant?.kind !== "action" ||
+              (descendant.projectId !== null &&
+                this.projectsById.get(descendant.projectId)?.status !==
+                  "active")
+            ) {
+              continue;
+            }
+            const containers =
+              containersByDescendant.get(descendantId) ?? [];
+            containers.push(id);
+            containersByDescendant.set(descendantId, containers);
+          }
+        }
+      }
+
+      // Only independent healthy witnesses seed propagation, so combined
+      // dependency/containment cycles cannot certify themselves.
+      const healthy = new Set<number>();
+      const queued = new Set<number>();
+      const ready: number[] = [];
+      const enqueueIfReady = (id: number) => {
+        const node = nodes.get(id);
+        if (
+          node &&
+          node.remainingDependencies === 0 &&
+          (!node.requiresDescendant || node.hasHealthyDescendant) &&
+          !queued.has(id)
+        ) {
+          queued.add(id);
+          ready.push(id);
+        }
+      };
+      for (const [id, node] of nodes) {
+        if (node.remainingDependencies === 0 && !node.requiresDescendant) {
+          enqueueIfReady(id);
+        }
+      }
+      for (let index = 0; index < ready.length; index += 1) {
+        const id = ready[index]!;
+        healthy.add(id);
+        for (const dependentId of requiredByDependency.get(id) ?? []) {
+          const dependent = nodes.get(dependentId);
+          if (!dependent) continue;
+          dependent.remainingDependencies -= 1;
+          enqueueIfReady(dependentId);
+        }
+        for (const containerId of containersByDescendant.get(id) ?? []) {
+          const container = nodes.get(containerId);
+          if (!container) continue;
+          container.hasHealthyDescendant = true;
+          enqueueIfReady(containerId);
+        }
+      }
+
+      taskIds = healthy;
+      this.healthyProjectProgressTaskIds = taskIds;
+    }
+
+    return taskIds.has(taskId);
   }
 
   /** All tasks belonging to a project, flattened regardless of depth,
@@ -955,8 +1068,7 @@ export class Graph {
   nextActionFor(projectId: number): TaskRecord | null {
     for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
       const task = this.tasksById.get(id);
-      if (!task) continue;
-      if (task.executable) return task;
+      if (task && !task.blocked) return task;
     }
     return null;
   }

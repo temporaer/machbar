@@ -153,7 +153,17 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const fact = (t: TaskRecord) => factForTask(t, graph, memberNames);
   const activeProjects = projects.filter((p) => p.status === "active").map((p) => factForProject(p, graph, memberNames));
   const projectStatusById = new Map([...graph.projectsById.values()].map((project) => [project.id, project.status]));
-  const executableNextActions = tasks.filter((t) => isTaskInWorkingSystem(t, projectStatusById) && t.kind === "action" && t.status === "actionable" && t.executable && !t.blocked && !t.needsClarification).filter((t) => t.projectId === null || graph.nextActionFor(t.projectId)?.id === t.id || t.additionalNextAction).map(fact);
+  const firstExecutionCandidateByProject = new Map<number, number>();
+  for (const project of projects) {
+    const candidate = graph.nextActionCandidatesFor(project.id).find(
+      (task) =>
+        inScope(task.scope) &&
+        isTaskInWorkingSystem(task, projectStatusById) &&
+        !task.needsClarification,
+    );
+    if (candidate) firstExecutionCandidateByProject.set(project.id, candidate.id);
+  }
+  const executableNextActions = tasks.filter((t) => isTaskInWorkingSystem(t, projectStatusById) && t.kind === "action" && t.status === "actionable" && t.executable && !t.blocked && !t.needsClarification).filter((t) => t.projectId === null || firstExecutionCandidateByProject.get(t.projectId) === t.id || t.additionalNextAction).map(fact);
   const waitingItems = tasks.filter((t) => t.status === "actionable" && (t.externalWait !== null || t.blocked || (t.revisitAt !== null && t.revisitAt > now.toISOString()))).map(fact);
   const backlog = [...projects.filter((p) => p.status === "backlog").map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "someday" || t.status === "captured").map(fact)];
   const areaCommitments = [...projects.filter((p) => p.status === "active" && p.effectiveTags.some((tag) => tag.kind === "area")).map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "actionable" && t.effectiveAreaTags.length > 0 && (t.scope === "household" || t.effectiveOwnerId === options.subjectMemberId)).map(fact)];
@@ -259,9 +269,9 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
     if (type === "task") {
       const t = item as TaskRecord; plannedDate = t.scheduledDate; revisitAt = t.revisitAt; dueDate = t.dueDate;
       const blocker = graph.blockerAnalysisFor(t.id);
-      if (t.externalWait && blocker?.healthyProgressPath) { classification = "intentional_wait"; waitingReason = `${t.externalWait.waitingFor ?? "Externe Rückmeldung"}${blocker.nextBlockerAttentionDate ? ` · Wiedervorlage ${blocker.nextBlockerAttentionDate}` : ""}`; }
+      if (t.externalWait && graph.hasHealthyProjectProgressPath(t.id)) { classification = "intentional_wait"; waitingReason = `${t.externalWait.waitingFor ?? "Externe Rückmeldung"}${blocker?.nextBlockerAttentionDate ? ` · Wiedervorlage ${blocker.nextBlockerAttentionDate}` : ""}`; }
       else if (t.externalWait) { classification = "insufficient_evidence"; waitingReason = blockerReason(blocker); }
-      else if (t.dependencies.some((d) => !d.resolved) && blocker?.healthyProgressPath) { classification = "intentional_wait"; waitingReason = "Gesunde blockierende Abhängigkeit"; }
+      else if (t.dependencies.some((d) => !d.resolved) && graph.hasHealthyProjectProgressPath(t.id)) { classification = "intentional_wait"; waitingReason = "Gesunde blockierende Abhängigkeit"; }
       else if (t.dependencies.some((d) => !d.resolved)) { classification = "insufficient_evidence"; waitingReason = blockerReason(blocker); }
       else if (t.revisitAt && t.revisitAt > now.toISOString()) { classification = "intentional_wait"; waitingReason = `Wiedervorlage am ${t.revisitAt}`; }
       else if ((t.notBeforeAt && t.notBeforeAt > now.toISOString()) || (t.notBeforeDate && t.notBeforeDate > endDate) || (t.scheduledDate && t.scheduledDate > endDate)) { classification = "future_planned"; plannedDate = t.scheduledDate ?? t.notBeforeDate ?? null; revisitAt = t.revisitAt; }
@@ -275,8 +285,8 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
       else {
         const childTasks = graph.tasksForProject(p.id); const actionableChild = childTasks.some((t) => t.repeatAfterDays === null && t.status === "actionable" && t.executable && !t.blocked);
         const blockedChildren = childTasks.filter((t) => t.status === "actionable" && (t.externalWait || t.blocked));
-        const healthyBlockedChildren = blockedChildren.filter((t) => graph.blockerAnalysisFor(t.id)?.healthyProgressPath === true);
-        const unhealthyBlockedChildren = blockedChildren.filter((t) => graph.blockerAnalysisFor(t.id)?.healthyProgressPath !== true);
+        const healthyBlockedChildren = blockedChildren.filter((t) => graph.hasHealthyProjectProgressPath(t.id));
+        const unhealthyBlockedChildren = blockedChildren.filter((t) => !graph.hasHealthyProjectProgressPath(t.id));
         if (unhealthyBlockedChildren.length > 0 && !actionableChild) { classification = "insufficient_evidence"; waitingReason = unhealthyBlockedChildren.map((t) => `${t.title}: ${blockerReason(graph.blockerAnalysisFor(t.id))}`).join("; "); }
         else if (healthyBlockedChildren.length > 0 && !actionableChild && healthyBlockedChildren.length === blockedChildren.length) { classification = "intentional_wait"; waitingReason = "Aktuelle nächste Arbeit wartet auf eine gesunde Wiedervorlage oder Abhängigkeit"; }
         else if (actionableChild) classification = hadOutcomeInWindow ? "insufficient_evidence" : "actionable_no_recorded_progress";

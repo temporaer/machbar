@@ -25,10 +25,18 @@ deadline can trigger project activation, but is never itself a progress path.
 Missing drivers or a concrete next action return structured decisions before
 the source mutation is committed.
 
-Revisit dates remain reconsideration, not execution commitments. Adding a
-reminder while a revisit is present does not promote the task. Healthy waits
-and future revisits retain their readiness meaning. Project activation does
-not bypass task blockers or future-date agenda eligibility.
+Revisit dates remain reconsideration, not execution commitments. A reached
+ordinary revisit on an actionable, unblocked leaf counts as currently available
+project progress, but reads never clear it or turn it into a work plan. Future
+ordinary revisits remain intentional future pauses; adding a reminder while a
+revisit is present does not promote the task. Healthy waits retain their
+readiness meaning. Project activation does not bypass task blockers or
+future-date agenda eligibility. Reflection's executable-next-actions section
+is narrower than project progress: it lists the first execution-eligible
+canonical candidate per project and does not treat a reached revisit as
+executable work. For a dependency path, a reached revisit on a container is
+healthy only when its canonical unfinished subtree has a healthy descendant
+path; future container revisits remain intentional pauses.
 
 ## AI clarification and reviewed application
 
@@ -351,6 +359,13 @@ deterministic briefing; Machbar does not contact an AI provider. The wrap-up
 requested from an external coach is only a human-readable draft in this phase,
 not a defined import protocol.
 
+History wait classifications use `Graph.hasHealthyProjectProgressPath()` so
+blocker clarification agrees with Review and project health. The graph derives
+that cycle-safe result once at the `Graph.load` snapshot instant and reuses it
+across roots and repeated projections of the same snapshot. Time-dependent
+blocker and progress facts remain coherent within one graph; evaluate a later
+instant by loading a new graph.
+
 ## 3. SQLite Data Model — Hierarchy and Inheritance
 
 ### Entity hierarchy
@@ -492,7 +507,7 @@ Projects additionally carry:
 | `notes` | Free-form project context, independent from completion criteria |
 | `acceptanceCriteria` | Ordered “Erledigt, wenn …” rows with `checked` state |
 | `openCount` / `doneCount` | Task rollups |
-| `nextAction` | First actionable, unblocked, *leaf* task in canonical outline order — a task with any open (not `done`/`cancelled`) child is a container and is skipped in favor of its subtree |
+| `nextAction` | First currently available actionable, unblocked, *leaf* task in canonical outline order; a reached ordinary revisit qualifies, a future revisit stays deferred, and a task with any open (not `done`/`cancelled`) child is skipped in favor of its subtree |
 | `stuckReason` | Diagnosis for `active` projects only (see §6) |
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
