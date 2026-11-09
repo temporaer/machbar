@@ -246,6 +246,10 @@ export class Graph {
     number,
     TaskBlockerAnalysis
   >();
+  private healthyProjectProgressSnapshot: {
+    now: number;
+    taskIds: Set<number>;
+  } | null = null;
   private readonly activationReadinessByProject = new Map<
     number,
     ProjectActivationReadiness
@@ -925,115 +929,110 @@ export class Graph {
   }
 
   hasHealthyProjectProgressPath(taskId: number, now: number): boolean {
-    type ProgressNode = {
-      remainingDependencies: number;
-      requiresDescendant: boolean;
-      hasHealthyDescendant: boolean;
-    };
-    const nodes = new Map<number, ProgressNode>();
-    const requiredByDependency = new Map<number, number[]>();
-    const containersByDescendant = new Map<number, number[]>();
-    const pending = [taskId];
-    const visited = new Set<number>();
+    let snapshot = this.healthyProjectProgressSnapshot;
+    if (!snapshot || snapshot.now !== now) {
+      type ProgressNode = {
+        remainingDependencies: number;
+        requiresDescendant: boolean;
+        hasHealthyDescendant: boolean;
+      };
+      const nodes = new Map<number, ProgressNode>();
+      const requiredByDependency = new Map<number, number[]>();
+      const containersByDescendant = new Map<number, number[]>();
 
-    while (pending.length > 0) {
-      const id = pending.pop()!;
-      if (visited.has(id)) continue;
-      visited.add(id);
-      const task = this.tasksById.get(id);
-      const analysis = this.blockerAnalysisFor(id);
-      if (
-        !task ||
-        !analysis ||
-        task.status !== "actionable" ||
-        !(analysis.executable || analysis.healthyProgressPath)
-      ) {
-        continue;
+      for (const [id, task] of this.tasksById) {
+        const analysis = this.blockerAnalysisFor(id);
+        if (
+          !analysis ||
+          task.status !== "actionable" ||
+          !(analysis.executable || analysis.healthyProgressPath)
+        ) {
+          continue;
+        }
+
+        const availableNow =
+          analysis.executable ||
+          (task.revisitAt !== null && Date.parse(task.revisitAt) <= now);
+        const requiresDescendant =
+          availableNow && this.taskContainsUnfinishedWork(id);
+        const dependencies = task.dependencies
+          .filter((dependency) => !dependency.resolved)
+          .map((dependency) => dependency.dependsOnTaskId);
+        nodes.set(id, {
+          remainingDependencies: dependencies.length,
+          requiresDescendant,
+          hasHealthyDescendant: false,
+        });
+
+        for (const dependencyId of dependencies) {
+          const dependents = requiredByDependency.get(dependencyId) ?? [];
+          dependents.push(id);
+          requiredByDependency.set(dependencyId, dependents);
+        }
+        if (requiresDescendant) {
+          for (const descendantId of
+            this.unfinishedWorkDescendantsByContainer.get(id) ?? []) {
+            const descendant = this.tasksById.get(descendantId);
+            if (
+              descendant?.kind !== "action" ||
+              (descendant.projectId !== null &&
+                this.projectsById.get(descendant.projectId)?.status !==
+                  "active")
+            ) {
+              continue;
+            }
+            const containers =
+              containersByDescendant.get(descendantId) ?? [];
+            containers.push(id);
+            containersByDescendant.set(descendantId, containers);
+          }
+        }
       }
 
-      const availableNow =
-        analysis.executable ||
-        (task.revisitAt !== null && Date.parse(task.revisitAt) <= now);
-      const requiresDescendant =
-        availableNow && this.taskContainsUnfinishedWork(id);
-      const descendants = requiresDescendant
-        ? (this.unfinishedWorkDescendantsByContainer.get(id) ?? []).filter(
-            (descendantId) => {
-              const descendant = this.tasksById.get(descendantId);
-              return (
-                descendant?.kind === "action" &&
-                (descendant.projectId === null ||
-                  this.projectsById.get(descendant.projectId)?.status ===
-                    "active")
-              );
-            },
-          )
-        : [];
-      const dependencies = task.dependencies
-        .filter((dependency) => !dependency.resolved)
-        .map((dependency) => dependency.dependsOnTaskId);
-      nodes.set(id, {
-        remainingDependencies: dependencies.length,
-        requiresDescendant,
-        hasHealthyDescendant: false,
-      });
+      // Only independent healthy witnesses seed propagation, so combined
+      // dependency/containment cycles cannot certify themselves.
+      const healthy = new Set<number>();
+      const queued = new Set<number>();
+      const ready: number[] = [];
+      const enqueueIfReady = (id: number) => {
+        const node = nodes.get(id);
+        if (
+          node &&
+          node.remainingDependencies === 0 &&
+          (!node.requiresDescendant || node.hasHealthyDescendant) &&
+          !queued.has(id)
+        ) {
+          queued.add(id);
+          ready.push(id);
+        }
+      };
+      for (const [id, node] of nodes) {
+        if (node.remainingDependencies === 0 && !node.requiresDescendant) {
+          enqueueIfReady(id);
+        }
+      }
+      for (let index = 0; index < ready.length; index += 1) {
+        const id = ready[index]!;
+        healthy.add(id);
+        for (const dependentId of requiredByDependency.get(id) ?? []) {
+          const dependent = nodes.get(dependentId);
+          if (!dependent) continue;
+          dependent.remainingDependencies -= 1;
+          enqueueIfReady(dependentId);
+        }
+        for (const containerId of containersByDescendant.get(id) ?? []) {
+          const container = nodes.get(containerId);
+          if (!container) continue;
+          container.hasHealthyDescendant = true;
+          enqueueIfReady(containerId);
+        }
+      }
 
-      for (const dependencyId of dependencies) {
-        const dependents = requiredByDependency.get(dependencyId) ?? [];
-        dependents.push(id);
-        requiredByDependency.set(dependencyId, dependents);
-        pending.push(dependencyId);
-      }
-      for (const descendantId of descendants) {
-        const containers =
-          containersByDescendant.get(descendantId) ?? [];
-        containers.push(id);
-        containersByDescendant.set(descendantId, containers);
-        pending.push(descendantId);
-      }
+      snapshot = { now, taskIds: healthy };
+      this.healthyProjectProgressSnapshot = snapshot;
     }
 
-    // Only independent healthy witnesses seed propagation, so combined
-    // dependency/containment cycles cannot certify themselves.
-    const healthy = new Set<number>();
-    const queued = new Set<number>();
-    const ready: number[] = [];
-    const enqueueIfReady = (id: number) => {
-      const node = nodes.get(id);
-      if (
-        node &&
-        node.remainingDependencies === 0 &&
-        (!node.requiresDescendant || node.hasHealthyDescendant) &&
-        !queued.has(id)
-      ) {
-        queued.add(id);
-        ready.push(id);
-      }
-    };
-    for (const [id, node] of nodes) {
-      if (node.remainingDependencies === 0 && !node.requiresDescendant) {
-        enqueueIfReady(id);
-      }
-    }
-    for (let index = 0; index < ready.length; index += 1) {
-      const id = ready[index]!;
-      if (healthy.has(id)) continue;
-      healthy.add(id);
-      for (const dependentId of requiredByDependency.get(id) ?? []) {
-        const dependent = nodes.get(dependentId);
-        if (!dependent) continue;
-        dependent.remainingDependencies -= 1;
-        enqueueIfReady(dependentId);
-      }
-      for (const containerId of containersByDescendant.get(id) ?? []) {
-        const container = nodes.get(containerId);
-        if (!container) continue;
-        container.hasHealthyDescendant = true;
-        enqueueIfReady(containerId);
-      }
-    }
-
-    return healthy.has(taskId);
+    return snapshot.taskIds.has(taskId);
   }
 
   /** All tasks belonging to a project, flattened regardless of depth,

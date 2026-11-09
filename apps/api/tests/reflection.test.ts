@@ -192,6 +192,114 @@ describe("historical reflection briefing", () => {
     expect(briefing.markdown).toContain("Deliberately later");
   });
 
+  it.each([
+    {
+      label: "a reached revisit with only captured work",
+      descendantStatus: "captured",
+      revisitAt: "2020-01-01T12:00:00.000Z",
+      classification: "insufficient_evidence",
+    },
+    {
+      label: "a reached revisit with only Someday work",
+      descendantStatus: "someday",
+      revisitAt: "2020-01-01T12:00:00.000Z",
+      classification: "insufficient_evidence",
+    },
+    {
+      label: "a reached revisit with a healthy active descendant",
+      descendantStatus: "actionable",
+      revisitAt: "2020-01-01T12:00:00.000Z",
+      classification: "intentional_wait",
+    },
+    {
+      label: "a future container pause",
+      descendantStatus: "captured",
+      revisitAt: "2099-01-01T12:00:00.000Z",
+      classification: "intentional_wait",
+    },
+  ] as const)(
+    "exports dependent task and project blocker classification for $label",
+    async ({ descendantStatus, revisitAt, classification }) => {
+      const mira = member("Mira");
+      const old = "2024-01-01T00:00:00.000Z";
+      const prerequisiteProject = insertTestProject(ctx.handle.db, {
+        title: "Prerequisite project",
+        status: "active",
+        createdAt: old,
+        updatedAt: old,
+      });
+      const dependentProject = insertTestProject(ctx.handle.db, {
+        title: "Dependent project",
+        status: "active",
+        createdAt: old,
+        updatedAt: old,
+      });
+      const container = insertTestTask(ctx.handle.db, {
+        title: "Revisited prerequisite",
+        projectId: prerequisiteProject.id,
+        status: "actionable",
+        revisitAt,
+        createdAt: old,
+        updatedAt: old,
+      });
+      insertTestTask(ctx.handle.db, {
+        title: "Prerequisite descendant",
+        parentTaskId: container.id,
+        status: descendantStatus,
+        createdAt: old,
+        updatedAt: old,
+      });
+      const dependentTask = insertTestTask(ctx.handle.db, {
+        title: "Waiting dependent task",
+        projectId: dependentProject.id,
+        status: "actionable",
+        createdAt: old,
+        updatedAt: old,
+      });
+      ctx.handle.db
+        .insert(schema.taskDependencies)
+        .values({
+          taskId: dependentTask.id,
+          dependsOnTaskId: container.id,
+        })
+        .run();
+
+      const response = await ctx.app.inject({
+        method: "GET",
+        url: `/api/reflection/briefing?memberId=${mira.id}&days=30&scope=household`,
+        headers: { [ACTIVITY_ACTOR_HEADER]: String(mira.id) },
+      });
+      expect(response.statusCode).toBe(200);
+      const briefing = response.json();
+      expect(briefing.history.inactiveWork).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: dependentTask.id,
+            classification,
+          }),
+          expect.objectContaining({
+            id: dependentProject.id,
+            classification,
+          }),
+        ]),
+      );
+      const clarification = briefing.markdown.split(
+        "### Warte- und Blockerpfade mit Klärungsbedarf",
+      )[1];
+      if (classification === "insufficient_evidence") {
+        expect(clarification).toContain("Waiting dependent task");
+        expect(clarification).toContain("Dependent project");
+      } else {
+        expect(briefing.history.inactiveWork).toContainEqual(
+          expect.objectContaining({
+            id: dependentTask.id,
+            waitingReason: "Gesunde blockierende Abhängigkeit",
+          }),
+        );
+      }
+    },
+  );
+
   it("attributes verified child outcomes to their historical project context", () => {
     const mira = member("Mira");
     const project = insertTestProject(ctx.handle.db, { title: "Backup-Konzept", status: "active", scope: "household", createdAt: "2025-01-01T00:00:00.000Z" });

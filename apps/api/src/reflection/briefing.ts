@@ -269,9 +269,9 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
     if (type === "task") {
       const t = item as TaskRecord; plannedDate = t.scheduledDate; revisitAt = t.revisitAt; dueDate = t.dueDate;
       const blocker = graph.blockerAnalysisFor(t.id);
-      if (t.externalWait && blocker?.healthyProgressPath) { classification = "intentional_wait"; waitingReason = `${t.externalWait.waitingFor ?? "Externe Rückmeldung"}${blocker.nextBlockerAttentionDate ? ` · Wiedervorlage ${blocker.nextBlockerAttentionDate}` : ""}`; }
+      if (t.externalWait && graph.hasHealthyProjectProgressPath(t.id, now.getTime())) { classification = "intentional_wait"; waitingReason = `${t.externalWait.waitingFor ?? "Externe Rückmeldung"}${blocker?.nextBlockerAttentionDate ? ` · Wiedervorlage ${blocker.nextBlockerAttentionDate}` : ""}`; }
       else if (t.externalWait) { classification = "insufficient_evidence"; waitingReason = blockerReason(blocker); }
-      else if (t.dependencies.some((d) => !d.resolved) && blocker?.healthyProgressPath) { classification = "intentional_wait"; waitingReason = "Gesunde blockierende Abhängigkeit"; }
+      else if (t.dependencies.some((d) => !d.resolved) && graph.hasHealthyProjectProgressPath(t.id, now.getTime())) { classification = "intentional_wait"; waitingReason = "Gesunde blockierende Abhängigkeit"; }
       else if (t.dependencies.some((d) => !d.resolved)) { classification = "insufficient_evidence"; waitingReason = blockerReason(blocker); }
       else if (t.revisitAt && t.revisitAt > now.toISOString()) { classification = "intentional_wait"; waitingReason = `Wiedervorlage am ${t.revisitAt}`; }
       else if ((t.notBeforeAt && t.notBeforeAt > now.toISOString()) || (t.notBeforeDate && t.notBeforeDate > endDate) || (t.scheduledDate && t.scheduledDate > endDate)) { classification = "future_planned"; plannedDate = t.scheduledDate ?? t.notBeforeDate ?? null; revisitAt = t.revisitAt; }
@@ -285,8 +285,8 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
       else {
         const childTasks = graph.tasksForProject(p.id); const actionableChild = childTasks.some((t) => t.repeatAfterDays === null && t.status === "actionable" && t.executable && !t.blocked);
         const blockedChildren = childTasks.filter((t) => t.status === "actionable" && (t.externalWait || t.blocked));
-        const healthyBlockedChildren = blockedChildren.filter((t) => graph.blockerAnalysisFor(t.id)?.healthyProgressPath === true);
-        const unhealthyBlockedChildren = blockedChildren.filter((t) => graph.blockerAnalysisFor(t.id)?.healthyProgressPath !== true);
+        const healthyBlockedChildren = blockedChildren.filter((t) => graph.hasHealthyProjectProgressPath(t.id, now.getTime()));
+        const unhealthyBlockedChildren = blockedChildren.filter((t) => !graph.hasHealthyProjectProgressPath(t.id, now.getTime()));
         if (unhealthyBlockedChildren.length > 0 && !actionableChild) { classification = "insufficient_evidence"; waitingReason = unhealthyBlockedChildren.map((t) => `${t.title}: ${blockerReason(graph.blockerAnalysisFor(t.id))}`).join("; "); }
         else if (healthyBlockedChildren.length > 0 && !actionableChild && healthyBlockedChildren.length === blockedChildren.length) { classification = "intentional_wait"; waitingReason = "Aktuelle nächste Arbeit wartet auf eine gesunde Wiedervorlage oder Abhängigkeit"; }
         else if (actionableChild) classification = hadOutcomeInWindow ? "insufficient_evidence" : "actionable_no_recorded_progress";

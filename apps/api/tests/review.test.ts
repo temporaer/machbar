@@ -864,6 +864,99 @@ describe("review queue", () => {
     expect(pathExpansionSpy.mock.calls.length).toBeLessThanOrEqual(depth * 10);
   });
 
+  it("reuses one healthy-path fixed point across graph roots and repeated Review projections", () => {
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", title: "Many roots", status: "active" })
+      .returning()
+      .get();
+    const depth = 40;
+    let parentId = project.id;
+    for (let level = 0; level < depth; level += 1) {
+      parentId = ctx.handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "task",
+          parentId,
+          title: `Reached container ${level}`,
+          status: "active",
+          revisitAt: "2026-08-30T12:00:00.000Z",
+        })
+        .returning()
+        .get().id;
+    }
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId,
+        title: "Captured endpoint",
+        status: "captured",
+      })
+      .run();
+
+    const now = `${today}T12:00:00.000Z`;
+    const workAnalysisSpy = vi.spyOn(
+      Graph.prototype,
+      "taskContainsUnfinishedWork",
+    );
+    const graph = Graph.load(ctx.handle.db, today, undefined, now);
+    for (const task of graph.actionsForProject(project.id)) {
+      graph.hasHealthyProjectProgressPath(task.id, Date.parse(now));
+    }
+    buildReviewItems(graph, { today, now });
+    buildReviewItems(graph, { today, now });
+
+    expect(workAnalysisSpy.mock.calls.length).toBeLessThanOrEqual(depth * 2);
+  });
+
+  it("recomputes the healthy-path snapshot when its evaluation instant changes", () => {
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", title: "Future revisit", status: "active" })
+      .returning()
+      .get();
+    const container = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: project.id,
+        title: "Future container",
+        status: "active",
+        revisitAt: "2026-08-15T12:00:00.000Z",
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: container.id,
+        title: "Captured descendant",
+        status: "captured",
+      })
+      .run();
+    const graph = Graph.load(
+      ctx.handle.db,
+      today,
+      undefined,
+      "2026-08-01T12:00:00.000Z",
+    );
+
+    expect(
+      graph.hasHealthyProjectProgressPath(
+        container.id,
+        Date.parse("2026-08-01T12:00:00.000Z"),
+      ),
+    ).toBe(true);
+    expect(
+      graph.hasHealthyProjectProgressPath(
+        container.id,
+        Date.parse("2026-09-01T12:00:00.000Z"),
+      ),
+    ).toBe(false);
+  });
+
   it("leaves reached external-wait follow-ups to Today instead of Review", () => {
     const member = ctx.handle.db
       .insert(schema.members)

@@ -359,6 +359,11 @@ deterministic briefing; Machbar does not contact an AI provider. The wrap-up
 requested from an external coach is only a human-readable draft in this phase,
 not a defined import protocol.
 
+History wait classifications use `Graph.hasHealthyProjectProgressPath()` so
+blocker clarification agrees with Review and project health. The graph derives
+that cycle-safe result once per evaluation instant and reuses it across roots
+and repeated projections of the same snapshot.
+
 ## 3. SQLite Data Model — Hierarchy and Inheritance
 
 ### Entity hierarchy
