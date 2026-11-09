@@ -377,6 +377,7 @@ const en = {
   intakeNoExistingProject: "No existing project",
   intakeExistingProjectHelp: "Only new steps are added. For a new project, change the type or choose a proposed parent.",
   intakeDestinationUnavailable: "Destination unavailable – choose again",
+  intakeDestinationReviewRequired: "The project destination has changed or is no longer available. Choose the destination again or remove the association.",
   intakeProjectIndexOverflow: "Too many projects for the AI context. No incomplete list was sent. Please review and choose existing project destinations yourself.",
   intakeNoNotes: "No notes",
   intakeLocation: "Location",

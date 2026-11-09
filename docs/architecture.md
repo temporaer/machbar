@@ -284,6 +284,11 @@ The generated draft binds `existingProjectRevision` at analysis completion;
 read/save/Apply never silently refresh this reviewed expectation. Review options
 are current visible same-scope eligible projects and use `DestinationPicker`.
 Choosing again explicitly reconfirms the returned server revision.
+Apply response issues are retained in review even when pre-claim validation leaves
+the stored job error empty. Same-record refreshes preserve this feedback; explicit
+draft edits, successful Apply/reanalysis, and leaving the record or identity clear
+the transient failure. Destination issues explain reselection/removal in the current
+locale without refreshing the reviewed revision or automatically retrying Apply.
 Intake reads explicitly carry the committed selected-member header in
 unauthenticated deployments, just as their writes do; they never read raw
 cross-tab local storage as an identity authority.

@@ -311,6 +311,7 @@ const base = {
   intakeNoExistingProject: "Kein bestehendes Projekt",
   intakeExistingProjectHelp: "Nur neue Schritte werden hinzugefügt. Für ein neues Projekt die Art ändern oder ein neues Vorhaben als übergeordnet wählen.",
   intakeDestinationUnavailable: "Ziel nicht mehr verfügbar – bitte erneut wählen",
+  intakeDestinationReviewRequired: "Das Projektziel hat sich geändert oder ist nicht mehr verfügbar. Wähle das Ziel erneut aus oder entferne die Zuordnung.",
   intakeProjectIndexOverflow: "Zu viele Projekte für den KI-Kontext. Es wurde keine unvollständige Liste gesendet. Bitte bestehende Projektziele selbst prüfen und wählen.",
   intakeNoNotes: "Keine Notizen",
   intakeLocation: "Ort",

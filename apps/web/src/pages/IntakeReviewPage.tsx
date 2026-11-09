@@ -7,11 +7,12 @@ import {
   prepareIncompleteIntakeDraft,
   type IntakeDraft,
   type IntakeDraftWorkItem,
+  type IntakeIssue,
   type IntakeOmission,
   type IntakeRecord,
 } from "@machbar/shared";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { api, apiUrl } from "../lib/api";
+import { api, apiUrl, ApiError } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
@@ -44,6 +45,12 @@ function intakeIssuePath(path: readonly (string | number)[]): string {
       : result
         ? `${result}.${segment}`
         : segment, "");
+}
+
+function intakeIssueMessage(issue: IntakeIssue, strings: ReturnType<typeof useStrings>): string {
+  return issue.code === "invalid_parent" && issue.path.at(-1) === "existingProjectId"
+    ? strings.intakeDestinationReviewRequired
+    : issue.message;
 }
 
 function intakeFailureExplanation(
@@ -196,7 +203,13 @@ export function IntakeReviewPage() {
   const [draft, setDraft] = useState<IntakeDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applyFailure, setApplyFailure] = useState<{ id: string; cause: unknown } | null>(null);
+  const applyCause = applyFailure?.id === id ? applyFailure.cause : null;
+  const applyError = applyCause === null ? null : localizedErrorMessage(applyCause, strings);
+  const responseIssues = applyCause instanceof ApiError && applyCause.code === "intake_draft_invalid" && applyCause.details
+    ? intakeErrorIssues({ code: applyCause.code, message: applyCause.message, details: applyCause.details, retryable: true })
+    : [];
+  useEffect(() => { setApplyFailure(null); }, [id]);
   const applyErrorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (applyError) {
@@ -450,9 +463,11 @@ export function IntakeReviewPage() {
   }
   if (!record) return null;
   const diagnosticHref = apiUrl(`/intake/${encodeURIComponent(id)}`);
+  const errorIssues = responseIssues.length > 0 ? responseIssues : intakeErrorIssues(record.error);
 
   const updateDraft = (next: IntakeDraft) => {
     if (applyingRef.current) return;
+    setApplyFailure(null);
     setActivationPrompt(null);
     setActivationDriverRequirement(null);
     if (JSON.stringify(next) !== failedSnapshotRef.current) {
@@ -522,6 +537,7 @@ export function IntakeReviewPage() {
         setDraft(nextRecord.draft ?? latestDraftRef.current);
       }
       setRecord(nextRecord);
+      setApplyFailure(null);
       setRetryHint(nextRecord.retryHint ?? "");
       retryHintDirtyRef.current = false;
       return true;
@@ -540,7 +556,7 @@ export function IntakeReviewPage() {
     if (acceptIncomplete && !canAcceptIncomplete) return;
     applyingRef.current = true;
     mutationBaselineRevisionRef.current = revisionRef.current;
-    setApplyError(null);
+    setApplyFailure(null);
     setBusy(true);
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     debounceRef.current = null;
@@ -586,7 +602,7 @@ export function IntakeReviewPage() {
       recordRef.current = nextRecord;
       revisionRef.current = nextRecord.revision;
       setRecord(nextRecord);
-      setApplyError(null);
+      setApplyFailure(null);
     }
     catch (cause) {
       if (isStaleWriteConflict(cause)) {
@@ -600,7 +616,7 @@ export function IntakeReviewPage() {
           const driverRequirement = projectDriverRequirementFromError(cause);
           if (driverRequirement) setActivationDriverRequirement(driverRequirement);
         }
-        setApplyError(localizedErrorMessage(cause, strings));
+        setApplyFailure({ id, cause });
         {
           // Failed transactions release their claim and advance the
           // revision. Refresh before enabling edits so the next save is current.
@@ -624,20 +640,20 @@ export function IntakeReviewPage() {
     if (record.status !== "partially_applied" || applyingRef.current) return;
     applyingRef.current = true;
     mutationBaselineRevisionRef.current = revisionRef.current;
-    setApplyError(null);
+    setApplyFailure(null);
     setBusy(true);
     try {
       const nextRecord = await api.applyIntake(id, { expectedRevision: record.revision });
       recordRef.current = nextRecord;
       revisionRef.current = nextRecord.revision;
       setRecord(nextRecord);
-      setApplyError(null);
+      setApplyFailure(null);
     } catch (cause) {
       if (isStaleWriteConflict(cause)) {
         conflictPendingRef.current = true;
         state.reload();
       } else {
-        setApplyError(localizedErrorMessage(cause, strings));
+        setApplyFailure({ id, cause });
         state.reload();
       }
     } finally {
@@ -716,6 +732,7 @@ export function IntakeReviewPage() {
             <p key={result.key} role="alert">{record.draft?.calendarEvents.find((event) => event.key === result.key)?.title ?? result.key}: {result.error?.message ?? strings.error}</p>
           ))}
           {applyError ? <p role="alert">{applyError}</p> : null}
+          {errorIssues.map((issue, index) => <p key={index}>{intakeIssuePath(issue.path)}: {intakeIssueMessage(issue, strings)}</p>)}
           <IntakeDiagnosticLink href={diagnosticHref} />
         </div>
       ) : null}
@@ -820,7 +837,7 @@ export function IntakeReviewPage() {
       {applyError || record.error ? (
         <div className="stack intake-error-group" ref={applyErrorRef} tabIndex={-1} role="alert">
           <p>{applyError ?? record.error?.message}</p>
-          {intakeErrorIssues(record.error).map((issue, index) => <p key={index}>{intakeIssuePath(issue.path)}: {issue.message}</p>)}
+          {errorIssues.map((issue, index) => <p key={index}>{intakeIssuePath(issue.path)}: {intakeIssueMessage(issue, strings)}</p>)}
           <IntakeDiagnosticLink href={diagnosticHref} />
         </div>
       ) : null}
