@@ -408,3 +408,99 @@ the bounded Project pilot or report the concrete failed assumption. Do not
 silently turn an uncertain forecast into a reduction promise, ship Query
 underneath the old owners, or expand to Tasks before the Project evidence is
 reviewed.
+
+### Installed-library handoff accepted for the bounded Project pilot
+
+Luna's temporary probes on Query **5.107.1** established response-aware
+publication, raw fetch-success callbacks distinct from manual/cache results,
+conditional rollback, and a native MutationCache held-value candidate. Stock
+invalidation did **not** schedule a trailing read during initial loading.
+An **11-line** native per-Query join/refetch adapter passed the selected
+counterexamples: shared trailing work, independent fast/slow readers, no extra
+idle fetch, queued 503 versus 403, and removal/replacement identity.
+
+The temporary harness passed ten cases and web typechecking; it is not
+production, API-contract or browser evidence. Actual actor/provider wiring,
+all response shapes, offline behavior, UI holds/GC and denied/converted-value
+retirement still require the Project implementation and its acceptance matrix.
+
+Authorize that bounded Project pilot, not expansion to Tasks or a promise of
+end-state reduction. Count all setup in its diff, aim near the low end of the
+forecast, and freeze for reforecast/review at the milestone. Stop for another
+DTO/cache/recovery framework, capability loss, growth beyond the forecast
+envelope, or loss of a supported negative end-state. Preserve the probe
+observations, but do not ship a large temporary test harness in place of
+focused production regressions.
+
+## 7. Frozen Project outcome: BLOCKED
+
+The bounded correction pass is frozen, not accepted or shipped. The coordinator
+independently measured **+1,127/-430 runtime lines, net +697**, versus
+`2e923f239e69fef583074b189bdd2abab013c4bd`, including both untracked runtime
+modules and excluding tests/support with the original counting rule.
+This exceeds the Project envelope and is not rescued by counting only tracked
+files or comparing against an intermediate commit.
+
+| Reforecast | Runtime lines |
+| --- | ---: |
+| Measured Project pilot, including shared setup | +697 |
+| Remaining estimated additions/replacements | +305 to +510 |
+| Remaining ledger removals | -687 |
+| **Projected completed migration** | **+315 to +520** |
+
+No evidence-backed additional removal set closes that gap. Do not continue to
+Tasks on the assertion that later deletions will pay for it. Moving UI/graph
+behavior outside the measurement, dropping capabilities, or extending another
+custom cache/recovery framework is not an acceptable correction.
+
+### Correctness evidence is also incomplete
+
+Luna reported a passing focused 11-file run (206 cases), followed by 37 Today
+cases with a valid mock. Those runs do not establish the full contract.
+Coordinator counterexamples against the actual `publishProjectToQueries`
+implementation reproduce two defects introduced by this pilot:
+
+- Publish an optimistic metadata revision 5 over confirmed revision 4, then
+  invoke its rollback without an intervening read. The cache remains at
+  revision 5 with optimistic content: the sharing policy rejects the rollback
+  as an older revision.
+- Publish a child project's confirmed metadata while it appears in a cached
+  parent detail's `childStories`. The child remains at its old revision:
+  encountering the parent Project record stops traversal before its children.
+
+The observations are production-helper counterexamples using existing typed
+fixtures, not end-to-end API/browser proof. A plain cache revision check and a
+rollback-only-after-newer-read case missed the first failure dimension; a
+root/list-only publication case missed the second. Preserve both in any
+successor design's independent matrix. These are pilot defects, not evidence
+that merged main has the same defects.
+
+Reproduction and logs are preserved in this session's `files/` directory:
+`query-project-counterexamples.mts`,
+`query-project-publication-counterexamples.log`,
+`query-project-focused-correction.log`, and
+`query-project-frozen-verify.log`. The standalone reproduction runs from the
+pilot worktree under Node 22:
+
+```bash
+node_modules/.bin/tsx ../query-project-counterexamples.mts
+```
+
+Its expected result on the frozen implementation is a failed assertion showing
+revision 5 instead of rollback revision 4, and child revision 4 instead of 5.
+Real actor/session wiring, denial/conversion during held leases, offline
+behavior and desktop/mobile browser behavior remain unverified. A final
+verifier run is recorded separately; a green existing suite would not supersede
+the reproduced counterexamples.
+
+### Stop, preserve, do not silently change the goal
+
+No Task migration or production publication is authorized by this outcome.
+Keep the experimental application work separate from the documentation branch;
+main remains unchanged. Resume only with a materially different, evidence-backed
+design/budget or an explicitly changed goal, not another patch loop on this
+forecast. A future design must distinguish confirmed server values from pending
+optimistic projections before choosing a revision floor and must traverse
+arbitrary-depth representations without turning into a client domain graph.
+This result rejects this implementation and forecast; it does not prove that
+every possible TanStack Query migration must grow the application.

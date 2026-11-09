@@ -79,6 +79,25 @@ Step 2; count shared setup once and retain the original measured baseline.
 
 ### Step 2: complete the Project-resource migration
 
+**Execution status:** installed-library feasibility probes on Query 5.107.1
+are accepted for the bounded Project pilot. The native trailing-invalidation
+adapter is 11 lines, with selected library-level counterexamples passing.
+This is not production verification or evidence of final LOC reduction.
+The Project implementation must freeze for review/reforecast before Tasks.
+
+**Current verdict: BLOCKED; do not expand or ship.** The first production
+handoff was rejected at net +346 runtime lines, with focused suites red and
+missing cache-publication, typed-placement and scope-retirement contracts.
+One bounded correction pass reached net **+697** (+1,127/-430, including new
+runtime files). The existing remaining ledger now projects **+315 to +520**
+at completion, not a reduction. Focused passing cases do not establish parity:
+coordinator production-helper counterexamples also reproduce failed ordinary
+rollback and missed nested-project publication. See the
+[frozen outcome](query-migration-budget.md#7-frozen-project-outcome-blocked)
+for evidence and limits. Preserve the experiment; Tasks, shipping and a
+production PR remain gated. This rejects the current implementation/forecast,
+not every possible Query design.
+
 After reviewing the revised whole-migration budget, first resolve the named
 library/placement uncertainties in a bounded probe handoff. Do not treat its
 mixed forecast as proof of end-state reduction. If that handoff supports the
