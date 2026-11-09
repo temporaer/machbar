@@ -36,6 +36,12 @@ an approved implementation, not as though this plan were already implemented.
 
 **Assigned role:** one Luna implementation agent, operating in analysis-only mode.
 
+**Status:** Step 1 is complete with a **REVISE** verdict in the linked map.
+The requested Luna run failed before its first turn with an authorization
+error; the coordinator completed and checked the source analysis directly.
+No application implementation has started. The preliminary Project-slice
+budget is positive, so Step 2 has not passed the reduction gate.
+
 Produce [the Step 1 map](query-migration-step-1.md), with:
 
 - The smallest closed Project-resource boundary: list/detail reads, imperative

@@ -67,6 +67,8 @@ approved. Search and maintenance work should not delay correctness repair.
 - [TanStack Query migration plan](query-migration-plan.md): replacement-first
   ownership migration from merged #263/#264, starting with a Project-resource
   deletion map and LOC budget; separate from the historical UX audit above.
+- [Query Step 1 map and budget](query-migration-step-1.md): current owners,
+  affected callers, replace/delete boundaries and the pre-implementation verdict.
 
 ## Evidence limits
 
