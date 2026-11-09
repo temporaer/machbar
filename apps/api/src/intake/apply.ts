@@ -166,8 +166,8 @@ export async function applyIntake(
       assertIntakeDestinations(db, draftToValidate, stored.scope, viewerMemberId, new Set(committedWork.map((work) => work.key)));
     } catch (error) {
       if (error instanceof AppError && error.code === "intake_draft_invalid"
-        && stored.status === "partially_applied" && previousResults
-        && previousResults.work.length === 0 && previousResults.calendar.length === 0) {
+        && stored.status === "partially_applied"
+        && (previousResults?.work.length ?? 0) === 0 && (previousResults?.calendar.length ?? 0) === 0) {
         const reopened = db.update(schema.intakeJobs).set({
           status: "ready", acceptedDraftJson: null, draftJson: JSON.stringify(draftToValidate),
           applyClaimToken: null, applyClaimExpiresAt: null, errorJson: JSON.stringify(applyFailureInfo(error)),

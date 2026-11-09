@@ -420,6 +420,70 @@ describe("intake apply", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["direct", "missing"],
+    ["read-first", "missing"],
+    ["direct", "empty"],
+    ["read-first", "empty"],
+  ] as const)("reopens an expired claim with a changed destination (%s retry, %s ledger)", async (entry, ledger) => {
+    const setup = await prepare();
+    const headers = { "x-machbar-actor-member-id": String(setup.member.id) };
+    const project = createProject(ctx.handle.db, { title: "Existing" });
+    const accepted = draft([
+      action("standalone"),
+      action("destination-step", { existingProjectId: project.id, existingProjectRevision: project.revision }),
+    ]);
+    const results = ledger === "missing" ? null : { work: [], calendar: [], paperlessDocumentIds: [] };
+    ctx.handle.db.update(schema.workItems).set({ revision: project.revision + 1 }).where(eq(schema.workItems.id, project.id)).run();
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "applying", acceptedDraftJson: JSON.stringify(accepted),
+      applyResultsJson: results === null ? null : JSON.stringify(results),
+      applyClaimToken: "interrupted-before-results",
+      applyClaimExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+      revision: setup.revision + 1,
+    }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const revision = entry === "read-first"
+      ? getIntake(ctx.handle.db, setup.id, setup.member.id).revision
+      : setup.revision + 1;
+    const before = {
+      work: ctx.handle.db.select().from(schema.workItems).all(),
+      activity: ctx.handle.db.select().from(schema.activityEvents).all(),
+      outbox: ctx.handle.db.select().from(schema.notificationEvents).all(),
+      requests: ctx.handle.db.select().from(schema.homeAssistantRequests).all(),
+    };
+    const failed = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: revision, draft: draft([action("unconfirmed replacement")]) } });
+    expect(failed.statusCode, failed.body).toBe(400);
+    expect(failed.json().error.code).toBe("intake_draft_invalid");
+    const recovered = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(recovered).toMatchObject({ status: "ready", draft: accepted, applyResults: results });
+    expect(ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()).toMatchObject({
+      acceptedDraftJson: null, applyClaimToken: null, applyClaimExpiresAt: null,
+    });
+    const unchanged = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: recovered.revision, draft: recovered.draft } });
+    expect(unchanged.statusCode, unchanged.body).toBe(400);
+    expect(unchanged.json().error.code).toBe("intake_draft_invalid");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(before.work);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(before.activity);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual(before.outbox);
+    expect(ctx.handle.db.select().from(schema.homeAssistantRequests).all()).toEqual(before.requests);
+    const corrected = draft([
+      action("standalone"),
+      action("destination-step", { existingProjectId: project.id, existingProjectRevision: project.revision + 1 }),
+    ]);
+    const saved = await ctx.app.inject({ method: "PATCH", url: `/api/intake/${setup.id}/plan`, headers,
+      payload: { expectedRevision: recovered.revision, draft: corrected } });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const applied = await ctx.app.inject({ method: "POST", url: `/api/intake/${setup.id}/apply`, headers,
+      payload: { expectedRevision: saved.json().revision, draft: corrected } });
+    expect(applied.statusCode, applied.body).toBe(200);
+    expect(applied.json().status).toBe("applied");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "standalone")).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "destination-step")).all())
+      .toMatchObject([{ parentId: project.id }]);
+  });
+
   it("applies the reported work date and early reminder without inventing a revisit", async () => {
     const setup = await prepare();
     const d = draft([{ key: "register", kind: "action", title: "Register", notes: null, parentKey: null,

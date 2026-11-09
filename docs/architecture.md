@@ -302,6 +302,8 @@ also reopens review when its accepted destination fails pre-claim validation; an
 replacement submitted with that retry is not applied. Other source-effect failures and partials with
 committed work/calendar remain immutable. Already committed work still replays without
 checking its old destination revision.
+An interrupted claim with no saved results has an empty ledger for this recovery,
+whether the claim is recovered by a read or directly by Apply.
 The optional HA structured-output field requires installing the updated custom
 integration for automatic suggestions; an old adapter remains compatible but
 does not forward the new field. HACS publication/versioning and HA restart are
