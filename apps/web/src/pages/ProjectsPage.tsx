@@ -1,7 +1,6 @@
 import { localizedErrorMessage } from "../lib/errorMessage";
 import type { Tag } from "@machbar/shared";
 import type { ProjectWithActions, CreationIntent } from "../lib/api";
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
@@ -58,7 +57,7 @@ function ProjectsPageContent() {
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
   const { bump } = useRefresh();
   const { currentMemberId } = useIdentity();
-  const actions = useProjectActions(projects ?? []);
+  const actions = useProjectActions();
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -96,10 +95,7 @@ function ProjectsPageContent() {
     }
   };
 
-  const latestProject = (project: NonNullable<typeof projects>[number]) => {
-    return actions.projectStory(project);
-  };
-  const allProjects = (projects ?? []).map(latestProject);
+  const allProjects = projects ?? [];
 
   const now = new Date();
   const filteredProjects = filterAndSortProjects(allProjects, {
@@ -145,14 +141,10 @@ function ProjectsPageContent() {
     return groups.map(group => ({ id: `${section}:${groupBy ?? "all"}:${group.tag?.id ?? "none"}`, tag: group.tag,
       children: group.items.map(project => ({ id: project.id, revision: project.revision, project })) }));
   };
-  const sections = useRetainedPlacement({
+  const sections = {
     active: groupCandidates("active", activeCandidates), quiet: groupCandidates("quiet", quietCandidates),
     backlog: groupCandidates("backlog", backlogCandidates), terminal: groupCandidates("terminal", terminalCandidates),
-  }, node => node.project !== undefined && actions.holdingIds.has(node.project.id), node => {
-    if (!node.project) return node;
-    const project = latestProject(node.project);
-    return { ...node, project, revision: project.revision };
-  }, `${query}:${scope}:${currentMemberId}:${groupBy}`);
+  };
   const groupsFor = (section: Section) => sections[section].flatMap(node => {
     const items = (node.children ?? []).flatMap(child => child.project ? [child.project] : []);
     return items.length ? [{ tag: node.tag ?? null, items }] : [];

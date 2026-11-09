@@ -10,18 +10,23 @@ import { PhysicalContextPicker } from "./PhysicalContextPicker";
 export function ProjectContextsSheet({
   story,
   onClose,
+  onFailure,
 }: {
   story: ProjectWithActions;
   onClose: () => void;
+  onFailure?: (cause: unknown) => void;
 }) {
   const strings = useStrings();
-  const projectActions = useProjectActions([story]);
+  const projectActions = useProjectActions();
   const saving = projectActions.isPending(story.id);
   const { data: homeAssistant } = useAsync(
-    () =>
+    async (signal) => {
+      try { return await (
       typeof api.getHomeAssistantStatus === "function"
         ? api.getHomeAssistantStatus()
-        : Promise.resolve(null),
+        : Promise.resolve(null)); }
+      catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
+    },
     [],
   );
 
@@ -40,7 +45,7 @@ export function ProjectContextsSheet({
           inherited={[]}
           disabled={saving}
           onChange={(_, contextIds) => {
-            void projectActions.setContexts(story, contextIds);
+            void projectActions.setContexts(story, contextIds).catch((cause) => onFailure?.(cause));
           }}
         />
         <button type="button" className="btn" disabled={saving} onClick={onClose}>

@@ -36,23 +36,11 @@ const ALLOWED_MUTATION_CALLERS = new Map([
   ],
   [
     "apps/web/src/lib/useTaskActions.tsx",
-    new Set(TASK_MUTATIONS),
+    new Set([...TASK_MUTATIONS, "moveTask"]),
   ],
   [
     "apps/web/src/lib/useProjectActions.tsx",
     new Set(PROJECT_MUTATIONS),
-  ],
-  [
-    "apps/web/src/lib/useOutlineOrganize.tsx",
-    new Set(["moveTask"]),
-  ],
-  [
-    "apps/web/src/components/MoveTaskSheet.tsx",
-    new Set(["moveTask"]),
-  ],
-  [
-    "apps/web/src/components/QuickAdd.tsx",
-    new Set(["moveTask"]),
   ],
   [
     "apps/web/src/pages/SharePage.tsx",
@@ -61,6 +49,10 @@ const ALLOWED_MUTATION_CALLERS = new Map([
 ]);
 
 const DEPRECATED_NAMES = new Map([
+  ["useRetainedMutations", "Use useItemMutations and invalidate server reads; do not retain DTO overlays."],
+  ["useRetainedPlacement", "Render current server membership and ordering without timed placement."],
+  ["useRetentionInteraction", "Editors outlive their source row without row-retention leases."],
+  ["retainPlacement", "Render current server membership and ordering without timed placement."],
   ["AssignOwnerSheet", "Use MemberSelectionSheet with useTaskActions."],
   ["AssignDriverSheet", "Use MemberSelectionSheet with useProjectActions."],
   ["ActivationReadinessSheet", "Use MemberSelectionSheet and useProjectActions.activate."],

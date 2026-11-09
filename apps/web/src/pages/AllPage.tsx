@@ -1,7 +1,3 @@
-import { flattenTasks } from "../lib/taskHelpers";
-import { useTaskActions } from "../lib/useTaskActions";
-import { useProjectActions } from "../lib/useProjectActions";
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useMemo, useState } from "react";
 import type { SearchFilters } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -67,12 +63,8 @@ export function AllPage() {
     locale,
     { recencyRank: recencyRankLookup("task") },
   );
-  const taskActions = useTaskActions(flattenTasks(tasks ?? []));
-  const projectActions = useProjectActions(projects ?? []);
-  const { rows: visibleTasks } = useRetainedPlacement({ rows: taskCandidates }, taskActions.holdingIds,
-    taskActions.projectTask, filtersKey);
-  const { rows: filteredProjects } = useRetainedPlacement({ rows: projectCandidates }, projectActions.holdingIds,
-    projectActions.projectStory, filtersKey);
+  const visibleTasks = taskCandidates;
+  const filteredProjects = projectCandidates;
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
 

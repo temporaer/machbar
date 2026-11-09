@@ -19,11 +19,14 @@ import { TagPicker } from "./TagPicker";
 import { TagChip } from "./TagChip";
 
 /** Focused `task.tags` editor — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskTagsSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskTagsSheet({ task, onClose, onFailure }: { task: Task; onClose: () => void; onFailure?: (cause: unknown) => void }) {
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
-  const { data: tags, loading, error, reload } = useAsync(() => api.getTags(), []);
+  const { data: tags, loading, error, reload } = useAsync(async (signal) => {
+    try { return await api.getTags(); }
+    catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
+  }, []);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saving = taskActions.isPending(task.id);
   const hints = useMemo(
@@ -46,8 +49,9 @@ export function TaskTagsSheet({ task, onClose }: { task: Task; onClose: () => vo
   const change = async (tagIds: number[]) => {
     setSaveError(null);
     try {
-      await taskActions.update(task, { tagIds }, undefined, true);
+      await taskActions.update(task, { tagIds }, true);
     } catch (cause) {
+      onFailure?.(cause);
       setSaveError(localizedErrorMessage(cause, strings));
     }
   };
@@ -62,10 +66,10 @@ export function TaskTagsSheet({ task, onClose }: { task: Task; onClose: () => vo
             ? task.excludedTagIds.filter((id) => id !== tagId)
             : [...task.excludedTagIds, tagId],
         },
-        undefined,
         true,
       );
     } catch (cause) {
+      onFailure?.(cause);
       setSaveError(localizedErrorMessage(cause, strings));
     }
   };
@@ -96,10 +100,10 @@ export function TaskTagsSheet({ task, onClose }: { task: Task; onClose: () => vo
             : {}),
           ...(title !== task.title ? { title } : {}),
         },
-        undefined,
         true,
       );
     } catch (cause) {
+      onFailure?.(cause);
       setSaveError(localizedErrorMessage(cause, strings));
     }
   };

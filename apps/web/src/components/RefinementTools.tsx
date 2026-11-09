@@ -41,16 +41,7 @@ export function RefinementTools() {
     }
     return names;
   }, [ownerRows]);
-  const listItems = useMemo<RefinementListItem[]>(() => {
-    if (!taskRows) return [];
-    const retainedOnly = [...actions.retained.values()].filter(
-      (retained) => !taskRows.some((task) => task.id === retained.id),
-    );
-    return [
-      ...taskRows.map((task) => actions.retained.get(task.id) ?? task),
-      ...retainedOnly,
-    ];
-  }, [actions.retained, taskRows]);
+  const listItems = taskRows ?? [];
   const filteredItems = selection
     ? listItems.filter((item) => {
         if (item.effectiveOwnerId !== selection.ownerId) return false;

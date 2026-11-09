@@ -1,4 +1,3 @@
-import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesAppend } from "./NotesAppend";
 import {
   useEffect,
@@ -21,7 +20,7 @@ import { useStrings } from "../lib/strings";
 import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
-import { flattenTasks, isCapturedInboxItem } from "../lib/taskHelpers";
+import { isCapturedInboxItem } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
@@ -40,6 +39,7 @@ import { buildTaskShareUrl } from "../lib/shareUrls";
 import { RecentActivity } from "./RecentActivity";
 import { useLocale } from "../lib/locale";
 import {
+  isReadAccessError,
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
@@ -132,9 +132,17 @@ export function TaskDetailSheet() {
     error,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
-  const taskActions = useTaskActions(flattenTasks(loadedTask ? [loadedTask] : []));
-  useRetentionInteraction(openTaskId, taskActions.pauseRetention, openTaskId !== null);
-  const task = loadedTask ? taskActions.projectTask(loadedTask) : null;
+  const taskActions = useTaskActions();
+  const task = loadedTask;
+  const currentTaskRef = useRef(task);
+  currentTaskRef.current = task;
+  const contentOpeningRef = useRef(0);
+  useEffect(() => {
+    contentOpeningRef.current += 1;
+    setSavingTextFields(false);
+    setCriteriaError(null);
+    return () => { contentOpeningRef.current += 1; };
+  }, [openTaskId]);
 
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
@@ -174,7 +182,15 @@ export function TaskDetailSheet() {
   useEffect(() => {
     if (!loadedTask) {
       lastLoadedTaskIdRef.current = null;
+      revisionRef.current = null;
       setTextFieldsBaseline(null);
+      setTitleDraft("");
+      setNotesDraft("");
+      setTitleEditing(false);
+      setNotesEditing(false);
+      setAttachmentOpen(false);
+      setLifecycleOpen(false);
+      setConfirmingDelete(false);
       return;
     }
     revisionRef.current = loadedTask.revision;
@@ -297,27 +313,34 @@ export function TaskDetailSheet() {
     if (field === "title" && !value) return false;
     const dirty = field === "title" ? titleDirty : notesDirty;
     if (!dirty) return true;
+    const opening = contentOpeningRef.current;
     setSavingTextFields(true);
     setSaveError(null);
     try {
       const updated = await taskActions.update(
         task,
         { [field]: value },
-        { [field]: value },
         true,
       );
-      if (!updated) return false;
+      if (!updated || opening !== contentOpeningRef.current) return false;
       revisionRef.current = updated.revision;
       setTextFieldsBaseline((current) =>
         current ? { ...current, [field]: value } : current,
       );
       return true;
     } catch (err) {
+      if (opening !== contentOpeningRef.current) return false;
+      if (isReadAccessError(err)) {
+        setTitleDraft(currentTaskRef.current?.title ?? "");
+        setNotesDraft(currentTaskRef.current?.notes ?? "");
+        setTitleEditing(false);
+        setNotesEditing(false);
+      }
       if (isStaleWriteConflict(err)) reload();
       setSaveError(localizedErrorMessage(err, strings));
       return false;
     } finally {
-      setSavingTextFields(false);
+      if (opening === contentOpeningRef.current) setSavingTextFields(false);
     }
   };
 
@@ -650,7 +673,6 @@ export function TaskDetailSheet() {
                         scope: task.scope === "work" ? "household" : "work",
                         expectedRevision: task.revision,
                       },
-                      undefined,
                       true,
                     );
                   } catch (cause) {
@@ -813,8 +835,10 @@ export function TaskDetailSheet() {
                 />
               ) : null}
             </div>
-            <NotesAppend disabled={notesEditing || savingTextFields || taskMutationPending} onAppend={async content => {
+            <NotesAppend key={task.id} disabled={notesEditing || savingTextFields || taskMutationPending} onAppend={async content => {
+              const opening = contentOpeningRef.current;
               const updated = await taskActions.appendNotes(task, content);
+              if (opening !== contentOpeningRef.current) return false;
               if (updated) { revisionRef.current = updated.revision; setTextFieldsBaseline(current => current ? { ...current, notes: updated.notes } : current); setNotesDraft(updated.notes); }
               return updated;
             }} />
@@ -874,10 +898,12 @@ export function TaskDetailSheet() {
             >
               {criteriaError ? <p role="alert" className="capture-error">{criteriaError}</p> : null}
               <AcceptanceCriteriaEditor
+                key={task.id}
                 ownerType="task"
                 workItemId={task.id}
                 criteria={task.acceptanceCriteria}
                 onError={setCriteriaError}
+                onFailure={(cause) => { if (isReadAccessError(cause)) reload(); }}
               />
             </WorkItemDetailDisclosure>
           ) : null}
@@ -1125,8 +1151,10 @@ export function TaskDetailSheet() {
     </BottomSheet>
     {attachmentOpen && task ? (
       <MarkdownAttachmentSheet
+        key={task.id}
         onClose={() => setAttachmentOpen(false)}
         onInsert={async (markdown) => {
+          const opening = contentOpeningRef.current;
           if (notesEditing) {
             notesRef.current?.insertMarkdown(markdown);
             return;
@@ -1138,15 +1166,16 @@ export function TaskDetailSheet() {
             const updated = await taskActions.update(
               task,
               { notes: nextNotes },
-              { notes: nextNotes },
               true,
             );
-            if (updated) {
+            if (updated && opening === contentOpeningRef.current) {
               revisionRef.current = updated.revision;
               setNotesDraft(updated.notes);
               setTextFieldsBaseline(textFieldsSnapshot(updated));
             }
           } catch (cause) {
+            if (opening !== contentOpeningRef.current) throw cause;
+            if (isReadAccessError(cause)) setAttachmentOpen(false);
             if (isStaleWriteConflict(cause)) reload();
             setSaveError(localizedErrorMessage(cause, strings));
             throw cause;

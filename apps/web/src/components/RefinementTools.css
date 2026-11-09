@@ -64,16 +64,6 @@
   border: 1px solid transparent;
 }
 
-/*
- * A row whose size was just changed keeps rendering (muted) with its new
- * size for `REFINEMENT_RETENTION_MS` (~4s — see `useRefinementActions.ts`)
- * so the resulting owner×size matrix regrouping is actually visible instead
- * of the row silently reshuffling the instant the mutation resolves.
- */
-.refinement-row-content.retained {
-  opacity: 0.55;
-}
-
 .refinement-row-size {
   min-width: 34px;
   height: 34px;

@@ -1,6 +1,6 @@
 {
   "name": "@machbar/web",
-  "version": "0.35.3",
+  "version": "0.36.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.107.1",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/state": "^6.7.6",

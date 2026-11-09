@@ -15,7 +15,6 @@ import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
-import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import { QuickAdd } from "./QuickAdd";
 import type { ProjectWithActions } from "../lib/api";
@@ -211,8 +210,8 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.activateProject).toHaveBeenCalledWith(20, {
       expectedRevision: 1,
     });
-    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
   });
 
   it("completes an active story", async () => {
@@ -230,7 +229,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.completeProject).toHaveBeenCalledWith(21, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
   });
 
   it("uses the current status label when a newer server revision supersedes a retained completion", async () => {
@@ -240,7 +239,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     await screen.findByText(story.title);
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Abschließen" }));
     await act(async () => { await flushMicrotasks(); });
-    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
     rerender(<Harness story={{ ...story, revision: 3 }} />);
     expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
     expect(container.querySelector(".story-row-status-badge")).not.toHaveTextContent("Abgeschlossen");
@@ -271,7 +270,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.completeProject).toHaveBeenCalledWith(27, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
   });
 
   it("opens the focused completion checklist — not the structural editor — for unchecked criteria", async () => {
@@ -452,7 +451,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.completeProject).toHaveBeenCalledWith(32, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
   });
 
   it("reopens a completed story", async () => {
@@ -476,7 +475,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(22, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Abgeschlossen");
   });
 
   it("opens a combined progress-path decision when a completed project needs reopening", async () => {
@@ -515,7 +514,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Wieder öffnen" }));
 
     const dialog = await screen.findByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"), "Ersten Schritt festlegen");
+    await userEvent.type(await within(dialog).findByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"), "Ersten Schritt festlegen");
     await userEvent.click(within(dialog).getByRole("button", { name: "Wieder öffnen" }));
 
     await waitFor(() =>
@@ -551,7 +550,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Wieder öffnen" }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Abgeschlossen ohne Driver“"), "1");
+    await userEvent.selectOptions(await within(dialog).findByLabelText("Verantwortlich für „Abgeschlossen ohne Driver“"), "1");
     await userEvent.click(within(dialog).getByRole("button", { name: "Wieder öffnen" }));
 
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(26, {
@@ -591,7 +590,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
       withdrawCommitments: false,
       expectedTaskRevisions: [],
     });
-    expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Archiviert");
   });
 
   it("never offers a transition the backend does not advertise", async () => {
@@ -647,7 +646,7 @@ describe("ProjectStoryRow – activation preparation", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
-    await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Ohne Driver backlog“"), "2");
+    await userEvent.selectOptions(await within(dialog).findByLabelText("Verantwortlich für „Ohne Driver backlog“"), "2");
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
     // Assigning and activating happen in one atomic backend call.
@@ -713,7 +712,7 @@ describe("ProjectStoryRow – activation preparation", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
-    await userEvent.selectOptions(within(dialog).getByLabelText("Verantwortlich für „Beide Aktivierungsvoraussetzungen fehlen“"), "2");
+    await userEvent.selectOptions(await within(dialog).findByLabelText("Verantwortlich für „Beide Aktivierungsvoraussetzungen fehlen“"), "2");
     await userEvent.type(within(dialog).getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"), "Ersten Schritt vorbereiten");
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
@@ -749,7 +748,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
 
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Abbrechen" }));
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -766,7 +765,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     await screen.findByText("Aktivierung abgebrochen");
     fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Projekt starten" }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Abbrechen" }));
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -880,7 +879,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
       withdrawCommitments: false,
       expectedTaskRevisions: [],
     });
-    expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
   });
 
   it("respects the driver invariant: an active story's driver can be reassigned but not cleared", async () => {
@@ -1549,7 +1548,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     vi.useRealTimers();
   });
 
-  it("keeps a transitioned row visible for the retention window and disables it only while the request is in flight", async () => {
+  it("disables a pending row without predicting server status or retaining a DTO", async () => {
     vi.useFakeTimers();
     const story = makeProject({
       id: 60,
@@ -1572,10 +1571,8 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       await flushMicrotasks();
     });
 
-    // In flight: optimistic, muted — and locked so the same story cannot be
-    // mutated twice concurrently.
-    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
     expect(container.querySelector(".story-row-primary")).toBeDisabled();
 
     await act(async () => {
@@ -1583,25 +1580,12 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       await flushMicrotasks();
     });
 
-    // Request resolved: still retained/muted, but actionable again.
-    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(container.querySelector(".story-row-primary")).not.toBeDisabled();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(RETENTION_MS - 500);
-    });
-    expect(screen.getByText("Retention")).toBeInTheDocument();
-    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // Retention elapsed: the optimistic override is dropped (the harness keeps
-    // rendering the unchanged prop, but no longer as a retained row).
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
+    expect(container.querySelector(".story-row-primary")).not.toBeDisabled();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
   });
 
-  it("lets the workflow be cycled immediately: complete, then reopen the very same retained row via the lifecycle rail", async () => {
+  it("reopens after the completed server row arrives", async () => {
     const story = makeProject({
       id: 61,
       title: "Zyklus",
@@ -1616,7 +1600,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       availableActions: ["reopen", "archive"],
     });
     mockedApi.reopenProject.mockResolvedValue({ ...story, revision: 3, status: "active" });
-    const { container } = renderWithProviders(<Harness story={story} />);
+    const { container, rerender } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Zyklus");
 
     fireEvent.click(container.querySelector(".story-row-primary") as HTMLElement);
@@ -1627,8 +1611,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       expectedRevision: 1,
     });
 
-    // Completed is terminal: no primary/forward action — reopen lives in the
-    // lifecycle rail instead.
+    rerender(<Harness story={{ ...story, revision: 2, status: "completed", availableActions: ["reopen", "archive"] }} />);
     await waitFor(() => expect(container.querySelector(".story-row-primary")).toBeDisabled());
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Wieder öffnen" }));
@@ -1637,7 +1620,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     });
 
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(61, { expectedRevision: 2 });
-    expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Abgeschlossen");
   });
 
   it("rolls the row back and shows a dismissible inline error when the transition fails", async () => {

@@ -18,7 +18,7 @@ import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
-import { makeMember, makePhysicalContext, makeProject, makeTag, makeTask } from "../test/fixtures";
+import { makeCriterion, makeMember, makePhysicalContext, makeProject, makeTag, makeTask } from "../test/fixtures";
 import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
@@ -37,12 +37,15 @@ vi.mock("../lib/api", () => ({
     getTask: vi.fn(),
     getTaskRecurrenceHistory: vi.fn(),
     updateTask: vi.fn(),
+    appendTaskNotes: vi.fn(),
     convertTaskToStory: vi.fn(),
     createTask: vi.fn(),
     createTaskStepBatchForTask: vi.fn(),
     getProject: vi.fn(),
     setExternalWait: vi.fn(),
     addCriterion: vi.fn(),
+    updateCriterion: vi.fn(),
+    removeCriterion: vi.fn(),
     updateProject: vi.fn(),
     resolveExternalWait: vi.fn(),
     transitionTaskStatus: vi.fn(),
@@ -486,6 +489,39 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(within(attachment).getByRole("button", { name: "Schließen" }));
     await waitFor(() => expect(trigger).toHaveFocus());
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it.each(["append", "attachment"] as const)("ends task %s authoring on denied write while GET stays authorized", async kind => {
+    const task = makeTask({ id: 42, title: "Saved task", notes: "Saved notes" });
+    mockedApi.getTask.mockResolvedValue(task);
+    const cause = Object.assign(new Error("Raw denial"), { name: "ApiError", status: 403 });
+    mockedApi.appendTaskNotes.mockRejectedValue(cause);
+    mockedApi.updateTask.mockRejectedValue(cause);
+    renderSheet(task.id);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle(task.title);
+    if (kind === "append") {
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+      setMarkdownValue(screen.getByRole("textbox", { name: strings.appendNote }), "Private append");
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+    } else {
+      await openDetailActions();
+      await userEvent.click(screen.getByRole("button", { name: strings.attach }));
+      await userEvent.upload(screen.getByLabelText("Datei auswählen"), new File(["pdf"], "receipt.pdf", { type: "application/pdf" }));
+    }
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Anhang" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: strings.appendNote })).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: task.title })).toBeVisible();
+    expect(screen.getByText(task.notes)).toBeVisible();
+    expect(screen.getAllByRole("alert").some(alert => alert.textContent?.includes(strings.error))).toBe(true);
+    if (kind === "append") {
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+      expect(markdownValue(screen.getByRole("textbox", { name: strings.appendNote }))).toBe("");
+    } else {
+      await openDetailActions();
+      await userEvent.click(screen.getByRole("button", { name: strings.attach }));
+      expect(screen.queryByRole("button", { name: strings.retry })).not.toBeInTheDocument();
+    }
   });
 
   it("inserts a header attachment at the active notes cursor without saving", async () => {
@@ -969,8 +1005,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Known steps");
     const opener = screen.getByRole("button", { name: strings.splitTaskAddHeading });
     await userEvent.click(screen.getByRole("button", { name: strings.classifyAsAction }));
-    expect(opener).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: strings.splitTaskAddHeading })).not.toBeInTheDocument();
+    expect(opener).toBeDisabled();
     expect(screen.queryByRole("dialog", { name: strings.splitTask })).not.toBeInTheDocument();
     await act(async () => rejectClassification(new Error("Classification failed")));
     await waitFor(() => expect(screen.getByRole("button", { name: strings.splitTaskAddHeading })).toBeEnabled());
@@ -2015,9 +2050,207 @@ describe("TaskDetailSheet", () => {
   // row rail's Struktur sheet, not from the task detail's own commands — see
   // `TaskStructureSheet.test.tsx` for its conversion-flow coverage.
 
+  it.each([401, 403, 404])("ends inline task editing when a %s read revokes access", async status => {
+    const task = makeTask({ id: 209, title: "Protected task" });
+    mockedApi.getTask.mockResolvedValue(task);
+    function RefreshControl() {
+      const { bump } = useRefresh();
+      return <button onClick={bump}>Refresh protected task</button>;
+    }
+    renderWithProviders(<OpenerHarness taskId={task.id}><TaskDetailSheet /><RefreshControl /></OpenerHarness>);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    const input = await openTitleEditor();
+    await userEvent.type(input, " private draft");
+    mockedApi.getTask.mockRejectedValue(Object.assign(new Error("Access denied"), { name: "ApiError", status }));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh protected task" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent(strings.error);
+    expect(screen.queryByDisplayValue(/private draft/)).not.toBeInTheDocument();
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+  });
+
+  it.each(
+    (["add", "update", "remove"] as const).flatMap(operation => [401, 403, 404].map(status => ({ operation, status }))),
+  )("discards criterion drafts after task criterion $operation returns $status while GET stays authorized", async ({ operation, status }) => {
+    const criterion = makeCriterion({ id: 310, workItemId: 209, text: "Saved criterion" });
+    const task = makeTask({ id: 209, title: "Task with criteria", acceptanceCriteria: [criterion] });
+    mockedApi.getTask.mockResolvedValue(task);
+    const cause = Object.assign(new Error("Raw denied criterion"), { name: "ApiError", status });
+    mockedApi.addCriterion.mockRejectedValue(cause);
+    mockedApi.updateCriterion.mockRejectedValue(cause);
+    mockedApi.removeCriterion.mockRejectedValue(cause);
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    const row = screen.getByRole("checkbox", { name: criterion.text }).closest<HTMLElement>(".criterion-row")!;
+    const addInput = screen.getByPlaceholderText(strings.addCriterionPlaceholder);
+    await userEvent.type(addInput, "Private new criterion");
+    const reads = mockedApi.getTask.mock.calls.length;
+    if (operation === "update") {
+      await userEvent.click(within(row).getByRole("button", { name: strings.edit }));
+      await userEvent.type(within(row).getByRole("textbox"), " private edit");
+      await userEvent.click(within(row).getByRole("button", { name: strings.save }));
+    } else if (operation === "add") {
+      await userEvent.click(screen.getByRole("button", { name: strings.addCriterion }));
+    } else {
+      await userEvent.click(within(row).getByRole("button", { name: strings.removeCriterion }));
+    }
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(strings.error);
+    await waitFor(() => expect(mockedApi.getTask.mock.calls.length).toBeGreaterThan(reads));
+    expect(screen.getByRole("heading", { name: task.title })).toBeVisible();
+    expect(addInput).toHaveValue("");
+    expect(within(row).getByRole("textbox")).toHaveValue(criterion.text);
+    expect(within(row).getByRole("textbox")).toHaveAttribute("readonly");
+    await userEvent.click(within(row).getByRole("button", { name: strings.edit }));
+    expect(within(row).getByRole("textbox")).toHaveValue(criterion.text);
+  });
+
+  it.each(["add", "update"] as const)("preserves the task criterion %s draft on an ordinary outage", async operation => {
+    const criterion = makeCriterion({ id: 310, workItemId: 209, text: "Saved criterion" });
+    const task = makeTask({ id: 209, title: "Task with criteria", acceptanceCriteria: [criterion] });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.addCriterion.mockRejectedValue(new Error("Offline"));
+    mockedApi.updateCriterion.mockRejectedValue(new Error("Offline"));
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    const row = screen.getByRole("checkbox", { name: criterion.text }).closest<HTMLElement>(".criterion-row")!;
+    if (operation === "add") {
+      await userEvent.type(screen.getByPlaceholderText(strings.addCriterionPlaceholder), "Private new criterion");
+      await userEvent.click(screen.getByRole("button", { name: strings.addCriterion }));
+    } else {
+      await userEvent.click(within(row).getByRole("button", { name: strings.edit }));
+      await userEvent.type(within(row).getByRole("textbox"), " private edit");
+      await userEvent.click(within(row).getByRole("button", { name: strings.save }));
+    }
+    expect(await screen.findByRole("alert")).toHaveTextContent("Offline");
+    if (operation === "add") expect(screen.getByPlaceholderText(strings.addCriterionPlaceholder)).toHaveValue("Private new criterion");
+    else {
+      expect(within(row).getByRole("textbox")).toHaveValue(`${criterion.text} private edit`);
+      expect(within(row).getByRole("textbox")).not.toHaveAttribute("readonly");
+    }
+  });
+
+  it.each(["another cached task", "same task reopened"])("ignores an obsolete denied criterion write in %s", async replacement => {
+    const original = makeTask({ id: 209, title: "Original task", acceptanceCriteria: [makeCriterion({ id: 310, workItemId: 209, text: "Original criterion" })] });
+    const next = replacement === "another cached task"
+      ? makeTask({ id: 210, title: "Replacement task", acceptanceCriteria: [makeCriterion({ id: 311, workItemId: 210, text: "Replacement criterion" })] })
+      : original;
+    mockedApi.getTask.mockImplementation(async id => id === original.id ? original : next);
+    let deny!: (cause: unknown) => void;
+    mockedApi.updateCriterion.mockReturnValue(new Promise((_resolve, reject) => { deny = reject; }));
+    function OpeningControls() {
+      const { open, close } = useTaskDetail();
+      return <><button onClick={() => open(original.id)}>Open original criteria</button><button onClick={() => open(next.id)}>Open replacement criteria</button><button onClick={close}>Close criteria opening</button></>;
+    }
+    renderWithProviders(<><OpeningControls /><TaskDetailSheet /></>);
+    if (replacement === "another cached task") {
+      await userEvent.click(screen.getByRole("button", { name: "Open replacement criteria" }));
+      await waitForTaskTitle(next.title);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Open original criteria", hidden: true }));
+    await waitForTaskTitle(original.title);
+    const oldRow = screen.getByRole("checkbox", { name: "Original criterion" }).closest<HTMLElement>(".criterion-row")!;
+    await userEvent.click(within(oldRow).getByRole("button", { name: strings.edit }));
+    await userEvent.type(within(oldRow).getByRole("textbox"), " old draft");
+    await userEvent.click(within(oldRow).getByRole("button", { name: strings.save }));
+    if (replacement === "same task reopened") {
+      fireEvent.click(screen.getByRole("button", { name: "Close criteria opening", hidden: true }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Open replacement criteria", hidden: true }));
+    await waitForTaskTitle(next.title);
+    const currentRow = screen.getByRole("checkbox", { name: next.acceptanceCriteria[0]!.text }).closest<HTMLElement>(".criterion-row")!;
+    await userEvent.click(within(currentRow).getByRole("button", { name: strings.edit }));
+    await userEvent.type(within(currentRow).getByRole("textbox"), " current draft");
+    await act(async () => { deny(Object.assign(new Error("Old denial"), { name: "ApiError", status: 403 })); });
+    expect(within(currentRow).getByRole("textbox")).toHaveValue(`${next.acceptanceCriteria[0]!.text} current draft`);
+    expect(within(currentRow).getByRole("textbox")).not.toHaveAttribute("readonly");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each(
+    (["title", "notes"] as const).flatMap(field => [401, 403, 404].map(status => ({ field, status }))),
+  )("discards the task $field draft on mutation $status even when GET remains authorized", async ({ field, status }) => {
+    const task = makeTask({ id: 209, title: "Saved task title", notes: "Saved task notes" });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockRejectedValue(Object.assign(new Error("Do not display raw denial"), { name: "ApiError", status }));
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    if (field === "title") {
+      await userEvent.type(await openTitleEditor(), " private draft");
+    } else {
+      setMarkdownValue(await openNotesEditor(), "private draft");
+    }
+    const reads = mockedApi.getTask.mock.calls.length;
+    await userEvent.click(screen.getByRole("button", { name: field === "title" ? strings.save : strings.saveNotes }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(strings.error);
+    await waitFor(() => expect(mockedApi.getTask.mock.calls.length).toBeGreaterThan(reads));
+    await waitFor(() => expect(screen.queryByLabelText(field === "title" ? strings.title : strings.notes)).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: task.title })).toBeVisible();
+    expect(screen.getByText(task.notes)).toBeVisible();
+    if (field === "title") expect(await openTitleEditor()).toHaveValue(task.title);
+    else expect(markdownValue(await openNotesEditor())).toBe(task.notes);
+    expect(mockedApi.updateTask).toHaveBeenCalledOnce();
+  });
+
+  it.each(["title", "notes"] as const)("preserves the task %s draft on a network write failure", async field => {
+    const task = makeTask({ id: 209, title: "Saved title", notes: "Saved notes" });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockRejectedValue(new Error("Offline"));
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    if (field === "title") await userEvent.type(await openTitleEditor(), " draft");
+    else setMarkdownValue(await openNotesEditor(), "notes draft");
+    await userEvent.click(screen.getByRole("button", { name: field === "title" ? strings.save : strings.saveNotes }));
+    await screen.findByRole("alert");
+    if (field === "title") expect(screen.getByLabelText(strings.title)).toHaveValue(`${task.title} draft`);
+    else expect(markdownValue(screen.getByLabelText(strings.notes))).toBe("notes draft");
+  });
+
+  it.each(["another task", "same task reopened"])("ignores an old denied write after opening %s", async replacement => {
+    const task = makeTask({ id: 209, title: "First task" });
+    const nextTask = makeTask({ id: replacement === "another task" ? 210 : task.id, title: "Next opening", revision: 2 });
+    mockedApi.getTask.mockImplementation(async id => id === task.id ? task : nextTask);
+    let deny!: (cause: unknown) => void;
+    mockedApi.updateTask.mockReturnValue(new Promise((_resolve, reject) => { deny = reject; }));
+    function OpeningControls() {
+      const { open, close } = useTaskDetail();
+      return <><button onClick={close}>Close opening</button><button onClick={() => open(nextTask.id)}>Replace opening</button></>;
+    }
+    renderWithProviders(<OpenerHarness taskId={task.id}><TaskDetailSheet /><OpeningControls /></OpenerHarness>);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    await userEvent.type(await openTitleEditor(), " old draft");
+    await userEvent.click(screen.getByRole("button", { name: strings.save }));
+    mockedApi.getTask.mockResolvedValue(nextTask);
+    await userEvent.click(screen.getByRole("button", { name: "Close opening", hidden: true }));
+    await userEvent.click(screen.getByRole("button", { name: "Replace opening", hidden: true }));
+    await waitForTaskTitle(nextTask.title);
+    const settle = async () => {
+      await act(async () => { deny(Object.assign(new Error("Old denial"), { name: "ApiError", status: 403 })); });
+    };
+    if (replacement === "same task reopened") {
+      const titleField = screen.getByRole("heading", { name: nextTask.title }).closest<HTMLElement>(".field")!;
+      const edit = within(titleField).getByRole("button", { name: strings.edit });
+      expect(edit).toBeDisabled();
+      await settle();
+      await waitFor(() => expect(edit).toBeEnabled());
+      await userEvent.type(await openTitleEditor(), " new draft");
+    } else {
+      await userEvent.type(await openTitleEditor(), " new draft");
+      await settle();
+    }
+    expect(screen.getByLabelText(strings.title)).toHaveValue(`${nextTask.title} new draft`);
+  });
+
   it.each(["action", "reference"] as const)("edits %s discussion nomination from details through the canonical task command", async (kind) => {
     const task = makeTask({ id: 209, title: "Gemeinsam besprechen", kind });
-    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.getTask.mockResolvedValueOnce(task).mockResolvedValue({ ...task, revision: 2, discussionRequested: true });
     mockedApi.updateTask.mockResolvedValue({ ...task, revision: 2, discussionRequested: true });
     renderSheet(209);
     await userEvent.click(screen.getByText("open"));

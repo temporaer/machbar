@@ -15,7 +15,6 @@ import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
-import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
 import "../styles/index.css";
@@ -180,8 +179,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     });
     // Optimistic: still shown, muted, with the new status while retained.
     expect(screen.getByText("Garten aufräumen")).toBeInTheDocument();
-    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
   });
 
   it("collects a missing driver before activation from the lifecycle rail", async () => {
@@ -200,7 +199,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Projekt starten" }));
 
     const dialog = await screen.findByRole("dialog");
-    const driver = within(dialog).getByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
+    const driver = await within(dialog).findByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
     await userEvent.selectOptions(driver, "2");
     await userEvent.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
 
@@ -270,7 +269,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
-  it("archives a story via the lifecycle rail, retaining it with optimistic styling before it disappears", async () => {
+  it("archives through the lifecycle rail without replacing the authoritative row prop", async () => {
     vi.useFakeTimers();
     const story = makeProject({ id: 16, title: "Winterreifen wechseln", status: "backlog" });
     mockedApi.archiveProject.mockResolvedValue({ ...story, status: "archived" });
@@ -289,21 +288,9 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(mockedApi.archiveProject).toHaveBeenCalledWith(16, {
       expectedRevision: 1,
     });
-    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("Archiviert")).toBeInTheDocument();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(RETENTION_MS - 500);
-    });
-    expect(screen.getByText("Winterreifen wechseln")).toBeInTheDocument();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-    // Retention window elapsed: no longer rendered as retained. The row prop
-    // itself (`storyProp`) is unchanged in this harness, so it keeps
-    // rendering — but no longer with the retained/optimistic styling.
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
+    expect(screen.getByText("Winterreifen wechseln")).toBeInTheDocument();
   });
 
   it("shows an inline, dismissible error and does not retain the story when activation fails", async () => {

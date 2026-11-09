@@ -10,6 +10,8 @@ import {
 import type { ReactNode } from "react";
 import { changeStreamUrl } from "./api";
 import { getClientId } from "./clientId";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createReadQueryClient, invalidateReads } from "./queryClient";
 
 export const DISCONNECTED_POLL_MS = 120_000;
 export const TIMED_ELIGIBILITY_REFRESH_MS = 60_000;
@@ -29,9 +31,8 @@ function refreshDiagnostic(reason: string, version: number) {
 /**
  * A tiny invalidation bus: any mutation (complete a task, move it, edit a
  * project, …) calls `bump()`, and every screen that reads server data
- * subscribes to `version` via `useAsync`. This gives cross-page consistency
- * (e.g. completing a task in the Inbox updates the Heute counts) without
- * pulling in a full data-fetching library.
+ * invalidates the Query-owned reads. `version` remains an event notification
+ * for explicit polling/activity consumers, not a second fetched-state owner.
  */
 interface RefreshContextValue {
   version: number;
@@ -48,6 +49,7 @@ export function RefreshProvider({
   remoteSyncEnabled?: boolean;
 }) {
   const [version, setVersion] = useState(0);
+  const [queryClient] = useState(createReadQueryClient);
   const [streamConnected, setStreamConnected] = useState(false);
   const coalesceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastExternalRefresh = useRef<number | null>(null);
@@ -56,8 +58,9 @@ export function RefreshProvider({
     diagnosticVersion.current += 1;
     refreshDiagnostic(reason, diagnosticVersion.current);
     setVersion((v) => v + 1);
-  }, []);
-  const bump = useCallback(() => invalidate("mutation"), [invalidate]);
+    return invalidateReads(queryClient, reason === "mutation");
+  }, [queryClient]);
+  const bump = useCallback(() => { void invalidate("mutation"); }, [invalidate]);
 
   // Leading refresh plus one trailing refresh; continuous events cannot
   // postpone convergence or invalidate all queries several times per second.
@@ -150,7 +153,11 @@ export function RefreshProvider({
   );
 
   const value = useMemo(() => ({ version, bump }), [version, bump]);
-  return <RefreshContext.Provider value={value}>{children}</RefreshContext.Provider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RefreshContext.Provider value={value}>{children}</RefreshContext.Provider>
+    </QueryClientProvider>
+  );
 }
 
 export function useRefresh(): RefreshContextValue {

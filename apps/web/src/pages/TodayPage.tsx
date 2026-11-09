@@ -1,7 +1,3 @@
-import { flattenTasks } from "../lib/taskHelpers";
-import { useTaskActions } from "../lib/useTaskActions";
-import { useProjectActions } from "../lib/useProjectActions";
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type AgendaScope } from "../lib/api";
@@ -72,25 +68,19 @@ export function TodayPage() {
     setScope(nextScope);
     writeTodayScope(nextScope);
   };
-  const taskActions = useTaskActions(flattenTasks([...(agenda?.planned ?? []), ...(agenda?.overdue ?? []), ...(agenda?.dueToday ?? []), ...(agenda?.dueSoon ?? []), ...(agenda?.revisit ?? []), ...(agenda?.completedToday ?? []), ...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])]));
-  const projectActions = useProjectActions();
-  const taskBuckets = useRetainedPlacement({
+  const taskBuckets = {
     planned: agenda?.planned ?? [], overdue: agenda?.overdue ?? [],
     dueToday: agenda?.dueToday ?? [], dueSoon: agenda?.dueSoon ?? [],
     revisit: agenda?.revisit ?? [], completedToday: agenda?.completedToday ?? [],
     additional: [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])],
-  }, taskActions.holdingIds, taskActions.projectTask, agendaSelectionKey);
+  };
   const projectCandidates = (agenda?.projects ?? []).map(entry => ({ ...entry, id: entry.project.id }));
-  const projectBuckets = useRetainedPlacement({
+  const projectBuckets = {
     planned: projectCandidates.filter(entry => entry.attentionBucket === "planned"),
     overdue: projectCandidates.filter(entry => entry.attentionBucket === "overdue"),
     dueToday: projectCandidates.filter(entry => entry.attentionBucket === "dueToday"),
     dueSoon: projectCandidates.filter(entry => entry.attentionBucket === "dueSoon"),
-  },
-    projectActions.holdingIds, entry => {
-      const project = projectActions.projectStory(entry.project);
-      return project === entry.project ? entry : { ...entry, project };
-    }, agendaSelectionKey);
+  };
   const revisitTasks = taskBuckets.revisit;
   const completedTodayTasks = taskBuckets.completedToday;
   const additionalTasks = taskBuckets.additional;

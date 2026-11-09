@@ -1,4 +1,3 @@
-import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { NotesTail } from "./NotesTail";
 import { useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
@@ -22,7 +21,6 @@ import {
 } from "../lib/projectListFilter";
 import {
   primaryWorkflowAction,
-  projectTransitionLabel,
   projectWorkflowIcons,
   projectWorkflowLabel,
 } from "../lib/projectWorkflow";
@@ -94,18 +92,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   // `null` on any host outside a navigable interaction surface; logical
   // active-item updates are best-effort there.
   const scope = useOptionalInteractionScope();
-  // Read the shared controller; only raw authoritative query results may
-  // reconcile an overlay, not a row already projected through that overlay.
-  const { isPending, retained, projectStory, holdingIds, pauseRetention, errors, clearError } = useProjectActions();
-
-  // A story that just transitioned keeps rendering here with the
-  // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)
-  // instead of snapping to its refetched state immediately. Exactly like the
-  // task list, the row stays *actionable* the moment the request resolves.
-  const candidate = retained.get(storyProp.id);
-  const retainedEntry = candidate && candidate.story.revision >= storyProp.revision ? candidate : undefined;
-  const story = projectStory(storyProp);
-  const isRetained = holdingIds.has(storyProp.id);
+  const { isPending, errors, clearError } = useProjectActions();
+  const story = storyProp;
   const rowError = errors[storyProp.id];
   const busy = isPending(story.id);
 
@@ -128,9 +116,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     ? projectWorkflowLabel(primaryAction, strings, story.status)
     : strings.workflowStep;
   const kebabButtonRef = useRef<HTMLButtonElement>(null);
-  const statusLabel = retainedEntry?.action
-    ? projectTransitionLabel(retainedEntry.action, strings)
-    : strings.projectStatusLabels[story.status];
+  const statusLabel = strings.projectStatusLabels[story.status];
   const now = new Date();
   const classification = classifyProjectListItem(story, now);
   const accent = statusAccentByClassification[classification];
@@ -207,12 +193,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const { dragX } = swipe;
   const chipsOpen = scope?.openRailId === storyProp.id;
   const lifecycleOpen = scope?.openLifecycleId === storyProp.id;
-  const retentionInteraction = useRetentionInteraction(story.id, pauseRetention, chipsOpen || lifecycleOpen);
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
   const swipeCoach = useSwipeCoach(
     `project:${story.id}`,
-    !busy && !isRetained && !chipsOpen && primaryAction !== null,
+    !busy && !chipsOpen && primaryAction !== null,
   );
 
   const runSecondary = (action: ProjectWorkflowAction) => {
@@ -265,8 +250,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         coachAnimate={swipeCoach.animate}
       />
       <div
-        {...retentionInteraction}
-        className={`story-row-content${showDriverAssignment ? " has-driver" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
+        className={`story-row-content${showDriverAssignment ? " has-driver" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
         onPointerDown={(event) => {
           if (swipeCoach.active && event.pointerType === "touch") {

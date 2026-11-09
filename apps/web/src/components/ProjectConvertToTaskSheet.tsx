@@ -3,7 +3,7 @@ import { api, type ProjectDetail, type ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
-import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
+import { hasApiErrorCode, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import { BottomSheet } from "./BottomSheet";
@@ -16,9 +16,13 @@ import { ErrorState, LoadingState } from "./AsyncStates";
 export function ProjectConvertToTaskSheet({
   story,
   onClose,
+  onFailure,
+  isCurrent = () => true,
 }: {
   story: ProjectWithActions;
   onClose: () => void;
+  onFailure?: (cause: unknown) => void;
+  isCurrent?: () => boolean;
 }) {
   const strings = useStrings();
   const { bump } = useRefresh();
@@ -38,7 +42,10 @@ export function ProjectConvertToTaskSheet({
     loading,
     error: loadError,
     reload,
-  } = useAsync<ProjectDetail>(() => api.getProject(story.id), [story.id]);
+  } = useAsync<ProjectDetail>(async (signal) => {
+    try { return await api.getProject(story.id); }
+    catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
+  }, [story.id]);
 
   const currentProject = freshProject ?? project;
 
@@ -77,14 +84,19 @@ export function ProjectConvertToTaskSheet({
         ...(currentProject.hierarchyRevisions ? { expectedHierarchyRevisions: currentProject.hierarchyRevisions } : {}),
       });
       bump();
+      if (!isCurrent()) return;
       onClose();
     } catch (cause) {
-      const prompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (prompt) setActivationPrompt(prompt);
-      if (isStaleWriteConflict(cause)) {
+      if (!isCurrent()) return;
+      onFailure?.(cause);
+      const requiredPrompt = projectActivationPromptFromError(cause);
+      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
+        setActivationPrompt(null);
         try {
           const latest = await api.getProject(story.id);
+          if (!isCurrent()) return;
           setFreshProject(latest);
+          if (requiredPrompt) setActivationPrompt(requiredPrompt);
           const nextConflicts: Array<"title" | "notes"> = [];
           if (!titleEdited || latest.title === title) {
             baseline.current.title = latest.title;
@@ -102,8 +114,8 @@ export function ProjectConvertToTaskSheet({
             nextConflicts.push("notes");
           }
           setConflicts(nextConflicts);
-        } catch {
-          // Keep the authored draft; the next attempt can reload the current project.
+        } catch (refreshCause) {
+          onFailure?.(refreshCause);
         }
       }
       setError(localizedErrorMessage(cause, strings));

@@ -12,9 +12,11 @@ import { localizedErrorMessage } from "../lib/errorMessage";
 export function TaskClarificationSheet({
   task,
   onClose,
+  onFailure,
 }: {
   task: Task;
   onClose: () => void;
+  onFailure?: (cause: unknown) => void;
 }) {
   const strings = useStrings();
   const { timezone, loaded } = useHouseholdTimezone();
@@ -45,6 +47,7 @@ export function TaskClarificationSheet({
       await taskActions.deferClarification(task, date, true);
       onClose();
     } catch (cause) {
+      onFailure?.(cause);
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);

@@ -11,9 +11,10 @@ import { calendarDateForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
-import { api } from "../lib/api";
+import { useAsync } from "../lib/useAsync";
+import { api, type UpdateTaskInput } from "../lib/api";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { hasApiErrorCode } from "../lib/errorMessage";
 import {
   extractCaptionHints,
@@ -46,7 +47,6 @@ import { sortDependencyCandidates } from "../lib/sortOrder";
 import { recencyRankLookup } from "../lib/recentlyViewed";
 import {
   projectActivationPromptFromSnapshot,
-  refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
@@ -86,11 +86,13 @@ function cardClass(active: boolean) {
 export function TaskPlanningSheet({
   task,
   onClose,
+  onFailure,
   initialTarget,
   suspended = false,
 }: {
   task: Task;
   onClose: () => void;
+  onFailure?: (cause: unknown) => void;
   initialTarget?: TaskPlanningTarget;
   suspended?: boolean;
 }) {
@@ -188,8 +190,25 @@ export function TaskPlanningSheet({
     Partial<Record<"scheduledDate" | "dueDate", TemporalCaptionHint>>
   >({});
   const [dependencyQuery, setDependencyQuery] = useState("");
-  const [dependencyResults, setDependencyResults] = useState<Task[]>([]);
-  const [dependencyError, setDependencyError] = useState<string | null>(null);
+  const [dependencyMutationError, setDependencyError] = useState<string | null>(null);
+  const dependencySearch = useAsync(
+    async (signal) => {
+      if (!dependencyQuery.trim() || suspended) return [];
+      try {
+        return await api.searchTasks({ text: dependencyQuery, kinds: ["action"] });
+      } catch (cause) {
+        if (!signal.aborted) onFailure?.(cause);
+        throw cause;
+      }
+    },
+    [dependencyQuery, baselineTask.id, suspended],
+  );
+  const dependencyResults = useMemo(() =>
+    sortDependencyCandidates(dependencySearch.data ?? [], baselineTask, dependencyQuery, locale, {
+      recencyRank: recencyRankLookup("task"),
+    }).slice(0, 8),
+  [dependencySearch.data, baselineTask, dependencyQuery, locale]);
+  const dependencyError = dependencyMutationError ?? dependencySearch.error ?? dependencySearch.refreshError;
   const [dependencyBusy, setDependencyBusy] = useState<number | null>(null);
   const [followUpOutcome, setFollowUpOutcome] = useState("");
   const [followUpChoice, setFollowUpChoice] = useState<"continue" | "resolve">("continue");
@@ -560,26 +579,6 @@ export function TaskPlanningSheet({
     setNotBeforeTime(time);
   };
 
-  const searchDependencies = async (query: string) => {
-    setDependencyQuery(query);
-    setDependencyError(null);
-    if (!query.trim()) {
-      setDependencyResults([]);
-      return;
-    }
-    try {
-      const results = await api.searchTasks({ text: query, kinds: ["action"] });
-      setDependencyResults(
-        sortDependencyCandidates(results, baselineTask, query, locale, {
-          recencyRank: recencyRankLookup("task"),
-        }).slice(0, 8),
-      );
-    } catch (cause) {
-      setDependencyError(localizedErrorMessage(cause, strings));
-      setDependencyResults([]);
-    }
-  };
-
   // All revision-conflict entry points share the same three-way reconciliation:
   // untouched fields refresh from the server, local-only edits remain drafts,
   // and divergent edits require an explicit choice before any retry is allowed.
@@ -689,10 +688,10 @@ export function TaskPlanningSheet({
         : await api.addDependency(baselineTask.id, dependsOnTaskId, expectedTaskRevision);
       setBaselineTask(updated);
       setExpectedTaskRevision(updated.revision);
-      setDependencyResults([]);
       setDependencyQuery("");
     } catch (cause) {
-      const latest = await refreshTaskAfterConflict(cause, baselineTask.id);
+      onFailure?.(cause);
+      const latest = await refreshTaskAfterConflict(cause, baselineTask.id, onFailure);
       if (latest) {
         reconcilePlanningDraft(latest, baselineTask);
       }
@@ -751,7 +750,8 @@ export function TaskPlanningSheet({
         }
       }
     } catch (cause) {
-      const latest = await refreshTaskAfterConflict(cause, baselineTask.id);
+      onFailure?.(cause);
+      const latest = await refreshTaskAfterConflict(cause, baselineTask.id, onFailure);
       if (latest) {
         reconcilePlanningDraft(latest, baselineTask);
       }
@@ -805,6 +805,7 @@ export function TaskPlanningSheet({
     }
     const nextRemindersChanged = JSON.stringify(plannedReminders) !== JSON.stringify(baselineTask.reminders);
     const priorBaseline = baselineTask;
+    let attemptedPatch: UpdateTaskInput | null = null;
     setSaving(true);
     setError(null);
     try {
@@ -825,6 +826,7 @@ export function TaskPlanningSheet({
         ...(externalWait !== undefined ? { externalWait } : {}),
         ...(titleChanged ? { title: cleanedTitle } : {}),
       };
+      attemptedPatch = patch;
       const activationResolution = activationPrompt
         ? projectActivationResolutionFromPrompt(activationPrompt)
         : null;
@@ -840,36 +842,34 @@ export function TaskPlanningSheet({
         }
       }
       const apiPatch = activationPrompt?.projects.length && activationResolution ? { ...patch, activationResolution } : patch;
-      const { reminders: _draftReminders, ...optimisticPatchBase } = patch;
-      const optimisticPatch = {
-        ...optimisticPatchBase,
-        ...(nextRemindersChanged ? { reminders: baselineTask.reminders } : {}),
-        ...(recurrenceEnabled && (recurrenceChanged || scheduledChanged) && recurrenceDeadline !== null ? { dueDate: recurrenceDeadline } : {}),
-        ...(externalWait !== undefined
-          ? {
-              externalWait:
-                externalWait === null
-                  ? null
-                  : { waitingFor: externalWait.waitingFor, revisitDate: null },
-            }
-          : {}),
-      };
       await taskActions.update(
         { ...baselineTask, revision: expectedTaskRevision },
         apiPatch,
-        optimisticPatch,
         true,
       );
       onClose();
     } catch (cause) {
-      const latestTask = await refreshTaskAfterConflict(cause, baselineTask.id);
+      onFailure?.(cause);
+      const latestTask = await refreshTaskAfterConflict(cause, baselineTask.id, onFailure);
       if (latestTask !== null) {
         reconcilePlanningDraft(latestTask, priorBaseline);
       }
-      const prompt = baselineTask.projectId === null
-        ? null
-        : await refreshProjectActivationPrompt(cause, baselineTask.projectId, activationPrompt);
-      if (prompt) setActivationState({ fingerprint: draftFingerprint, prompt });
+      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
+        setActivationState(null);
+        if (attemptedPatch !== null) {
+          try {
+            const preview = await api.previewTaskUpdate(baselineTask.id, {
+              ...attemptedPatch,
+              expectedRevision: latestTask?.revision ?? expectedTaskRevision,
+            });
+            if (preview.activatingProjects.length) setActivationState({
+              fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision),
+            });
+          } catch (refreshCause) {
+            onFailure?.(refreshCause);
+          }
+        }
+      }
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -1307,7 +1307,10 @@ export function TaskPlanningSheet({
                 id={`planning-prerequisites-${baselineTask.id}`}
                 value={dependencyQuery}
                 disabled={saving || dependencyBusy !== null || planningConflicts.length > 0}
-                onChange={(event) => void searchDependencies(event.target.value)}
+                onChange={(event) => {
+                  setDependencyQuery(event.target.value);
+                  setDependencyError(null);
+                }}
                 placeholder={strings.prerequisitesSearchHint}
               />
               {dependencyError ? <p className="human-date-error" role="alert">{dependencyError}</p> : null}

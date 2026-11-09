@@ -1,15 +1,13 @@
-import { useRetentionInteraction } from "../lib/useRetentionInteraction";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
-import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow, type TaskWorkflowState } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskStructureSheet } from "./TaskStructureSheet";
-import { TaskSplitSheet } from "./TaskSplitSheet";
+import { discardTaskSplitDraft, TaskSplitSheet } from "./TaskSplitSheet";
 import { WorkClarificationSheet } from "./WorkClarificationSheet";
 import { TaskPrioritySheet } from "./TaskPrioritySheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
@@ -21,6 +19,8 @@ import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
+import { BottomSheet } from "./BottomSheet";
+import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 
 /**
  * The single host for every focused task workflow reachable through a
@@ -38,6 +38,16 @@ import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailConte
 export function TaskWorkflowHost() {
   const workflow = useTaskWorkflow();
   const taskDetail = useTaskDetail();
+  const { currentMemberId } = useIdentity();
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const current = useRef({ opening: workflow.current, currentMemberId });
+  current.current = { opening: workflow.current, currentMemberId };
+  const openings = useRef(new WeakMap<TaskWorkflowState, number>());
+  const sequence = useRef(0);
   useEffect(() => {
     if (workflow.detailInspection && taskDetail.openTaskId === null) {
       const previous = workflow.detailInspection.previousDetail;
@@ -51,35 +61,80 @@ export function TaskWorkflowHost() {
   const foreground = workflow.current === workflow.detailInspection?.planningWorkflow
     ? null : workflow.current;
   return <>
-    {[...retained.map((inspection) => inspection.planningWorkflow), foreground].map((state, index) =>
-      <TaskWorkflowContent key={index} state={state} suspended={index < retained.length} />)}
+    {[...retained.map((inspection) => inspection.planningWorkflow), foreground].map((state, index) => {
+      if (!state) return null;
+      if (!openings.current.has(state)) openings.current.set(state, ++sequence.current);
+      return <TaskWorkflowContent
+        key={`${currentMemberId}:${openings.current.get(state)}`}
+        state={state}
+        suspended={index < retained.length}
+        isCurrent={() => mounted.current && current.current.opening === state && current.current.currentMemberId === currentMemberId}
+      />;
+    })}
   </>;
 }
 
-function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflowState | null; suspended?: boolean }) {
+function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
+  state: TaskWorkflowState;
+  suspended?: boolean;
+  isCurrent: () => boolean;
+}) {
   const workflow = useTaskWorkflow();
   const strings = useStrings();
-  const { members } = useIdentity();
+  const { members, currentMemberId } = useIdentity();
   const taskActions = useTaskActions();
   const taskDetail = useTaskDetail();
   const location = useLocation();
   const navigate = useNavigate();
-  const dispatch = useWorkItemCommands();
-  const taskId = state?.taskId ?? null;
-  const { data: fetchedTask, reload } = useAsync(
-    () => (taskId !== null ? api.getTask(taskId) : Promise.resolve(null)),
-    [taskId],
+  const taskId = state.taskId;
+  const [endedError, setEndedError] = useState<string | null>(null);
+  const [requirementsEpoch, setRequirementsEpoch] = useState(0);
+  const ended = useRef(false);
+  const endOnDenied = (cause: unknown) => {
+    if (isCurrent() && isReadAccessError(cause)) {
+      if (state.kind === "split") discardTaskSplitDraft(taskId, currentMemberId);
+      ended.current = true;
+      setEndedError(localizedErrorMessage(cause, strings));
+    }
+  };
+  const run = async (command: () => Promise<unknown>) => {
+    try {
+      await command();
+    } catch (cause) {
+      endOnDenied(cause);
+      if (isCurrent() && !ended.current && state.kind === "completeWithCriteria" &&
+        isStaleWriteConflict(cause)) {
+        setRequirementsEpoch((value) => value + 1);
+      }
+      throw cause;
+    }
+  };
+  const { data: task, loading, error, reload } = useAsync(
+    async (signal) => {
+      if (ended.current) return null;
+      try {
+        return await api.getTask(taskId);
+      } catch (cause) {
+        if (!signal.aborted) endOnDenied(cause);
+        throw cause;
+      }
+    },
+    [taskId, requirementsEpoch],
   );
-  useRetentionInteraction(taskId, taskActions.pauseRetention, taskId !== null);
-  const retained = taskId !== null ? taskActions.retained.get(taskId) : undefined;
-  const task = fetchedTask ? taskActions.projectTask(fetchedTask) : retained ?? null;
-
-  useEffect(() => {
-    if (taskId !== null) reload();
-  }, [taskId, reload]);
-
-  if (!state || !task) return null;
-  const close = workflow.close;
+  const dismiss = () => { if (isCurrent()) workflow.close(); };
+  const close = () => { if (!ended.current) dismiss(); };
+  if (!endedError && !task && loading) return suspended ? null : <p role="status">{strings.loading}</p>;
+  if (endedError || !task) {
+    if (suspended) return null;
+    return <BottomSheet title={strings.error} onClose={dismiss}>
+      <div className="stack">
+        {endedError || error ? <p role="alert">{endedError ?? error}</p> : requirementsEpoch > 0 ? <p role="alert">{strings.activationRequirementsChanged}</p> : null}
+        {!endedError && loading ? <p role="status">{strings.loading}</p> : null}
+        {!endedError && error ? <button className="btn" onClick={reload}>{strings.retry}</button> : null}
+        <button className="btn" onClick={dismiss}>{strings.close}</button>
+      </div>
+    </BottomSheet>;
+  }
 
   switch (state.kind) {
     case "plan":
@@ -89,19 +144,20 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
           task={task}
           suspended={suspended}
           onClose={close}
+          onFailure={endOnDenied}
           {...(state.planningTarget
             ? { initialTarget: state.planningTarget }
             : {})}
         />
       );
     case "availability":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} initialTarget="availability" />;
+      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} onFailure={endOnDenied} initialTarget="availability" />;
     case "deferClarification":
-      return <TaskClarificationSheet task={task} onClose={close} />;
+      return <TaskClarificationSheet task={task} onClose={close} onFailure={endOnDenied} />;
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
     case "waitingLifecycle":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} initialTarget="waiting" />;
+      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} onFailure={endOnDenied} initialTarget="waiting" />;
     case "split":
       return (
         <TaskSplitSheet
@@ -113,10 +169,13 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
           projectId={task.projectId}
           existingChildren={task.children}
           onClose={close}
+          onFailure={endOnDenied}
+          isCurrent={() => isCurrent() && !ended.current}
         />
       );
     case "refinement":
-      return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onStarted={(intakeId) => {
+      return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onFailure={endOnDenied} onStarted={(intakeId) => {
+        if (!isCurrent() || ended.current) return;
         const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
         const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
         close();
@@ -141,27 +200,27 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
           }
           onClose={close}
           onSelect={async ({ ownerMemberId, ownerInheritanceMode }, cleanedTitle) => {
-            await taskActions.assignOwner(
+            await run(() => taskActions.assignOwner(
               task,
               ownerMemberId,
               ownerInheritanceMode,
               cleanedTitle && cleanedTitle !== task.title
                 ? { title: cleanedTitle }
                 : {},
-            );
+            ));
           }}
         />
       );
     case "changeProject":
-      return <MoveTaskSheet task={task} onClose={close} />;
+      return <MoveTaskSheet task={task} onClose={close} onFailure={endOnDenied} isCurrent={() => isCurrent() && !ended.current} />;
     case "priority":
-      return <TaskPrioritySheet task={task} onClose={close} />;
+      return <TaskPrioritySheet task={task} onClose={close} onFailure={endOnDenied} />;
     case "tags":
-      return <TaskTagsSheet task={task} onClose={close} />;
+      return <TaskTagsSheet task={task} onClose={close} onFailure={endOnDenied} />;
     case "contexts":
-      return <TaskContextsSheet task={task} onClose={close} />;
+      return <TaskContextsSheet task={task} onClose={close} onFailure={endOnDenied} />;
     case "convertToProject":
-      return <TaskConvertToProjectSheet key={task.id} task={task} onClose={close} />;
+      return <TaskConvertToProjectSheet key={task.id} task={task} onClose={close} onFailure={endOnDenied} isCurrent={() => isCurrent() && !ended.current} />;
     case "completeWithCriteria":
       return (
         <CompleteWithCriteriaSheet
@@ -170,7 +229,7 @@ function TaskWorkflowContent({ state, suspended = false }: { state: TaskWorkflow
           onClose={close}
           onRefresh={reload}
           onComplete={async (criteriaToCheck, childPolicy) => {
-            await taskActions.complete(task, childPolicy, criteriaToCheck, true);
+            await run(() => taskActions.complete(task, childPolicy, criteriaToCheck, true));
           }}
         />
       );

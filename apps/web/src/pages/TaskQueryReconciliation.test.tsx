@@ -30,16 +30,13 @@ describe("nested task query reconciliation", () => {
       const actions = useTaskActions();
       return <>
         <button onClick={() => void actions.update(child, { title: renamed.title })}>Rename nested task</button>
-        <output data-testid="nested-overlay">{String(actions.retained.has(child.id))}</output>
+        <output data-testid="nested-pending">{String(actions.isPending(child.id))}</output>
       </>;
     }
     renderWithProviders(<><Page /><Controls /></>);
     await screen.findByText(parent.title);
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Rename nested task" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(screen.getByTestId("nested-overlay")).toHaveTextContent("true");
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    expect(screen.getByTestId("nested-overlay")).toHaveTextContent("false");
+    await screen.findByText(renamed.title);
+    expect(screen.getByTestId("nested-pending")).toHaveTextContent("false");
   });
 });

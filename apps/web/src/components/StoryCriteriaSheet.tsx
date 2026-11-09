@@ -11,7 +11,7 @@ import { BottomSheet } from "./BottomSheet";
  * list (and losing the reviewing flow) just to reach the project detail
  * page.
  */
-export function StoryCriteriaSheet({ story, onClose }: { story: Project; onClose: () => void }) {
+export function StoryCriteriaSheet({ story, onClose, onFailure }: { story: Project; onClose: () => void; onFailure?: (cause: unknown) => void }) {
   const strings = useStrings();
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +32,7 @@ export function StoryCriteriaSheet({ story, onClose }: { story: Project; onClose
           workItemId={story.id}
           criteria={story.acceptanceCriteria}
           onError={setError}
+          {...(onFailure ? { onFailure } : {})}
           autoFocusNewCriterion
         />
         <button type="button" className="btn btn-block" onClick={onClose}>

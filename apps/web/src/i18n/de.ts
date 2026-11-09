@@ -1193,6 +1193,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
 
   // --- Project clarification -------------------------------------------
   activateStory: "Projekt starten",
+  activationDecisionHint: "Prüfe die aktuellen Voraussetzungen und bestätige deine Auswahl.",
+  activationRequirementsChanged: "Der Eintrag wurde geändert. Prüfe die aktuellen Angaben und bestätige erneut.",
   activationProgressRequired:
     "Füge zuerst einen ausführbaren nächsten Schritt hinzu oder plane bewusst einen gesunden Wartepfad.",
   activationReadyHint: "Das Projekt ist startklar. Starte es mit einer eigenen Entscheidung.",

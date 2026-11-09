@@ -111,10 +111,12 @@ function renderProjectStructure(projectId: number) {
   );
 }
 
-function renderProjectConversion(project: ReturnType<typeof makeProject>) {
-  return renderWithProviders(
+async function renderProjectConversion(project: ReturnType<typeof makeProject>) {
+  const result = renderWithProviders(
     <ProjectConvertToTaskSheet story={project} onClose={vi.fn()} />,
   );
+  await screen.findByLabelText("Titel");
+  return result;
 }
 
 describe("TaskStructureSheet routing", () => {
@@ -241,7 +243,7 @@ describe("TaskStructureSheet routing", () => {
       tasks: [],
     });
     mockedApi.convertStoryToTask.mockResolvedValue(makeTask({ id: story.id }));
-    renderProjectConversion(story);
+    await renderProjectConversion(story);
 
     const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
     await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
@@ -270,7 +272,7 @@ describe("TaskStructureSheet routing", () => {
     mockedApi.convertStoryToTask
       .mockRejectedValueOnce(stale)
       .mockResolvedValueOnce(makeTask({ id: story.id }));
-    renderProjectConversion(story);
+    await renderProjectConversion(story);
 
     const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
     const convertButton = within(sheet).getByRole("button", { name: "Zur Aufgabe machen" });
@@ -298,7 +300,7 @@ describe("TaskStructureSheet routing", () => {
         name: "ApiError", code: "stale_write_conflict", details: {},
       }))
       .mockResolvedValueOnce(makeTask({ id: story.id }));
-    renderProjectConversion(story);
+    await renderProjectConversion(story);
 
     const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
     await userEvent.clear(within(sheet).getByLabelText("Titel"));
@@ -325,7 +327,7 @@ describe("TaskStructureSheet routing", () => {
         name: "ApiError", code: "stale_write_conflict", details: {},
       }))
       .mockResolvedValueOnce(makeTask({ id: story.id }));
-    renderProjectConversion(story);
+    await renderProjectConversion(story);
 
     const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
     await userEvent.clear(within(sheet).getByLabelText("Titel"));
@@ -356,7 +358,7 @@ describe("TaskStructureSheet routing", () => {
         name: "ApiError", code: "stale_write_conflict", details: {},
       }))
       .mockResolvedValueOnce(makeTask({ id: story.id }));
-    renderProjectConversion(story);
+    await renderProjectConversion(story);
 
     const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
     await userEvent.clear(within(sheet).getByLabelText("Titel"));
@@ -394,7 +396,7 @@ describe("TaskStructureSheet routing", () => {
         name: "ApiError", code: "stale_write_conflict", details: {},
       }))
       .mockResolvedValueOnce(makeTask({ id: story.id }));
-    renderProjectConversion(story);
+    await renderProjectConversion(story);
 
     const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
     await userEvent.clear(within(sheet).getByLabelText("Titel"));
@@ -426,7 +428,7 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Zur Aufgabe machen" }));
 
     const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
-    expect(within(sheet).getByText("1 Unteraufgaben bleiben erhalten.")).toBeInTheDocument();
+    expect(await within(sheet).findByText("1 Unteraufgaben bleiben erhalten.")).toBeInTheDocument();
     const convertButton = within(sheet).getByRole("button", { name: "Zur Aufgabe machen" });
     expect(convertButton).toBeEnabled();
     await userEvent.click(convertButton);
@@ -609,7 +611,7 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectActive }));
     const picker = await screen.findByRole("dialog");
     expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
-    expect(within(picker).getByText(strings.commitmentResolutionHint)).toBeInTheDocument();
+    expect(within(picker).getByText(strings.activationDecisionHint)).toBeInTheDocument();
     await userEvent.selectOptions(within(picker).getByLabelText(strings.commitmentDriverFor(project.title)), "1");
     if (needsPath) await userEvent.type(within(picker).getByLabelText(strings.commitmentNextActionLabel), "Ersten Schritt festlegen");
     await userEvent.click(within(picker).getByRole("button", { name: strings.activateStory }));
@@ -636,7 +638,7 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectActive }));
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledOnce());
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
-    expect(screen.queryByText(strings.commitmentResolutionHint)).not.toBeInTheDocument();
+    expect(screen.queryByText(strings.activationDecisionHint)).not.toBeInTheDocument();
   });
 
   it("offers step entry, move, and conversion for a captured inbox item", async () => {

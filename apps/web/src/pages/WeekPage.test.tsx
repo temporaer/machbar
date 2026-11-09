@@ -410,6 +410,10 @@ describe("WeekPage", () => {
     renderWithProviders(<WeekPage />);
     await screen.findByRole("button", { name: /^IKEA Lieferung/ });
 
+    mockedApi.getWeekAgenda.mockResolvedValue(agenda({
+      days: Array.from({ length: 7 }, (_, index) =>
+        day(addIsoCalendarDays("2026-09-07", index), index === 3 ? [{ ...item, attentionDate: "2026-09-10" }] : [])),
+    }));
     const transfer = dataTransfer();
     fireEvent.dragStart(card("IKEA Lieferung"), { dataTransfer: transfer });
     fireEvent.drop(screen.getByLabelText("Do., 10."), { dataTransfer: transfer });
@@ -422,7 +426,7 @@ describe("WeekPage", () => {
       }),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
-    expect(within(screen.getByLabelText("Do., 10.")).getByRole("button", { name: /^IKEA Lieferung/ })).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("Do., 10.")).findByRole("button", { name: /^IKEA Lieferung/ })).toBeInTheDocument();
   });
 
   it("dropping a revisit card onto unplanned clears revisitDate and falls back to an in-week due date", async () => {
@@ -456,6 +460,10 @@ describe("WeekPage", () => {
     renderWithProviders(<WeekPage />);
     await screen.findByRole("button", { name: /^Spedition anrufen/ });
 
+    mockedApi.getWeekAgenda.mockResolvedValue(agenda({
+      days: Array.from({ length: 7 }, (_, index) =>
+        day(addIsoCalendarDays("2026-09-07", index), index === 5 ? [{ ...item, placement: "due", attentionDate: "2026-09-12" }] : [])),
+    }));
     const transfer = dataTransfer();
     fireEvent.dragStart(card("Spedition anrufen"), { dataTransfer: transfer });
     fireEvent.drop(screen.getByLabelText("Ohne Planung"), { dataTransfer: transfer });
@@ -468,7 +476,7 @@ describe("WeekPage", () => {
       }),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
-    expect(within(screen.getByLabelText("Sa., 12.")).getByRole("button", { name: /^Spedition anrufen/ })).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("Sa., 12.")).findByRole("button", { name: /^Spedition anrufen/ })).toBeInTheDocument();
     expect(within(screen.getByLabelText("Ohne Planung")).queryByRole("button", { name: /^Spedition anrufen/ })).not.toBeInTheDocument();
   });
 
@@ -675,6 +683,10 @@ describe("WeekPage", () => {
     renderWithProviders(<WeekPage />);
     await screen.findByRole("button", { name: /^Formular einreichen/ });
 
+    mockedApi.getWeekAgenda.mockResolvedValue(agenda({
+      days: Array.from({ length: 7 }, (_, index) =>
+        day(addIsoCalendarDays("2026-09-07", index), index === 4 ? [{ ...item, placement: "due", scheduledDate: null, attentionDate: "2026-09-11" }] : [])),
+    }));
     const transfer = dataTransfer();
     fireEvent.dragStart(card("Formular einreichen"), { dataTransfer: transfer });
     fireEvent.drop(screen.getByLabelText("Ohne Planung"), { dataTransfer: transfer });
@@ -686,7 +698,7 @@ describe("WeekPage", () => {
       }),
     );
     expect(
-      within(screen.getByLabelText("Fr., 11.")).getByRole("button", {
+      await within(screen.getByLabelText("Fr., 11.")).findByRole("button", {
         name: /^Formular einreichen/,
       }),
     ).toBeInTheDocument();

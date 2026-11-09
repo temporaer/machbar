@@ -1242,6 +1242,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   allEmpty: "No matching projects or tasks.",
 
   activateStory: "Start project",
+  activationDecisionHint: "Review the current requirements and confirm your choices.",
+  activationRequirementsChanged: "This item changed. Review the current details and confirm again.",
   activationProgressRequired:
     "Add an executable next action first, or deliberately plan a healthy waiting path.",
   activationReadyHint: "This project is ready. Starting it is a separate decision.",

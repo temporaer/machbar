@@ -284,7 +284,6 @@ export function useWorkItemCommands() {
           taskActions.update(
             command.task,
             { revisitAt: null, scheduledDate },
-            { revisitAt: null, scheduledDate },
           );
           return;
         }
@@ -359,7 +358,6 @@ export function useWorkItemCommands() {
           taskActions.update(
             command.task,
             { additionalNextAction: nextValue },
-            { additionalNextAction: nextValue },
           );
           return;
         }
@@ -374,7 +372,6 @@ export function useWorkItemCommands() {
           return taskActions.update(
             command.task,
             { discussionRequested: command.requested },
-            { discussionRequested: command.requested },
             true,
           );
         case "task.setClarification":
@@ -382,13 +379,11 @@ export function useWorkItemCommands() {
           return taskActions.update(
             command.task,
             { needsClarification: command.requested },
-            { needsClarification: command.requested, clarificationRevisitDate: null },
             true,
           );
         case "workItem.schedule":
           return taskActions.update(
             command.item.task,
-            { scheduledDate: command.date },
             { scheduledDate: command.date },
             true,
           );
@@ -396,7 +391,6 @@ export function useWorkItemCommands() {
           if (command.item.role === "task") {
             return taskActions.update(
               command.item.task,
-              { dueDate: command.date },
               { dueDate: command.date },
               true,
             );
@@ -431,7 +425,6 @@ export function useWorkItemCommands() {
             return taskActions.update(
               command.item.task,
               { revisitAt },
-              { revisitAt },
               true,
             );
           }
@@ -441,7 +434,6 @@ export function useWorkItemCommands() {
               : null;
             return projectActions.update(
               command.item.project,
-              { revisitAt },
               { revisitAt },
             );
           }
@@ -506,7 +498,6 @@ export function useWorkItemCommands() {
         case "story.setDiscussion":
           return projectActions.update(
             command.story,
-            { discussionRequested: command.requested },
             { discussionRequested: command.requested },
             true,
           );

@@ -113,16 +113,22 @@ describe("TaskConvertToProjectSheet", () => {
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(42, expect.objectContaining({ preservedStepTitle: "Authored window step" })));
   });
 
-  it("preserves decisions when a concurrent change adds requirements after preview", async () => {
+  it("reloads before requiring explicit decisions when concurrent changes add requirements", async () => {
     const task = makeTask({ id: 42, status: "captured" });
+    mockedApi.getTask.mockResolvedValue(task);
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
-    mockedApi.convertTaskToStory.mockRejectedValueOnce(Object.assign(new Error("changed"), { code: "project_commitment_resolution_required", details: {
+    mockedApi.convertTaskToStory.mockRejectedValueOnce(Object.assign(new Error("changed"), { name: "ApiError", code: "project_commitment_resolution_required", details: {
       targetRevision: 1, expectedProjects: [{ projectId: 42, revision: 1 }],
       projects: [{ projectId: 42, title: "Vorhaben", revision: 1, ownerMemberId: null, required: ["driver"] }],
     } }));
     renderWithProviders(<TaskConvertToProjectSheet task={task} onClose={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: strings.convertToProjectActive }));
-    await userEvent.selectOptions(await screen.findByLabelText(strings.commitmentDriverFor("Vorhaben")), "1");
+    const driver = await screen.findByLabelText(strings.commitmentDriverFor("Vorhaben"));
+    expect(driver).toHaveValue("");
+    expect(mockedApi.getTask).toHaveBeenCalledTimes(2);
+    expect(mockedApi.convertTaskToStory).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: strings.activateStory })).toBeDisabled();
+    await userEvent.selectOptions(driver, "1");
     await userEvent.click(screen.getByRole("button", { name: strings.activateStory }));
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledTimes(2));
     expect(mockedApi.convertTaskToStory).toHaveBeenLastCalledWith(42, expect.objectContaining({ activationResolution: { expectedProjects: [{ projectId: 42, revision: 1 }], drivers: [{ projectId: 42, ownerMemberId: 1 }] } }));
@@ -137,25 +143,33 @@ describe("TaskConvertToProjectSheet", () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
   });
-  it("retains authored decisions while refreshing a stale conversion snapshot", async () => {
-    const task = makeTask({ id: 42, status: "captured", revision: 1 });
+  it("retains authored step text but resets compound choices after a stale conversion", async () => {
+    const task = makeTask({ id: 42, status: "captured", revision: 1, scheduledDate: "2026-10-20" });
     const decision = (revision: number) => ({ targetRevision: revision, expectedProjects: [{ projectId: 42, revision }], projects: [{ projectId: 42, title: "Vorhaben", revision, ownerMemberId: null, required: ["driver", "progressPath"] as ("driver" | "progressPath")[] }] });
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.previewTaskConversion.mockResolvedValueOnce({ decision: decision(1), activatingProjects: [{ id: 42, title: "Vorhaben" }] }).mockResolvedValueOnce({ decision: decision(2), activatingProjects: [{ id: 42, title: "Vorhaben" }] });
     mockedApi.getTask.mockResolvedValueOnce(task).mockResolvedValueOnce({ ...task, revision: 2 });
     mockedApi.convertTaskToStory.mockRejectedValueOnce(Object.assign(new Error("stale"), { name: "ApiError", code: "stale_write_conflict" }));
     renderWithProviders(<TaskConvertToProjectSheet task={task} onClose={vi.fn()} />);
+    const retainedStep = screen.getByLabelText(strings.convertToProjectPreservedStep);
+    await userEvent.clear(retainedStep);
+    await userEvent.type(retainedStep, "Authored retained step");
     await userEvent.click(screen.getByRole("button", { name: strings.convertToProjectActive }));
     await userEvent.selectOptions(await screen.findByLabelText(strings.commitmentDriverFor("Vorhaben")), "1");
-    const title = screen.getByRole("textbox");
+    const title = screen.getByLabelText(strings.commitmentNextActionLabel);
     await userEvent.type(title, "Authored next action");
     await userEvent.click(screen.getByRole("button", { name: strings.activateStory }));
     await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledTimes(2));
     await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectActive }));
-    expect(await screen.findByDisplayValue("Authored next action")).toBeInTheDocument();
-    expect(screen.getByLabelText(strings.commitmentDriverFor("Vorhaben"))).toHaveValue("1");
+    expect(await screen.findByLabelText(strings.commitmentDriverFor("Vorhaben"))).toHaveValue("");
+    expect(screen.getByLabelText(strings.commitmentNextActionLabel)).toHaveValue("");
+    expect(screen.getByLabelText(strings.convertToProjectPreservedStep)).toHaveValue("Authored retained step");
+    expect(screen.getByRole("button", { name: strings.activateStory })).toBeDisabled();
+    expect(mockedApi.convertTaskToStory).toHaveBeenCalledTimes(1);
+    await userEvent.selectOptions(screen.getByLabelText(strings.commitmentDriverFor("Vorhaben")), "1");
+    await userEvent.type(screen.getByLabelText(strings.commitmentNextActionLabel), "Fresh next action");
     await userEvent.click(screen.getByRole("button", { name: strings.activateStory }));
-    expect(mockedApi.convertTaskToStory).toHaveBeenLastCalledWith(42, expect.objectContaining({ expectedRevision: 2, activationResolution: expect.objectContaining({ nextActionTitle: "Authored next action", drivers: [{ projectId: 42, ownerMemberId: 1 }] }) }));
+    expect(mockedApi.convertTaskToStory).toHaveBeenLastCalledWith(42, expect.objectContaining({ expectedRevision: 2, preservedStepTitle: "Authored retained step", activationResolution: expect.objectContaining({ nextActionTitle: "Fresh next action", drivers: [{ projectId: 42, ownerMemberId: 1 }] }) }));
   });
 
 });

@@ -25,6 +25,11 @@ export function isStaleWriteConflict(error: unknown): boolean {
   return isApiError(error) && error.code === "stale_write_conflict";
 }
 
+export function isReadAccessError(error: unknown): boolean {
+  return isApiError(error) && "status" in error &&
+    typeof error.status === "number" && [401, 403, 404].includes(error.status);
+}
+
 function stringDetail(
   details: Record<string, unknown> | undefined,
   key: string,

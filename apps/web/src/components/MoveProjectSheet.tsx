@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type ProjectDetail, type ProjectWithActions } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
-import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
+import { hasApiErrorCode, localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
 import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
 import { rememberDestination } from "../lib/recentDestinations";
 import { BottomSheet } from "./BottomSheet";
@@ -10,7 +10,9 @@ import { DestinationPicker } from "./DestinationPicker";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 /** Focused story.move workflow: selection and activation decisions remain local until one commit. */
-export function MoveProjectSheet({ story, onClose }: { story: ProjectWithActions; onClose: () => void }) {
+export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => true }: {
+  story: ProjectWithActions; onClose: () => void; onFailure?: (cause: unknown) => void; isCurrent?: () => boolean;
+}) {
   const strings = useStrings();
   const { bump } = useRefresh();
   const [source, setSource] = useState<ProjectDetail | null>(null);
@@ -30,7 +32,7 @@ export function MoveProjectSheet({ story, onClose }: { story: ProjectWithActions
     let cancelled = false;
     Promise.all([api.getProject(story.id), api.getProjects()]).then(([current, choices]) => {
       if (!cancelled) { setSource(current); setProjects(choices); }
-    }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); })
+    }).catch((cause) => { if (!cancelled) { onFailure?.(cause); setError(localizedErrorMessage(cause, strings)); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [story.id, strings]);
@@ -39,7 +41,7 @@ export function MoveProjectSheet({ story, onClose }: { story: ProjectWithActions
     setDestination(null);
     if (parentId !== null) api.getProject(parentId).then((current) => {
       if (!cancelled) setDestination(current);
-    }).catch((cause) => { if (!cancelled) setError(localizedErrorMessage(cause, strings)); });
+    }).catch((cause) => { if (!cancelled) { onFailure?.(cause); setError(localizedErrorMessage(cause, strings)); } });
     return () => { cancelled = true; };
   }, [parentId, strings]);
   const resolution = prompt ? projectActivationResolutionFromPrompt(prompt) : null;
@@ -56,15 +58,26 @@ export function MoveProjectSheet({ story, onClose }: { story: ProjectWithActions
       await api.moveProject(story.id, { parentId, expectedRevision: source.revision,
         expectedHierarchyRevisions: [...revisions].map(([id, revision]) => ({ id, revision })),
         ...(resolution ? { activationResolution: resolution } : {}) });
-      rememberDestination("project", parentId);
       bump();
+      if (!isCurrent()) return;
+      rememberDestination("project", parentId);
       onClose();
     } catch (cause) {
-      const nextPrompt = projectActivationPromptFromError(cause, prompt);
-      if (nextPrompt) setPrompt(nextPrompt);
-      if (isStaleWriteConflict(cause)) {
+      if (!isCurrent()) return;
+      onFailure?.(cause);
+      const requiredPrompt = projectActivationPromptFromError(cause);
+      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
+        setPrompt(null);
         bump();
-        try { await load(); if (parentId !== null) setDestination(await api.getProject(parentId)); } catch { /* Retain the destination and decisions for retry. */ }
+        try {
+          await load();
+          if (parentId !== null) {
+            const latest = await api.getProject(parentId);
+            if (!isCurrent()) return;
+            setDestination(latest);
+          }
+          if (requiredPrompt && isCurrent()) setPrompt(requiredPrompt);
+        } catch (refreshCause) { onFailure?.(refreshCause); }
       }
       setError(localizedErrorMessage(cause, strings));
     } finally { setBusy(false); }

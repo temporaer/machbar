@@ -16,13 +16,13 @@ import {
   type UpdateGoalInput,
 } from "./api";
 import { pollCoachProposal } from "./goalCoach";
-import { useRetainedMutations } from "./useRetainedMutations";
+import { useItemMutations } from "./useItemMutations";
 
 /**
  * The single canonical mutation path for the goals & interventions journal
  * (feature spec §9). Every goal/intervention/assessment write funnels through
  * here so the Goals page never owns transport or ad-hoc optimistic state of its
- * own. Built on {@link useRetainedMutations} for shared pending/error handling
+ * own. Built on {@link useItemMutations} for shared pending/error handling
  * and the global refresh bump that revalidates the page's `useAsync` load.
  *
  * Writes are not optimistically retained: the journal is a small authored
@@ -35,7 +35,7 @@ const CREATE_GOAL_KEY = -1;
 export function useGoalActions() {
   const { locale } = useLocale();
   const { run, isPending, errors, clearError } =
-    useRetainedMutations<never>();
+    useItemMutations();
 
   const recordObservation = useCallback((id: number, input: Parameters<typeof api.recordObservation>[1]) => run({ id, mutate: () => api.recordObservation(id, input), throwOnError: true }), [run]);
 

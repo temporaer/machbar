@@ -289,12 +289,12 @@ describe("TaskRow – primary swipe direction mapping", () => {
   });
 
 
-  it("can swipe the retained crossed-out row again to reopen it", async () => {
+  it("can swipe a server-confirmed completed row to reopen it", async () => {
     const task = makeTask({ id: 9, title: "Status direkt wechseln", status: "actionable" });
     const completed = makeTask({ ...task, status: "done", revision: 2 });
     mockedApi.completeTask.mockResolvedValue(completed);
     mockedApi.reopenTask.mockResolvedValue({ ...task, revision: 3 });
-    const { container } = renderWithProviders(
+    const { container, rerender } = renderWithProviders(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
     );
     await screen.findByText("Status direkt wechseln");
@@ -308,7 +308,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
         1,
       ),
     );
-    expect(container.querySelector(".task-row-content.retained")).toBeInTheDocument();
+    rerender(<TaskOutline tasks={[completed]} emptyMessage="Nichts da" />);
 
     swipe(container, 100);
     await waitFor(() =>
@@ -410,12 +410,14 @@ describe("TaskRow – primary swipe direction mapping", () => {
   it.each(["captured", "actionable", "someday"] as const)("acknowledges clarification from the %s rail without AI or completing the task", async (status) => {
     const task = makeTask({ id: 208, status, needsClarification: true, clarificationRevisitDate: "2026-10-20", scheduledDate: "2026-10-21" });
     const resolvedStatus = status === "captured" ? "actionable" : status;
-    mockedApi.clarifyTask.mockResolvedValue({ ...task, revision: 2, status: resolvedStatus, needsClarification: false, clarificationRevisitDate: null });
-    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    const confirmed = { ...task, revision: 2, status: resolvedStatus, needsClarification: false, clarificationRevisitDate: null };
+    mockedApi.clarifyTask.mockResolvedValue(confirmed);
+    const { container, rerender } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
     await userEvent.click(kebab);
     await userEvent.click(screen.getByRole("button", { name: "Jetzt klären" }));
     await waitFor(() => expect(mockedApi.clarifyTask).toHaveBeenCalledWith(task.id, task.revision));
+    rerender(<TaskOutline tasks={[confirmed]} emptyMessage="Nichts da" />);
     expect(container.querySelector(".task-row")).toHaveClass(`task-row-surface-${resolvedStatus}`);
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(kebab).toHaveFocus();

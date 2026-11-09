@@ -53,9 +53,10 @@ export function DeveloperModeRoute({ children }: { children: ReactNode }) {
 }
 
 function IdentityAwareRefreshProvider({ children }: { children: ReactNode }) {
-  const { authEnabled, authenticated, authLoading } = useIdentity();
+  const { authEnabled, authenticated, authLoading, currentMemberId } = useIdentity();
   return (
     <RefreshProvider
+      key={`${authEnabled}:${authenticated}:${currentMemberId}`}
       remoteSyncEnabled={!authLoading && (!authEnabled || authenticated)}
     >
       <HouseholdTimezoneProvider

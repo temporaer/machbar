@@ -1,8 +1,4 @@
 import { InteractionScopeProvider } from "../lib/interactionScope";
-import { flattenTasks } from "../lib/taskHelpers";
-import { useTaskActions } from "../lib/useTaskActions";
-import { useProjectActions } from "../lib/useProjectActions";
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
@@ -15,12 +11,8 @@ import { ProjectStoryRow } from "../components/ProjectStoryRow";
 export function DiscussionPage() {
   const strings = useStrings();
   const { data, loading, error, reload } = useAsync(() => api.getDiscussion(), []);
-  const taskActions = useTaskActions(flattenTasks(data?.tasks ?? []));
-  const projectActions = useProjectActions(data?.projects ?? []);
-  const { rows: tasks } = useRetainedPlacement({ rows: data?.tasks ?? [] }, taskActions.holdingIds,
-    taskActions.projectTask);
-  const { rows: projects } = useRetainedPlacement({ rows: data?.projects ?? [] }, projectActions.holdingIds,
-    projectActions.projectStory);
+  const tasks = data?.tasks ?? [];
+  const projects = data?.projects ?? [];
   const empty = data !== null && tasks.length === 0 && projects.length === 0;
 
   return (

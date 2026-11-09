@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { ReactElement } from "react";
-import { render, fireEvent, screen, waitFor } from "@testing-library/react";
+import { render, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskOutline } from "./TaskOutline";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
@@ -235,7 +235,8 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
-      expect(await screen.findByText(/Netzwerkfehler/)).toBeInTheDocument();
+      const picker = screen.getByRole("dialog", { name: "In anderes Projekt verschieben" });
+      expect(await within(picker).findByRole("alert")).toHaveTextContent(/Netzwerkfehler/);
       // The sheet stays open — nothing to navigate to and nothing lost.
       expect(screen.getByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
     });

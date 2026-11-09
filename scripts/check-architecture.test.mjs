@@ -106,6 +106,15 @@ test("rejects deprecated primitives and hierarchy routes", () => {
   );
 });
 
+test("rejects reintroducing optimistic DTO and row-retention machinery", () => {
+  for (const name of ["useRetainedMutations", "useRetainedPlacement", "useRetentionInteraction", "retainPlacement"]) {
+    assert.deepEqual(
+      rules("apps/web/src/lib/useExample.ts", `const value = ${name}();`),
+      ["deprecated-architecture"],
+    );
+  }
+});
+
 test("allows canonical action and pure mutation modules", () => {
   assert.deepEqual(
     rules(
@@ -158,8 +167,9 @@ test("allows reads, unique operations, and explicit exceptions", () => {
     "apps/web/src/components/MoveTaskSheet.tsx",
     "apps/web/src/components/QuickAdd.tsx",
   ]) {
-    assert.deepEqual(rules(filePath, "api.moveTask(1, {});"), []);
+    assert.deepEqual(rules(filePath, "api.moveTask(1, {});"), ["canonical-task-hierarchy"]);
   }
+  assert.deepEqual(rules("apps/web/src/lib/useTaskActions.tsx", "api.moveTask(1, {});"), []);
 });
 
 test("rejects a surface rendering a focused workflow sheet itself", () => {

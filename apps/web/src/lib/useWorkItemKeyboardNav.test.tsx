@@ -363,7 +363,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1, position: 1 }));
     const first = makeTask({ id: 1, title: "Erste", position: 0 });
     const second = makeTask({ id: 2, title: "Zweite", position: 1 });
-    renderWithProviders(
+    const { rerender } = renderWithProviders(
       <>
         <WorkItemKeyboardNavMount />
         <TaskOutline tasks={[first, second]} emptyMessage="Nichts da" organizable />
@@ -376,8 +376,22 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
 
     await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
 
-    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalled());
-    await waitFor(() => expect(handleFor("Erste")).toHaveFocus());
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(first.id, {
+      parentTaskId: null, projectId: first.projectId, position: 1, expectedRevision: first.revision,
+    }));
+    expect(mainButtonFor("Erste")).toHaveFocus();
+    expect(screen.getAllByRole("button", { name: /^(Erste|Zweite)$/ }).map(button => button.textContent))
+      .toEqual(["Erste", "Zweite"]);
+
+    rerender(
+      <>
+        <WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[{ ...second, position: 0 }, { ...first, position: 1, revision: 2 }]} emptyMessage="Nichts da" organizable />
+      </>,
+    );
+    expect(screen.getAllByRole("button", { name: /^(Erste|Zweite)$/ }).map(button => button.textContent))
+      .toEqual(["Zweite", "Erste"]);
+    expect(mainButtonFor("Erste")).toHaveFocus();
   });
 
   it("Alt+ArrowRight (indent/reparent) keeps focus on the moved item", async () => {

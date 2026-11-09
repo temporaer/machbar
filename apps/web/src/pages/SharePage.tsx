@@ -363,12 +363,6 @@ function SharePageContent({
     return appendTextBlock(withImportedContent, note.trim());
   };
 
-  const reloadTargets = () => {
-    projectsState.reload();
-    tasksState.reload();
-    agendaState.reload();
-  };
-
   const isReferenceDestination = (option: ShareOption) =>
     option.kind === "project" ||
     (option.kind === "task" && option.taskKind === "reference");
@@ -415,7 +409,6 @@ function SharePageContent({
       if (isStaleWriteConflict(cause)) {
         bump();
         setPendingConflict(null);
-        reloadTargets();
       }
       setError(localizedErrorMessage(cause, strings));
     } finally {

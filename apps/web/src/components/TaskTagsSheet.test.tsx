@@ -69,7 +69,7 @@ describe("TaskTagsSheet", () => {
 
     const inheritedField = await screen.findByText("Geerbt");
     expect(inheritedField.closest(".field")).toHaveTextContent("Garten");
-    expect(screen.getAllByText("Einkauf")).not.toHaveLength(0);
+    expect(await screen.findAllByText("Einkauf")).not.toHaveLength(0);
     expect(screen.getAllByText("Garten")).toHaveLength(1);
   });
 });

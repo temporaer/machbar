@@ -1,14 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Task } from "@machbar/shared";
-import { api } from "./api";
-import { useRefresh } from "./refresh";
+import { useTaskActions } from "./useTaskActions";
 import { useStrings } from "./strings";
-import type { Strings } from "./strings";
-import { isStaleWriteConflict, localizedErrorMessage } from "./errorMessage";
+import { isStaleWriteConflict } from "./errorMessage";
 import { useInteractionScope } from "./interactionScope";
 import {
   INDENT_WIDTH,
-  applyMove,
   locateTask,
   outlineRootGroup,
   planMove,
@@ -40,7 +37,6 @@ export interface OutlineOrganizeValue {
    * addressed parent expands itself (collapse state lives per row).
    */
   expandRequest: { taskId: number } | null;
-  errors: Record<number, string>;
   registerRow: (taskId: number, row: OutlineRow, element: HTMLElement | null) => void;
   /** Arms a pointer drag; it only becomes real once the pointer actually moves. */
   beginDrag: (taskId: number, clientX: number, clientY: number) => void;
@@ -49,7 +45,6 @@ export interface OutlineOrganizeValue {
   /** True exactly once after a real drag, so the handle's click never re-triggers anything else. */
   consumeDragClick: () => boolean;
   moveBy: (taskId: number, direction: OrganizeDirection) => void;
-  clearError: (taskId: number) => void;
 }
 
 const OutlineOrganizeContext = createContext<OutlineOrganizeValue | null>(null);
@@ -81,15 +76,9 @@ function sameProjection(a: DropProjection | null, b: DropProjection | null): boo
   return a.parentId === b.parentId && a.depth === b.depth && a.index === b.index && a.beforeTaskId === b.beforeTaskId;
 }
 
-function errorMessage(err: unknown, strings: Strings): string {
-  const detail = localizedErrorMessage(err, strings);
-  return detail ? `${strings.moveFailed}: ${detail}` : strings.moveFailed;
-}
-
 /**
  * Owns everything about structurally editing one outline: the pointer drag
- * session, the equivalent keyboard/toolbar moves, the optimistic tree and
- * its rollback.
+ * session and the equivalent keyboard/toolbar moves.
  *
  * `organizable` is the caller's explicit statement that this outline shows
  * one *complete* sibling group (a project's own task tree). Compiled views
@@ -98,14 +87,11 @@ function errorMessage(err: unknown, strings: Strings): string {
  * it would be applied to the full group on the server. The structural
  * shape of the data is then still checked on top of that opt-in.
  *
- * The optimistic tree carries the moved task's deterministic next revision.
- * It remains active across unrelated refresh responses until authoritative
- * data reaches that revision. A rejected move restores the previous tree
- * in place and surfaces a localized message on the affected row.
+ * Only the drag geometry is previewed. After drop, the server owns the tree.
  */
 export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   const strings = useStrings();
-  const { bump } = useRefresh();
+  const taskActions = useTaskActions();
   const containerRef = useRef<HTMLDivElement | null>(null);
   // The logical active WorkItem is scope state, not private hook state --
   // one scope may contain several outline mounts (Today's per-section
@@ -115,28 +101,13 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   // `organizable` value into the scope rather than the page declaring a
   // separate flag that could drift out of sync with it.
   const scope = useInteractionScope();
-  const [override, setOverride] = useState<{
-    tasks: Task[];
-    taskId: number;
-    revision: number;
-  } | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [placementVersion, setPlacementVersion] = useState(0);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [projection, setProjection] = useState<DropProjection | null>(null);
   const [indicatorTop, setIndicatorTop] = useState(0);
   const [expandRequest, setExpandRequest] = useState<{ taskId: number } | null>(null);
-  const [errors, setErrors] = useState<Record<number, string>>({});
 
-  const authoritativeRevision = override
-    ? locateTask(tasks, override.taskId, tasks[0]?.parentTaskId ?? null)?.task.revision
-    : undefined;
-  const effectiveTasks =
-    override &&
-    authoritativeRevision !== undefined &&
-    authoritativeRevision < override.revision
-      ? override.tasks
-      : tasks;
+  const effectiveTasks = tasks;
   const structuralGroup = useMemo(() => outlineRootGroup(effectiveTasks), [effectiveTasks]);
   const rootGroup = organizable ? structuralGroup : null;
   const enabled = rootGroup !== null;
@@ -145,7 +116,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   const session = useRef<DragSession | null>(null);
   const suppressClick = useRef(false);
   const mounted = useRef(true);
-  const refocusId = useRef<number | null>(null);
+  const refocusId = useRef<{ id: number; tree: Task[] } | null>(null);
   const staleTaskRevisions = useRef(new Map<number, number>());
   for (const [taskId, staleRevision] of staleTaskRevisions.current) {
     const authoritative = locateTask(tasks, taskId, tasks[0]?.parentTaskId ?? null);
@@ -157,8 +128,8 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   // Window listeners and async mutations both outlive the render that
   // created them, so everything they need is mirrored here instead of being
   // captured in a stale closure.
-  const latest = useRef({ effectiveTasks, rootGroup, override, pendingId });
-  latest.current = { effectiveTasks, rootGroup, override, pendingId };
+  const latest = useRef({ effectiveTasks, rootGroup, pendingId });
+  latest.current = { effectiveTasks, rootGroup, pendingId };
 
   useEffect(() => {
     // Re-asserted on (re-)mount rather than only cleared on unmount: React's
@@ -179,8 +150,9 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   // Runs after every row has (re-)registered. Re-parenting remounts the row,
   // so defer restoration until its new handle exists and is enabled.
   useEffect(() => {
-    const taskId = refocusId.current;
-    if (taskId === null) return;
+    const request = refocusId.current;
+    if (request === null || request.tree === effectiveTasks) return;
+    const taskId = request.id;
     const handle = registry.current
       .get(taskId)
       ?.element.querySelector<HTMLButtonElement>(".task-row-drag-handle");
@@ -193,22 +165,11 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     handle.focus();
   }, [effectiveTasks, pendingId]);
 
-  const clearError = useCallback((taskId: number) => {
-    setErrors((prev) => {
-      if (!(taskId in prev)) return prev;
-      const next = { ...prev };
-      delete next[taskId];
-      return next;
-    });
-  }, []);
-
   const commitMove = useCallback(
     (taskId: number, targetParentId: number | null, targetIndex: number) => {
-      const { effectiveTasks: current, rootGroup: group, override: previousOverride, pendingId: busy } =
+      const { effectiveTasks: current, rootGroup: group, pendingId: busy } =
         latest.current;
       if (!group || busy !== null || staleTaskRevisions.current.has(taskId)) return;
-      // A row that only exists as a retention snapshot (or a destination
-      // that just vanished) has no place in the real tree — never guess.
       if (!locateTask(current, taskId, group.parentId)) return;
       if (targetParentId !== group.parentId && !locateTask(current, targetParentId as number, group.parentId)) return;
 
@@ -222,24 +183,15 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       });
       if (plan.kind === "none") return;
 
-      const optimistic = applyMove(current, taskId, targetParentId, targetIndex, group.parentId);
-      if (optimistic === current) return;
 
       // Re-parenting moves the row to a different list, so React unmounts
       // and remounts it — which would drop keyboard focus mid-sequence.
       // Remember to put it back on the row's own handle.
       const active = document.activeElement;
       if (active instanceof HTMLElement && registry.current.get(taskId)?.element.contains(active)) {
-        refocusId.current = taskId;
+        refocusId.current = { id: taskId, tree: current };
       }
 
-      clearError(taskId);
-      setPlacementVersion(version => version + 1);
-      setOverride({
-        tasks: optimistic,
-        taskId,
-        revision: plan.expectedRevision + 1,
-      });
       setPendingId(taskId);
       // A destination parent that happens to be collapsed would swallow the
       // row the user just moved; ask it to reveal its children. A fresh
@@ -250,35 +202,25 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       }
       void (async () => {
         try {
-          await api.moveTask(plan.taskId, {
+          await taskActions.move({ id: plan.taskId }, {
             parentTaskId: plan.parentTaskId,
             ...(plan.projectId !== undefined ? { projectId: plan.projectId } : {}),
             position: plan.position,
             expectedRevision: plan.expectedRevision,
           });
           if (!mounted.current) return;
-          // Refresh for cross-view convergence. The accepted optimistic tree is
-          // already revision-safe, so a failed or overlapping refresh cannot
-          // leave the outline locked or revive an older task revision.
-          bump();
         } catch (err) {
           if (!mounted.current) return;
-          setPlacementVersion(version => version + 1);
-          setOverride(previousOverride);
+          refocusId.current = null;
           if (isStaleWriteConflict(err)) {
             staleTaskRevisions.current.set(taskId, plan.expectedRevision);
-            bump();
           }
-          setErrors((prev) => ({
-            ...prev,
-            [taskId]: errorMessage(err, strings),
-          }));
         } finally {
           if (mounted.current) setPendingId(null);
         }
       })();
     },
-    [bump, clearError, strings],
+    [taskActions.move],
   );
 
   const snapshotRows = useCallback((taskId: number) => {
@@ -548,13 +490,11 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       projection,
       dragDepthDelta,
       expandRequest,
-      errors,
       registerRow,
       beginDrag,
       beginLongPressDrag,
       consumeDragClick,
       moveBy,
-      clearError,
     }),
     [
       taskIds,
@@ -564,20 +504,17 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       projection,
       dragDepthDelta,
       expandRequest,
-      errors,
       registerRow,
       beginDrag,
       beginLongPressDrag,
       consumeDragClick,
       moveBy,
-      clearError,
     ],
   );
 
   return {
-    /** The tree to render: server data, or the optimistic tree while a move is pending. */
+    /** The tree to render is always server-owned; only drag geometry is previewed. */
     tasks: effectiveTasks,
-    placementVersion,
     enabled,
     value,
     containerRef,

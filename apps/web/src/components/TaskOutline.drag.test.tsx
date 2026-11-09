@@ -113,7 +113,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     vi.useRealTimers();
   });
 
-  it("keeps a removed retained child readable without registering it as a drag target", async () => {
+  it("removes an omitted child and its drag target after server regrouping", async () => {
     const child = makeTask({ id: 2, title: "Retained child", parentTaskId: 1, projectId: 5 });
     const parent = makeTask({ id: 1, title: "Parent", projectId: 5, children: [child] });
     mockedApi.completeTask.mockResolvedValue({ ...child, status: "done", revision: 2 });
@@ -122,9 +122,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
     await act(async () => { await flushMicrotasks(); });
     rerender(<TaskOutline tasks={[{ ...parent, children: [] }]} emptyMessage="Empty" organizable />);
-    expect(screen.getByText("Retained child")).toBeInTheDocument();
-    expect(within(screen.getByText("Retained child").closest("li")!).getByRole("button", { name: "Wieder öffnen" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Retained child" })).toBeEnabled();
+    expect(screen.queryByText("Retained child")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Verschieben: Retained child" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben: Parent" })).toBeInTheDocument();
   });
@@ -145,11 +143,10 @@ describe("TaskOutline Ziehen und Umbauen", () => {
         expectedRevision: 1,
       }),
     );
-    // Die Liste zeigt das Ergebnis sofort, ohne auf einen Refresh zu warten.
-    expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
+    expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
   });
 
-  it("ignoriert eine ältere überlappende Aktualisierung nach einem erfolgreichen Zug", async () => {
+  it("renders only the supplied server tree after a successful drag", async () => {
     mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1, revision: 2 }));
     const rendered = renderWithProviders(
       <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />,
@@ -158,12 +155,11 @@ describe("TaskOutline Ziehen und Umbauen", () => {
 
     drag("Alpha", { toY: centreOf(2, 5) });
     await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledTimes(1));
-    expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
+    expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
 
-    // A request started before the move may still return a new array carrying
-    // the old revision and order. It must not replace the accepted override.
+    const [alpha, beta, gamma] = outlineTasks();
     rendered.rerender(
-      <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />,
+      <TaskOutline tasks={[{ ...beta!, position: 0 }, { ...gamma!, position: 1 }, { ...alpha!, position: 2, revision: 2 }]} emptyMessage="Nichts da" organizable />,
     );
     expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
 
@@ -193,8 +189,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
         expectedRevision: 1,
       }),
     );
-    // Beta hängt jetzt unter Alpha.
-    expect(document.querySelectorAll(".task-row-children .task-row-title")[0]?.textContent).toBe("Beta");
+    expect(document.querySelectorAll(".task-row-children")).toHaveLength(0);
   });
 
   it("rückt beim Ziehen nach links wieder eine Stufe aus", async () => {
@@ -218,7 +213,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
       }),
     );
     expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
-    expect(document.querySelectorAll(".task-row-children").length).toBe(0);
+    expect(document.querySelectorAll(".task-row-children").length).toBe(1);
   });
 
   it("stellt die Reihenfolge wieder her und meldet einen abgelehnten Zug an der Zeile", async () => {
@@ -228,11 +223,52 @@ describe("TaskOutline Ziehen und Umbauen", () => {
 
     drag("Alpha", { toY: centreOf(2, 5) });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Verschieben fehlgeschlagen");
-    expect(screen.getByRole("alert")).toHaveTextContent("Kreis in der Aufgabenhierarchie");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Kreis in der Aufgabenhierarchie");
     // Kein voreiliger globaler Refresh: die Zeilen kehren einfach zurück.
     await waitFor(() => expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]));
   });
+
+  it.each(["completion failure", "metadata failure", "metadata success"] as const)(
+    "replaces an earlier move error after a later %s",
+    async (outcome) => {
+      const tasks = outlineTasks();
+      mockedApi.moveTask.mockRejectedValueOnce(new Error("Earlier move error"));
+      if (outcome === "completion failure") {
+        mockedApi.completeTask.mockRejectedValueOnce(new Error("Latest completion error"));
+      } else if (outcome === "metadata success") {
+        mockedApi.updateTask.mockResolvedValueOnce({ ...tasks[0]!, notes: "Changed", revision: 2 });
+      } else {
+        mockedApi.updateTask.mockRejectedValueOnce(new Error("Latest metadata error"));
+      }
+      function Harness() {
+        const actions = useTaskActions();
+        return <>
+          <TaskOutline tasks={tasks} emptyMessage="Empty" organizable />
+          <button onClick={() => void actions.update(tasks[0]!, { notes: "Changed" })}>Update Alpha</button>
+        </>;
+      }
+      renderWithProviders(<Harness />);
+      handleFor("Alpha").focus();
+      await userEvent.keyboard("{ArrowDown}");
+      expect(await screen.findByRole("alert")).toHaveTextContent("Earlier move error");
+
+      if (outcome === "completion failure") {
+        const row = screen.getByText("Alpha").closest("li")!;
+        await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+      } else {
+        await userEvent.click(screen.getByRole("button", { name: "Update Alpha" }));
+      }
+      if (outcome === "metadata success") {
+        await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+      } else {
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(
+          outcome === "completion failure" ? "Latest completion error" : "Latest metadata error",
+        ));
+      }
+      expect(screen.queryByText(/Earlier move error/)).not.toBeInTheDocument();
+      expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
+    },
+  );
 
   it("refreshes after a stale move and blocks the stale snapshot from retrying", async () => {
     const stale = Object.assign(new Error("Veraltete Revision"), {
@@ -338,7 +374,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     expect(mockedApi.moveTask).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])("gives keyboard moves precedence over an active hold, including rollback: %s", async rejectMove => {
+  it.each([false, true])("keeps the authoritative tree during a keyboard move, including rejection: %s", async rejectMove => {
     const initial = outlineTasks();
     const edited = { ...initial[1]!, title: "Edited Beta", revision: 2 };
     mockedApi.updateTask.mockResolvedValue(edited);
@@ -350,7 +386,6 @@ describe("TaskOutline Ziehen und Umbauen", () => {
       const actions = useTaskActions();
       return <>
         <button onClick={async () => { const task = await actions.update(initial[1]!, { title: edited.title }); if (task) setTasks([initial[0]!, task, initial[2]!]); }}>Edit Beta</button>
-        <output data-testid="held-values">{String(actions.retained.has(edited.id))}</output>
         <TaskOutline tasks={tasks} emptyMessage="Empty" organizable />
       </>;
     }
@@ -360,26 +395,19 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     act(() => handleFor(edited.title).focus());
     await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(edited.id, { parentTaskId: 1, position: 0, expectedRevision: 2 }));
-    expect(screen.getByText(edited.title).closest("li")?.parentElement?.closest("li")).toHaveTextContent("Alpha");
-    expect(screen.getByTestId("held-values")).toHaveTextContent("true");
+    expect(screen.getByText(edited.title).closest("li")?.parentElement?.closest("li")).toBeNull();
     if (rejectMove) {
       await act(async () => { reject(new Error("Move rejected")); });
       await screen.findByText(/Move rejected/);
       expect(screen.getByText(edited.title).closest("li")?.parentElement?.closest("li")).toBeNull();
-      expect(screen.getByTestId("held-values")).toHaveTextContent("true");
       return;
     }
     await waitFor(() => expect(document.activeElement).toBe(handleFor(edited.title)));
-    mockedApi.moveTask.mockResolvedValue({ ...edited, revision: 4, parentTaskId: null, position: 1 });
-    await userEvent.keyboard("{ArrowLeft}");
-    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenLastCalledWith(edited.id, { parentTaskId: null, projectId: 5, position: 1, expectedRevision: 3 }));
-    expect(screen.getByText(edited.title).closest("li")?.parentElement?.closest("li")).toBeNull();
-    expect(screen.getByTestId("held-values")).toHaveTextContent("true");
   });
 
   it("verschiebt per Tastatur direkt am Ziehgriff", async () => {
     mockedApi.moveTask.mockResolvedValue(makeTask({ id: 2, revision: 2 }));
-    renderWithProviders(
+    const rendered = renderWithProviders(
       <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />,
     );
     await screen.findByText("Beta");
@@ -393,10 +421,9 @@ describe("TaskOutline Ziehen und Umbauen", () => {
         expectedRevision: 1,
       }),
     );
+    const [alpha, beta, gamma] = outlineTasks();
+    rendered.rerender(<TaskOutline tasks={[{ ...alpha!, children: [{ ...beta!, parentTaskId: alpha!.id, position: 0, revision: 2 }] }, gamma!]} emptyMessage="Nichts da" organizable />);
     expect(document.querySelectorAll(".task-row-children .task-row-title")[0]?.textContent).toBe("Beta");
-
-    // The optimistic tree carries the exact next revision, so a second move
-    // does not wait for a project refresh.
     await waitFor(() => expect(document.activeElement).toBe(handleFor("Beta")));
     handleFor("Beta").focus();
     await userEvent.keyboard("{ArrowLeft}");
@@ -408,7 +435,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
         expectedRevision: 2,
       }),
     );
-    expect(document.querySelectorAll(".task-row-children").length).toBe(0);
+    expect(document.querySelectorAll(".task-row-children").length).toBe(1);
   });
 
   it("deaktiviert das Umbauen in gemischten Ansichten", async () => {
@@ -576,17 +603,15 @@ describe("TaskOutline Ziehen und Umbauen", () => {
         expectedRevision: 1,
       }),
     );
-    expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
-    // Position normalization does not stale the sibling snapshots, and the
-    // moved row already has its deterministic next revision.
+    expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
     await waitFor(() => expect(handleFor("Alpha")).not.toHaveAttribute("aria-busy", "true"));
-    drag("Alpha", { toY: -10 });
+    drag("Alpha", { toY: centreOf(2, 5) });
     await waitFor(() =>
       expect(mockedApi.moveTask).toHaveBeenLastCalledWith(1, {
         parentTaskId: null,
         projectId: 5,
-        position: 0,
-        expectedRevision: 2,
+        position: 2,
+        expectedRevision: 1,
       }),
     );
   });
@@ -619,7 +644,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     rerender(<TaskOutline tasks={[tasks[1]!, tasks[2]!]} emptyMessage="Nichts da" organizable />);
 
     await waitFor(() => expect(screen.getAllByRole("button", { name: /^Verschieben:/ })).toHaveLength(2));
-    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Verschieben: Alpha" })).toBeNull();
   });
 
@@ -684,6 +709,6 @@ describe("TaskOutline Ziehen und Umbauen", () => {
         expectedRevision: 1,
       }),
     );
-    expect(renderedOrder()[0]).toBe("Letzte");
+    expect(renderedOrder()[0]).toBe("Ebene 1");
   });
 });

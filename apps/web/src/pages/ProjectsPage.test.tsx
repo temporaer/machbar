@@ -1,7 +1,6 @@
 import { useLocation } from "react-router-dom";
 import { useState } from "react";
 import { useProjectActions } from "../lib/useProjectActions";
-import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { useRefresh } from "../lib/refresh";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -274,7 +273,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
       expectedRevision: 1,
     });
     expect(rowFor(container, "Aktive Geschichte").querySelector(".story-row-status-badge")).toHaveTextContent(
-      "Abgeschlossen",
+      "Aktiv",
     );
   });
 
@@ -295,7 +294,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 
-  it("keeps a retained row visible even when a refetch no longer lists it", async () => {
+  it("removes a project when its successful command refetch omits it", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Fertige Geschichte");
     mockedApi.reopenProject.mockResolvedValue(
@@ -314,11 +313,10 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(72, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Fertige Geschichte")).toBeInTheDocument();
-    expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Fertige Geschichte")).not.toBeInTheDocument());
   });
 
-  it("keeps a held project's original tag group while its workflow is active", async () => {
+  it("naturally regroups a project after its tag command is confirmed", async () => {
     const oldTag = makeTag({ id: 91, name: "Original area", kind: "area" });
     const newTag = makeTag({ id: 92, name: "New area", kind: "area" });
     const project = makeProject({ id: 90, title: "Retag held project", status: "active", ownerMemberId: 1,
@@ -331,12 +329,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     mockedApi.updateProject.mockImplementation(async () => { phase = 2; return updated; });
     function Controls() {
       const actions = useProjectActions();
-      const [open, setOpen] = useState(false);
-      useRetentionInteraction(project.id, actions.pauseRetention, open);
       return <>
         <button onClick={() => void actions.acknowledgeReview(project)}>Hold project</button>
-        <button onClick={() => { setOpen(true); void actions.update(held, { tagIds: [newTag.id] }); }}>Retag in workflow</button>
-        <button onClick={() => setOpen(false)}>Close workflow</button>
+        <button onClick={() => void actions.update(held, { tagIds: [newTag.id] })}>Retag in workflow</button>
       </>;
     }
     renderWithProviders(<><ProjectsPage /><Controls /></>);
@@ -345,19 +340,10 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" })).getByRole("button", { name: "Bereich" }));
     const originalGroup = screen.getByRole("heading", { name: oldTag.name }).closest(".collapsible-group")!;
     const originalRow = screen.getByText(project.title).closest("li")!;
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Hold project" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await waitFor(() => expect(phase).toBe(1));
     fireEvent.click(screen.getByRole("button", { name: "Retag in workflow" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
-    expect(originalRow).toBeInTheDocument();
-    expect(originalRow.closest(".collapsible-group")).toBe(originalGroup);
-    expect(screen.queryByRole("heading", { name: newTag.name })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Close workflow" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
-    expect(originalRow).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await screen.findByRole("heading", { name: newTag.name });
     expect(originalGroup).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: newTag.name })).toBeInTheDocument();
     expect(screen.getAllByText(project.title)).toHaveLength(1);
@@ -1029,7 +1015,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     });
   });
 
-  it("keeps a completed story in its original section while showing the confirmed status", async () => {
+  it("moves a completed project to the terminal section when confirmed by the server", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -1046,6 +1032,9 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     await screen.findByText("Aktive Geschichte");
     expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
 
+    mockedApi.getProjects.mockResolvedValue([makeProject({
+      id: 1, title: "Aktive Geschichte", status: "completed", ownerMemberId: 1, revision: 2,
+    })]);
     swipeRow(rowFor(container, "Aktive Geschichte"), 100);
     const lifecycle = within(rowFor(container, "Aktive Geschichte")).getByRole("group", { name: "Status" });
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
@@ -1056,9 +1045,8 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.completeProject).toHaveBeenCalledWith(1, {
       expectedRevision: 1,
     });
-    expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
-    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
-    expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
+    await screen.findByText("Abgeschlossen & archiviert (1)");
+    expect(rowFor(container, "Aktive Geschichte").closest("details")).not.toHaveAttribute("open");
   });
 
   it("keeps a reopened story in its original terminal section during retention", async () => {

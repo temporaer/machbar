@@ -1,5 +1,3 @@
-import { useTaskActions } from "../lib/useTaskActions";
-import { useRetainedPlacement } from "../lib/useRetainedPlacement";
 import type { Task, WaitingEntry } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { TaskOutline } from "./TaskOutline";
@@ -34,10 +32,8 @@ export function WaitingGroupList({
       )
       .map((entry) => entry.task),
   );
-  const actions = useTaskActions();
-  const { external: externalTasks, context: contextTasks } = useRetainedPlacement(
-    { external: externalCandidates, context: contextCandidates }, actions.holdingIds,
-    actions.projectTask);
+  const externalTasks = externalCandidates;
+  const contextTasks = contextCandidates;
   const outline = (items: Task[], external: boolean) => (
     <TaskOutline
       tasks={items}

@@ -883,6 +883,7 @@ describe("TaskPlanningSheet", () => {
     const user = userEvent.setup();
     const task = makeTask({ id: 312, revision: 2, status: "someday", projectId: 45, scheduledDate: null, reminders: [] });
     const missingDriver = () => Object.assign(new Error("decision required"), {
+      name: "ApiError",
       code: "project_commitment_resolution_required",
       details: {
         projects: [{ projectId: 45, title: "Heizung", revision: 8, ownerMemberId: null, required: ["driver"] }],
@@ -890,6 +891,19 @@ describe("TaskPlanningSheet", () => {
         targetRevision: 8,
       },
     });
+    const requiredPreview = {
+      activatingProjects: [{ id: 45, title: "Heizung" }],
+      decision: {
+        projects: [{ projectId: 45, title: "Heizung", revision: 8, ownerMemberId: null, required: ["driver" as const] }],
+        expectedProjects: [{ projectId: 45, revision: 8 }],
+        targetRevision: 8,
+      },
+    };
+    mockedApi.previewTaskUpdate
+      .mockResolvedValueOnce({ decision: null, activatingProjects: [] })
+      .mockResolvedValueOnce(requiredPreview)
+      .mockResolvedValueOnce({ decision: null, activatingProjects: [] })
+      .mockResolvedValueOnce(requiredPreview);
     mockedApi.getMembers.mockResolvedValue([{ id: 9, name: "Rae" }] as never);
     mockedApi.updateTask
       .mockRejectedValueOnce(missingDriver())

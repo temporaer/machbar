@@ -5,7 +5,7 @@ import {
   moveRevisitToCalendarDate,
   type Member,
 } from "@machbar/shared";
-import { api, type AgendaScope, type WeekAgendaResponse, type WeekPlanningItem } from "../lib/api";
+import { api, type AgendaScope, type WeekPlanningItem } from "../lib/api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
@@ -23,6 +23,8 @@ import { formatDate } from "../lib/format";
 import { QuickAdd } from "../components/QuickAdd";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
+import { useTaskActions } from "../lib/useTaskActions";
+import { useProjectActions } from "../lib/useProjectActions";
 
 function weekWindowStart(date: Date): string {
   return toIsoCalendarDate(date);
@@ -33,145 +35,6 @@ function weekdayLabel(dateIso: string, locale: string): string {
     weekday: "short",
     day: "numeric",
   }).format(new Date(`${dateIso}T00:00:00.000Z`));
-}
-
-function removeItem(agenda: WeekAgendaResponse, itemId: number): WeekAgendaResponse {
-  return {
-    ...agenda,
-    days: agenda.days.map((day) => ({
-      ...day,
-      items: day.items.filter((item) => item.id !== itemId),
-    })),
-    unplanned: agenda.unplanned.filter((item) => item.id !== itemId),
-  };
-}
-
-function addItem(
-  agenda: WeekAgendaResponse,
-  item: WeekPlanningItem,
-): WeekAgendaResponse {
-  if (item.placement === "unplanned" || item.attentionDate === null) {
-    return { ...agenda, unplanned: [...agenda.unplanned, item] };
-  }
-  return {
-    ...agenda,
-    days: agenda.days.map((day) =>
-      day.date === item.attentionDate
-        ? { ...day, items: [...day.items, item] }
-        : day,
-    ),
-  };
-}
-
-/**
- * Projects an item's current placement + attention date from its (possibly
- * just-mutated) source dates, mirroring the shared backend algorithm in
- * `projectWeekAttention` so optimistic frontend updates match the server.
- * `today` is the window's start when it equals the real rolling anchor;
- * callers only invoke this for items already visible in the current week.
- */
-function projectAttention(
-  item: WeekPlanningItem,
-  today: string,
-  householdTimezone = "Europe/Berlin",
-): { placement: WeekPlanningItem["placement"]; attentionDate: string } | null {
-  const waiting = item.role === "task" && item.externalWait !== null;
-  const revisitAt = item.role === "task"
-    ? item.task.revisitAt
-    : item.project.revisitAt;
-  const candidates = {
-    scheduledDate: waiting ? null : item.scheduledDate,
-    revisitAt: revisitAt ?? null,
-    dueDate: item.dueDate,
-  };
-  const options: Array<{ placement: "scheduled" | "revisit" | "due"; raw: string }> = [];
-  if (candidates.scheduledDate) options.push({ placement: "scheduled", raw: candidates.scheduledDate });
-  if (candidates.revisitAt) {
-    const revisitDate = calendarDateForInstant(candidates.revisitAt, householdTimezone);
-    if (revisitDate) options.push({ placement: "revisit", raw: revisitDate });
-  }
-  if (candidates.dueDate) options.push({ placement: "due", raw: candidates.dueDate });
-  if (options.length === 0) return null;
-  const priority = { scheduled: 0, revisit: 1, due: 2 } as const;
-  const projected = options
-    .map((option) => ({
-      placement: option.placement,
-      attentionDate: option.raw < today ? today : option.raw,
-    }))
-    .sort(
-      (a, b) =>
-        a.attentionDate.localeCompare(b.attentionDate) ||
-        priority[a.placement] - priority[b.placement],
-    );
-  return projected[0]!;
-}
-
-function moveScheduled(
-  agenda: WeekAgendaResponse,
-  item: WeekPlanningItem,
-  date: string | null,
-  today: string,
-  householdTimezone: string,
-): WeekAgendaResponse {
-  const task = item.task ? { ...item.task, scheduledDate: date } : item.task;
-  const project = item.project ? { ...item.project, scheduledDate: date } : item.project;
-  const withDate: WeekPlanningItem = { ...item, scheduledDate: date, task, project } as WeekPlanningItem;
-  const projected = projectAttention(withDate, today, householdTimezone);
-  const next: WeekPlanningItem = projected
-    ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
-    : { ...withDate, placement: "unplanned", attentionDate: null };
-  return addItem(removeItem(agenda, item.id), next);
-}
-
-function moveRevisit(
-  agenda: WeekAgendaResponse,
-  item: WeekPlanningItem,
-  date: string | null,
-  today: string,
-  householdTimezone: string,
-): WeekAgendaResponse {
-  const currentRevisitAt =
-    item.role === "task" ? item.task?.revisitAt : item.project?.revisitAt;
-  const revisitAt =
-    date && currentRevisitAt
-      ? moveRevisitToCalendarDate(currentRevisitAt, date, householdTimezone)
-      : date
-        ? null
-        : null;
-  if (date && currentRevisitAt && revisitAt === null) {
-    throw new Error("invalid_revisit_time");
-  }
-  const task = item.task ? { ...item.task, revisitAt } : item.task;
-  const project = item.project ? { ...item.project, revisitAt } : item.project;
-  const withDate: WeekPlanningItem = { ...item, task, project } as WeekPlanningItem;
-  const projected = projectAttention(withDate, today, householdTimezone);
-  const next: WeekPlanningItem = projected
-    ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
-    : { ...withDate, placement: "unplanned", attentionDate: null };
-  return addItem(removeItem(agenda, item.id), next);
-}
-
-function sortAgenda(agenda: WeekAgendaResponse): WeekAgendaResponse {
-  const placementOrder: Record<WeekPlanningItem["placement"], number> = {
-    scheduled: 0,
-    revisit: 1,
-    due: 2,
-    unplanned: 3,
-  };
-  const sort = (a: WeekPlanningItem, b: WeekPlanningItem) =>
-    (a.attentionDate ?? "9999-99-99").localeCompare(b.attentionDate ?? "9999-99-99") ||
-    placementOrder[a.placement] - placementOrder[b.placement] ||
-    (a.role !== b.role ? (a.role === "story" ? -1 : 1) : 0) ||
-    a.title.localeCompare(b.title, "de") ||
-    a.id - b.id;
-  return {
-    ...agenda,
-    days: agenda.days.map((day) => ({
-      ...day,
-      items: [...day.items].sort(sort),
-    })),
-    unplanned: [...agenda.unplanned].sort(sort),
-  };
 }
 
 function WeekCard({
@@ -187,6 +50,9 @@ function WeekCard({
 }) {
   const strings = useStrings();
   const { locale } = useLocale();
+  const taskActions = useTaskActions();
+  const projectActions = useProjectActions();
+  const busy = (item.role === "task" ? taskActions : projectActions).isPending(item.id);
   const owner = item.ownerMemberId
     ? members.find((member) => member.id === item.ownerMemberId) ?? null
     : null;
@@ -243,11 +109,13 @@ function WeekCard({
   return (
     <article
       className={`week-card week-card-${item.role}`}
-      draggable={item.placement !== "due"}
+      draggable={!busy && item.placement !== "due"}
+      aria-busy={busy}
       data-workitem-id={item.id}
       data-workitem-role={item.role}
       data-workitem-placement={item.placement}
       onDragStart={(event) => {
+        if (busy) { event.preventDefault(); return; }
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", String(item.id));
         onDragStart(item);
@@ -358,7 +226,6 @@ export function WeekPage() {
     () => calendarDateForInstant(now, householdTimezone) ?? toIsoCalendarDate(new Date()),
     [householdTimezone, now],
   );
-  const [agenda, setAgenda] = useState<WeekAgendaResponse | null>(null);
   const [dragged, setDragged] = useState<WeekPlanningItem | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const loadKey = `${start}:${scope}:${currentMemberId ?? "none"}`;
@@ -366,6 +233,7 @@ export function WeekPage() {
     () => api.getWeekAgenda(start, currentMemberId, scope),
     [loadKey],
   );
+  const agenda = data;
   const selectScope = (nextScope: AgendaScope) => {
     setScope(nextScope);
     writeTodayScope(nextScope);
@@ -379,22 +247,15 @@ export function WeekPage() {
     if (timezoneLoaded && !navigatedRef.current) setStart(today);
   }, [timezoneLoaded, today]);
 
-  useEffect(() => {
-    if (data) setAgenda(data);
-  }, [data]);
-
   const applySchedule = async (
     item: Extract<WeekPlanningItem, { role: "task" }>,
     date: string | null,
   ) => {
     if (!agenda) return;
-    const previous = agenda;
     setMutationError(null);
-    setAgenda(sortAgenda(moveScheduled(agenda, item, date, today, householdTimezone)));
     try {
       await dispatch({ type: "workItem.schedule", item, date });
     } catch (cause) {
-      setAgenda(previous);
       setMutationError(cause instanceof Error ? cause.message : strings.error);
     }
   };
@@ -404,12 +265,12 @@ export function WeekPage() {
     date: string | null,
   ) => {
     if (!agenda) return;
-    const previous = agenda;
     setMutationError(null);
     try {
-      setAgenda(
-        sortAgenda(moveRevisit(agenda, item, date, today, householdTimezone)),
-      );
+      const currentRevisitAt = item.role === "task" ? item.task.revisitAt : item.project.revisitAt;
+      if (date && currentRevisitAt && moveRevisitToCalendarDate(currentRevisitAt, date, householdTimezone) === null) {
+        throw new Error("invalid_revisit_time");
+      }
       await dispatch({
         type: "workItem.setRevisitDate",
         item,
@@ -417,7 +278,6 @@ export function WeekPage() {
         householdTimezone,
       });
     } catch (cause) {
-      setAgenda(previous);
       setMutationError(
         cause instanceof Error && cause.message === "invalid_revisit_time"
           ? strings.invalidRevisitTime

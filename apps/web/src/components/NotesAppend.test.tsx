@@ -43,6 +43,19 @@ it("does not discard an append draft when full-document editing disables it", ()
   expect(screen.getByRole("textbox")).toHaveAttribute("aria-disabled", "true");
 });
 
+it.each([401, 403, 404])("ends and discards an append draft on mutation %s", async status => {
+  const append = vi.fn().mockRejectedValue(Object.assign(new Error("Raw denial"), { name: "ApiError", status }));
+  render(<NotesAppend onAppend={append} />);
+  fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
+  setMarkdownValue(screen.getByRole("textbox"), "Private draft");
+  fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
+  await screen.findByRole("alert");
+  await waitFor(() => expect(screen.queryByRole("textbox")).not.toBeInTheDocument());
+  expect(screen.getByRole("alert")).not.toHaveTextContent("Raw denial");
+  fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
+  expect(markdownValue(screen.getByRole("textbox"))).toBe("");
+});
+
 it("shows the end of long notes and keeps links independent from detail navigation", () => {
   const open = vi.fn();
   render(

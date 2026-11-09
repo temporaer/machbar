@@ -10,7 +10,8 @@ import { InteractionScopeProvider } from "../lib/interactionScope";
 import { api } from "../lib/api";
 import { makeMember } from "../test/fixtures";
 import type { RefinementListItem } from "../lib/useRefinementActions";
-import { useRefinementActions, REFINEMENT_RETENTION_MS } from "../lib/useRefinementActions";
+import { useRefinementActions } from "../lib/useRefinementActions";
+import { TaskActionsProvider } from "../lib/useTaskActions";
 import { RefinementTaskRow } from "./RefinementTaskRow";
 
 vi.mock("../lib/api", () => ({
@@ -65,6 +66,12 @@ function Harness({
   task: RefinementListItem;
   onOpen: (id: number, field?: string) => void;
   routes?: boolean;
+}) {
+  return <TaskActionsProvider><HarnessContent task={task} onOpen={onOpen} routes={routes} /></TaskActionsProvider>;
+}
+
+function HarnessContent({ task, routes = false }: {
+  task: RefinementListItem; onOpen: (id: number, field?: string) => void; routes?: boolean;
 }) {
   const actions = useRefinementActions();
   const row = <RefinementTaskRow task={task} ownerName={null} actions={actions} />;
@@ -159,7 +166,7 @@ describe("RefinementTaskRow", () => {
     expect(onOpen).toHaveBeenCalledWith(41, undefined);
   });
 
-  it("cancels an active drag on retention and cannot fire more actions while disabled", async () => {
+  it("cancels an active drag while pending and permits commands after confirmation", async () => {
     const task = makeItem();
     let finish!: () => void;
     mockedApi.updateTask.mockImplementationOnce(() => new Promise((resolve) => {
@@ -178,7 +185,7 @@ describe("RefinementTaskRow", () => {
     expect(mockedApi.updateTask).toHaveBeenCalledOnce();
     await act(async () => finish());
     swipe(container, 64);
-    expect(mockedApi.updateTask).toHaveBeenCalledOnce();
+    expect(mockedApi.updateTask).toHaveBeenCalledTimes(2);
   });
 
   it("shows story/owner/status meta and the current size on the badge", async () => {
@@ -405,9 +412,9 @@ describe("RefinementTaskRow", () => {
         expectedRevision: 1,
       }),
     );
-    // The popup closes again and the row keeps the new owner optimistically.
+    // The popup closes; the server prop still owns displayed ownership.
     expect(screen.queryByRole("group", { name: "Zuständig" })).not.toBeInTheDocument();
-    expect(container.querySelector(".refinement-row-content.retained")).toBeInTheDocument();
+    expect(container.querySelector(".refinement-row-content.retained")).not.toBeInTheDocument();
   });
 
   it("clears the owner back to the shared bucket from the same popup", async () => {
@@ -472,7 +479,7 @@ describe("RefinementTaskRow", () => {
     expect(chip).toBeDisabled();
   });
 
-  it("retains the row (muted, disabled) with its new size for the retention window after a size change", async () => {
+  it("leaves size rendering to the server prop after a confirmed command", async () => {
     const task = makeItem({ id: 30, size: "S" });
     mockedApi.updateTask.mockResolvedValue({ ...task, size: "M" } as never);
     vi.useFakeTimers();
@@ -483,12 +490,7 @@ describe("RefinementTaskRow", () => {
       await flushMicrotasks();
     });
 
-    expect(container.querySelector(".refinement-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("M")).toBeInTheDocument();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(REFINEMENT_RETENTION_MS + 500);
-    });
+    expect(screen.getByText("S")).toBeInTheDocument();
     expect(container.querySelector(".refinement-row-content.retained")).not.toBeInTheDocument();
     vi.useRealTimers();
   });

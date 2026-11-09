@@ -17,16 +17,19 @@ import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { PhysicalContextPicker } from "./PhysicalContextPicker";
 
 /** Focused `task.contexts` editor — the canonical destination regardless of rail/keyboard/detail invocation. */
-export function TaskContextsSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskContextsSheet({ task, onClose, onFailure }: { task: Task; onClose: () => void; onFailure?: (cause: unknown) => void }) {
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
   const saving = taskActions.isPending(task.id);
   const { data: homeAssistant } = useAsync(
-    () =>
+    async (signal) => {
+      try { return await (
       typeof api.getHomeAssistantStatus === "function"
         ? api.getHomeAssistantStatus()
-        : Promise.resolve(null),
+        : Promise.resolve(null)); }
+      catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
+    },
     [],
   );
   const hints = useMemo(
@@ -47,7 +50,7 @@ export function TaskContextsSheet({ task, onClose }: { task: Task; onClose: () =
     const title = removeCaptionHintSpans(task.title, [hint.removalSpan]);
     if (task.effectiveContexts.some((context) => context.id === hint.context.id)) {
       if (title !== task.title) {
-        void taskActions.update(task, { title }, { title }, true);
+        void taskActions.update(task, { title }, true).catch((cause) => onFailure?.(cause));
       }
       return;
     }
@@ -64,7 +67,7 @@ export function TaskContextsSheet({ task, onClose }: { task: Task; onClose: () =
       selection.mode,
       selection.contextIds,
       title !== task.title ? { title } : {},
-    );
+    ).catch((cause) => onFailure?.(cause));
   };
 
   return (
@@ -94,7 +97,7 @@ export function TaskContextsSheet({ task, onClose }: { task: Task; onClose: () =
           mode={task.contextInheritanceMode}
           disabled={saving}
           onChange={(mode, contextIds) => {
-            if (mode) void taskActions.setContexts(task, mode, contextIds);
+            if (mode) void taskActions.setContexts(task, mode, contextIds).catch((cause) => onFailure?.(cause));
           }}
         />
         <button type="button" className="btn" disabled={saving} onClick={onClose}>

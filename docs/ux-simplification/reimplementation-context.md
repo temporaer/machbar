@@ -1,5 +1,244 @@
 # Reimplementation context
 
+## Superseding decision: server-confirmed simplification
+
+On 2026-11-09 the user explicitly approved simpler interaction guarantees after
+the second Query pilot failed its correctness and size gates. The rejected pilot
+is preserved locally at `279b12ba`; documentation-only PR #265 records its
+net +697 runtime lines and projected completed growth. It is not a foundation
+to patch or ship.
+
+The new implementation starts from merged main `2e923f23`, not that pilot:
+
+- Wait for mutation confirmation; show pending/errors without optimistic DTOs.
+- Invalidate and refetch whole view/endpoint responses instead of patching every
+  embedded copy or building a normalized client graph.
+- Let rows regroup/disappear on fresh results; delete timed holds and leases.
+- Preserve authored drafts during ordinary refreshes/network failures.
+- End focused workflows on access loss, discard choices, and reopen fresh.
+- Reload stale compound prerequisites and require explicit reconfirmation.
+- Permit one pending domain command per work item in this client.
+- Keep authorization, transactional writes, revision checks and identity isolation.
+
+Native Query owns the generic read facade's values and execution. Bootstrap
+identity and independent explicit polling are not silently claimed as migrated.
+Correctness and measured source reduction remain separate acceptance checks.
+The history below preserves earlier investigation; requirements for recovery
+across access revocation and timed placement are deliberately superseded.
+
+### Implementation contract and acceptance matrix
+
+The observable contract was established before changing production behavior.
+The implementation replaces machinery rather than layering another recovery
+protocol over it:
+
+1. Replace optimistic/retained actions with server-confirmed commands and a
+   shared per-item pending gate, including hierarchy moves and refinement.
+2. Replace the generic custom read runner with native Query, retaining the
+   existing localized read interface and invalidation transport.
+3. End denied editor openings and reset stale compound decisions; retain
+   authored text across ordinary outages and harmless refreshes.
+4. Verify the complete application, both browser projects and actual provider
+   identity replacement before publishing.
+
+| Observable invariant | Counterexamples and boundary evidence |
+| --- | --- |
+| Pending commands do not predict domain state | Metadata, completion, refinement and moves retain the old projection until an authoritative read; failed commands do not need rollback |
+| One pending task command is shared across entry points | Metadata-before-move and move-before-metadata; outline and destination picker use the same canonical task action |
+| Successful writes cannot publish a pre-write read | Held read completes before/after invalidation; canceled results cannot replace the post-write projection |
+| External events cannot starve the initial read | Initial and trailing reads, repeated invalidators, and removed/replaced same-key Query objects |
+| Ordinary outages retain useful data and authored drafts | Network failure, explicit retry, stale refresh and cancellation; no new timed row holds |
+| Denial removes protected controls and choices | Read denial and private mutation denial, including when a later GET would still succeed; notice dismissal and explicit fresh reopening |
+| Stale compound decisions require another explicit commit | Changed requirements, including equal target revisions with changed surrounding graph; no automatic command replay |
+| Another identity cannot receive old values or callbacks | Provider retirement and delayed reads; real App mount tree, not just provider-rich component fixtures |
+
+The integration pass exposed tests that mocked away the production read
+provider or assumed synchronous custom-runner notifications. Those fixtures now
+use the real provider and explicitly advance native notification timers; the
+scheduler was not replaced. Intake mock response queues are reset between tests
+so an early failure cannot contaminate later scenarios. Tag management and share
+conflict handling also had redundant local reload plus global invalidation:
+they now rely on the single global refresh, while explicit read retry remains.
+
+The measured application-source delta against
+`2e923f23` is **+1118 / -2589, net -1471 lines across 67 runtime files**,
+including newly added source and excluding tests/test support. Test source is
+separate: **+3165 / -2666, net +499 lines across 52 test files**, including
+architecture-contract and browser tests. Deleted retention
+tests describe deliberately removed guarantees; replacement tests cover the
+approved server-confirmed behavior. These counts do not measure dependency
+implementation size or establish correctness.
+
+The first full verifier failed during integration; it is not acceptance
+evidence. The final frozen implementation, including the independent and
+Copilot review corrections below, passed:
+
+- `bash scripts/verify.sh`: architecture, shared build, all typechecks,
+  1,418 API tests, 1,905 web tests, production build and Python
+  (159 passed, 1 skipped).
+- `npm run build && npm run test:e2e`: production rebuild and 50 desktop/mobile
+  Chromium cases, including real-App read and refinement-continuation retirement,
+  authored-write/criterion denial, canceled catalog-read callbacks and
+  superseded dependency search, submitted split-draft consumption across
+  identity replacement and stale-deadline read retry.
+- `git diff --check`: passed.
+
+Verification used Node.js 22 and the existing Python test environment. These
+results do not prove physical touch/keyboard, assistive-technology,
+non-Chromium or live integration behavior.
+
+### Acceptance review and correction
+
+The simplification critic accepted the bounded design: the two small helpers
+have real consumers and the removed coordination is not recreated elsewhere.
+The source reduction is maintenance evidence, not proof of fewer taps or
+faster everyday use. Intake/refinement proposal generation remains a separate
+job with local pending state; the shared task gate covers domain mutations,
+including refinement-list edits and moves.
+
+The independent regression review found a missed identity ordering: production
+identity replacement unmounts workflow hosts, leaving render-updated opening
+refs frozen. A held refinement success could then navigate the replacement
+identity to the old opening's intake job. This is a client continuation defect,
+not evidence of an authorization bypass. Both hosts now retire their guards
+synchronously on unmount, including StrictMode lifecycle replay; task denial
+handling observes the same guard.
+
+Four focused tests rejected the old task/project refinement and move
+continuations. Both real-App browser refinement scenarios also rejected the
+previously built faulty bundle: after identity replacement, releasing the held
+POST navigated to the old intake URL. These browser tests use the production
+App/provider tree and real member/item reads; only the held successful intake
+response is supplied by the test. They do not establish Home Assistant
+integration or intake persistence behavior.
+
+The independent follow-up accepted resolution of this specific blocker after
+reviewing both guards, StrictMode replacement behavior and the supplied
+red/green evidence. No remaining causal scenario was identified for the
+post-unmount continuation defect. This was a bounded correction review, not
+proof that every asynchronous workflow or physical device was audited.
+
+### Copilot review: expand the failure class
+
+The first current-head Copilot review of #266 reported four actionable issues.
+The merge is gated on their correction and a clean re-review, not just green CI:
+
+- Task and project title/notes writes can be denied while a subsequent GET is
+  still authorized. Read-denial cleanup is not sufficient: the current authored
+  editor must end and discard its draft on mutation denial independently.
+  Ordinary write outages must still retain it; obsolete openings cannot discard
+  a replacement draft.
+- Query cancellation excludes returned values, but cannot undo callbacks already
+  executed inside a fetcher. A canceled old GET that later fails with denial
+  must not end a current editor after its replacement read succeeds. Qualify
+  fetcher-side failure callbacks with the native signal, not another generation
+  store. Current, uncanceled denial still ends the editor.
+- Outline movement already uses the shared task action. Its separate error map
+  duplicated that owner and could hide the failure of a later completion or
+  metadata edit, or survive a later success. Remove the duplicate map instead of
+  merely reversing error precedence. All row failures and dismissal use the
+  canonical task-action error state.
+
+The counterexamples distinguish mutation failure from read failure, callback
+execution from result publication, and failure-to-failure from failure-to-success
+ordering. These are additions to the original matrix, not a return to the
+rejected optimistic or restoration guarantees.
+
+The four new real-App browser scenarios rejected the pre-review built bundle:
+task/project denied title writes left their inputs open after an authorized
+GET, and canceled tag-catalog denials closed the replacement editor. All four
+then passed on rebuilt corrected source in both browser projects. The title
+cases also preserve a subsequent ordinary-outage draft; the catalog cases
+confirm the tag was persisted through the real canonical mutation. Unit
+counterexamples cover both authored fields, 401/403/404, live read denials,
+obsolete openings and move-failure ordering. The browser denials are supplied
+serialized responses, not evidence that the server changed authorization.
+
+The second review confirmed those four corrections but identified two sibling
+paths omitted from that pass. Criterion text is a separate authored editor:
+denied add/update commands must discard its draft even when the item GET remains
+authorized, without discarding ordinary-outage or replacement-opening drafts.
+Dependency search is an imperative read outside the seven fetcher wrappers:
+an older search's denial after a newer success must not end the current
+planning draft. Its empty-query, live-denial and replacement-query exits need
+the same native read cancellation contract, not another generation store.
+
+Criterion mutations now discard current add/edit drafts on denial; task detail
+also revalidates the still-readable item. React keyed lifetimes retire obsolete
+editor callbacks. Auditing adjacent authoring found the same omission in note
+append and saved-notes attachment commands: these now discard/close on denied
+writes, retain ordinary-outage drafts and cannot close a replacement opening.
+Project criterion hosts were already guarded. Draft-only Markdown insertion
+and Paperless upload/search authorization are separate from task/project write
+denial; this does not claim an audit of those integration permissions.
+
+Dependency search now uses the existing native read facade, keyed by query,
+task and suspension state. Tests distinguish older-denial/newer-success,
+cleared/whitespace queries, pending supersession, live 401/403/404, replacement
+openings and explicit selection. Both new real-App browser cases reject the
+pre-correction bundle at the intended invariant: criterion text remains editable
+after denial/authorized refresh, or the obsolete search removes the current
+planning draft. Initial selector/setup failures were corrected before recording
+that sensitivity evidence.
+
+Command-bound planning previews/conflict reads remain imperative. An advisory
+source inspection noted an unchecked success continuation after a held planning
+preview, but same-identity replacement reachability and an unintended write
+were not reproduced; pending controls, identity retirement and revisions retain
+their existing guards. This is a separate unverified concern, not a confirmed
+regression from search cancellation or evidence of complete preview coverage.
+The merge remains gated on another current-head Copilot review and CI.
+
+The third review identified three more independent lifecycle/recovery gaps.
+The verification contract distinguishes:
+
+- Confirmed split success after identity retirement must consume only its
+  still-matching submitted storage draft; newer drafts and failed submissions
+  survive, and retired UI/navigation never resumes.
+- Deadline stale-save recovery must retain the selected date, discard stale
+  activation choices and expose a GET-only retry after offline/server failure.
+  Repeated read failure stays recoverable; even an empty requirements result
+  needs an explicit fresh-revision Save, never an automatic write replay.
+- Successful writes after a consumer sheet closes still invalidate their
+  captured refresh scope. Consumer unmount is not identity retirement:
+  replacement identities must not receive the old write's UI or invalidation.
+
+The split draft now carries a per-record identity so a newer draft with
+identical text survives confirmed-success cleanup; legacy session arrays remain
+readable. The old bundle failed the real-App test with already-created steps
+still in session storage after the identity switch. The corrected test also
+switches back, reopens the existing split workflow and observes a blank composer
+with exactly the two already-created children in SQLite.
+
+Deadline retry reloads only requirements and preserves the selected date;
+fresh decisions and the current revision need another explicit Save. Tests
+also cover repeated GET failure, absent activation requirements and the sibling
+unchanged-date retry dead end after an ordinary write outage. The old bundle
+failed the real-App stale/offline scenario at the absent retry control.
+
+The shared mutation runner now invalidates its captured owner regardless of
+consumer mounting, retaining local-state guards. Real-Query Goals tests
+distinguish sheet closure from identity replacement. An adjacent, reachable
+close/reopen ordering also exposed an old success closing the replacement
+intervention sheet; its callback is now retired on unmount. No backend command
+or successful return contract changed.
+
+The fourth review requested human assessment of another confirmed-success
+invalidation omission: criterion add/update/remove/reorder checked consumer
+mounting before invalidating. The criterion check command already conformed.
+The same guard ordering also existed in task-to-project conversion,
+project-to-task conversion and project movement. All four writers now
+invalidate their captured scope before the opening guard; local callbacks,
+navigation and destination memory remain guarded.
+
+Real-Query counterexamples keep an underlying read mounted, close the pending
+writer and then confirm success. Four of five criterion cases and all three
+conversion/move cases rejected the old ordering; all eight pass after the
+correction. Their mutation responses are supplied test data, not evidence of
+backend persistence. Existing scope-retirement tests distinguish a closed
+consumer from an identity-retired provider. This extends the successful-write
+matrix without adding another invalidation owner or weakening identity isolation.
+
 ## Decision and baseline
 
 On 2026-11-08 the user approved preserving the previous effort and restarting
