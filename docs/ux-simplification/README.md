@@ -64,6 +64,9 @@ approved. Search and maintenance work should not delay correctness repair.
   subsequent recovery effort and the 2026-11-08 decision to restart from merged
   #252. Preserves regression evidence and rejected approaches, with a narrow
   backend/Activation tranche; the original audit above remains unchanged.
+- [TanStack Query migration plan](query-migration-plan.md): replacement-first
+  ownership migration from merged #263/#264, starting with a Project-resource
+  deletion map and LOC budget; separate from the historical UX audit above.
 
 ## Evidence limits
 

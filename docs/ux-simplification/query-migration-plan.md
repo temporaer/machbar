@@ -1,0 +1,150 @@
+# TanStack Query migration plan
+
+**Date:** 2026-11-09
+
+**Baseline:** current merged main, `2e923f239e69fef583074b189bdd2abab013c4bd`
+
+**Authorization:** plan and Step 1 analysis only; application implementation is
+not authorized by this assignment.
+
+## Goal and ownership
+
+Replace custom fetched/confirmed-state machinery with TanStack Query, rather
+than putting Query underneath the same retained-state implementation.
+Preserve existing capabilities and the recovery fixes merged in #262-#264.
+Use [reimplementation context](reimplementation-context.md) as a source of
+counterexamples, not code to transplant from #256.
+
+| Responsibility | Target owner |
+| --- | --- |
+| Fetched and confirmed server data | Query cache, qualified by resource and effective viewer |
+| Revision reconciliation and affected-query invalidation | Central cache integration used by canonical actions |
+| Domain operations, expected revisions and API transport | Existing task/project action and mutation paths |
+| Optimism | Narrow mutation projections; not another confirmed-data store |
+| Drafts, choices, focus and opening identity | Existing local editor/workflow state |
+| Temporary row placement and interaction lifetime | UI-only state, independent of server-value ownership |
+| Workflow facts, permissions and legal lifecycle transitions | Backend |
+| Authenticated SSE/reconnect transport | Existing transport, eventually invalidating Query |
+
+These are proposed changes to current ownership, not a claim that main already
+uses Query. Update the normative architecture rules and primitive registry with
+an approved implementation, not as though this plan were already implemented.
+
+## Sequence and gates
+
+### Step 1: replacement/deletion map and LOC budget
+
+**Assigned role:** one Luna implementation agent, operating in analysis-only mode.
+
+Produce [the Step 1 map](query-migration-step-1.md), with:
+
+- The smallest closed Project-resource boundary: list/detail reads, imperative
+  freshness-dependent reads, canonical writes, and every affected consumer.
+  Include project representations in Today, Review, All and task/compound
+  workflows; do not assume one editor is an isolated resource.
+- Current fetched, confirmed, optimistic and UI-lifetime owners, with file/line
+  evidence. Classify them separately before proposing deletion.
+- A replace/delete/keep table naming exact symbols, affected callers, proposed
+  owner, and the milestone that permits removal.
+- Measured source baselines and estimated replacement/deletion ranges, including
+  shared setup and cross-resource integration. State assumptions and uncertainty.
+- Observable invariants and a proportional counterexample matrix independent
+  of a preferred implementation, plus relevant existing regression locations.
+- A verdict: proceed with a bounded Project slice, revise its boundary, or
+  block with concrete reasons. Do not solve an unclosed boundary by inventing
+  another cache, generic recovery framework or client domain graph.
+
+No application edits, dependency changes/installations, runtime experiments,
+Git publication, or additional agents in Step 1. The coordinator reviews this
+map before commissioning implementation.
+
+### Step 2: complete the Project-resource migration
+
+After approval of the Step 1 map:
+
+1. Establish Query in the real app provider tree, viewer-qualified resource
+   identity, and the smallest central reconciliation/invalidation integration.
+   Prove relevant behavior against the actual installed library before relying
+   on cancellation, cache publication or imperative-fetch assumptions.
+2. Move the agreed Project read and canonical write paths together. Account
+   for other mounted readers, aggregate projections and task writes that affect
+   project detail. No migrated resource may retain competing fetched/confirmed
+   ownership through `useAsync` or a retained DTO map.
+3. Remove Project retained-value overlays and per-view release bookkeeping
+   identified in Step 1. Preserve drafts and placement behavior without using
+   a stored server DTO as their lifetime owner.
+4. Update architecture documentation and enforcement, remove obsolete callers
+   and tests, and preserve behavioral regressions at appropriate boundaries.
+
+The milestone is a working resource migration, not merely a provider,
+`useQuery` wrapper or renamed retention controller. Existing Tasks and other
+unmigrated resources may temporarily use their old paths, with the boundary and
+remaining removals explicit.
+
+### Step 3: migrate Tasks and remove shared retained server-state ownership
+
+Apply the accepted resource pattern to task reads and canonical task mutations.
+Preserve arbitrary-depth outlines, membership, moves, pending feedback and
+interaction retention. Remove shared retained server-state machinery only when
+its final real consumer is migrated; do not credit that deletion to Step 2.
+Do not redesign backend workflow policy or UI capabilities during the migration.
+
+### Step 4: finish remaining reads and invalidation cleanup
+
+Migrate remaining resources, including bootstrap/configuration paths as needed.
+Delete `useAsync` and the old refresh-counter ownership when their final callers
+are removed. Keep authenticated SSE, reconnect, visibility and timed-eligibility
+behavior, feeding the canonical Query invalidation path. Remove temporary
+integration paths and update the registry to describe the actual final system.
+
+## Invariants and counterexamples
+
+Step 1 must locate the actual affected paths and refine this initial matrix:
+
+| Invariant | Counterexample to preserve |
+| --- | --- |
+| Older reads cannot roll back confirmed values | Held GET settles after a higher-revision mutation response |
+| Metadata acknowledgement is not a full authorized read | Mutation confirmation arrives after a denied detail GET |
+| Fresh derived facts remain authoritative | Equal entity revision but changed children/readiness |
+| Cached data and resolved promises do not grant permission | Denial, failed retry, cached result or observer cancellation |
+| Identity and logical opening qualify publication | Viewer/opening A-to-B-to-A; old success/error settles later |
+| Acceptance is independent of runner idleness | Accepted 200 followed by queued 503; queued 403 still revokes |
+| Draft ownership is independent of fetched data | Edit, refresh/denial/recovery, Save/Cancel and replacement opening |
+| Current decisions/revisions survive editing | API-error requirements, newer GET and delayed older/equal/newer errors |
+| Optimism and row retention do not corrupt server membership | Save/refresh/interaction reorderings, removal, rollback and eventual release |
+| Mutations and reads retain their existing semantics | Explicit commit, GET-only recovery, stale conflict and fresh prerequisite reads |
+
+Do not import the abandoned test suite wholesale, weaken privacy assertions, or
+claim that provider-rich component fixtures prove the real app mount tree.
+Separate existing defects from introduced ones; record evidence gaps explicitly.
+
+## Acceptance and measurement
+
+- Behavioral parity is mandatory; fewer controls, tests or files alone do not
+  establish simplification.
+- A completed migration milestone must reduce custom ownership responsibilities
+  and demonstrate lower production LOC. If the measured result grows, stop and
+  revisit the design before expanding or calling the milestone simplified.
+- Count runtime additions/deletions under `apps/*/src` and `packages/*/src`,
+  excluding tests and test support. Report tests, documentation, package metadata
+  and lockfile changes separately.
+- Count shared Query setup in the first milestone. Do not count the same helper
+  deletion twice or claim removal while Tasks/other resources still consume it.
+- Baselines are measurements; replacement budgets are estimates, not promises.
+  Reconcile estimates against the final diff and explain material differences.
+- Approved code changes require the repository verifier and applicable
+  desktop/mobile browser gate. Relevant regressions must reject the old failure,
+  or use explicit positive/negative invariants for genuinely new behavior.
+- No migration milestone is accepted solely on a green test count or LOC delta.
+
+## Execution and handoff
+
+One coordinator publishes; one Luna agent writes the assigned slice at a time.
+The agent reports a frozen handoff before the coordinator edits its files.
+Step 1 owns only `query-migration-step-1.md`; the coordinator owns this plan and
+its README link. Existing preserved branches/worktrees remain untouched.
+
+Each later assignment must name its baseline, exact owned paths, deletions,
+callers, invariants, exclusions, evidence requirements and stop condition.
+After a few focused unsuccessful attempts, freeze and report the blocker rather
+than growing an unapproved framework or broadening into other editor repairs.
