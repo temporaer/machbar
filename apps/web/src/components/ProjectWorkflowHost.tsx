@@ -101,12 +101,12 @@ function ProjectWorkflowContent({
     refreshError: projectRefreshError,
     reload,
   } = useAsync(
-    async () => {
+    async (signal) => {
       try {
         if (ended.current) return null;
         return await api.getProject(projectId);
       } catch (error) {
-        endOnDenied(error);
+        if (!signal.aborted) endOnDenied(error);
         throw error;
       }
     },

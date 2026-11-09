@@ -26,9 +26,9 @@ export function ProjectTagsSheet({
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const { data: tags, loading, error, reload } = useAsync(async () => {
+  const { data: tags, loading, error, reload } = useAsync(async (signal) => {
     try { return await api.getTags(); }
-    catch (cause) { onFailure?.(cause); throw cause; }
+    catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
   }, []);
   const change = async (nextIds: number[]) => {
     if (saving) return;

@@ -110,12 +110,12 @@ function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
     }
   };
   const { data: task, loading, error, reload } = useAsync(
-    async () => {
+    async (signal) => {
       if (ended.current) return null;
       try {
         return await api.getTask(taskId);
       } catch (cause) {
-        endOnDenied(cause);
+        if (!signal.aborted) endOnDenied(cause);
         throw cause;
       }
     },

@@ -55,6 +55,7 @@ import { MarkdownAttachmentSheet } from "../components/MarkdownAttachmentSheet";
 import { WorkItemInlineError } from "../components/WorkItemInlineError";
 import { PaperlessAttachmentStrip } from "../components/PaperlessAttachmentStrip";
 import {
+  isReadAccessError,
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
@@ -125,6 +126,15 @@ export function ProjectDetailPage() {
   }, [projectId]);
   const projectActions = useProjectActions();
   const project = loadedProject;
+  const currentProjectRef = useRef(project);
+  currentProjectRef.current = project;
+  const contentOpeningRef = useRef(0);
+  useEffect(() => {
+    contentOpeningRef.current += 1;
+    setSavingContent(false);
+    setContentError(null);
+    return () => { contentOpeningRef.current += 1; };
+  }, [projectId]);
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
 
   const owner = project
@@ -193,6 +203,7 @@ export function ProjectDetailPage() {
     if (!project || savingContent) return false;
     const value = field === "title" ? titleDraft.trim() : notesDraft;
     if (field === "title" && !value) return false;
+    const opening = contentOpeningRef.current;
     setSavingContent(true);
     setContentError(null);
     try {
@@ -201,14 +212,21 @@ export function ProjectDetailPage() {
         { [field]: value },
         true,
       );
-      if (!confirmed) return false;
+      if (!confirmed || opening !== contentOpeningRef.current) return false;
       return true;
     } catch (cause) {
+      if (opening !== contentOpeningRef.current) return false;
+      if (isReadAccessError(cause)) {
+        setTitleDraft(currentProjectRef.current?.title ?? "");
+        setNotesDraft(currentProjectRef.current?.notes ?? "");
+        setTitleEditing(false);
+        setNotesEditing(false);
+      }
       if (isStaleWriteConflict(cause)) reloadProject();
       setContentError(localizedErrorMessage(cause, strings));
       return false;
     } finally {
-      setSavingContent(false);
+      if (opening === contentOpeningRef.current) setSavingContent(false);
     }
   };
 

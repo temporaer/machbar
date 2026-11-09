@@ -157,6 +157,114 @@ test("changing identity retires a held read in the real app provider tree", asyn
 });
 
 for (const targetType of ["task", "project"] as const) {
+  test(`a denied ${targetType} title write ends editing despite an authorized refresh`, async ({ page }) => {
+    const created = await page.request.post(`/api/${targetType}s`, {
+      data: { title: `Saved title ${randomUUID()}` },
+    });
+    expect(created.status()).toBe(201);
+    const item = await created.json();
+    const path = `/api/${targetType}s/${item.id}`;
+    let status = 403;
+    let writes = 0;
+    await page.route(`**${path}`, async route => {
+      if (route.request().method() !== "PATCH") return route.continue();
+      writes += 1;
+      return route.fulfill({
+        status,
+        json: { error: { code: status === 403 ? "forbidden" : "internal_error", message: "Write failed." } },
+      });
+    });
+    await page.goto(`/#/${targetType}s/${item.id}`);
+    const heading = page.getByRole("heading", { name: item.title, exact: true });
+    await expect(heading).toBeVisible();
+    const section = page.locator(targetType === "task" ? ".field" : ".page-header").filter({ has: heading });
+    await section.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+    const input = page.getByRole("textbox", { name: targetType === "task" ? "Titel" : "Projekttitel", exact: true });
+    await input.fill("Discard this denied draft");
+    const refresh = page.waitForResponse(response =>
+      new URL(response.url()).pathname === path && response.request().method() === "GET",
+    );
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    expect((await refresh).status()).toBe(200);
+    await expect(input).toHaveCount(0);
+    await expect(page.locator(".detail-inline-error[role=alert]")).toBeVisible();
+    await expect(heading).toBeVisible();
+    expect(writes).toBe(1);
+    expect((await (await page.request.get(path)).json()).title).toBe(item.title);
+
+    await section.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+    await expect(input).toHaveValue(item.title);
+    await input.fill("Keep this network-failure draft");
+    status = 503;
+    const failure = page.waitForResponse(response =>
+      new URL(response.url()).pathname === path && response.request().method() === "PATCH",
+    );
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    const response = await failure;
+    expect(response.status()).toBe(503);
+    await response.finished();
+    await expect(page.locator(".detail-inline-error[role=alert]")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Speichern", exact: true })).toBeEnabled();
+    await expect(input).toHaveValue("Keep this network-failure draft");
+    expect(writes).toBe(2);
+  });
+
+  test(`a canceled tag read cannot end the current ${targetType} tag editor`, async ({ page }) => {
+    const created = await page.request.post(`/api/${targetType}s`, {
+      data: { title: `Tag cancellation ${randomUUID()}` },
+    });
+    expect(created.status()).toBe(201);
+    const item = await created.json();
+    const tagResponse = await page.request.post("/api/tags", {
+      data: { name: `Cancellation tag ${randomUUID()}`, kind: "plain" },
+    });
+    expect(tagResponse.status()).toBe(201);
+    const tag = await tagResponse.json();
+    let phase: "initial" | "held" | "fresh" = "initial";
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    let started = false;
+    await page.route("**/api/tags", async route => {
+      if (route.request().method() !== "GET" || phase !== "held") return route.continue();
+      started = true;
+      await held;
+      return route.fulfill({ status: 403, json: { error: { code: "forbidden", message: "Obsolete denial." } } });
+    });
+    try {
+      await page.goto(`/#/${targetType}s/${item.id}`);
+      await page.getByRole("button", { name: "+ Tags", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Tags", exact: true });
+      const choice = dialog.getByRole("button", { name: tag.name, exact: true });
+      await expect(choice).toBeVisible();
+      phase = "held";
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await expect.poll(() => started).toBe(true);
+      phase = "fresh";
+      const replacement = page.waitForResponse(response =>
+        new URL(response.url()).pathname === "/api/tags" && response.status() === 200,
+      );
+      await choice.click();
+      await (await replacement).finished();
+      await expect(choice).toHaveAttribute("aria-pressed", "true");
+      const obsolete = page.waitForResponse(response =>
+        new URL(response.url()).pathname === "/api/tags" && response.status() === 403,
+      );
+      release();
+      await (await obsolete).finished();
+      await page.evaluate(() => new Promise<void>(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }));
+      await expect(dialog).toBeVisible();
+      await expect(choice).toHaveAttribute("aria-pressed", "true");
+      await expect(dialog.getByRole("alert")).toHaveCount(0);
+      const saved = await (await page.request.get(`/api/${targetType}s/${item.id}`)).json();
+      const savedTags = targetType === "task" ? saved.explicitTags : saved.tags;
+      expect(savedTags.map((entry: { id: number }) => entry.id)).toContain(tag.id);
+    } finally {
+      release();
+    }
+  });
+
   test(`changing identity retires a held ${targetType} refinement continuation`, async ({ page }) => {
     const created = await page.request.post(`/api/${targetType}s`, {
       data: { title: `Refinement identity ${randomUUID()}` },

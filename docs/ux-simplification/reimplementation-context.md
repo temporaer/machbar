@@ -61,22 +61,24 @@ conflict handling also had redundant local reload plus global invalidation:
 they now rely on the single global refresh, while explicit read retry remains.
 
 The measured application-source delta against
-`2e923f23` is **+870 / -2487, net -1617 lines across 64 runtime files**,
+`2e923f23` is **+914 / -2528, net -1614 lines across 64 runtime files**,
 including newly added source and excluding tests/test support. Test source is
-separate: **+1489 / -2656, net -1167 lines across 43 files**. Deleted retention
+separate: **+1989 / -2658, net -669 lines across 44 test files**, including
+architecture-contract and browser tests. Deleted retention
 tests describe deliberately removed guarantees; replacement tests cover the
 approved server-confirmed behavior. These counts do not measure dependency
 implementation size or establish correctness.
 
 The first full verifier failed during integration; it is not acceptance
-evidence. The final frozen implementation, including the review correction
-below, passed:
+evidence. The final frozen implementation, including the independent and
+Copilot review corrections below, passed:
 
 - `bash scripts/verify.sh`: architecture, shared build, all typechecks,
-  1,418 API tests, 1,803 web tests, production build and Python
+  1,418 API tests, 1,837 web tests, production build and Python
   (159 passed, 1 skipped).
-- `npm run build && npm run test:e2e`: production rebuild and 34 desktop/mobile
-  Chromium cases, including real-App read and refinement-continuation retirement.
+- `npm run build && npm run test:e2e`: production rebuild and 42 desktop/mobile
+  Chromium cases, including real-App read and refinement-continuation retirement,
+  authored-write denial and canceled catalog-read callbacks.
 - `git diff --check`: passed.
 
 Verification used Node.js 22 and the existing Python test environment. These
@@ -113,6 +115,42 @@ reviewing both guards, StrictMode replacement behavior and the supplied
 red/green evidence. No remaining causal scenario was identified for the
 post-unmount continuation defect. This was a bounded correction review, not
 proof that every asynchronous workflow or physical device was audited.
+
+### Copilot review: expand the failure class
+
+The first current-head Copilot review of #266 reported four actionable issues.
+The merge is gated on their correction and a clean re-review, not just green CI:
+
+- Task and project title/notes writes can be denied while a subsequent GET is
+  still authorized. Read-denial cleanup is not sufficient: the current authored
+  editor must end and discard its draft on mutation denial independently.
+  Ordinary write outages must still retain it; obsolete openings cannot discard
+  a replacement draft.
+- Query cancellation excludes returned values, but cannot undo callbacks already
+  executed inside a fetcher. A canceled old GET that later fails with denial
+  must not end a current editor after its replacement read succeeds. Qualify
+  fetcher-side failure callbacks with the native signal, not another generation
+  store. Current, uncanceled denial still ends the editor.
+- Outline movement already uses the shared task action. Its separate error map
+  duplicated that owner and could hide the failure of a later completion or
+  metadata edit, or survive a later success. Remove the duplicate map instead of
+  merely reversing error precedence. All row failures and dismissal use the
+  canonical task-action error state.
+
+The counterexamples distinguish mutation failure from read failure, callback
+execution from result publication, and failure-to-failure from failure-to-success
+ordering. These are additions to the original matrix, not a return to the
+rejected optimistic or restoration guarantees.
+
+The four new real-App browser scenarios rejected the pre-review built bundle:
+task/project denied title writes left their inputs open after an authorized
+GET, and canceled tag-catalog denials closed the replacement editor. All four
+then passed on rebuilt corrected source in both browser projects. The title
+cases also preserve a subsequent ordinary-outage draft; the catalog cases
+confirm the tag was persisted through the real canonical mutation. Unit
+counterexamples cover both authored fields, 401/403/404, live read denials,
+obsolete openings and move-failure ordering. The browser denials are supplied
+serialized responses, not evidence that the server changed authorization.
 
 ## Decision and baseline
 

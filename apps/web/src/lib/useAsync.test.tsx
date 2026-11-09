@@ -25,6 +25,36 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("useAsync", () => {
+  it("passes native cancellation authority to fetchers across replacement and unmount", async () => {
+    const obsolete = deferred<string>();
+    const current = deferred<string>();
+    const pendingAtUnmount = deferred<string>();
+    const fetcher = vi.fn<(signal: AbortSignal) => Promise<string>>()
+      .mockReturnValueOnce(obsolete.promise)
+      .mockReturnValueOnce(current.promise)
+      .mockReturnValueOnce(pendingAtUnmount.promise);
+    const { result, rerender, unmount } = renderHook(
+      ({ id }) => useAsync(fetcher, [id]),
+      { wrapper, initialProps: { id: 1 } },
+    );
+    const oldSignal = fetcher.mock.calls[0]![0];
+    expect(oldSignal.aborted).toBe(false);
+    rerender({ id: 2 });
+    const currentSignal = fetcher.mock.calls[1]![0];
+    expect(oldSignal.aborted).toBe(true);
+    expect(currentSignal.aborted).toBe(false);
+    await act(async () => current.resolve("current"));
+    await waitFor(() => expect(result.current.data).toBe("current"));
+    await act(async () => obsolete.reject(new ApiError(403, "Canceled denied read")));
+    expect(result.current).toMatchObject({ data: "current", error: null, refreshError: null });
+    rerender({ id: 3 });
+    const unmountedSignal = fetcher.mock.calls[2]![0];
+    expect(unmountedSignal.aborted).toBe(false);
+    unmount();
+    expect(unmountedSignal.aborted).toBe(true);
+    await act(async () => pendingAtUnmount.resolve("unmounted"));
+  });
+
   it("uses foreground loading for the initial request and exposes its result", async () => {
     const request = deferred<string>();
     const { result } = renderHook(() => useAsync(() => request.promise), {

@@ -2034,6 +2034,84 @@ describe("TaskDetailSheet", () => {
     expect(screen.queryByText(task.title)).not.toBeInTheDocument();
   });
 
+  it.each(
+    (["title", "notes"] as const).flatMap(field => [401, 403, 404].map(status => ({ field, status }))),
+  )("discards the task $field draft on mutation $status even when GET remains authorized", async ({ field, status }) => {
+    const task = makeTask({ id: 209, title: "Saved task title", notes: "Saved task notes" });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockRejectedValue(Object.assign(new Error("Do not display raw denial"), { name: "ApiError", status }));
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    if (field === "title") {
+      await userEvent.type(await openTitleEditor(), " private draft");
+    } else {
+      setMarkdownValue(await openNotesEditor(), "private draft");
+    }
+    const reads = mockedApi.getTask.mock.calls.length;
+    await userEvent.click(screen.getByRole("button", { name: field === "title" ? strings.save : strings.saveNotes }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(strings.error);
+    await waitFor(() => expect(mockedApi.getTask.mock.calls.length).toBeGreaterThan(reads));
+    await waitFor(() => expect(screen.queryByLabelText(field === "title" ? strings.title : strings.notes)).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: task.title })).toBeVisible();
+    expect(screen.getByText(task.notes)).toBeVisible();
+    if (field === "title") expect(await openTitleEditor()).toHaveValue(task.title);
+    else expect(markdownValue(await openNotesEditor())).toBe(task.notes);
+    expect(mockedApi.updateTask).toHaveBeenCalledOnce();
+  });
+
+  it.each(["title", "notes"] as const)("preserves the task %s draft on a network write failure", async field => {
+    const task = makeTask({ id: 209, title: "Saved title", notes: "Saved notes" });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockRejectedValue(new Error("Offline"));
+    renderSheet(task.id);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    if (field === "title") await userEvent.type(await openTitleEditor(), " draft");
+    else setMarkdownValue(await openNotesEditor(), "notes draft");
+    await userEvent.click(screen.getByRole("button", { name: field === "title" ? strings.save : strings.saveNotes }));
+    await screen.findByRole("alert");
+    if (field === "title") expect(screen.getByLabelText(strings.title)).toHaveValue(`${task.title} draft`);
+    else expect(markdownValue(screen.getByLabelText(strings.notes))).toBe("notes draft");
+  });
+
+  it.each(["another task", "same task reopened"])("ignores an old denied write after opening %s", async replacement => {
+    const task = makeTask({ id: 209, title: "First task" });
+    const nextTask = makeTask({ id: replacement === "another task" ? 210 : task.id, title: "Next opening", revision: 2 });
+    mockedApi.getTask.mockImplementation(async id => id === task.id ? task : nextTask);
+    let deny!: (cause: unknown) => void;
+    mockedApi.updateTask.mockReturnValue(new Promise((_resolve, reject) => { deny = reject; }));
+    function OpeningControls() {
+      const { open, close } = useTaskDetail();
+      return <><button onClick={close}>Close opening</button><button onClick={() => open(nextTask.id)}>Replace opening</button></>;
+    }
+    renderWithProviders(<OpenerHarness taskId={task.id}><TaskDetailSheet /><OpeningControls /></OpenerHarness>);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    await userEvent.type(await openTitleEditor(), " old draft");
+    await userEvent.click(screen.getByRole("button", { name: strings.save }));
+    mockedApi.getTask.mockResolvedValue(nextTask);
+    await userEvent.click(screen.getByRole("button", { name: "Close opening", hidden: true }));
+    await userEvent.click(screen.getByRole("button", { name: "Replace opening", hidden: true }));
+    await waitForTaskTitle(nextTask.title);
+    const settle = async () => {
+      await act(async () => { deny(Object.assign(new Error("Old denial"), { name: "ApiError", status: 403 })); });
+    };
+    if (replacement === "same task reopened") {
+      const titleField = screen.getByRole("heading", { name: nextTask.title }).closest<HTMLElement>(".field")!;
+      const edit = within(titleField).getByRole("button", { name: strings.edit });
+      expect(edit).toBeDisabled();
+      await settle();
+      await waitFor(() => expect(edit).toBeEnabled());
+      await userEvent.type(await openTitleEditor(), " new draft");
+    } else {
+      await userEvent.type(await openTitleEditor(), " new draft");
+      await settle();
+    }
+    expect(screen.getByLabelText(strings.title)).toHaveValue(`${nextTask.title} new draft`);
+  });
+
   it.each(["action", "reference"] as const)("edits %s discussion nomination from details through the canonical task command", async (kind) => {
     const task = makeTask({ id: 209, title: "Gemeinsam besprechen", kind });
     mockedApi.getTask.mockResolvedValueOnce(task).mockResolvedValue({ ...task, revision: 2, discussionRequested: true });

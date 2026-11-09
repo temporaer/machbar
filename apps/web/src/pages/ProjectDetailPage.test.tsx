@@ -261,6 +261,74 @@ describe("ProjectDetailPage task explanations", () => {
     expect(input).toHaveValue("Sommerfest planen authored draft");
   });
 
+  it.each(
+    (["title", "notes"] as const).flatMap(field => [401, 403, 404].map(status => ({ field, status }))),
+  )("discards the project $field draft on mutation $status even when GET remains authorized", async ({ field, status }) => {
+    const project = { ...makeProject({ id: 42, title: "Saved project title", notes: "Saved project notes" }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    mockedApi.updateProject.mockRejectedValue(Object.assign(new Error("Do not display raw denial"), { name: "ApiError", status }));
+    renderWithProviders(<ProjectDetailPage />);
+    const heading = await screen.findByRole("heading", { name: project.title });
+    const section = field === "title" ? heading.closest<HTMLElement>(".page-header")! : screen.getByRole("heading", { name: strings.notes }).closest<HTMLElement>("section")!;
+    await userEvent.click(within(section).getByRole("button", { name: strings.edit }));
+    if (field === "title") await userEvent.type(screen.getByLabelText(strings.projectTitle), " private draft");
+    else setMarkdownValue(screen.getByLabelText(strings.notes), "private draft");
+    const reads = mockedApi.getProject.mock.calls.length;
+    await userEvent.click(screen.getByRole("button", { name: field === "title" ? strings.save : strings.saveNotes }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(strings.error);
+    await waitFor(() => expect(mockedApi.getProject.mock.calls.length).toBeGreaterThan(reads));
+    await waitFor(() => expect(screen.queryByLabelText(field === "title" ? strings.projectTitle : strings.notes)).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: project.title })).toBeVisible();
+    expect(screen.getByText(project.notes)).toBeVisible();
+    await userEvent.click(within(section).getByRole("button", { name: strings.edit }));
+    if (field === "title") expect(screen.getByLabelText(strings.projectTitle)).toHaveValue(project.title);
+    else expect(markdownValue(screen.getByLabelText(strings.notes))).toBe(project.notes);
+    expect(mockedApi.updateProject).toHaveBeenCalledOnce();
+  });
+
+  it.each(
+    (["title", "notes"] as const).flatMap(field => ["network", "stale"].map(failure => ({ field, failure }))),
+  )("preserves the project $field draft on a $failure write failure", async ({ field, failure }) => {
+    const project = { ...makeProject({ id: 42, title: "Saved title", notes: "Saved notes" }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    mockedApi.updateProject.mockRejectedValue(failure === "network" ? new Error("Offline") : Object.assign(new Error("Stale"), { name: "ApiError", status: 409, code: "stale_write_conflict" }));
+    renderWithProviders(<ProjectDetailPage />);
+    const heading = await screen.findByRole("heading", { name: project.title });
+    const section = field === "title" ? heading.closest<HTMLElement>(".page-header")! : screen.getByRole("heading", { name: strings.notes }).closest<HTMLElement>("section")!;
+    await userEvent.click(within(section).getByRole("button", { name: strings.edit }));
+    if (field === "title") await userEvent.type(screen.getByLabelText(strings.projectTitle), " draft");
+    else setMarkdownValue(screen.getByLabelText(strings.notes), "notes draft");
+    await userEvent.click(screen.getByRole("button", { name: field === "title" ? strings.save : strings.saveNotes }));
+    await screen.findByRole("alert");
+    if (field === "title") expect(screen.getByLabelText(strings.projectTitle)).toHaveValue(`${project.title} draft`);
+    else expect(markdownValue(screen.getByLabelText(strings.notes))).toBe("notes draft");
+  });
+
+  it("ignores an old denied content write after navigating to another project editor", async () => {
+    const original = { ...makeProject({ id: 42, title: "First project" }), tasks: [] };
+    const next = { ...makeProject({ id: 43, title: "Next project" }), tasks: [] };
+    mockedApi.getProject.mockImplementation(async id => id === original.id ? original : next);
+    let deny!: (cause: unknown) => void;
+    mockedApi.updateProject.mockReturnValue(new Promise((_resolve, reject) => { deny = reject; }));
+    function Navigation() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate("/projects/43")}>Next project</button>;
+    }
+    renderWithProviders(<><Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes><Navigation /></>, { initialEntries: ["/projects/42"] });
+    const heading = await screen.findByRole("heading", { name: original.title });
+    await userEvent.click(within(heading.closest(".page-header")!).getByRole("button", { name: strings.edit }));
+    await userEvent.type(screen.getByLabelText(strings.projectTitle), " old draft");
+    await userEvent.click(screen.getByRole("button", { name: strings.save }));
+    await userEvent.click(screen.getByRole("button", { name: "Next project" }));
+    const nextHeading = await screen.findByRole("heading", { name: next.title });
+    await userEvent.click(within(nextHeading.closest(".page-header")!).getByRole("button", { name: strings.edit }));
+    await userEvent.type(screen.getByLabelText(strings.projectTitle), " new draft");
+    await act(async () => { deny(Object.assign(new Error("Old denial"), { name: "ApiError", status: 403 })); });
+    expect(screen.getByLabelText(strings.projectTitle)).toHaveValue(`${next.title} new draft`);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("uses refreshed hierarchy membership after a parent edit", async () => {
     const parent = makeTask({ id: 71, title: "Parent before edit", projectId: 42 });
     const child = makeTask({ id: 72, title: "Moved sibling", projectId: 42 });

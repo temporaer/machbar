@@ -42,9 +42,9 @@ export function ProjectConvertToTaskSheet({
     loading,
     error: loadError,
     reload,
-  } = useAsync<ProjectDetail>(async () => {
+  } = useAsync<ProjectDetail>(async (signal) => {
     try { return await api.getProject(story.id); }
-    catch (cause) { onFailure?.(cause); throw cause; }
+    catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
   }, [story.id]);
 
   const currentProject = freshProject ?? project;

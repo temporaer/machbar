@@ -20,12 +20,12 @@ export function ProjectContextsSheet({
   const projectActions = useProjectActions();
   const saving = projectActions.isPending(story.id);
   const { data: homeAssistant } = useAsync(
-    async () => {
+    async (signal) => {
       try { return await (
       typeof api.getHomeAssistantStatus === "function"
         ? api.getHomeAssistantStatus()
         : Promise.resolve(null)); }
-      catch (cause) { onFailure?.(cause); throw cause; }
+      catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
     },
     [],
   );

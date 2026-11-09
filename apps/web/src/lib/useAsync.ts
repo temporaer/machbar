@@ -14,7 +14,7 @@ export interface AsyncState<T> {
 }
 
 export function useAsync<T>(
-  fetcher: () => Promise<T>,
+  fetcher: (signal: AbortSignal) => Promise<T>,
   deps: ReadonlyArray<unknown> = [],
 ): AsyncState<T> {
   const strings = useStrings();
@@ -23,7 +23,7 @@ export function useAsync<T>(
   const query = useQuery({
     queryKey: ["read", readId, ...deps],
     queryFn: async ({ signal }) => {
-      const result = await fetcher();
+      const result = await fetcher(signal);
       signal.throwIfAborted();
       return result;
     },

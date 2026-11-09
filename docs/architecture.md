@@ -678,6 +678,9 @@ Successful local writes cancel obsolete reads and refetch active results;
 mutation DTOs are not published across list/detail/aggregate caches. External
 events join an in-flight initial read and share one trailing revalidation.
 Consumed cancellation signals prevent an obsolete request from publishing.
+`useAsync` also supplies that signal to fetchers; fetcher-side failure callbacks
+check it before discarding drafts or ending an editor. A result-only guard
+cannot retire those earlier side effects.
 Changing actor/authentication remounts the read/action/editor scope with a fresh
 Query client. Bootstrap identity and independent explicit polling remain
 outside this read facade.
@@ -1424,7 +1427,7 @@ The old global "Sortiermodus" and its seven-button panel under *every* row — a
 | Module | Responsibility |
 |--------|----------------|
 | `lib/taskTreeMove.ts` | Pure, React-free geometry and tree maths: `slotFromPointer`, `projectDrop`, `locateTask`, `planMove`, `applyMove`, `outlineRootGroup`. Unit-tested on its own |
-| `lib/useOutlineOrganize.tsx` | Drag/keyboard destination calculation, live drag geometry and pending/error feedback; publishes `OutlineOrganizeValue` through context |
+| `lib/useOutlineOrganize.tsx` | Drag/keyboard destination calculation, live drag geometry and pending feedback; publishes `OutlineOrganizeValue` through context. Row errors belong to the canonical task action, not an outline-local copy |
 
 `TaskRow` renders exactly one structural control — the ⠿ handle. Pressing it starts a drag (a row long-press is the touch shortcut into the same drag); arrow keys on the focused handle move the task directly, and `Alt+ArrowUp/Down/Left/Right` moves the interaction scope's active task the same way from anywhere in the row (`lib/useWorkItemKeyboardNav.ts`). A plain click/tap on the handle opens no separate mode. `consumeDragClick()` swallows the click a real drag ends with, so a drag never also fires a stray click.
 

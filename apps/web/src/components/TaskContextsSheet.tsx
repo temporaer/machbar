@@ -23,12 +23,12 @@ export function TaskContextsSheet({ task, onClose, onFailure }: { task: Task; on
   const taskActions = useTaskActions();
   const saving = taskActions.isPending(task.id);
   const { data: homeAssistant } = useAsync(
-    async () => {
+    async (signal) => {
       try { return await (
       typeof api.getHomeAssistantStatus === "function"
         ? api.getHomeAssistantStatus()
         : Promise.resolve(null)); }
-      catch (cause) { onFailure?.(cause); throw cause; }
+      catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
     },
     [],
   );

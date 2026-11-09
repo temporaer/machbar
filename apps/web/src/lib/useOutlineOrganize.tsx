@@ -2,8 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Task } from "@machbar/shared";
 import { useTaskActions } from "./useTaskActions";
 import { useStrings } from "./strings";
-import type { Strings } from "./strings";
-import { isStaleWriteConflict, localizedErrorMessage } from "./errorMessage";
+import { isStaleWriteConflict } from "./errorMessage";
 import { useInteractionScope } from "./interactionScope";
 import {
   INDENT_WIDTH,
@@ -38,7 +37,6 @@ export interface OutlineOrganizeValue {
    * addressed parent expands itself (collapse state lives per row).
    */
   expandRequest: { taskId: number } | null;
-  errors: Record<number, string>;
   registerRow: (taskId: number, row: OutlineRow, element: HTMLElement | null) => void;
   /** Arms a pointer drag; it only becomes real once the pointer actually moves. */
   beginDrag: (taskId: number, clientX: number, clientY: number) => void;
@@ -47,7 +45,6 @@ export interface OutlineOrganizeValue {
   /** True exactly once after a real drag, so the handle's click never re-triggers anything else. */
   consumeDragClick: () => boolean;
   moveBy: (taskId: number, direction: OrganizeDirection) => void;
-  clearError: (taskId: number) => void;
 }
 
 const OutlineOrganizeContext = createContext<OutlineOrganizeValue | null>(null);
@@ -77,11 +74,6 @@ function sameProjection(a: DropProjection | null, b: DropProjection | null): boo
   if (a === b) return true;
   if (!a || !b) return false;
   return a.parentId === b.parentId && a.depth === b.depth && a.index === b.index && a.beforeTaskId === b.beforeTaskId;
-}
-
-function errorMessage(err: unknown, strings: Strings): string {
-  const detail = localizedErrorMessage(err, strings);
-  return detail ? `${strings.moveFailed}: ${detail}` : strings.moveFailed;
 }
 
 /**
@@ -114,7 +106,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   const [projection, setProjection] = useState<DropProjection | null>(null);
   const [indicatorTop, setIndicatorTop] = useState(0);
   const [expandRequest, setExpandRequest] = useState<{ taskId: number } | null>(null);
-  const [errors, setErrors] = useState<Record<number, string>>({});
 
   const effectiveTasks = tasks;
   const structuralGroup = useMemo(() => outlineRootGroup(effectiveTasks), [effectiveTasks]);
@@ -174,15 +165,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     handle.focus();
   }, [effectiveTasks, pendingId]);
 
-  const clearError = useCallback((taskId: number) => {
-    setErrors((prev) => {
-      if (!(taskId in prev)) return prev;
-      const next = { ...prev };
-      delete next[taskId];
-      return next;
-    });
-  }, []);
-
   const commitMove = useCallback(
     (taskId: number, targetParentId: number | null, targetIndex: number) => {
       const { effectiveTasks: current, rootGroup: group, pendingId: busy } =
@@ -210,7 +192,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
         refocusId.current = { id: taskId, tree: current };
       }
 
-      clearError(taskId);
       setPendingId(taskId);
       // A destination parent that happens to be collapsed would swallow the
       // row the user just moved; ask it to reveal its children. A fresh
@@ -234,16 +215,12 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
           if (isStaleWriteConflict(err)) {
             staleTaskRevisions.current.set(taskId, plan.expectedRevision);
           }
-          setErrors((prev) => ({
-            ...prev,
-            [taskId]: errorMessage(err, strings),
-          }));
         } finally {
           if (mounted.current) setPendingId(null);
         }
       })();
     },
-    [clearError, strings, taskActions.move],
+    [taskActions.move],
   );
 
   const snapshotRows = useCallback((taskId: number) => {
@@ -513,13 +490,11 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       projection,
       dragDepthDelta,
       expandRequest,
-      errors,
       registerRow,
       beginDrag,
       beginLongPressDrag,
       consumeDragClick,
       moveBy,
-      clearError,
     }),
     [
       taskIds,
@@ -529,13 +504,11 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       projection,
       dragDepthDelta,
       expandRequest,
-      errors,
       registerRow,
       beginDrag,
       beginLongPressDrag,
       consumeDragClick,
       moveBy,
-      clearError,
     ],
   );
 

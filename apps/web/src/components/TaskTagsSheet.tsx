@@ -23,9 +23,9 @@ export function TaskTagsSheet({ task, onClose, onFailure }: { task: Task; onClos
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
-  const { data: tags, loading, error, reload } = useAsync(async () => {
+  const { data: tags, loading, error, reload } = useAsync(async (signal) => {
     try { return await api.getTags(); }
-    catch (cause) { onFailure?.(cause); throw cause; }
+    catch (cause) { if (!signal.aborted) onFailure?.(cause); throw cause; }
   }, []);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saving = taskActions.isPending(task.id);

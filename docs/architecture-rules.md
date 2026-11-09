@@ -97,6 +97,10 @@ by one shared trailing revalidation, so repeated events cannot starve loading.
 Do not add per-component throttles, revision floors, publication traversals or
 confirmed-result maps.
 
+Side-effecting read fetchers must qualify callbacks with the native cancellation
+signal supplied by `useAsync`. Filtering returned values alone cannot stop a
+canceled transport's later denial from discarding a current editor.
+
 Ordinary network/server errors preserve usable data and authored drafts with
 visible retry feedback. Access-denied/missing reads (401/403/404) remove cached
 content. Access loss ends the focused workflow; reopening starts a fresh
@@ -143,7 +147,8 @@ separate backend commands.
 `useOutlineOrganize.tsx` owns drag/keyboard destination calculation and pending
 feedback; `MoveTaskSheet.tsx` owns explicit destination selection.
 Both execute through `useTaskActions.move`, sharing the same task-ID concurrency gate and invalidation
-as other task commands. Only that canonical action calls `api.moveTask`.
+as other task commands. Row errors and dismissal use that same action owner,
+not a second outline error map. Only that canonical action calls `api.moveTask`.
 
 `treeRepo.getDirectChildren` is the canonical mixed-role sibling query for
 creation, successor insertion, reindexing and project moves. Task moves normalize
@@ -227,7 +232,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Intervention review evidence and checkpoints | `domain/interventionEvidence.ts`, canonical `goals.ts::insertAssessment`, `InterventionEvidencePanel` (method-aware facts and citation selection), `ObservationPlanSummary` in `ObservationPlanEditor.tsx`, and `InterventionAssessSheet`; existing reflection evidence is reused |
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
-| Shared read ownership and invalidation | `refresh.tsx`, `queryClient.ts` and the `useAsync.ts` facade over TanStack Query; write invalidations cancel obsolete reads, external invalidations share trailing reads, and access errors remove cached content. |
+| Shared read ownership and invalidation | `refresh.tsx`, `queryClient.ts` and the `useAsync.ts` facade over TanStack Query; write invalidations cancel obsolete reads, external invalidations share trailing reads, access errors remove cached content, and side-effecting fetchers qualify callbacks with the native signal. |
 | Server-confirmed item mutation | `apps/web/src/lib/useItemMutations.ts` |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |

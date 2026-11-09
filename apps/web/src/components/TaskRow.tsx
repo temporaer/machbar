@@ -143,9 +143,7 @@ export function TaskRow({
     () => (isReference ? parseReferenceContent(task.notes) : null),
     [isReference, task.notes],
   );
-  const statusError = errors[taskProp.id];
-  const organizeError = organize?.errors[taskProp.id];
-  const rowError = organizeError ?? statusError;
+  const rowError = errors[taskProp.id];
   const showTodayRevisitActions =
     attentionTone === "revisit" &&
     depth === 0 &&
@@ -642,12 +640,9 @@ export function TaskRow({
       {rowError ? (
         <RowErrorBanner
           classPrefix="task-row"
-          headline={organizeError && !statusError ? strings.moveFailed : strings.error}
+          headline={strings.error}
           message={rowError}
-          onClose={() => {
-            clearError(task.id);
-            organize?.clearError(taskProp.id);
-          }}
+          onClose={() => clearError(task.id)}
         />
       ) : null}
 

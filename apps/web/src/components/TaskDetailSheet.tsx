@@ -39,6 +39,7 @@ import { buildTaskShareUrl } from "../lib/shareUrls";
 import { RecentActivity } from "./RecentActivity";
 import { useLocale } from "../lib/locale";
 import {
+  isReadAccessError,
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
@@ -133,6 +134,14 @@ export function TaskDetailSheet() {
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
   const taskActions = useTaskActions();
   const task = loadedTask;
+  const currentTaskRef = useRef(task);
+  currentTaskRef.current = task;
+  const contentOpeningRef = useRef(0);
+  useEffect(() => {
+    contentOpeningRef.current += 1;
+    setSavingTextFields(false);
+    return () => { contentOpeningRef.current += 1; };
+  }, [openTaskId]);
 
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
@@ -303,6 +312,7 @@ export function TaskDetailSheet() {
     if (field === "title" && !value) return false;
     const dirty = field === "title" ? titleDirty : notesDirty;
     if (!dirty) return true;
+    const opening = contentOpeningRef.current;
     setSavingTextFields(true);
     setSaveError(null);
     try {
@@ -311,18 +321,25 @@ export function TaskDetailSheet() {
         { [field]: value },
         true,
       );
-      if (!updated) return false;
+      if (!updated || opening !== contentOpeningRef.current) return false;
       revisionRef.current = updated.revision;
       setTextFieldsBaseline((current) =>
         current ? { ...current, [field]: value } : current,
       );
       return true;
     } catch (err) {
+      if (opening !== contentOpeningRef.current) return false;
+      if (isReadAccessError(err)) {
+        setTitleDraft(currentTaskRef.current?.title ?? "");
+        setNotesDraft(currentTaskRef.current?.notes ?? "");
+        setTitleEditing(false);
+        setNotesEditing(false);
+      }
       if (isStaleWriteConflict(err)) reload();
       setSaveError(localizedErrorMessage(err, strings));
       return false;
     } finally {
-      setSavingTextFields(false);
+      if (opening === contentOpeningRef.current) setSavingTextFields(false);
     }
   };
 

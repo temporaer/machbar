@@ -223,11 +223,52 @@ describe("TaskOutline Ziehen und Umbauen", () => {
 
     drag("Alpha", { toY: centreOf(2, 5) });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Verschieben fehlgeschlagen");
-    expect(screen.getByRole("alert")).toHaveTextContent("Kreis in der Aufgabenhierarchie");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Kreis in der Aufgabenhierarchie");
     // Kein voreiliger globaler Refresh: die Zeilen kehren einfach zurück.
     await waitFor(() => expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]));
   });
+
+  it.each(["completion failure", "metadata failure", "metadata success"] as const)(
+    "replaces an earlier move error after a later %s",
+    async (outcome) => {
+      const tasks = outlineTasks();
+      mockedApi.moveTask.mockRejectedValueOnce(new Error("Earlier move error"));
+      if (outcome === "completion failure") {
+        mockedApi.completeTask.mockRejectedValueOnce(new Error("Latest completion error"));
+      } else if (outcome === "metadata success") {
+        mockedApi.updateTask.mockResolvedValueOnce({ ...tasks[0]!, notes: "Changed", revision: 2 });
+      } else {
+        mockedApi.updateTask.mockRejectedValueOnce(new Error("Latest metadata error"));
+      }
+      function Harness() {
+        const actions = useTaskActions();
+        return <>
+          <TaskOutline tasks={tasks} emptyMessage="Empty" organizable />
+          <button onClick={() => void actions.update(tasks[0]!, { notes: "Changed" })}>Update Alpha</button>
+        </>;
+      }
+      renderWithProviders(<Harness />);
+      handleFor("Alpha").focus();
+      await userEvent.keyboard("{ArrowDown}");
+      expect(await screen.findByRole("alert")).toHaveTextContent("Earlier move error");
+
+      if (outcome === "completion failure") {
+        const row = screen.getByText("Alpha").closest("li")!;
+        await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+      } else {
+        await userEvent.click(screen.getByRole("button", { name: "Update Alpha" }));
+      }
+      if (outcome === "metadata success") {
+        await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+      } else {
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(
+          outcome === "completion failure" ? "Latest completion error" : "Latest metadata error",
+        ));
+      }
+      expect(screen.queryByText(/Earlier move error/)).not.toBeInTheDocument();
+      expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
+    },
+  );
 
   it("refreshes after a stale move and blocks the stale snapshot from retrying", async () => {
     const stale = Object.assign(new Error("Veraltete Revision"), {
