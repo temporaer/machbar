@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRetentionInteraction } from "../lib/useRetentionInteraction";
 import { api, ApiError, type ProjectDetail } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -64,7 +64,6 @@ export function ProjectWorkflowHost() {
   const {
     data: fetchedProject,
     loading: projectLoading,
-    refreshing: projectRefreshing,
     error: projectError,
     refreshError: projectRefreshError,
     reload,
@@ -104,36 +103,26 @@ export function ProjectWorkflowHost() {
         activationOpening &&
         error instanceof ApiError &&
         (error.status === 403 || error.status === 404),
+      onAcceptedResult: (project) => {
+        if (
+          !activationOpening ||
+          projectId === null ||
+          project === null ||
+          project.id !== projectId ||
+          openingIdRef.current !== openingId
+        ) return;
+        const current = activationReadStateRef.current;
+        const readable = {
+          openingId,
+          denied: false,
+          authorityVersion: current.openingId === openingId ? current.authorityVersion : 0,
+          readVersion: current.openingId === openingId ? current.readVersion + 1 : 1,
+        };
+        activationReadStateRef.current = readable;
+        setActivationReadState(readable);
+      },
     },
   );
-  useEffect(() => {
-    if (
-      !activationOpening ||
-      openingIdRef.current !== openingId ||
-      !fetchedProject ||
-      projectLoading ||
-      projectRefreshing ||
-      projectError ||
-      projectRefreshError
-    ) return;
-    const current = activationReadStateRef.current;
-    const readable = {
-      openingId,
-      denied: false,
-      authorityVersion: current.openingId === openingId ? current.authorityVersion : 0,
-      readVersion: current.openingId === openingId ? current.readVersion + 1 : 1,
-    };
-    activationReadStateRef.current = readable;
-    setActivationReadState(readable);
-  }, [
-    activationOpening,
-    fetchedProject,
-    openingId,
-    projectError,
-    projectLoading,
-    projectRefreshError,
-    projectRefreshing,
-  ]);
   useRetentionInteraction(projectId, projectActions.pauseRetention, projectId !== null);
   const retained = projectId !== null ? projectActions.retained.get(projectId)?.story : undefined;
   const story = fetchedProject ? projectActions.projectStory(fetchedProject) : retained;

@@ -175,11 +175,13 @@ describe("useAsync", () => {
   it("does not let a slower previous request overwrite a newer result", async () => {
     const first = deferred<string>();
     const second = deferred<string>();
+    const onAcceptedResult = vi.fn();
     const { result, rerender } = renderHook(
       ({ query }) =>
         useAsync(
           () => (query === "first" ? first.promise : second.promise),
           [query],
+          { onAcceptedResult },
         ),
       { wrapper, initialProps: { query: "first" } },
     );
@@ -191,6 +193,8 @@ describe("useAsync", () => {
     act(() => first.resolve("older"));
     await act(async () => Promise.resolve());
     expect(result.current.data).toBe("newer");
+    expect(onAcceptedResult).toHaveBeenCalledOnce();
+    expect(onAcceptedResult).toHaveBeenCalledWith("newer");
   });
   it.each(["resolve", "reject"] as const)(
     "serializes repeated invalidations and settles after initial %s",

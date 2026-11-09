@@ -22,8 +22,9 @@ interface AsyncSnapshot<T> {
   refreshErrorCause: unknown | null;
 }
 
-interface UseAsyncOptions {
+interface UseAsyncOptions<T> {
   clearDataOnError?: (error: unknown) => boolean;
+  onAcceptedResult?: (result: T) => void;
 }
 
 function sameDependencies(
@@ -46,7 +47,7 @@ function sameDependencies(
 export function useAsync<T>(
   fetcher: () => Promise<T>,
   deps: ReadonlyArray<unknown> = [],
-  options: UseAsyncOptions = {},
+  options: UseAsyncOptions<T> = {},
 ): AsyncState<T> {
   const strings = useStrings();
   const { version } = useRefresh();
@@ -113,6 +114,7 @@ export function useAsync<T>(
       try {
         const result = await fetcherRef.current();
         if (cancelled || generation.current !== currentGeneration) return;
+        optionsRef.current.onAcceptedResult?.(result);
         const next: AsyncSnapshot<T> = {
           generation: currentGeneration,
           data: result,

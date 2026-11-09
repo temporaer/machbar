@@ -13,6 +13,7 @@ import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFiel
 import { BottomSheet } from "./BottomSheet";
 
 type ActivationDraft = Pick<ProjectActivationPrompt, "selectedDrivers" | "nextActionTitle">;
+type ActivationRequirements = Omit<ProjectActivationPrompt, "selectedDrivers" | "nextActionTitle">;
 
 function activationPrompt(story: ProjectDetail, draft: ActivationDraft): ProjectActivationPrompt {
   const previous = {
@@ -78,14 +79,14 @@ export function ProjectActivationSheet({
   const [draft, setDraft] = useState<ActivationDraft>({ selectedDrivers: {}, nextActionTitle: "" });
   const [promptOverride, setPromptOverride] = useState<{
     readVersion: number;
-    prompt: ProjectActivationPrompt;
+    requirements: ActivationRequirements;
   } | null>(null);
   const authorityRef = useRef({ openingId, authorityVersion, readVersion, hasAuthority: story !== null });
   authorityRef.current = { openingId, authorityVersion, readVersion, hasAuthority: story !== null };
   const currentPrompt = story ? activationPrompt(story, draft) : null;
   const prompt = story
     ? promptOverride?.readVersion === readVersion
-      ? promptOverride.prompt
+      ? { ...promptOverride.requirements, ...draft }
       : currentPrompt
     : null;
   const resolution = useMemo(
@@ -116,10 +117,11 @@ export function ProjectActivationSheet({
       if (!isCurrentAuthority(startedWith.authorityVersion)) return;
       const commandPrompt = projectActivationPromptFromError(cause, prompt);
       if (commandPrompt) {
-        setPromptOverride({ readVersion: authorityRef.current.readVersion, prompt: commandPrompt });
+        const { selectedDrivers, nextActionTitle, ...requirements } = commandPrompt;
+        setPromptOverride({ readVersion: authorityRef.current.readVersion, requirements });
         setDraft({
-          selectedDrivers: commandPrompt.selectedDrivers,
-          nextActionTitle: commandPrompt.nextActionTitle,
+          selectedDrivers,
+          nextActionTitle,
         });
       }
       if (cause instanceof ApiError && cause.code === "stale_write_conflict") onRetry();
@@ -145,7 +147,6 @@ export function ProjectActivationSheet({
                   selectedDrivers: next.selectedDrivers,
                   nextActionTitle: next.nextActionTitle,
                 });
-                setPromptOverride(null);
               }}
             />
             {readError ? (

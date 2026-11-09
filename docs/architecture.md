@@ -900,6 +900,10 @@ sheet. A 403/404 clears its retained project detail from `useAsync`; the mounted
 sheet keeps only authored choices and exposes a GET-only retry, then rebuilds
 requirements and revisions from the newly accepted server snapshot. Other
 refresh errors retain usable content.
+Acceptance is published by the canonical runner, not inferred from idle state:
+a successful read remains authoritative when its queued successor fails harmlessly.
+Error-supplied activation requirements survive authored edits until a later
+accepted read replaces them; choices remain normalized to current requirements.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.

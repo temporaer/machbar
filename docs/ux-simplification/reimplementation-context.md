@@ -134,6 +134,10 @@ Callback authority must rotate at the qualified read-denial event, not only
 when queued React state renders. Test command success/error after restoration
 and success in the same batch as denial: a render-mirrored authority ref left
 a reproduced closing race.
+Read acceptance is not runner idleness: an accepted 200 followed by a queued
+503 must recover the editor. Error-supplied requirements also outlive choice
+edits until a new accepted GET replaces them. Keep one authored-choice owner
+and preserve canonical normalization when a newer read removes a driver requirement.
 
 ## Mistakes not to repeat
 
