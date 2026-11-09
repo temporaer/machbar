@@ -61,9 +61,9 @@ conflict handling also had redundant local reload plus global invalidation:
 they now rely on the single global refresh, while explicit read retry remains.
 
 The measured application-source delta against
-`2e923f23` is **+1007 / -2573, net -1566 lines across 66 runtime files**,
+`2e923f23` is **+1117 / -2588, net -1471 lines across 67 runtime files**,
 including newly added source and excluding tests/test support. Test source is
-separate: **+2533 / -2661, net -128 lines across 48 test files**, including
+separate: **+3018 / -2666, net +352 lines across 51 test files**, including
 architecture-contract and browser tests. Deleted retention
 tests describe deliberately removed guarantees; replacement tests cover the
 approved server-confirmed behavior. These counts do not measure dependency
@@ -74,12 +74,13 @@ evidence. The final frozen implementation, including the independent and
 Copilot review corrections below, passed:
 
 - `bash scripts/verify.sh`: architecture, shared build, all typechecks,
-  1,418 API tests, 1,877 web tests, production build and Python
+  1,418 API tests, 1,897 web tests, production build and Python
   (159 passed, 1 skipped).
-- `npm run build && npm run test:e2e`: production rebuild and 46 desktop/mobile
+- `npm run build && npm run test:e2e`: production rebuild and 50 desktop/mobile
   Chromium cases, including real-App read and refinement-continuation retirement,
   authored-write/criterion denial, canceled catalog-read callbacks and
-  superseded dependency search.
+  superseded dependency search, submitted split-draft consumption across
+  identity replacement and stale-deadline read retry.
 - `git diff --check`: passed.
 
 Verification used Node.js 22 and the existing Python test environment. These
@@ -187,6 +188,40 @@ were not reproduced; pending controls, identity retirement and revisions retain
 their existing guards. This is a separate unverified concern, not a confirmed
 regression from search cancellation or evidence of complete preview coverage.
 The merge remains gated on another current-head Copilot review and CI.
+
+The third review identified three more independent lifecycle/recovery gaps.
+The verification contract distinguishes:
+
+- Confirmed split success after identity retirement must consume only its
+  still-matching submitted storage draft; newer drafts and failed submissions
+  survive, and retired UI/navigation never resumes.
+- Deadline stale-save recovery must retain the selected date, discard stale
+  activation choices and expose a GET-only retry after offline/server failure.
+  Repeated read failure stays recoverable; even an empty requirements result
+  needs an explicit fresh-revision Save, never an automatic write replay.
+- Successful writes after a consumer sheet closes still invalidate their
+  captured refresh scope. Consumer unmount is not identity retirement:
+  replacement identities must not receive the old write's UI or invalidation.
+
+The split draft now carries a per-record identity so a newer draft with
+identical text survives confirmed-success cleanup; legacy session arrays remain
+readable. The old bundle failed the real-App test with already-created steps
+still in session storage after the identity switch. The corrected test also
+switches back, reopens the existing split workflow and observes a blank composer
+with exactly the two already-created children in SQLite.
+
+Deadline retry reloads only requirements and preserves the selected date;
+fresh decisions and the current revision need another explicit Save. Tests
+also cover repeated GET failure, absent activation requirements and the sibling
+unchanged-date retry dead end after an ordinary write outage. The old bundle
+failed the real-App stale/offline scenario at the absent retry control.
+
+The shared mutation runner now invalidates its captured owner regardless of
+consumer mounting, retaining local-state guards. Real-Query Goals tests
+distinguish sheet closure from identity replacement. An adjacent, reachable
+close/reopen ordering also exposed an old success closing the replacement
+intervention sheet; its callback is now retired on unmount. No backend command
+or successful return contract changed.
 
 ## Decision and baseline
 

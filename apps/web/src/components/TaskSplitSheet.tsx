@@ -139,14 +139,14 @@ export function TaskSplitSheet({
         }
       }
       const result = await api.createTaskStepBatchForTask(parentId, input);
-      if (!isCurrent()) return false;
+      bump();
+      if (!isCurrent()) return true;
       if (result.parent) {
         setCurrentParentRevision(result.parent.revision);
         setCurrentParentStatus(result.parent.status);
         setCurrentProjectId(result.parent.projectId);
         setCurrentProject(result.projectSnapshot ?? null);
       }
-      bump();
       setActivationState(null);
       if (result.convertedProject) {
         onClose();

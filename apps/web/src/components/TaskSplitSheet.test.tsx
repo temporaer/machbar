@@ -5,18 +5,18 @@ import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
-import { IdentityProvider } from "../lib/identity";
+import { IdentityProvider, useIdentity } from "../lib/identity";
 import { LocaleProvider } from "../lib/locale";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { RefreshProvider } from "../lib/refresh";
 import { SwipeCoachProvider } from "../lib/swipeCoach";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
-import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
+import { TaskWorkflowProvider, useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { ThemeProvider } from "../lib/theme";
 import { TaskSplitSheet } from "./TaskSplitSheet";
@@ -39,6 +39,30 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
+function SplitOpening() {
+  const workflow = useTaskWorkflow();
+  return <><button onClick={() => workflow.open("split", 7)}>Open split</button><TaskWorkflowHost /></>;
+}
+
+function KeyedSplitScope() {
+  const { currentMemberId, setCurrentMemberId, membersLoading } = useIdentity();
+  const location = useLocation();
+  if (membersLoading) return null;
+  return <>
+    <button onClick={() => setCurrentMemberId(1)}>Use member one</button>
+    <button onClick={() => setCurrentMemberId(2)}>Use member two</button>
+    <output aria-label="Current path">{location.pathname}</output>
+    <TaskWorkflowProvider key={currentMemberId}><SplitOpening /></TaskWorkflowProvider>
+  </>;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
 describe("TaskSplitSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,6 +73,91 @@ describe("TaskSplitSheet", () => {
   });
 
   afterEach(() => { vi.useRealTimers(); });
+
+  it.each(["success", "failure"] as const)("settles submitted persistence after identity replacement on %s without affecting the replacement editor", async outcome => {
+    localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 }), makeMember({ id: 2 })]);
+    const command = deferred<Awaited<ReturnType<typeof api.createTaskStepBatchForTask>>>();
+    let revision = 1;
+    mockedApi.getTask.mockImplementation(async () => makeTask({ id: 7, revision }));
+    mockedApi.createTaskStepBatchForTask.mockReturnValueOnce(command.promise);
+    renderWithProviders(<KeyedSplitScope />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open split" }));
+    await user.type(await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder), "Submitted member one draft");
+    await user.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    const submitted = sessionStorage.getItem("machbar:steps:task-7-member-1");
+    expect(submitted).toContain("Submitted member one draft");
+    await user.click(screen.getByRole("button", { name: "Use member two" }));
+    await user.click(await screen.findByRole("button", { name: "Open split" }));
+    await user.type(await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder), "Member two draft");
+    const replacement = sessionStorage.getItem("machbar:steps:task-7-member-2");
+    await act(async () => {
+      if (outcome === "success") {
+        revision = 2;
+        command.resolve({ tasks: [makeTask({ parentTaskId: 7, title: "Submitted member one draft" })], parent: makeTask({ id: 7, revision }) });
+      } else command.reject(new Error("Offline"));
+    });
+    expect(sessionStorage.getItem("machbar:steps:task-7-member-1")).toBe(outcome === "success" ? null : submitted);
+    expect(sessionStorage.getItem("machbar:steps:task-7-member-2")).toBe(replacement);
+    expect(screen.getAllByPlaceholderText(strings.splitTaskRowPlaceholder)[0]).toHaveValue("Member two draft");
+    expect(screen.getByLabelText("Current path")).toHaveTextContent(/^\/$/);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Use member one" }));
+    await user.click(screen.getByRole("button", { name: "Open split" }));
+    const restored = await screen.findAllByPlaceholderText(strings.splitTaskRowPlaceholder);
+    expect(restored[0]).toHaveValue(outcome === "success" ? "" : "Submitted member one draft");
+    expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledOnce();
+    if (outcome === "success") expect(screen.getByRole("button", { name: "0 Teilaufgaben anlegen" })).toBeDisabled();
+  });
+
+  it.each(["Newer draft", "Submitted draft"])("cannot consume a newer same-key draft with title %s when an obsolete batch succeeds", async title => {
+    localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 }), makeMember({ id: 2 })]);
+    const command = deferred<Awaited<ReturnType<typeof api.createTaskStepBatchForTask>>>();
+    mockedApi.createTaskStepBatchForTask.mockReturnValueOnce(command.promise);
+    renderWithProviders(<KeyedSplitScope />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open split" }));
+    await user.type(await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder), "Submitted draft");
+    await user.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await user.click(screen.getByRole("button", { name: "Use member two" }));
+    await user.click(screen.getByRole("button", { name: "Use member one" }));
+    await user.click(screen.getByRole("button", { name: "Open split" }));
+    const replacement = (await screen.findAllByPlaceholderText(strings.splitTaskRowPlaceholder))[0]!;
+    await user.clear(replacement);
+    await user.type(replacement, title);
+    const newerDraft = sessionStorage.getItem("machbar:steps:task-7-member-1");
+    await act(async () => command.resolve({ tasks: [], parent: makeTask({ id: 7, revision: 2 }) }));
+    expect(sessionStorage.getItem("machbar:steps:task-7-member-1")).toBe(newerDraft);
+    expect(replacement).toHaveValue(title);
+    await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await user.click(screen.getByRole("button", { name: "Open split" }));
+    expect((await screen.findAllByPlaceholderText(strings.splitTaskRowPlaceholder))[0]).toHaveValue(title);
+    expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledOnce();
+  });
+
+  it("consumes a retired successful conversion draft without navigating or closing the replacement editor", async () => {
+    localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 }), makeMember({ id: 2 })]);
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 7, revision: 1, status: "captured" }));
+    const command = deferred<Awaited<ReturnType<typeof api.createTaskStepBatchForTask>>>();
+    mockedApi.createTaskStepBatchForTask.mockReturnValueOnce(command.promise);
+    renderWithProviders(<KeyedSplitScope />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open split" }));
+    await user.type(await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder), "Converted step");
+    await user.click(screen.getByRole("checkbox", { name: strings.stepTreatAsProject }));
+    await user.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
+    await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledOnce());
+    await user.click(screen.getByRole("button", { name: "Use member two" }));
+    await user.click(screen.getByRole("button", { name: "Open split" }));
+    await user.type(await screen.findByPlaceholderText(strings.splitTaskRowPlaceholder), "Replacement member draft");
+    await act(async () => command.resolve({ tasks: [], convertedProject: makeProject({ id: 7 }) }));
+    expect(sessionStorage.getItem("machbar:steps:task-7-member-1")).toBeNull();
+    expect(screen.getAllByPlaceholderText(strings.splitTaskRowPlaceholder)[0]).toHaveValue("Replacement member draft");
+    expect(screen.getByLabelText("Current path")).toHaveTextContent(/^\/$/);
+  });
 
   it("restores independent drafts when the member changes in another tab", async () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 }), makeMember({ id: 2 })]);

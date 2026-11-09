@@ -89,7 +89,9 @@ logical dependencies; responses are whole view/endpoint results, not a normalize
 client graph. Unmounted reads are not retained for navigation reuse.
 
 Successful writes cancel pre-write reads before invalidating and refetching
-active queries. Mutation DTOs do not patch other cached projections. Other views
+active queries. A closed consumer still invalidates its captured refresh scope;
+identity retirement must not redirect that invalidation to the replacement
+identity. Mutation DTOs do not patch other cached projections. Other views
 may briefly show their previous result while refetching. External events use the
 existing bounded leading/trailing cadence; an initial read may finish followed
 by one shared trailing revalidation, so repeated events cannot starve loading.
@@ -233,7 +235,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Goals journal and advisory goal coach | Manual and coach-authored writes share `apps/api/src/domain/goals.ts`, `apps/api/src/goals/coach.ts`, and `apps/web/src/lib/useGoalActions.ts`. `apps/web/src/lib/goalCoach.ts` owns bounded polling for the two proposal endpoints. `GoalsPage` and `InterventionAssessSheet` only review proposals; no intervention or assessment is written until the explicit accept action. |
 | Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Shared read ownership and invalidation | `refresh.tsx`, `queryClient.ts` and the `useAsync.ts` facade over TanStack Query; write invalidations cancel obsolete reads, external invalidations share trailing reads, access errors remove cached content, and side-effecting fetchers qualify callbacks with the native signal. |
-| Server-confirmed item mutation | `apps/web/src/lib/useItemMutations.ts` |
+| Server-confirmed item mutation | `apps/web/src/lib/useItemMutations.ts`; confirmed success invalidates the captured scope even after consumer unmount, while local callbacks/state remain lifetime-guarded |
 | Ordinary clarification and shared discussion nomination | Explicit `task.setClarification` (`requested: false`) acknowledgement delegates to `useTaskActions.clarify`, clearing the flag/revisit date and classifying captured work without demoting existing commitments; AI `task.refine` remains separate. Clarification uses `work_items.needs_clarification` independently from lifecycle status and a separate `work_items.clarification_revisit_date`; `POST /api/tasks/:id/clarification-revisit` defers only the clarification queue, while canonical agenda eligibility still uses execution commitments. Besprechen uses `work_items.discussion_requested`, canonical task/project updates, viewer-filtered `GET /api/discussion`, and `DiscussionPage` with the existing row components. Discussion nomination is edited in task/project details, not the intervention rail. Viewing or editing never acknowledges Review or clears either flag. |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
@@ -257,7 +259,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task hierarchy planning | `apps/web/src/lib/taskTreeMove.ts` |
 | Task hierarchy execution | `useTaskActions.move` owns transport, revision input, pending/errors and invalidation; `useOutlineOrganize` and `MoveTaskSheet` calculate/select destinations |
 | Proposed activation decisions | `activationPreview.ts` evaluates the exact canonical mutation in a rollback-only transaction; the existing routes carry the preview header, and `projectActivationResolution.ts` adapts server snapshots. No preview writes or change notifications persist. |
-| Shared task-step entry and atomic batches | `apps/web/src/components/StepComposer.tsx` for authored rows; `POST /api/tasks/:id/children/batch` and `POST /api/projects/:id/tasks/batch` call the shared transactional task-step operation in `apps/api/src/domain/taskStepBatch.ts`. Inbox parent classification and commitment activation are part of that transaction. Inline successors still use the canonical successor mutation. |
+| Shared task-step entry and atomic batches | `apps/web/src/components/StepComposer.tsx` for authored rows and identity-bearing per-member session drafts; confirmed success conditionally consumes only the submitted record, even after unmount. `POST /api/tasks/:id/children/batch` and `POST /api/projects/:id/tasks/batch` call the shared transactional task-step operation in `apps/api/src/domain/taskStepBatch.ts`. Inbox parent classification and commitment activation are part of that transaction. Inline successors still use the canonical successor mutation. |
 | Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |
 | Household member selection | `apps/web/src/components/MemberSelectionSheet.tsx` |
 | Single-task composition | `apps/web/src/components/StepComposer.tsx` in single-step mode |

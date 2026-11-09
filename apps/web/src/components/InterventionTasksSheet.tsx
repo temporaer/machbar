@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Intervention, InterventionTaskPlan } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useGoalActions } from "../lib/useGoalActions";
@@ -29,7 +29,20 @@ export function InterventionTasksSheet({ intervention, onClose }: { intervention
   const [tasks, setTasks] = useState<InterventionTaskPlan[]>([{ key: crypto.randomUUID(), title: intervention.commitment }]);
   const [reminderPending, setReminderPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const save = async () => { try { setError(null); await actions.backIntervention(intervention, { tasks }); onClose(); } catch (e) { setError(localizedErrorMessage(e, s)); } };
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const save = async () => {
+    try {
+      setError(null);
+      await actions.backIntervention(intervention, { tasks });
+      if (mounted.current) onClose();
+    } catch (e) {
+      if (mounted.current) setError(localizedErrorMessage(e, s));
+    }
+  };
   return <BottomSheet title={s.interventionTasksTitle} onClose={onClose}><div className="stack">
     <InterventionTasksEditor tasks={tasks} onChange={setTasks} onPendingChange={setReminderPending} disabled={actions.isPending(intervention.id)} />
     {error ? <p role="alert">{error}</p> : null}

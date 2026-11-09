@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CreateTaskStepBatchInput } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
@@ -6,8 +6,12 @@ import { IconActionButton } from "./IconActionButton";
 
 export type StepDraft = CreateTaskStepBatchInput["steps"][number];
 
-export function discardStepDraft(draftKey: string) {
-  try { sessionStorage.removeItem(`machbar:steps:${draftKey}`); }
+export function discardStepDraft(draftKey: string, expected?: string | null) {
+  try {
+    const key = `machbar:steps:${draftKey}`;
+    if (expected !== undefined && sessionStorage.getItem(key) !== expected) return;
+    sessionStorage.removeItem(key);
+  }
   catch { /* Browser storage may be unavailable. */ }
 }
 
@@ -39,10 +43,23 @@ export function StepComposer({
   submitDisabled?: boolean;
 }) {
   const strings = useStrings();
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const persistedDraft = useRef<string | null>(null);
   const [rows, setRows] = useState<StepDraft[]>(() => {
     if (draftKey) {
-      try { const rows: unknown = JSON.parse(sessionStorage.getItem(`machbar:steps:${draftKey}`) ?? "null");
-        if (Array.isArray(rows) && rows.length && rows.every(row => typeof row.title === "string" && (row.dueDate === undefined || typeof row.dueDate === "string") && (row.scheduledDate === undefined || typeof row.scheduledDate === "string"))) return rows;
+      try {
+        const raw = sessionStorage.getItem(`machbar:steps:${draftKey}`);
+        const saved: unknown = JSON.parse(raw ?? "null");
+        const rows: unknown = Array.isArray(saved) ? saved
+          : saved !== null && typeof saved === "object" && "rows" in saved ? saved.rows : null;
+        if (Array.isArray(rows) && rows.length && rows.every(row => typeof row.title === "string" && (row.dueDate === undefined || typeof row.dueDate === "string") && (row.scheduledDate === undefined || typeof row.scheduledDate === "string"))) {
+          persistedDraft.current = raw;
+          return rows;
+        }
       } catch { /* Empty draft when browser storage is unavailable. */ }
     }
     return [blankStep()];
@@ -64,9 +81,21 @@ export function StepComposer({
   const changeRows = (next: StepDraft[]) => {
     if (draftKey) {
       try {
-        if (next.some(row => row.title.trim() || row.dueDate || row.scheduledDate)) sessionStorage.setItem(`machbar:steps:${draftKey}`, JSON.stringify(next));
-        else discardStepDraft(draftKey);
-      } catch { /* The live draft remains available during this session. */ }
+        if (next.some(row => row.title.trim() || row.dueDate || row.scheduledDate)) {
+          // A later draft may contain exactly the same rows.
+          const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const saved = JSON.stringify({ id, rows: next });
+          sessionStorage.setItem(`machbar:steps:${draftKey}`, saved);
+          persistedDraft.current = saved;
+        } else {
+          discardStepDraft(draftKey, persistedDraft.current);
+          persistedDraft.current = null;
+        }
+      } catch {
+        persistedDraft.current = null;
+        /* The live draft remains available during this session. */
+      }
     }
     setRows(next);
     onDraftChange?.(next.filter((row) => row.title.trim() !== "").map((row) => ({
@@ -92,19 +121,29 @@ export function StepComposer({
 
   const submit = async () => {
     if (savingRef.current || steps.length === 0) return;
+    const submittedDraft = persistedDraft.current;
     savingRef.current = true;
     setSaving(true);
     onPendingChange?.(true);
     setError(null);
     try {
       const saved = await onSubmit(steps);
-      if (saved !== false) changeRows([blankStep()]);
+      if (saved !== false) {
+        if (draftKey) discardStepDraft(draftKey, submittedDraft);
+        if (mounted.current) {
+          persistedDraft.current = null;
+          setRows([blankStep()]);
+          onDraftChange?.([]);
+        }
+      }
     } catch (cause) {
-      setError(localizedErrorMessage(cause, strings));
+      if (mounted.current) setError(localizedErrorMessage(cause, strings));
     } finally {
       savingRef.current = false;
-      setSaving(false);
-      onPendingChange?.(false);
+      if (mounted.current) {
+        setSaving(false);
+        onPendingChange?.(false);
+      }
     }
   };
 

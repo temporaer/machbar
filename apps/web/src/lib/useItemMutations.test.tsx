@@ -44,14 +44,26 @@ describe("server-confirmed item commands", () => {
     expect(bump).not.toHaveBeenCalled();
   });
 
-  it("does not invalidate a departed identity when an old command settles", async () => {
+  it("invalidates the captured owner after its consumer closes and still returns confirmed success", async () => {
     bump.mockClear();
     const { result, unmount } = renderHook(() => useItemMutations());
-    let confirm!: () => void;
-    let command!: Promise<void | undefined>;
-    act(() => { command = result.current.run({ id: 1, mutate: () => new Promise<void>(resolve => { confirm = resolve; }) }); });
+    let confirm!: (value: string) => void;
+    let command!: Promise<string | undefined>;
+    act(() => { command = result.current.run({ id: 1, mutate: () => new Promise<string>(resolve => { confirm = resolve; }) }); });
     unmount();
-    await act(async () => { confirm(); await command; });
+    await act(async () => { confirm("confirmed"); expect(await command).toBe("confirmed"); });
+    expect(bump).toHaveBeenCalledOnce();
+  });
+
+  it("does not invalidate a failed command after its consumer closes and preserves the rejection", async () => {
+    bump.mockClear();
+    const failure = new Error("Write failed");
+    const { result, unmount } = renderHook(() => useItemMutations());
+    let reject!: (cause: unknown) => void;
+    let command!: Promise<unknown>;
+    act(() => { command = result.current.run({ id: 1, mutate: () => new Promise((_resolve, fail) => { reject = fail; }), throwOnError: true }); });
+    unmount();
+    await act(async () => { reject(failure); await expect(command).rejects.toBe(failure); });
     expect(bump).not.toHaveBeenCalled();
   });
 

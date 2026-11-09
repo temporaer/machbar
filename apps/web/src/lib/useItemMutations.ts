@@ -45,7 +45,8 @@ export function useItemMutations() {
     clearError(id);
     try {
       const result = await mutate();
-      if (mounted.current) bump();
+      // The captured refresh owner outlives a sheet, but cannot target a replacement identity.
+      bump();
       return result;
     } catch (error) {
       if (mounted.current) {

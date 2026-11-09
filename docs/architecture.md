@@ -981,6 +981,11 @@ the same outline level and makes it depend on its source task;
 one SQLite transaction. It may include the optional plan or deadline collected
 by the shared composer.
 
+Per-member session drafts use identity-bearing `{id, rows}` records; legacy
+row arrays remain readable. Confirmed submission consumes only its matching
+record, including after the composer unmounts. A newer draft with identical
+rows must survive; retired UI callbacks and navigation do not resume.
+
 Task splitting and project task entry submit every filled row in one request to
 `domain/taskStepBatch.ts`. The domain operation checks the selected parent or
 project revision and the full containing project chain, creates all tasks,
@@ -1291,6 +1296,9 @@ execution and owner assignment semantics. `useItemMutations` supplies common
 per-item pending state, localized errors, duplicate-in-flight protection and
 successful-write/stale-conflict invalidation. Actions do not predict domain
 state or retain confirmed server-value overlays.
+Successful writes invalidate the captured refresh owner even after their
+consumer sheet closes. Provider retirement isolates that owner from a new
+identity; local callbacks and state still require their own lifetime guards.
 
 Presentation components call those paths instead of rebuilding revision,
 refresh, and error handling. Unique workflows such as SharePage's append/date

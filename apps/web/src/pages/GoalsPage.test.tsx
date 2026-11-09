@@ -10,11 +10,13 @@ import type {
 import { renderWithProviders } from "../test/testUtils";
 import { GoalsPage } from "./GoalsPage";
 import { api } from "../lib/api";
+import { RefreshProvider, useRefresh } from "../lib/refresh";
 
 vi.mock("../lib/api", () => ({
   api: {
     listGoals: vi.fn(),
     getMembers: vi.fn(() => Promise.resolve([])),
+    observationHistory: vi.fn(() => Promise.resolve({ observations: [], plans: [], recentReports: [] })),
     backIntervention: vi.fn(() => Promise.resolve({})),
     concludeIntervention: vi.fn(() => Promise.resolve({})),
     requestGoalSuggestion: vi.fn(),
@@ -164,6 +166,114 @@ describe("GoalsPage", () => {
       10,
       expect.objectContaining({ expectedRevision: 2 }),
     );
+  });
+
+  it.each(["success", "failure"] as const)("settles backing %s after closing the sheet without losing the Goals read", async outcome => {
+    const running = makeIntervention({ status: "active", concludedAt: null, derivedState: "running", assessments: [], backingTaskId: null });
+    const backed = { ...running, revision: 3, backingTaskId: 77 };
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [running] })]);
+    let confirm!: (value: InterventionView) => void;
+    let reject!: (cause: unknown) => void;
+    mockedApi.backIntervention.mockReturnValue(new Promise((resolve, fail) => { confirm = resolve; reject = fail; }));
+    renderWithProviders(<GoalsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Aufgaben dazu erstellen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben erstellen" }));
+    expect(mockedApi.backIntervention).toHaveBeenCalledOnce();
+    const sheet = screen.getByRole("dialog", { name: "Aufgaben zum Vorhaben" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Schließen" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("Run a half marathon")).toBeVisible();
+    expect(screen.queryByTestId("intervention-backed-badge")).not.toBeInTheDocument();
+    const reads = mockedApi.listGoals.mock.calls.length;
+    await act(async () => {
+      if (outcome === "success") {
+        mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [backed] })]);
+        confirm(backed);
+      } else {
+        reject(new Error("Offline"));
+      }
+    });
+    if (outcome === "success") {
+      expect(await screen.findByTestId("intervention-backed-badge")).toBeVisible();
+      expect(mockedApi.listGoals.mock.calls.length).toBeGreaterThan(reads);
+    } else {
+      expect(mockedApi.listGoals).toHaveBeenCalledTimes(reads);
+      expect(screen.queryByTestId("intervention-backed-badge")).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    }
+  });
+
+  it.each(["success", "failure"] as const)("isolates backing %s from a replacement identity's real Query owner", async outcome => {
+    const running = makeIntervention({ status: "active", concludedAt: null, derivedState: "running", assessments: [], backingTaskId: null });
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [running] })]);
+    let confirm!: (value: InterventionView) => void;
+    let reject!: (cause: unknown) => void;
+    mockedApi.backIntervention.mockReturnValue(new Promise((resolve, fail) => { confirm = resolve; reject = fail; }));
+    function ScopeVersion() {
+      const { version } = useRefresh();
+      return <output aria-label="identity refresh version">{version}</output>;
+    }
+    const { rerender } = renderWithProviders(
+      <RefreshProvider key="first-identity"><GoalsPage /><ScopeVersion /></RefreshProvider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Aufgaben dazu erstellen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben erstellen" }));
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ id: 2, title: "Replacement identity goal", interventions: [] })]);
+    rerender(<RefreshProvider key="replacement-identity"><GoalsPage /><ScopeVersion /></RefreshProvider>);
+    await screen.findByText("Replacement identity goal");
+    const reads = mockedApi.listGoals.mock.calls.length;
+    await act(async () => {
+      if (outcome === "success") confirm({ ...running, revision: 3, backingTaskId: 77 });
+      else reject(new Error("Old identity failure"));
+    });
+    expect(screen.getByText("Replacement identity goal")).toBeVisible();
+    expect(screen.queryByText("Run a half marathon")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("intervention-backed-badge")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("identity refresh version")).toHaveTextContent("0");
+    expect(mockedApi.listGoals).toHaveBeenCalledTimes(reads);
+  });
+
+  it.each(["success", "denial"] as const)("keeps a reopened backing draft after its retired sheet's %s", async outcome => {
+    const running = makeIntervention({ status: "active", concludedAt: null, derivedState: "running", assessments: [], backingTaskId: null });
+    const backed = { ...running, revision: 3, backingTaskId: 77 };
+    mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [running] })]);
+    let confirm!: (value: InterventionView) => void;
+    let reject!: (cause: unknown) => void;
+    mockedApi.backIntervention.mockReturnValue(new Promise((resolve, fail) => { confirm = resolve; reject = fail; }));
+    renderWithProviders(<GoalsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Aufgaben dazu erstellen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben erstellen" }));
+    const oldSheet = screen.getByRole("dialog", { name: "Aufgaben zum Vorhaben" });
+    const close = within(oldSheet).getByRole("button", { name: "Schließen" });
+    expect(close).toBeEnabled();
+    expect(within(oldSheet).getByRole("button", { name: "Aufgaben erstellen" })).toBeDisabled();
+    await userEvent.click(close);
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben dazu erstellen" }));
+    const replacement = screen.getByRole("dialog", { name: "Aufgaben zum Vorhaben" });
+    const draft = within(replacement).getByRole("textbox", { name: "Titel" });
+    await userEvent.clear(draft);
+    await userEvent.type(draft, "Replacement draft must remain");
+    const reads = mockedApi.listGoals.mock.calls.length;
+    await act(async () => {
+      if (outcome === "success") {
+        mockedApi.listGoals.mockResolvedValue([makeGoal({ interventions: [backed] })]);
+        confirm(backed);
+      } else {
+        reject(Object.assign(new Error("Retired denial"), { name: "ApiError", status: 403 }));
+      }
+    });
+    if (outcome === "success") {
+      await waitFor(() => expect(mockedApi.listGoals.mock.calls.length).toBeGreaterThan(reads));
+      expect(await screen.findByTestId("intervention-backed-badge")).toBeInTheDocument();
+    }
+    expect(screen.getByRole("dialog", { name: "Aufgaben zum Vorhaben" })).toBe(replacement);
+    expect(draft).toHaveValue("Replacement draft must remain");
+    expect(within(replacement).queryByRole("alert")).not.toBeInTheDocument();
+    expect(mockedApi.backIntervention).toHaveBeenCalledExactlyOnceWith(running.id, expect.objectContaining({
+      expectedRevision: running.revision,
+      tasks: [expect.objectContaining({ title: running.commitment })],
+    }));
   });
 
   it("offers ordinary tasks for a non-frequency intervention", async () => {

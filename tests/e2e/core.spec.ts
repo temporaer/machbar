@@ -196,6 +196,102 @@ test("a denied criterion edit discards its draft despite an authorized task refr
   await expect(input).toHaveValue(criterion.text);
 });
 
+test("a confirmed split consumes its submitted draft across identity replacement", async ({ page }) => {
+  const item = await task(page, { status: "captured" });
+  const otherResponse = await page.request.post("/api/members", { data: { name: `Replacement ${randomUUID()}` } });
+  expect(otherResponse.ok()).toBeTruthy();
+  const other = await otherResponse.json();
+  const path = `/api/tasks/${item.id}/children/batch`;
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let committed = false;
+  await page.route(`**${path}`, async route => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(201);
+    committed = true;
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.goto(`/#/tasks/${item.id}`);
+    const memberId = await page.evaluate(() => localStorage.getItem("machbar:identity-member-id"));
+    const storageKey = `machbar:steps:task-${item.id}-member-${memberId}`;
+    await page.getByRole("button", { name: "Teilaufgaben hinzufügen", exact: true }).click();
+    await page.getByPlaceholder("Schritt …").nth(0).fill("Already created first step");
+    await page.getByPlaceholder("Schritt …").nth(1).fill("Already created second step");
+    await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), storageKey)).not.toBeNull();
+    await page.getByRole("button", { name: "2 Teilaufgaben anlegen", exact: true }).click();
+    await expect.poll(() => committed).toBe(true);
+    await page.evaluate(id => {
+      const key = "machbar:identity-member-id";
+      localStorage.setItem(key, String(id));
+      window.dispatchEvent(new StorageEvent("storage", { key, newValue: String(id), storageArea: localStorage }));
+    }, other.id);
+    await expect(page.getByPlaceholder("Schritt …")).toHaveCount(0);
+    const confirmation = page.waitForResponse(response => new URL(response.url()).pathname === path);
+    release();
+    await (await confirmation).finished();
+    await expect.poll(() => page.evaluate(key => sessionStorage.getItem(key), storageKey)).toBeNull();
+    await page.evaluate(id => {
+      const key = "machbar:identity-member-id";
+      localStorage.setItem(key, id);
+      window.dispatchEvent(new StorageEvent("storage", { key, newValue: id, storageArea: localStorage }));
+    }, memberId!);
+    await page.getByRole("button", { name: "Aufgabe aufteilen", exact: true }).click();
+    await expect(page.getByPlaceholder("Schritt …")).toHaveCount(1);
+    await expect(page.getByPlaceholder("Schritt …").nth(0)).toHaveValue("");
+    const stored = await (await page.request.get(`/api/tasks/${item.id}`)).json();
+    expect(stored.children.map((child: { title: string }) => child.title)).toEqual([
+      "Already created first step", "Already created second step",
+    ]);
+  } finally {
+    release();
+  }
+});
+
+test("a stale project deadline can reload requirements after an outage without replaying the save", async ({ page }) => {
+  const created = await page.request.post("/api/projects", { data: { title: `Deadline retry ${randomUUID()}` } });
+  expect(created.status()).toBe(201);
+  const project = await created.json();
+  const path = `/api/projects/${project.id}`;
+  let offline = false;
+  let writes = 0;
+  await page.route(`**${path}`, route => {
+    if (route.request().method() === "PATCH") {
+      writes += 1;
+      if (writes === 1) {
+        offline = true;
+        return route.fulfill({ status: 409, json: { error: { code: "stale_write_conflict", message: "Changed project." } } });
+      }
+    } else if (offline && route.request().method() === "GET") {
+      return route.fulfill({ status: 503, json: { error: { code: "internal_error", message: "Offline." } } });
+    }
+    return route.continue();
+  });
+  await page.goto(`/#/projects/${project.id}`);
+  await page.getByRole("button", { name: "+ Deadline hinzufügen", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Projekt-Deadline", exact: true });
+  const date = dialog.getByLabel("Fällig", { exact: true });
+  await date.fill("15.12.2099");
+  await date.press("Enter");
+  const retry = dialog.getByRole("button", { name: "Erneut versuchen", exact: true });
+  await expect(retry).toBeVisible();
+  await expect(date).toHaveValue("15.12.2099");
+  expect(writes).toBe(1);
+  offline = false;
+  await retry.click();
+  const driver = dialog.getByLabel(`Verantwortlich für „${project.title}“`, { exact: true });
+  await expect(driver).toHaveValue("");
+  expect(writes).toBe(1);
+  await expect(date).toHaveValue("15.12.2099");
+  const memberId = await page.evaluate(() => localStorage.getItem("machbar:identity-member-id"));
+  await driver.selectOption(memberId!);
+  await dialog.getByLabel("Welcher konkrete nächste Schritt bringt das Projekt voran?", { exact: true }).fill("Reconfirm the deadline");
+  await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect.poll(async () => (await (await page.request.get(path)).json()).dueDate).toBe("2099-12-15");
+  expect(writes).toBe(2);
+});
+
 test("a superseded dependency search cannot discard the current planning draft", async ({ page }) => {
   const item = await task(page);
   const candidate = await task(page, { title: `New dependency ${randomUUID()}` });

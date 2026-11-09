@@ -1,13 +1,15 @@
 import { useState } from "react";
 import type { Project } from "@machbar/shared";
-import { hasApiErrorCode, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
+import { hasApiErrorCode, isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
+import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import {
   projectActivationResolutionFromPrompt,
-  refreshProjectActivationPrompt,
+  projectActivationPromptFromError,
+  projectActivationPromptFromSnapshot,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
 import type { ProjectActivationResolution } from "@machbar/shared";
@@ -29,6 +31,35 @@ export function ProjectDeadlineSheet({
   const [error, setError] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState(story.dueDate ?? "");
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [requirementsReloadNeeded, setRequirementsReloadNeeded] = useState(false);
+
+  const reloadRequirements = async () => {
+    try {
+      const current = await api.getProject(story.id);
+      setActivationPrompt(projectActivationPromptFromSnapshot(
+        current.activationDecisionSnapshot ?? {
+          projects: [],
+          expectedProjects: [],
+          targetRevision: current.revision,
+        },
+      ));
+      setRequirementsReloadNeeded(false);
+    } catch (cause) {
+      onFailure?.(cause);
+      setError(localizedErrorMessage(cause, strings));
+    }
+  };
+
+  const retryRequirements = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await reloadRequirements();
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const commit = async (
     patch: { dueDate: string | null; activationResolution?: ProjectActivationResolution },
@@ -40,10 +71,16 @@ export function ProjectDeadlineSheet({
       await onSave(patch);
     } catch (cause) {
       onFailure?.(cause);
-      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) setActivationPrompt(null);
-      const prompt = await refreshProjectActivationPrompt(cause, story.id, "commitment", onFailure);
-      if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
+      if (isStaleWriteConflict(cause)) {
+        setActivationPrompt(null);
+        setRequirementsReloadNeeded(true);
+        await reloadRequirements();
+      } else if (hasApiErrorCode(cause, "project_commitment_resolution_required")) {
+        setActivationPrompt(projectActivationPromptFromError(cause));
+      } else if (!activationPrompt && !isReadAccessError(cause)) {
+        setRequirementsReloadNeeded(true);
+      }
     } finally {
       setSaving(false);
     }
@@ -66,7 +103,7 @@ export function ProjectDeadlineSheet({
             value={dueDate}
             onChange={(date) => {
               setDueDate(date ?? "");
-              void commit({ dueDate: date });
+              if (!requirementsReloadNeeded) void commit({ dueDate: date });
             }}
             disabled={saving}
           />
@@ -91,6 +128,11 @@ export function ProjectDeadlineSheet({
               {strings.save}
             </button>
           </>
+        ) : null}
+        {requirementsReloadNeeded ? (
+          <button type="button" className="btn" disabled={saving} onClick={() => void retryRequirements()}>
+            {strings.retry}
+          </button>
         ) : null}
         {error ? <p role="alert" style={{ color: "var(--color-danger)" }}>{error}</p> : null}
         <button type="button" className="btn" onClick={onClose} disabled={saving}>
