@@ -61,9 +61,9 @@ conflict handling also had redundant local reload plus global invalidation:
 they now rely on the single global refresh, while explicit read retry remains.
 
 The measured application-source delta against
-`2e923f23` is **+1117 / -2588, net -1471 lines across 67 runtime files**,
+`2e923f23` is **+1118 / -2589, net -1471 lines across 67 runtime files**,
 including newly added source and excluding tests/test support. Test source is
-separate: **+3018 / -2666, net +352 lines across 51 test files**, including
+separate: **+3165 / -2666, net +499 lines across 52 test files**, including
 architecture-contract and browser tests. Deleted retention
 tests describe deliberately removed guarantees; replacement tests cover the
 approved server-confirmed behavior. These counts do not measure dependency
@@ -74,7 +74,7 @@ evidence. The final frozen implementation, including the independent and
 Copilot review corrections below, passed:
 
 - `bash scripts/verify.sh`: architecture, shared build, all typechecks,
-  1,418 API tests, 1,897 web tests, production build and Python
+  1,418 API tests, 1,905 web tests, production build and Python
   (159 passed, 1 skipped).
 - `npm run build && npm run test:e2e`: production rebuild and 50 desktop/mobile
   Chromium cases, including real-App read and refinement-continuation retirement,
@@ -222,6 +222,22 @@ distinguish sheet closure from identity replacement. An adjacent, reachable
 close/reopen ordering also exposed an old success closing the replacement
 intervention sheet; its callback is now retired on unmount. No backend command
 or successful return contract changed.
+
+The fourth review requested human assessment of another confirmed-success
+invalidation omission: criterion add/update/remove/reorder checked consumer
+mounting before invalidating. The criterion check command already conformed.
+The same guard ordering also existed in task-to-project conversion,
+project-to-task conversion and project movement. All four writers now
+invalidate their captured scope before the opening guard; local callbacks,
+navigation and destination memory remain guarded.
+
+Real-Query counterexamples keep an underlying read mounted, close the pending
+writer and then confirm success. Four of five criterion cases and all three
+conversion/move cases rejected the old ordering; all eight pass after the
+correction. Their mutation responses are supplied test data, not evidence of
+backend persistence. Existing scope-retirement tests distinguish a closed
+consumer from an identity-retired provider. This extends the successful-write
+matrix without adding another invalidation owner or weakening identity isolation.
 
 ## Decision and baseline
 

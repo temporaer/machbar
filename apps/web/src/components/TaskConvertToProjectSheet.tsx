@@ -110,8 +110,8 @@ export function TaskConvertToProjectSheet({ task, onClose, onFailure, isCurrent 
         }
       }
       const converted = await api.convertTaskToStory(task.id, input);
-      if (!isCurrent()) return;
       bump();
+      if (!isCurrent()) return;
       onClose();
       detail.close();
       navigate(`/projects/${converted.id}`, { state: { createdProjectId: converted.id } });

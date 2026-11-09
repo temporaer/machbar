@@ -78,8 +78,8 @@ export function AcceptanceCriteriaEditor({
     onError(null);
     try {
       await job();
-      if (!mounted.current) return false;
       bump();
+      if (!mounted.current) return false;
       return true;
     } catch (err) {
       if (!mounted.current) return false;

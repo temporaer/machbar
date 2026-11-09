@@ -1,15 +1,18 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { makeCriterion, makeProject } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { de as strings } from "../i18n/de";
+import { useAsync } from "../lib/useAsync";
 
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getProject: vi.fn(),
     addCriterion: vi.fn(),
     updateCriterion: vi.fn(),
     checkCriterion: vi.fn(),
@@ -32,6 +35,65 @@ describe("AcceptanceCriteriaEditor", () => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
   });
+
+  it.each(["add", "update", "remove", "reorder", "check"] as const)(
+    "refreshes the still-mounted read after a closed editor's %s succeeds",
+    async operation => {
+      const second = makeCriterion({ id: 11, workItemId: 4, text: "Second criterion", position: 1 });
+      const initial = [criterion, second];
+      const next = operation === "add" ? [...initial, makeCriterion({ id: 12, workItemId: 4, text: "New criterion" })]
+        : operation === "remove" ? [second]
+        : operation === "reorder" ? [second, criterion]
+        : [{ ...criterion, ...(operation === "check" ? { checked: true } : { text: "Updated criterion" }) }, second];
+      let stored = { ...project, tasks: [], acceptanceCriteria: initial };
+      mockedApi.getProject.mockImplementation(async () => stored);
+      let complete!: () => void;
+      const response = new Promise<typeof project>(resolve => {
+        complete = () => { stored = { ...stored, acceptanceCriteria: next }; resolve(stored); };
+      });
+      const method = ({
+        add: "addCriterion", update: "updateCriterion", remove: "removeCriterion",
+        reorder: "reorderCriteria", check: "checkCriterion",
+      } as const)[operation];
+      mockedApi[method].mockImplementation(() => response);
+      const onError = vi.fn();
+      const onFailure = vi.fn();
+      function Parent() {
+        const [open, setOpen] = useState(true);
+        const { data } = useAsync(() => api.getProject(4));
+        return <>
+          <output data-testid="criterion-read">{JSON.stringify(data?.acceptanceCriteria)}</output>
+          <button onClick={() => setOpen(false)}>Close editor</button>
+          {open ? <AcceptanceCriteriaEditor ownerType="project" workItemId={4} criteria={initial}
+            onError={onError} onFailure={onFailure} /> : null}
+        </>;
+      }
+      renderWithProviders(<Parent />);
+      await waitFor(() => expect(screen.getByTestId("criterion-read")).toHaveTextContent(JSON.stringify(initial)));
+      const row = screen.getByRole("checkbox", { name: criterion.text }).closest<HTMLElement>(".criterion-row")!;
+      if (operation === "update") {
+        await userEvent.click(within(row).getByRole("button", { name: strings.edit }));
+        await userEvent.type(within(row).getByRole("textbox"), " changed");
+        await userEvent.click(within(row).getByRole("button", { name: strings.save }));
+      } else if (operation === "add") {
+        await userEvent.type(screen.getByPlaceholderText(strings.addCriterionPlaceholder), "New criterion");
+        await userEvent.click(screen.getByRole("button", { name: strings.addCriterion }));
+      } else if (operation === "remove") {
+        await userEvent.click(within(row).getByRole("button", { name: strings.removeCriterion }));
+      } else if (operation === "reorder") {
+        await userEvent.click(within(row).getByRole("button", { name: strings.moveCriterionDown }));
+      } else {
+        await userEvent.click(within(row).getByRole("checkbox"));
+      }
+      await userEvent.click(screen.getByRole("button", { name: "Close editor" }));
+      onError.mockClear();
+      await act(async () => { complete(); });
+      await waitFor(() => expect(screen.getByTestId("criterion-read")).toHaveTextContent(JSON.stringify(next)));
+      expect(mockedApi.getProject).toHaveBeenCalledTimes(2);
+      expect(onError).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
+    },
+  );
 
   it("edits text only through explicit Edit and Save, never on blur", async () => {
     mockedApi.updateCriterion.mockResolvedValue(project);

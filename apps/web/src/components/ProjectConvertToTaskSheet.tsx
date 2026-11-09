@@ -83,8 +83,8 @@ export function ProjectConvertToTaskSheet({
         ...(activationResolution ? { activationResolution } : {}),
         ...(currentProject.hierarchyRevisions ? { expectedHierarchyRevisions: currentProject.hierarchyRevisions } : {}),
       });
-      if (!isCurrent()) return;
       bump();
+      if (!isCurrent()) return;
       onClose();
     } catch (cause) {
       if (!isCurrent()) return;

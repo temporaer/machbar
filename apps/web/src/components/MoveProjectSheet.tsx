@@ -58,9 +58,9 @@ export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => 
       await api.moveProject(story.id, { parentId, expectedRevision: source.revision,
         expectedHierarchyRevisions: [...revisions].map(([id, revision]) => ({ id, revision })),
         ...(resolution ? { activationResolution: resolution } : {}) });
+      bump();
       if (!isCurrent()) return;
       rememberDestination("project", parentId);
-      bump();
       onClose();
     } catch (cause) {
       if (!isCurrent()) return;
