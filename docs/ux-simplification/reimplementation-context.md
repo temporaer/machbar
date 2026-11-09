@@ -62,7 +62,7 @@ they now rely on the single global refresh, while explicit read retry remains.
 
 The measured application-source delta against
 `2e923f23` is **+870 / -2487, net -1617 lines across 64 runtime files**,
-including new untracked source and excluding tests/test support. Test source is
+including newly added source and excluding tests/test support. Test source is
 separate: **+1489 / -2656, net -1167 lines across 43 files**. Deleted retention
 tests describe deliberately removed guarantees; replacement tests cover the
 approved server-confirmed behavior. These counts do not measure dependency
@@ -107,6 +107,12 @@ POST navigated to the old intake URL. These browser tests use the production
 App/provider tree and real member/item reads; only the held successful intake
 response is supplied by the test. They do not establish Home Assistant
 integration or intake persistence behavior.
+
+The independent follow-up accepted resolution of this specific blocker after
+reviewing both guards, StrictMode replacement behavior and the supplied
+red/green evidence. No remaining causal scenario was identified for the
+post-unmount continuation defect. This was a bounded correction review, not
+proof that every asynchronous workflow or physical device was audited.
 
 ## Decision and baseline
 
