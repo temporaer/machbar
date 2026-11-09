@@ -69,6 +69,9 @@ approved. Search and maintenance work should not delay correctness repair.
   deletion map and LOC budget; separate from the historical UX audit above.
 - [Query Step 1 map and budget](query-migration-step-1.md): current owners,
   affected callers, replace/delete boundaries and the pre-implementation verdict.
+- [Whole-migration deletion budget](query-migration-budget.md): named end-state
+  removals and replacement costs, counting shared setup once and allowing
+  temporary Project-pilot growth under the revised, approved acceptance gate.
 
 ## Evidence limits
 

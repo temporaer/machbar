@@ -7,6 +7,12 @@ TanStack Query is not present in this baseline.
 
 ## Verdict: REVISE before commissioning implementation
 
+**Subsequent decision:** the user approved the bounded-setup/whole-migration
+budget option below, followed by implementation step by step. This map preserves
+the original source measurements and Project-only estimate; it does not claim
+the first slice will reduce LOC. The [whole-migration budget](query-migration-budget.md)
+and [updated execution plan](query-migration-plan.md) govern the next gate.
+
 Project is not a closed slice if defined as only `GET /projects` and
 `GET /projects/:id`: project DTOs also arrive inside agenda/discussion views,
 their display is shared across several screens, and task mutations change
@@ -17,12 +23,12 @@ and their canonical writers participate in one Query-owned server-state plan.
 The shared `useAsync`, refresh/SSE transport, `useRetainedMutations`, task
 actions, authored decisions, and placement leases cannot be removed in this
 phase. The measured source inventory and preliminary estimate below do not
-support a promise of net runtime LOC reduction. Do not start phase 2 until the
-deletion budget is revised with evidence, or the user explicitly approves
-changing the per-milestone reduction gate to a bounded setup cost and a later
-whole-app reduction gate. The coordinator must not waive the approved LOC gate
-silently. Do not create a DTO bridge or second retained project store to force
-a negative number.
+support a promise of net runtime LOC reduction for this slice. At the original
+handoff this blocked phase 2 unless the deletion budget changed or the user
+approved a bounded setup cost and later whole-app reduction gate. The latter is
+now approved, with a revised end-to-end budget required before implementation.
+Do not create a DTO bridge or second retained project store to force a negative
+number.
 
 ## 1. Smallest closed Project-resource boundary
 

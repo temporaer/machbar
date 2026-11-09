@@ -4,8 +4,11 @@
 
 **Baseline:** current merged main, `2e923f239e69fef583074b189bdd2abab013c4bd`
 
-**Authorization:** plan and Step 1 analysis only; application implementation is
-not authorized by this assignment.
+**Authorization:** the initial assignment authorized planning only. The user
+subsequently approved the revised execution sequence: "ok, then go ahead, step
+by step." Establish the whole-migration budget first, then implement the bounded
+Project pilot and proceed through the remaining consumers. Temporary setup
+growth is allowed; the completed migration must reduce production LOC.
 
 ## Goal and ownership
 
@@ -36,11 +39,19 @@ an approved implementation, not as though this plan were already implemented.
 
 **Assigned role:** one Luna implementation agent, operating in analysis-only mode.
 
-**Status:** Step 1 is complete with a **REVISE** verdict in the linked map.
+**Status:** the initial Project-only map is complete with a historical
+**REVISE** verdict.
 The requested Luna run failed before its first turn with an authorization
 error; the coordinator completed and checked the source analysis directly.
-No application implementation has started. The preliminary Project-slice
-budget is positive, so Step 2 has not passed the reduction gate.
+The user has now approved replacing the per-milestone LOC-reduction gate with
+explicit temporary setup growth and a whole-migration reduction gate. The
+[whole-migration budget](query-migration-budget.md) now accounts for named
+deletions across Tasks, Goals, Refinement and remaining readers: 799 gross
+replacement lines against an estimated 640 to 1,080 replacement/integration
+lines. Its net range is -159 to +281; reduction is not established. The original
+Project estimate was +50 to +360; the more explicit estimate is +223 to +458,
+not a measured result or approved spending cap. The next step is a bounded
+installed-library feasibility handoff before production reader migration.
 
 Produce [the Step 1 map](query-migration-step-1.md), with:
 
@@ -60,13 +71,18 @@ Produce [the Step 1 map](query-migration-step-1.md), with:
   block with concrete reasons. Do not solve an unclosed boundary by inventing
   another cache, generic recovery framework or client domain graph.
 
-No application edits, dependency changes/installations, runtime experiments,
-Git publication, or additional agents in Step 1. The coordinator reviews this
-map before commissioning implementation.
+The original Step 1 assignment permitted no application edits, dependency
+changes/installations, runtime experiments, Git publication or additional
+agents. That restriction describes the completed analysis, not the subsequently
+approved implementation. Review the end-to-end budget before commissioning
+Step 2; count shared setup once and retain the original measured baseline.
 
 ### Step 2: complete the Project-resource migration
 
-After approval of the Step 1 map:
+After reviewing the revised whole-migration budget, first resolve the named
+library/placement uncertainties in a bounded probe handoff. Do not treat its
+mixed forecast as proof of end-state reduction. If that handoff supports the
+resource migration:
 
 1. Establish Query in the real app provider tree, viewer-qualified resource
    identity, and the smallest central reconciliation/invalidation integration.
@@ -91,8 +107,9 @@ remaining removals explicit.
 
 Apply the accepted resource pattern to task reads and canonical task mutations.
 Preserve arbitrary-depth outlines, membership, moves, pending feedback and
-interaction retention. Remove shared retained server-state machinery only when
-its final real consumer is migrated; do not credit that deletion to Step 2.
+interaction retention. Include the remaining Goal/Refinement mutation consumers
+before deleting shared retained server-state machinery; do not credit that
+deletion to Step 2 or remove their behavior to make the budget pass.
 Do not redesign backend workflow policy or UI capabilities during the migration.
 
 ### Step 4: finish remaining reads and invalidation cleanup
@@ -128,9 +145,15 @@ Separate existing defects from introduced ones; record evidence gaps explicitly.
 
 - Behavioral parity is mandatory; fewer controls, tests or files alone do not
   establish simplification.
-- A completed migration milestone must reduce custom ownership responsibilities
-  and demonstrate lower production LOC. If the measured result grows, stop and
-  revisit the design before expanding or calling the milestone simplified.
+- Each milestone must remove old server-state ownership responsibilities.
+  The Project pilot may temporarily increase LOC, with setup included in its
+  measured diff. The **completed migration** must demonstrate lower production
+  LOC against the baseline above; a hybrid architecture is not the final result.
+- Reconcile the pilot's measured growth and named later deletions with the
+  whole-migration budget before expanding. Materially exceeding the preliminary
+  range, needing another custom cache/recovery framework, or losing a credible
+  end-state reduction requires revisiting the design, not silently moving the
+  goalposts or abandoning behavior.
 - Count runtime additions/deletions under `apps/*/src` and `packages/*/src`,
   excluding tests and test support. Report tests, documentation, package metadata
   and lockfile changes separately.
@@ -145,10 +168,14 @@ Separate existing defects from introduced ones; record evidence gaps explicitly.
 
 ## Execution and handoff
 
-One coordinator publishes; one Luna agent writes the assigned slice at a time.
+One coordinator publishes; one coding agent writes the assigned slice at a
+time, with Luna requested for implementation. An agent's actual availability
+must be reported honestly rather than treating a failed launch as active work.
 The agent reports a frozen handoff before the coordinator edits its files.
-Step 1 owns only `query-migration-step-1.md`; the coordinator owns this plan and
-its README link. Existing preserved branches/worktrees remain untouched.
+The original Step 1 owned only `query-migration-step-1.md`; the separate
+end-to-end budget assignment owns only `query-migration-budget.md`.
+The coordinator owns this plan and its README links. Existing preserved
+branches/worktrees remain untouched.
 
 Each later assignment must name its baseline, exact owned paths, deletions,
 callers, invariants, exclusions, evidence requirements and stop condition.
