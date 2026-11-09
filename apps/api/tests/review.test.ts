@@ -957,6 +957,72 @@ describe("review queue", () => {
     ).toBe(false);
   });
 
+  it("uses one advancing default instant across active projects", () => {
+    const projectCount = 4;
+    for (let index = 0; index < projectCount; index += 1) {
+      const project = ctx.handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "story",
+          title: `Active project ${index}`,
+          status: "active",
+        })
+        .returning()
+        .get();
+      const container = ctx.handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "task",
+          parentId: project.id,
+          title: `Reached container ${index}`,
+          status: "active",
+          revisitAt: "2020-01-01T12:00:00.000Z",
+        })
+        .returning()
+        .get();
+      ctx.handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "task",
+          parentId: container.id,
+          title: `Captured descendant ${index}`,
+          status: "captured",
+        })
+        .run();
+    }
+
+    const graph = Graph.load(ctx.handle.db, today);
+    const healthInstants: number[] = [];
+    let workAnalysisCalls = 0;
+    const taskContainsUnfinishedWork =
+      graph.taskContainsUnfinishedWork.bind(graph);
+    graph.taskContainsUnfinishedWork = (taskId) => {
+      workAnalysisCalls += 1;
+      return taskContainsUnfinishedWork(taskId);
+    };
+    const hasHealthyProgressPath =
+      graph.hasHealthyProjectProgressPath.bind(graph);
+    vi.spyOn(graph, "hasHealthyProjectProgressPath").mockImplementation(
+      (taskId, now) => {
+        healthInstants.push(now);
+        const result = hasHealthyProgressPath(taskId, now);
+        vi.setSystemTime(new Date(Date.now() + 1));
+        return result;
+      },
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${today}T12:00:00.000Z`));
+    try {
+      buildReviewItems(graph, { today });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(healthInstants.length).toBeGreaterThan(projectCount);
+    expect.soft(new Set(healthInstants).size).toBe(1);
+    expect.soft(workAnalysisCalls).toBeLessThanOrEqual(projectCount * 2);
+  });
+
   it("leaves reached external-wait follow-ups to Today instead of Review", () => {
     const member = ctx.handle.db
       .insert(schema.members)

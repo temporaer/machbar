@@ -141,6 +141,7 @@ export function buildReviewItems(
   const today =
     options.today ?? new Date().toISOString().slice(0, 10);
   const now = options.now ?? new Date().toISOString();
+  const nowInstant = Date.parse(now);
   const projectStatuses = new Map(
     [...graph.projectsById.values()].map((project) => [
       project.id,
@@ -300,15 +301,14 @@ export function buildReviewItems(
     if (project.status === "active") {
       const openTasks = tasks.filter(isOpen);
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
-      const now = Date.parse(options.now ?? new Date().toISOString());
       const hasHealthyProgressPath = openTasks.some((task) => {
-        return isViableProgressTask(task, graph, now);
+        return isViableProgressTask(task, graph, nowInstant);
       });
       const hasIntentionalWait = openTasks.some(
         (task) =>
           task.externalWait !== null &&
           task.revisitAt !== null &&
-          Date.parse(task.revisitAt) > now,
+          Date.parse(task.revisitAt) > nowInstant,
       );
       const hasViablePath = hasHealthyProgressPath || hasIntentionalWait;
       if (project.ownerMemberId === null) {
@@ -365,7 +365,7 @@ export function buildReviewItems(
           addDaysIso(today, -BACKLOG_REVIEW_DAYS);
       if (
         project.revisitAt !== null &&
-        Date.parse(project.revisitAt) <= Date.parse(now)
+        Date.parse(project.revisitAt) <= nowInstant
       ) {
         items.push(
           projectItem(project, "reconsider", "backlog_revisit_reached", {
