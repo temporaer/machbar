@@ -612,7 +612,9 @@ export class Graph {
         project.id,
         evaluateProjectActivationReadiness({
           ownerMemberId: project.ownerMemberId,
-          candidateTaskIds: nextActionIdsByProject.get(project.id) ?? [],
+          candidateTaskIds: (
+            nextActionIdsByProject.get(project.id) ?? []
+          ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
           projectTaskIds: rawTasks
             .filter((task) => task.projectId === project.id)
             .map((task) => task.id),
@@ -742,18 +744,20 @@ export class Graph {
         .filter((context): context is PhysicalContext => context !== undefined);
 
       const depRefs = dependenciesByTask.get(raw.id) ?? [];
-      const dependencies: Dependency[] = depRefs.map((d) => {
-        const dependsOn = rawTasksById.get(d.dependsOnTaskId);
-        const resolved =
-          dependsOn?.status === "done" || dependsOn?.status === "cancelled";
-        return {
-          id: d.id,
-          taskId: raw.id,
-          dependsOnTaskId: d.dependsOnTaskId,
-          title: dependsOn?.title,
-          resolved,
-        };
-      });
+      const dependencies: Dependency[] = depRefs
+        .filter((dependency) => rawTasksById.has(dependency.dependsOnTaskId))
+        .map((d) => {
+          const dependsOn = rawTasksById.get(d.dependsOnTaskId)!;
+          const resolved =
+            dependsOn.status === "done" || dependsOn.status === "cancelled";
+          return {
+            id: d.id,
+            taskId: raw.id,
+            dependsOnTaskId: d.dependsOnTaskId,
+            title: dependsOn.title,
+            resolved,
+          };
+        });
       const incomingDependencies = incomingDependenciesByTask.get(raw.id) ?? [];
       const execution = blockerAnalysis.get(raw.id);
       const externalWait = externalWaitByTask.get(raw.id) ?? null;
@@ -1064,7 +1068,7 @@ export class Graph {
   nextActionFor(projectId: number): TaskRecord | null {
     for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
       const task = this.tasksById.get(id);
-      if (task) return task;
+      if (task && !task.blocked) return task;
     }
     return null;
   }
