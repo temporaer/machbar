@@ -489,9 +489,16 @@ node_modules/.bin/tsx ../query-project-counterexamples.mts
 Its expected result on the frozen implementation is a failed assertion showing
 revision 5 instead of rollback revision 4, and child revision 4 instead of 5.
 Real actor/session wiring, denial/conversion during held leases, offline
-behavior and desktop/mobile browser behavior remain unverified. A final
-verifier run is recorded separately; a green existing suite would not supersede
-the reproduced counterexamples.
+behavior and desktop/mobile browser behavior remain unverified.
+
+The required `bash scripts/verify.sh` was run once on this frozen experimental
+tree under Node 22. Architecture, shared build, all typechecks and the API suite
+passed. The web suite failed: **64 failures across six files**, with 1,753
+passing cases. Production app builds and Python checks were not reached after
+that failure; browser/e2e checks were not run. The failures have not all been
+classified as production defects versus missing fixture prerequisites.
+Regardless, neither the passing focused subset nor these existing tests
+supersedes the two independently reproduced production-helper defects.
 
 ### Stop, preserve, do not silently change the goal
 

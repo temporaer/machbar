@@ -94,7 +94,9 @@ at completion, not a reduction. Focused passing cases do not establish parity:
 coordinator production-helper counterexamples also reproduce failed ordinary
 rollback and missed nested-project publication. See the
 [frozen outcome](query-migration-budget.md#7-frozen-project-outcome-blocked)
-for evidence and limits. Preserve the experiment; Tasks, shipping and a
+for evidence and limits. The required verifier also fails on 64 web cases;
+the failure classification is incomplete, not evidence of 64 production bugs.
+Preserve the experiment; Tasks, shipping and a
 production PR remain gated. This rejects the current implementation/forecast,
 not every possible Query design.
 
