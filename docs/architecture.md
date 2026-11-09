@@ -34,7 +34,9 @@ readiness meaning. Project activation does not bypass task blockers or
 future-date agenda eligibility. Reflection's executable-next-actions section
 is narrower than project progress: it lists the first execution-eligible
 canonical candidate per project and does not treat a reached revisit as
-executable work.
+executable work. For a dependency path, a reached revisit on a container is
+healthy only when its canonical unfinished subtree has a healthy descendant
+path; future container revisits remain intentional pauses.
 
 ## AI clarification and reviewed application
 
