@@ -56,7 +56,8 @@ export function ProjectWorkflowHost() {
     denied: boolean;
     authorityVersion: number;
     readVersion: number;
-  }>({ openingId: 0, denied: false, authorityVersion: 0, readVersion: 0 });
+    readRevision: number | null;
+  }>({ openingId: 0, denied: false, authorityVersion: 0, readVersion: 0, readRevision: null });
   const activationReadStateRef = useRef(activationReadState);
   const activationOpening = workflow.current?.kind === "activateWithDriver" ||
     workflow.current?.kind === "reopenWithDriver";
@@ -89,6 +90,7 @@ export function ProjectWorkflowHost() {
                 ? current.authorityVersion + 1
                 : 1,
               readVersion: current.openingId === openingId ? current.readVersion : 0,
+              readRevision: current.openingId === openingId ? current.readRevision : null,
             };
             activationReadStateRef.current = denied;
             setActivationReadState(denied);
@@ -117,6 +119,7 @@ export function ProjectWorkflowHost() {
           denied: false,
           authorityVersion: current.openingId === openingId ? current.authorityVersion : 0,
           readVersion: current.openingId === openingId ? current.readVersion + 1 : 1,
+          readRevision: project.revision,
         };
         activationReadStateRef.current = readable;
         setActivationReadState(readable);
@@ -133,7 +136,7 @@ export function ProjectWorkflowHost() {
     const action = workflow.current.kind === "reopenWithDriver" ? "reopen" : "activate";
     const readState = activationReadState.openingId === openingId
       ? activationReadState
-      : { openingId, denied: false, authorityVersion: 0, readVersion: 0 };
+      : { openingId, denied: false, authorityVersion: 0, readVersion: 0, readRevision: null };
     const activationStory = readState.denied || !fetchedProject
       ? null
       : projectActions.projectStory(fetchedProject);
@@ -146,17 +149,30 @@ export function ProjectWorkflowHost() {
         openingIdRef.current === openingId &&
         (currentRead?.authorityVersion ?? 0) === authorityVersion;
     };
-    const isCurrentAuthority = (authorityVersion: number) => {
+    const currentAuthorityReadVersion = (
+      authorityVersion: number,
+      expectedReadVersion?: number,
+      responseRevision?: number,
+    ): number | null => {
       const currentRead = activationReadStateRef.current.openingId === openingId
         ? activationReadStateRef.current
         : null;
-      return sameOpeningAtVersion(authorityVersion) && currentRead?.denied !== true;
+      if (!sameOpeningAtVersion(authorityVersion) || currentRead?.denied === true) return null;
+      if (expectedReadVersion !== undefined) {
+        if (!currentRead) return null;
+        const sameRead = currentRead.readVersion === expectedReadVersion;
+        const newerResponse = responseRevision !== undefined &&
+          currentRead.readRevision !== null &&
+          responseRevision > currentRead.readRevision;
+        if (!sameRead && !newerResponse) return null;
+      }
+      return currentRead?.readVersion ?? 0;
     };
     const closeActivation = () => {
       if (workflowRef.current === openingState && openingIdRef.current === openingId) close();
     };
     const completeActivation = () => {
-      if (isCurrentAuthority(readState.authorityVersion)) close();
+      if (currentAuthorityReadVersion(readState.authorityVersion) !== null) close();
     };
     return (
       <ProjectActivationSheet
@@ -171,7 +187,7 @@ export function ProjectWorkflowHost() {
         openingId={openingId}
         authorityVersion={readState.authorityVersion}
         readVersion={readState.readVersion}
-        isCurrentAuthority={isCurrentAuthority}
+        currentAuthorityReadVersion={currentAuthorityReadVersion}
         onClose={closeActivation}
         onActivationSuccess={completeActivation}
         onActivate={(ownerMemberId, resolution, expectedRevision) =>

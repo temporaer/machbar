@@ -94,6 +94,11 @@ Project activation uses this for 403/404 so its editor can retain authored
 choices without rendering a stale project snapshot.
 Accepted-read authority uses `useAsync`'s qualified `onAcceptedResult`, before
 queued revalidation; runner idle/error flags are not evidence of acceptance.
+Activation command errors are qualified against that read authority: an error
+from the same read may update its requirements, while a delayed error after a
+newer accepted read may replace them only when its target revision is strictly
+newer than the accepted project's revision. Older or equal-revision errors must
+not overwrite the newer read's requirements.
 
 ### Task mutations
 

@@ -138,6 +138,11 @@ Read acceptance is not runner idleness: an accepted 200 followed by a queued
 503 must recover the editor. Error-supplied requirements also outlive choice
 edits until a new accepted GET replaces them. Keep one authored-choice owner
 and preserve canonical normalization when a newer read removes a driver requirement.
+Also test the opposite response order: a delayed command error must not stamp
+older requirements with a newer GET's identity. The existing live read witness
+qualifies publication before React renders; older or equal-revision errors leave
+fresh read facts intact, while a strictly newer error can supply updated
+requirements. Keep the command's own error feedback in either case.
 
 ## Mistakes not to repeat
 

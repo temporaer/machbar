@@ -902,8 +902,11 @@ requirements and revisions from the newly accepted server snapshot. Other
 refresh errors retain usable content.
 Acceptance is published by the canonical runner, not inferred from idle state:
 a successful read remains authoritative when its queued successor fails harmlessly.
-Error-supplied activation requirements survive authored edits until a later
-accepted read replaces them; choices remain normalized to current requirements.
+Error-supplied activation requirements survive authored edits. A command error
+from the same accepted read can update them; after a newer accepted read, only
+an error with a strictly newer target revision can replace that read's
+requirements. Older and equal-revision errors leave the current read intact.
+Choices remain normalized to current requirements.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.

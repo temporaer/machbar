@@ -55,7 +55,7 @@ export function ProjectActivationSheet({
   openingId,
   authorityVersion,
   readVersion,
-  isCurrentAuthority,
+  currentAuthorityReadVersion,
   onClose,
   onActivationSuccess,
   onActivate,
@@ -68,7 +68,11 @@ export function ProjectActivationSheet({
   openingId: number;
   authorityVersion: number;
   readVersion: number;
-  isCurrentAuthority: (authorityVersion: number) => boolean;
+  currentAuthorityReadVersion: (
+    authorityVersion: number,
+    expectedReadVersion?: number,
+    responseRevision?: number,
+  ) => number | null;
   onClose: () => void;
   onActivationSuccess: () => void;
   onActivate: (ownerMemberId: number | null, resolution: ProjectActivationResolution, expectedRevision?: number) => Promise<void>;
@@ -111,18 +115,24 @@ export function ProjectActivationSheet({
         currentAuthority.openingId === startedWith.openingId &&
         currentAuthority.authorityVersion === startedWith.authorityVersion &&
         currentAuthority.hasAuthority &&
-        isCurrentAuthority(startedWith.authorityVersion)
+        currentAuthorityReadVersion(startedWith.authorityVersion) !== null
       ) onActivationSuccess();
     } catch (cause) {
-      if (!isCurrentAuthority(startedWith.authorityVersion)) return;
+      if (currentAuthorityReadVersion(startedWith.authorityVersion) === null) return;
       const commandPrompt = projectActivationPromptFromError(cause, prompt);
       if (commandPrompt) {
-        const { selectedDrivers, nextActionTitle, ...requirements } = commandPrompt;
-        setPromptOverride({ readVersion: authorityRef.current.readVersion, requirements });
-        setDraft({
-          selectedDrivers,
-          nextActionTitle,
-        });
+        const responseRevision = commandPrompt.targetRevision ??
+          commandPrompt.expectedProjects.find((entry) => entry.projectId === story.id)?.revision;
+        const acceptedReadVersion = currentAuthorityReadVersion(
+          startedWith.authorityVersion,
+          startedWith.readVersion,
+          responseRevision,
+        );
+        if (acceptedReadVersion !== null) {
+          const { selectedDrivers, nextActionTitle, ...requirements } = commandPrompt;
+          setPromptOverride({ readVersion: acceptedReadVersion, requirements });
+          setDraft({ selectedDrivers, nextActionTitle });
+        }
       }
       if (cause instanceof ApiError && cause.code === "stale_write_conflict") onRetry();
       setError(localizedErrorMessage(cause, strings));

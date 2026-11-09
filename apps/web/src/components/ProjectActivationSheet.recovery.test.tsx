@@ -299,6 +299,140 @@ describe("ProjectActivationSheet read recovery", () => {
     }
   });
 
+  it.each([
+    { order: "after read render", errorRevision: 2 },
+    { order: "same batch, older error", errorRevision: 2 },
+    { order: "same batch, equal revision error", errorRevision: 3 },
+    { order: "same batch, newer error", errorRevision: 4 },
+  ])("qualifies a delayed command snapshot arriving $order", async ({ order, errorRevision }) => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    vi.spyOn(api, "getMembers").mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+    vi.spyOn(api, "getAuthStatus").mockResolvedValue({
+      enabled: false,
+      authenticated: false,
+      member: null,
+    });
+    const currentRead = deferred<ProjectDetail>();
+    const currentDetail = activationDetail({
+      title: "Current read requirements",
+      revision: 3,
+      directActivationDecisionSnapshot: {
+        projects: [{
+          projectId: 731,
+          title: "Current read requirements",
+          revision: 3,
+          ownerMemberId: null,
+          required: ["driver"],
+        }],
+        expectedProjects: [{ projectId: 731, revision: 3 }],
+        targetRevision: 3,
+      },
+    });
+    const getProject = vi.spyOn(api, "getProject")
+      .mockResolvedValueOnce(activationDetail({
+        title: "Original activation title",
+        revision: 1,
+        directActivationDecisionSnapshot: {
+          projects: [{
+            projectId: 731,
+            title: "Original activation title",
+            revision: 1,
+            ownerMemberId: null,
+            required: ["driver"],
+          }],
+          expectedProjects: [{ projectId: 731, revision: 1 }],
+          targetRevision: 1,
+        },
+      }, 731, "Original activation title"))
+      .mockReturnValueOnce(currentRead.promise)
+      .mockResolvedValue(currentDetail);
+    const activation = deferred<ProjectWithActions>();
+    const activateProject = vi.spyOn(api, "activateProject")
+      .mockReturnValueOnce(activation.promise)
+      .mockResolvedValue(makeProject({
+        id: 731,
+        title: "Current read requirements",
+        status: "active",
+        revision: 5,
+      }));
+    const errorTitle = errorRevision > 3 ? "Newer error requirements" : "Superseded error requirements";
+    const commandError = new ApiError(409, "Decisions changed.", "project_commitment_resolution_required", {
+      projects: [{
+        projectId: 731,
+        title: errorTitle,
+        revision: errorRevision,
+        ownerMemberId: null,
+        required: ["driver", "progressPath"],
+      }],
+      expectedProjects: [{ projectId: 731, revision: errorRevision }],
+      targetRevision: errorRevision,
+    });
+
+    renderWithProviders(<WorkflowControls />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Start activation" }));
+    const dialog = await screen.findByRole("dialog");
+    await screen.findByRole("option", { name: "Mira" });
+    await user.selectOptions(within(dialog).getByLabelText(/Verantwortlich für/), "1");
+    await user.click(within(dialog).getByRole("button", { name: /^Projekt starten$/ }));
+    await waitFor(() => expect(activateProject).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "Refresh project" }));
+    await waitFor(() => expect(getProject).toHaveBeenCalledTimes(2));
+    if (order === "after read render") {
+      await act(async () => currentRead.resolve(currentDetail));
+      await waitFor(() => expect(within(dialog).getByText("Current read requirements")).toBeVisible());
+      await act(async () => {
+        activation.reject(commandError);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    } else {
+      await act(async () => {
+        currentRead.resolve(currentDetail);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(within(dialog).getByText("Original activation title")).toBeVisible();
+        activation.reject(commandError);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toBeVisible());
+    if (errorRevision <= 3) {
+      expect(within(dialog).getByText("Current read requirements")).toBeVisible();
+      expect(within(dialog).getByLabelText(/Current read requirements/)).toHaveValue("1");
+      expect(dialog.querySelector("#commitment-next-action")).toBeNull();
+      expect(dialog).not.toHaveTextContent(errorTitle);
+
+      await user.click(within(dialog).getByRole("button", { name: /^Projekt starten$/ }));
+      await waitFor(() => expect(activateProject).toHaveBeenCalledTimes(2));
+      expect(activateProject).toHaveBeenLastCalledWith(731, expect.objectContaining({
+        expectedRevision: 3,
+        activationResolution: {
+          expectedProjects: [{ projectId: 731, revision: 3 }],
+          drivers: [{ projectId: 731, ownerMemberId: 1 }],
+        },
+      }));
+    } else {
+      expect(within(dialog).getByLabelText(/Newer error requirements/)).toHaveValue("1");
+      const nextAction = dialog.querySelector<HTMLInputElement>("#commitment-next-action");
+      expect(nextAction).not.toBeNull();
+      await user.type(nextAction!, "Progress from newer error");
+      await user.click(within(dialog).getByRole("button", { name: /^Projekt starten$/ }));
+      await waitFor(() => expect(activateProject).toHaveBeenCalledTimes(2));
+      expect(activateProject).toHaveBeenLastCalledWith(731, expect.objectContaining({
+        expectedRevision: 4,
+        activationResolution: {
+          expectedProjects: [{ projectId: 731, revision: 4 }],
+          drivers: [{ projectId: 731, ownerMemberId: 1 }],
+          nextActionTitle: "Progress from newer error",
+        },
+      }));
+    }
+  });
+
   it("keeps an empty opening recoverable after initial denial without inventing a project", async () => {
     window.localStorage.setItem("machbar:identity-member-id", "1");
     vi.spyOn(api, "getMembers").mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
