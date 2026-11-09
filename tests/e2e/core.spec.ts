@@ -527,6 +527,58 @@ test("Discussion renders real tasks/projects and live changes", async ({ page })
   await expect(page.getByRole("button", { name: item.title, exact: true })).toHaveCount(0);
 });
 
+test("Discussion retains focused rows through an outage and retries without writes", async ({ page }) => {
+  let item = await task(page);
+  item = await (await page.request.patch(`/api/tasks/${item.id}`, {
+    data: { discussionRequested: true, expectedRevision: item.revision },
+  })).json();
+  const created = await page.request.post("/api/projects", { data: { title: `Discussion retry ${randomUUID()}` } });
+  expect(created.status()).toBe(201);
+  let project = await created.json();
+  project = await (await page.request.patch(`/api/projects/${project.id}`, {
+    data: { discussionRequested: true, expectedRevision: project.revision },
+  })).json();
+  await page.goto("/#/more/discussion");
+  const discussion = page.locator(".discussion-page");
+  const row = discussion.getByRole("button", { name: item.title, exact: true });
+  const projectRow = discussion.getByRole("button", { name: new RegExp(project.title) });
+  await expect(row).toBeVisible();
+  await expect(projectRow).toBeVisible();
+  let offline = true;
+  await page.route("**/api/discussion", async route => {
+    if (offline) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Unavailable" }) });
+    else await route.continue();
+  });
+  await row.focus();
+  const failed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/discussion" && response.status() === 503);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await failed;
+  await expect(discussion.getByRole("alert")).toBeVisible();
+  await expect(row).toBeVisible();
+  await expect(projectRow).toBeVisible();
+  await expect(row).toBeFocused();
+  const writes: string[] = [];
+  page.on("request", request => {
+    if (new URL(request.url()).pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method())) {
+      writes.push(`${request.method()} ${request.url()}`);
+    }
+  });
+  offline = false;
+  const retried = page.waitForResponse(response => new URL(response.url()).pathname === "/api/discussion" && response.request().method() === "GET" && response.status() === 200);
+  await discussion.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+  await retried;
+  await expect(discussion.getByRole("alert")).toHaveCount(0);
+  await expect(row).toBeVisible();
+  await expect(projectRow).toBeVisible();
+  expect(writes).toEqual([]);
+  expect(await (await page.request.get(`/api/tasks/${item.id}`)).json()).toMatchObject({
+    revision: item.revision, discussionRequested: true,
+  });
+  expect(await (await page.request.get(`/api/projects/${project.id}`)).json()).toMatchObject({
+    revision: project.revision, discussionRequested: true,
+  });
+});
+
 test("a real service worker activates and controls a reloaded app", async ({ page }) => {
   await page.goto("/#/today");
   const result = await page.evaluate(async () => {
