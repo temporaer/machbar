@@ -213,11 +213,17 @@ verified. Fixture tests and a successful local dry-run do not mean that a
 production database has been migrated.
 
 When upgrading Verarbeiten, upgrade the paired Machbar Home Assistant custom
-integration at the same time. Protocol 2 has no v1 compatibility mode. After
+integration at the same time. Current intake requires protocol 3. After
 the Home Assistant component update, reopen its options flow and select the
 configured `ai_task.*` entity and writable `calendar.*` entity again if
 necessary. Home Assistant must be online for intake analysis and calendar
 creation.
+
+Existing-project suggestions for ordinary intake require Machbar Home Assistant
+integration **0.8.0 or newer**. Update the custom component through HACS and
+restart Home Assistant; rebuilding the Machbar server does not update the
+component loaded by Home Assistant. Older components can still return ordinary
+proposals, but do not preserve the new existing-project destination field.
 
 ## Health check
 
@@ -304,7 +310,7 @@ intake is never uploaded as a Paperless document.
 ## Home Assistant prerequisites for Verarbeiten
 
 Install the paired Machbar custom integration from HACS (Home Assistant
-2025.8.0 or newer), pair it using protocol 2, and reopen **Configure** in the
+2025.8.0 or newer), pair it using protocol 3, and reopen **Configure** in the
 integration options. Select an AI Task entity from the `ai_task` domain and a
 calendar entity from the `calendar` domain. The AI Task must support
 `GENERATE_DATA`; photo/file intake also needs attachment support. The calendar

@@ -123,7 +123,8 @@ function normalizedWorkItemKind(
   kind: IntakeDraftWorkItem["kind"],
   parentKey: string | null,
 ): IntakeDraftWorkItem {
-  const base = { ...item, kind, parentKey };
+  const base = { ...item, kind, parentKey,
+    ...(kind !== "action" || parentKey !== null ? { existingProjectId: null, existingProjectRevision: null } : {}) };
   if (kind === "project") {
     return {
       ...base,

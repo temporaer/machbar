@@ -100,6 +100,16 @@ the same transaction as its first child; **Als Projekt behandeln** is an
 optional branch through the existing guarded conversion. Unsupported
 conversions leave the original task and the whole step batch intact.
 
+Ordinary **Verarbeiten** can suggest new actions and action subtrees in an
+existing visible project. Review shows its title and active/backlog status.
+**Bearbeiten → Bestehendes Projekt** changes or removes the association;
+the existing type and proposed-parent controls still support new projects
+and standalone tasks. Nothing reconciles or completes existing tasks.
+Adding a step to a backlog project does not activate it or put it in Today.
+If the complete project index exceeds the AI context limit, review warns and
+offers manual destination selection instead. Changed or unavailable targets
+must be explicitly chosen again before Apply; stale reviews are not auto-refreshed.
+
 **Kopf freimachen**, available from Eingang and Mehr, is an open-ended deck of
 optional reflection questions over sixteen life areas in five thematic worlds.
 Each area offers different perspectives, including unfinished matters, future

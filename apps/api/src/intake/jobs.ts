@@ -45,6 +45,7 @@ import { getHouseholdAiContext } from "../aiContext.js";
 import { assertBreakdownDraft, breakdownSnapshot, breakdownSourceText, breakdownTask } from "./breakdown.js";
 import { assertRefinementContext } from "./refinement.js";
 import { buildRefinementSnapshot } from "./refinementSnapshot.js";
+import { intakeExistingProjects, intakeProjectIndex } from "./existingProjects.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_INTAKE_TIMEZONE = "Europe/Berlin";
@@ -208,7 +209,8 @@ export function recoverExpiredApplyClaim(
   now = nowIso(),
 ): boolean {
   if (
-    job.status !== "applying"
+    job.refinementTargetType !== null
+    || job.status !== "applying"
     || job.applyClaimToken === null
     || job.applyClaimExpiresAt === null
     || job.applyClaimExpiresAt > now
@@ -288,6 +290,8 @@ export async function createIntakeJob(
     const expiresAt = new Date(Date.now() + DAY_MS).toISOString();
     const promptNow = new Date();
     const promptTimezone = intakeTimezone(db);
+    const existingProjectIndex = !sourceTask && !input.refinement
+      ? intakeProjectIndex(intakeExistingProjects(db, input.scope, input.createdByMemberId)) : undefined;
     db.transaction((tx) => {
       tx.insert(schema.intakeJobs).values({
         id,
@@ -328,6 +332,7 @@ export async function createIntakeJob(
         payload: {
           intakeId: id,
           taskName: "Machbar intake",
+          ...(existingProjectIndex ? { existingProjectIndexComplete: JSON.parse(existingProjectIndex).complete } : {}),
           instructions: buildIntakeInstructions({
             today: new Intl.DateTimeFormat("en-CA", { timeZone: promptTimezone }).format(promptNow),
             timezone: promptTimezone,
@@ -336,6 +341,7 @@ export async function createIntakeJob(
             hasText: input.text !== null,
             attachmentCount: binaryAttachments.length,
             aiContext: getHouseholdAiContext(db),
+            existingProjectIndex,
             breakdownInstruction: sourceTask ? input.breakdown?.instruction ?? "" : undefined,
             refinement: input.refinement ? {
               targetType: input.refinement.targetType,
@@ -374,7 +380,8 @@ export function getIntake(
     eq(schema.homeAssistantRequests.intakeJobId, id),
     eq(schema.homeAssistantRequests.kind, "intake_analyze"),
   )).orderBy(desc(schema.homeAssistantRequests.createdAt)).get();
-  const draft = normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson));
+  const draft = job.refinementTargetType === null
+    ? normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson)) : null;
   const error = parseJson<IntakeErrorInfo>(job.errorJson);
   const integration = activeHomeAssistantIntegration(db);
   const breakdownRows = job.breakdownSnapshotJson ? JSON.parse(job.breakdownSnapshotJson) as Array<{
@@ -394,6 +401,10 @@ export function getIntake(
     ? null
     : breakdownRows.find((row) => row.id === job.breakdownTaskId) ?? null;
   return {
+    ...(!job.breakdownTaskId && !job.refinementTargetType ? {
+      existingProjects: intakeExistingProjects(db, job.scope, viewerMemberId),
+      existingProjectIndexComplete: draft?.existingProjectIndexComplete ?? true,
+    } : {}),
     id: job.id,
     status: (job.status === "queued" && request?.status === "leased" ? "analyzing" : job.status) as IntakeRecord["status"],
     revision: job.revision,
@@ -531,6 +542,19 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
   }
   const normalized = normalizeIntakePlan(parsed.data as IntakePlan);
   const draft = buildDraftFromPlan(normalized.plan, members);
+  if (job.breakdownTaskId === null) {
+    const request = db.select().from(schema.homeAssistantRequests)
+      .where(and(eq(schema.homeAssistantRequests.intakeJobId, job.id), eq(schema.homeAssistantRequests.kind, "intake_analyze")))
+      .orderBy(desc(schema.homeAssistantRequests.createdAt)).get();
+    const complete = request ? (JSON.parse(request.payloadJson) as { existingProjectIndexComplete?: boolean }).existingProjectIndexComplete : undefined;
+    if (complete !== undefined) draft.existingProjectIndexComplete = complete;
+    const destinations = new Map(intakeExistingProjects(db, job.scope, job.createdByMemberId).map((project) => [project.id, project]));
+    for (const item of draft.workItems) {
+      if (item.existingProjectId != null) {
+        item.existingProjectRevision = destinations.get(item.existingProjectId)?.revision ?? null;
+      }
+    }
+  }
   if (job.breakdownTaskId !== null) {
     try {
       const source = breakdownTask(db, job.breakdownTaskId, job.createdByMemberId);
@@ -626,6 +650,7 @@ export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | n
   if (!current) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (current.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
   if (current.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (current.refinementTargetType !== null) throw AppError.conflict("intake_state_conflict", "Use the refinement endpoint for this intake.");
   if (current.status !== "ready" || current.acceptedDraftJson !== null) {
     throw AppError.conflict("intake_state_conflict", "The intake can only be edited before Apply starts.");
   }
@@ -635,6 +660,7 @@ export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | n
     if (!job) throw AppError.notFound("intake_not_found", "The intake was not found.");
     if (job.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (job.refinementTargetType !== null) throw AppError.conflict("intake_state_conflict", "Use the refinement endpoint for this intake.");
     if (job.status !== "ready" || job.acceptedDraftJson !== null) {
       throw AppError.conflict("intake_state_conflict", "The intake can only be edited before Apply starts.");
     }
@@ -669,7 +695,8 @@ export async function retryIntakeAnalysis(
   if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
   if (integration.protocolVersion !== 3) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
   const previousError = parseJson<IntakeErrorInfo>(job.errorJson);
-  const currentDraft = normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson));
+  const currentDraft = job.refinementTargetType === null
+    ? normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson)) : null;
   const membersForValidation = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
   const attachments = db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all();
   const currentDraftIssues = currentDraft
@@ -694,7 +721,7 @@ export async function retryIntakeAnalysis(
   const currentProposal = currentDraft ? {
     summary: currentDraft.summary,
     calendarEvents: currentDraft.calendarEvents,
-    workItems: currentDraft.workItems.map(({ ownerMemberId, ...item }) => ({
+    workItems: currentDraft.workItems.map(({ ownerMemberId, existingProjectRevision: _reviewRevision, ...item }) => ({
       ...item,
       ownerName: members.find((member) => member.id === ownerMemberId)?.name ?? null,
     })),
@@ -702,6 +729,8 @@ export async function retryIntakeAnalysis(
   } : null;
   const promptNow = new Date();
   const promptTimezone = intakeTimezone(db);
+  const existingProjectIndex = job.breakdownTaskId === null && !job.refinementTargetType
+    ? intakeProjectIndex(intakeExistingProjects(db, job.scope, job.createdByMemberId)) : undefined;
   const sourceTask = job.breakdownTaskId !== null
     ? breakdownTask(db, job.breakdownTaskId, viewerMemberId)
     : null;
@@ -730,6 +759,7 @@ export async function retryIntakeAnalysis(
       payload: {
         intakeId: id,
         taskName: "Machbar intake",
+        ...(existingProjectIndex ? { existingProjectIndexComplete: JSON.parse(existingProjectIndex).complete } : {}),
         instructions: buildIntakeInstructions({
           today: new Intl.DateTimeFormat("en-CA", { timeZone: promptTimezone }).format(promptNow),
           timezone: promptTimezone,
@@ -741,6 +771,7 @@ export async function retryIntakeAnalysis(
           currentProposal,
           userInstruction: retryHint,
           aiContext: getHouseholdAiContext(db),
+          existingProjectIndex,
           breakdownInstruction: job.breakdownTaskId !== null ? job.breakdownInstruction ?? "" : undefined,
           refinement: job.refinementTargetType && job.refinementIntent ? {
             targetType: job.refinementTargetType,

@@ -149,6 +149,24 @@ def _valid_plan():
     }
 
 
+def test_existing_project_destination_survives_structured_output_and_normalization():
+    plan = _valid_plan()
+    plan["workItems"][0]["existingProjectId"] = 42
+    validated = INTAKE_STRUCTURE(plan)
+    assert normalize_plan(validated)["workItems"][0]["existingProjectId"] == 42
+    schema = to_openapi(_probatio_schema_from_voluptuous(INTAKE_STRUCTURE))
+    assert "existingProjectId" in json.dumps(schema)
+
+
+@pytest.mark.parametrize("destination", [-1, 0, True, "42", 1.5])
+def test_existing_project_destination_rejects_non_positive_numeric_ids(destination):
+    plan = _valid_plan()
+    plan["workItems"][0]["existingProjectId"] = destination
+    with pytest.raises(AdapterError) as err:
+        normalize_plan(plan)
+    assert err.value.details["path"] == ["workItems", 0, "existingProjectId"]
+
+
 @pytest.mark.parametrize(
     ("object_path", "unknown_key"),
     [

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { IntakeDraftWorkItem, IntakeIssue } from "@machbar/shared";
+import type { IntakeDraftWorkItem, IntakeIssue, IntakeRecord } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "../components/BottomSheet";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownNotes } from "../components/MarkdownNotes";
 import { IntakeIssueText } from "./IntakeReviewFields";
+import { DestinationPicker } from "../components/DestinationPicker";
 
 export function IntakeWorkItemContentEditor({
   item,
@@ -15,6 +16,9 @@ export function IntakeWorkItemContentEditor({
   onClose,
   allowedKinds = ["action", "project", "reference"],
   allowClarification = true,
+  existingProjects = [],
+  workItems = [],
+  allowDestination = true,
 }: {
   item: IntakeDraftWorkItem;
   index: number;
@@ -24,6 +28,9 @@ export function IntakeWorkItemContentEditor({
   onClose: () => void;
   allowedKinds?: IntakeDraftWorkItem["kind"][] | undefined;
   allowClarification?: boolean;
+  existingProjects?: IntakeRecord["existingProjects"];
+  workItems?: IntakeDraftWorkItem[];
+  allowDestination?: boolean;
 }) {
   const strings = useStrings();
   const [titleEditing, setTitleEditing] = useState(false);
@@ -103,6 +110,41 @@ export function IntakeWorkItemContentEditor({
             {allowedKinds.includes("reference") ? <option value="reference">{strings.materialLabel}</option> : null}
           </select>
         </label>
+
+        {allowDestination ? <>
+          <label className="field">
+            <span className="field-label">{strings.intakeParent}</span>
+            <select value={item.parentKey ?? ""} onChange={(event) => onChange({
+              ...item, parentKey: event.target.value || null, existingProjectId: null, existingProjectRevision: null,
+            })}>
+              <option value="">{strings.intakeStandalone}</option>
+              {workItems.filter((candidate) => {
+                if (candidate.key === item.key || !candidate.enabled) return false;
+                if (candidate.kind !== "project" && !(candidate.kind === "action" && item.kind !== "project")) return false;
+                let ancestor: IntakeDraftWorkItem | undefined = candidate;
+                const seen = new Set<string>();
+                while (ancestor) {
+                  if (ancestor.key === item.key || seen.has(ancestor.key)) return false;
+                  seen.add(ancestor.key);
+                  ancestor = workItems.find((value) => value.key === ancestor?.parentKey);
+                }
+                return true;
+              }).map((candidate) => <option key={candidate.key} value={candidate.key}>{candidate.title}</option>)}
+            </select>
+          </label>
+          {item.kind === "action" ? <>
+            <p className="text-muted">{strings.intakeExistingProjectHelp}</p>
+            <DestinationPicker kind="project" label={strings.intakeExistingProject}
+              options={existingProjects.map((project) => ({ id: project.id, title: project.title,
+                subtitle: strings.projectStatusLabels[project.status] }))}
+              value={item.existingProjectId ?? null} noneLabel={strings.intakeNoExistingProject}
+              onChange={(id) => onChange({ ...item, existingProjectId: id,
+                existingProjectRevision: existingProjects.find((project) => project.id === id)?.revision ?? null,
+                ...(id !== null ? { parentKey: null } : {}),
+              })} />
+            <IntakeIssueText issues={issues} path={[...path, "existingProjectId"]} />
+          </> : null}
+        </> : null}
 
         <section className="intake-authored-field">
           <div className="intake-authored-heading">

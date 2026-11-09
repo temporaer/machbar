@@ -583,6 +583,7 @@ const intakeWorkItemSchema = z
     title: z.string().trim().min(1).max(200),
     notes: z.string().max(8000).nullable().optional(),
     parentKey: z.string().nullable().optional(),
+    existingProjectId: z.number().int().positive().nullable().optional(),
     ownerName: z.string().nullable().optional(),
     dueDate: intakeShapeDateSchema.optional(),
     scheduledDate: intakeShapeDateSchema.optional(),
@@ -606,7 +607,7 @@ export const intakePlanStructureSchema = z
 const intakeCalendarEventCanonicalSchema = intakeCalendarEventSchema.required().strict();
 const intakeWorkItemCanonicalSchema = intakeWorkItemSchema
   .required()
-  .extend({ revisitAt: intakeShapeDateTimeSchema.optional() })
+  .extend({ revisitAt: intakeShapeDateTimeSchema.optional(), existingProjectId: z.number().int().positive().nullable().optional() })
   .strict();
 const intakeWarningSchema = z.object({ message: z.string().trim().min(1).max(500) }).strict();
 
@@ -636,9 +637,11 @@ const intakeDraftCalendarEventSchema = intakeCalendarEventCanonicalSchema.extend
 const intakeDraftWorkItemSchema = intakeWorkItemCanonicalSchema.omit({ ownerName: true }).extend({
   enabled: z.boolean(),
   ownerMemberId: z.number().int().positive().nullable(),
+  existingProjectRevision: z.number().int().positive().nullable().optional(),
 }).strict();
 export const intakeDraftStructureSchema = z
   .object({
+    existingProjectIndexComplete: z.boolean().optional(),
     summary: z.string().max(1000),
     calendarEvents: z.array(intakeDraftCalendarEventSchema).max(20),
     workItems: z.array(intakeDraftWorkItemSchema).max(50),

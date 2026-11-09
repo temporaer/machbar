@@ -14,7 +14,7 @@ import {
   unacceptedWorkRefinementProposal,
   workRefinementProposalSchema,
 } from "@machbar/shared";
-import type { ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
+import type { IntakeDraft, ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
 import { closeTestContext, createTestContext, insertTestProject, type TestContext } from "./helpers.js";
 
 describe("AI work refinement proposals", () => {
@@ -32,6 +32,103 @@ describe("AI work refinement proposals", () => {
       ...(details.projects.some((project) => project.required.includes("progressPath")) ? { nextActionTitle } : {}),
     };
   }
+
+  function prepareModeBoundaryJob(targetType: "task" | "project") {
+    const target = targetType === "task"
+      ? createTask(ctx.handle.db, { title: "Typed refinement source" })
+      : createProject(ctx.handle.db, { title: "Typed refinement source" });
+    const unrelated = createProject(ctx.handle.db, { title: "Unrelated destination", notes: "Preserve metadata" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, targetType, target.id, null).snapshot;
+    const proposal: WorkRefinementProposal = {
+      intent: "improve", disposition: "changes", summary: "Typed proposal", question: null,
+      changes: [{ kind: targetType === "task" ? "update_task" : "update_project",
+        targetId: target.id, title: "Explicitly reviewed typed edit", rationale: "Clearer title", accepted: false }],
+    };
+    const draft: IntakeDraft = {
+      summary: "Wrong mode", warnings: [], calendarEvents: [], retainSourceInPaperless: false,
+      workItems: [{
+        key: "ordinary", kind: "action", title: "Must not be created", notes: null, parentKey: null,
+        existingProjectId: unrelated.id, existingProjectRevision: unrelated.revision,
+        ownerMemberId: null, dueDate: null, scheduledDate: null, revisitAt: null,
+        notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false,
+        relatedCalendarKeys: [], enabled: true,
+      }],
+    };
+    const id = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, status: "ready", revision: 1, scope: "household", createdByMemberId: null,
+      refinementTargetType: targetType, refinementTargetId: target.id, refinementIntent: "improve",
+      refinementSnapshotJson: snapshot, refinementJson: JSON.stringify(proposal),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+    return { id, target, unrelated, proposal, draft };
+  }
+
+  function modeBoundaryState(id: string) {
+    return {
+      job: ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get(),
+      work: ctx.handle.db.select().from(schema.workItems).all(),
+      activity: ctx.handle.db.select().from(schema.activityEvents).all(),
+      outbox: ctx.handle.db.select().from(schema.notificationEvents).all(),
+      requests: ctx.handle.db.select().from(schema.homeAssistantRequests).all(),
+    };
+  }
+
+  it.each([
+    ["task", "apply"], ["project", "apply"], ["task", "plan"], ["project", "plan"],
+  ] as const)("rejects ordinary %s refinement /%s mode confusion without effects, while dedicated typed Apply remains usable", async (targetType, operation) => {
+    const { id, target, unrelated, proposal, draft } = prepareModeBoundaryJob(targetType);
+    const before = modeBoundaryState(id);
+    const response = await ctx.app.inject({
+      method: operation === "apply" ? "POST" : "PATCH",
+      url: `/api/intake/${id}/${operation}`,
+      payload: { expectedRevision: 1, draft },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ error: { code: "intake_state_conflict" } });
+    expect(response.body).not.toContain(unrelated.title);
+    expect(modeBoundaryState(id)).toEqual(before);
+    const read = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(read.statusCode).toBe(200);
+    expect(read.json()).toMatchObject({ status: "ready", revision: 1, draft: null, refinement: { proposal } });
+    expect(read.json()).not.toHaveProperty("existingProjects");
+    expect(read.json()).not.toHaveProperty("existingProjectIndexComplete");
+    expect(modeBoundaryState(id)).toEqual(before);
+
+    const accepted = { ...proposal, changes: proposal.changes.map((change) => ({ ...change, accepted: true })) };
+    const saved = await ctx.app.inject({ method: "PATCH", url: `/api/intake/${id}/refinement`,
+      payload: { expectedRevision: 1, proposal: accepted } });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const applied = await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/refinement/apply`,
+      payload: { expectedRevision: saved.json().revision } });
+    expect(applied.statusCode, applied.body).toBe(200);
+    expect(applied.json().status).toBe("applied");
+    const after = modeBoundaryState(id);
+    expect(after.work).toHaveLength(before.work.length);
+    expect(after.work.find((row) => row.id === target.id)?.title).toBe("Explicitly reviewed typed edit");
+    expect(after.work.find((row) => row.id === unrelated.id)).toEqual(before.work.find((row) => row.id === unrelated.id));
+  });
+
+  it("does not project or recover an ordinary draft/expired claim stored on a typed refinement job", async () => {
+    const { id, draft, proposal } = prepareModeBoundaryJob("task");
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "applying", draftJson: JSON.stringify(draft), acceptedDraftJson: JSON.stringify(draft),
+      applyClaimToken: "wrong-mode-claim", applyClaimExpiresAt: "2020-01-01T00:00:00.000Z",
+    }).where(eq(schema.intakeJobs.id, id)).run();
+    const before = modeBoundaryState(id);
+    const read = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(read.statusCode).toBe(200);
+    expect(read.json()).toMatchObject({ status: "applying", revision: 1, draft: null, refinement: { proposal } });
+    expect(read.json()).not.toHaveProperty("existingProjects");
+    expect(read.json()).not.toHaveProperty("existingProjectIndexComplete");
+    expect(modeBoundaryState(id)).toEqual(before);
+    const apply = await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/apply`,
+      payload: { expectedRevision: 1, draft } });
+    expect(apply.statusCode, apply.body).toBe(409);
+    expect(apply.json().error.code).toBe("intake_state_conflict");
+    expect(modeBoundaryState(id)).toEqual(before);
+  });
 
   it.each([
     ["update_task", { targetId: 12, title: "Klarer", notes: null }],
@@ -326,6 +423,14 @@ describe("AI work refinement proposals", () => {
       question: null,
       changes: [{ kind: "update_task", rationale: "Der nächste Schritt wird sichtbar." }],
     });
+    ctx.handle.db.update(schema.intakeJobs).set({ draftJson: JSON.stringify({
+      summary: "POISONED ORDINARY CONTEXT", calendarEvents: [], warnings: [], retainSourceInPaperless: false,
+      workItems: [{
+        key: "ordinary", kind: "action", title: "Wrong mode", notes: null, parentKey: null,
+        ownerMemberId: null, dueDate: "POISONED DATE", scheduledDate: null, notBeforeDate: null,
+        notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true,
+      }],
+    }) }).where(eq(schema.intakeJobs.id, id)).run();
 
     const response = await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/retry` });
     expect(response.statusCode).toBe(200);
@@ -336,6 +441,11 @@ describe("AI work refinement proposals", () => {
     const instructions = JSON.parse(request!.payloadJson).instructions as string;
     expect(instructions).toContain("changes[0].targetId");
     expect(instructions).toContain("Required");
+    expect(instructions).not.toContain("workItems[0]");
+    expect(instructions).not.toContain("POISONED");
+    expect(instructions).not.toContain("EXISTING PROJECT DESTINATIONS");
+    expect(response.json().draft).toBeNull();
+    expect(JSON.parse(request!.payloadJson).analysisMode).toBe("work_refinement");
   });
 
   it("stores unaccepted recommendations and applies selected updates and children atomically", () => {

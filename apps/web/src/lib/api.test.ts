@@ -70,6 +70,18 @@ describe("api request() Content-Type handling", () => {
     expect(headersOf(fetchMock)).toMatchObject({ [ACTIVITY_ACTOR_HEADER]: "7" });
   });
 
+  it("binds intake reads to the committed initiating identity, without trusting raw local storage", async () => {
+    setRequestActorMemberId(7);
+    window.localStorage.setItem("machbar:identity-member-id", "999");
+    const fetchMock = mockFetchOnce({ text: async () => JSON.stringify({}) });
+    await api.getIntake("proposal");
+    expect(headersOf(fetchMock)).toMatchObject({ [ACTIVITY_ACTOR_HEADER]: "7" });
+    setRequestActorMemberId(null);
+    const anonymousFetch = mockFetchOnce({ text: async () => JSON.stringify({}) });
+    await api.getIntake("proposal");
+    expect(headersOf(anonymousFetch)).not.toHaveProperty(ACTIVITY_ACTOR_HEADER);
+  });
+
   describe("api request() activity actor header", () => {
     afterEach(() => {
       window.localStorage.clear();

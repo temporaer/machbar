@@ -3,6 +3,7 @@ import type {
   IntakeDraftWorkItem,
   IntakeIssue,
   Member,
+  IntakeRecord,
 } from "@machbar/shared";
 import { transitionWorkItemKind, workItemDepths } from "../lib/intakeDraft";
 import { useStrings } from "../lib/strings";
@@ -24,6 +25,7 @@ export function IntakeProposalReview({
   diagnosticHref,
   breakdown = false,
   existingChildren = [],
+  existingProjects = [],
 }: {
   draft: IntakeDraft;
   members: Member[];
@@ -40,6 +42,7 @@ export function IntakeProposalReview({
   diagnosticHref: string;
   breakdown?: boolean;
   existingChildren?: Array<{ id: number; title: string; status: string; depth: number }>;
+  existingProjects?: IntakeRecord["existingProjects"];
 }) {
   const strings = useStrings();
   const workItemDepth = workItemDepths(draft.workItems);
@@ -122,6 +125,14 @@ export function IntakeProposalReview({
         <section className="stack intake-proposal-section">
           <h2>{strings.intakeMachbar}</h2>
           {draft.workItems.map((item, index) => {
+            let root = item;
+            const visited = new Set<string>();
+            while (root.parentKey && !visited.has(root.key)) {
+              visited.add(root.key);
+              const parent = draft.workItems.find((candidate) => candidate.key === root.parentKey);
+              if (!parent) break;
+              root = parent;
+            }
             const parentTitle = item.parentKey
               ? draft.workItems.find(
                   (candidate) => candidate.key === item.parentKey,
@@ -131,6 +142,9 @@ export function IntakeProposalReview({
               <IntakeWorkItemCard
                 key={item.key}
                 item={item}
+                existingProjects={existingProjects}
+                workItems={draft.workItems}
+                destinationProjectId={root.existingProjectId}
                 breakdownRole={breakdown ? (item.key === "existing-task" ? "root" : "step") : undefined}
                 onMove={breakdown && item.key !== "existing-task" ? (delta) => {
                   const siblings = draft.workItems.map((candidate, at) => ({ candidate, at }))

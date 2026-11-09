@@ -86,6 +86,10 @@ function selectedActorHeader(method = "GET"): Record<string, string> {
   if (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") {
     return {};
   }
+  return selectedMemberHeader();
+}
+
+function selectedMemberHeader(): Record<string, string> {
   const memberId = readRequestActorMemberId();
   return memberId === null
     ? {}
@@ -670,7 +674,9 @@ export const api = {
     request<{ id: string }>(`/intake/refinement/${targetType}/${targetId}`, {
       method: "POST", body: JSON.stringify(body),
     }),
-  getIntake: (id: string) => request<IntakeRecord>(`/intake/${encodeURIComponent(id)}`),
+  getIntake: (id: string) => request<IntakeRecord>(`/intake/${encodeURIComponent(id)}`, {
+    headers: selectedMemberHeader(),
+  }),
   updateIntakeDraft: (
     id: string,
     body: { expectedRevision: number; draft: IntakeDraft },

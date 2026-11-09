@@ -54,6 +54,47 @@ describe("reviewed task breakdown", () => {
         ...(activationResolution ? { activationResolution } : {}),
       }, {}, null);
 
+  it.each(["ordinary", "breakdown"] as const)("keeps serialized ordinary plan-save/Apply usable for %s jobs", async (mode) => {
+    const source = createTask(ctx.handle.db, { title: "Preserved source" });
+    const project = createProject(ctx.handle.db, { title: "Existing ordinary destination" });
+    const prepared = prepare(source.id);
+    if (mode === "ordinary") {
+      prepared.draft.workItems = [{ ...item("new", null, "New ordinary action"),
+        existingProjectId: project.id, existingProjectRevision: project.revision }];
+      ctx.handle.db.update(schema.intakeJobs).set({
+        breakdownTaskId: null, breakdownSnapshotJson: null, breakdownInstruction: null,
+      }).where(eq(schema.intakeJobs.id, prepared.id)).run();
+    }
+    const read = await ctx.app.inject({ method: "GET", url: `/api/intake/${prepared.id}` });
+    expect(read.statusCode).toBe(200);
+    if (mode === "ordinary") expect(read.json().existingProjects).toEqual([
+      expect.objectContaining({ id: project.id, title: project.title }),
+    ]);
+    else expect(read.json()).not.toHaveProperty("existingProjects");
+    const saved = await ctx.app.inject({ method: "PATCH", url: `/api/intake/${prepared.id}/plan`,
+      payload: { expectedRevision: 1, draft: prepared.draft } });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const applied = await ctx.app.inject({ method: "POST", url: `/api/intake/${prepared.id}/apply`,
+      payload: { expectedRevision: saved.json().revision, draft: prepared.draft } });
+    expect(applied.statusCode, applied.body).toBe(200);
+    expect(applied.json().status).toBe("applied");
+    expect(getTaskOrThrow(ctx.handle.db, source.id).title).toBe(source.title);
+    if (mode === "breakdown") expect(getTaskOrThrow(ctx.handle.db, source.id).children).toHaveLength(2);
+    else expect(getTaskOrThrow(ctx.handle.db, applied.json().applyResults.work[0].workItemId).projectId).toBe(project.id);
+  });
+
+  it("does not interpret ordinary project destinations as breakdown edits", async () => {
+    const task = createTask(ctx.handle.db, { title: "Existing action" });
+    const project = createProject(ctx.handle.db, { title: "Unrelated project" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[0]!.existingProjectId = project.id;
+    draft.workItems[0]!.existingProjectRevision = project.revision;
+    const before = ctx.handle.db.select().from(schema.workItems).all();
+    await expect(apply(id, draft)).rejects.toMatchObject({ code: "intake_draft_invalid" });
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(before);
+    expect(getIntake(ctx.handle.db, id, null).existingProjects).toBeUndefined();
+  });
+
   it("applies the enabled root instead of an excluded duplicate", async () => {
     const task = createTask(ctx.handle.db, { title: "Room", status: "actionable" });
     const { id, draft } = prepare(task.id);

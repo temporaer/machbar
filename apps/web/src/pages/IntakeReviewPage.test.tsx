@@ -13,7 +13,8 @@ import { useNavigate } from "react-router-dom";
 
 const mockedApi = vi.mocked(api, true);
 
-vi.mock("../lib/api", () => ({
+vi.mock("../lib/api", async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import("../lib/api")>()).ApiError,
   apiUrl: (path: string) => `/api${path}`,
   api: {
     getIntake: vi.fn(),
@@ -199,6 +200,194 @@ function authoredField(editor: ReturnType<typeof within>, label: string) {
 }
 
 describe("IntakeReviewPage", () => {
+  it.each([
+    ["ready", "reconfirm"],
+    ["ready", "remove"],
+    ["incomplete", "reconfirm"],
+    ["partially_applied", "reconfirm"],
+  ] as const)("retains serialized preclaim destination issues from %s until explicit %s", async (entry, correction) => {
+    const { ApiError } = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+    const proposal = structuredClone(draft);
+    proposal.calendarEvents = entry === "incomplete" ? [{
+      ...proposal.calendarEvents[0]!, relatedWorkKeys: ["parent"], startDateTime: "2026-10-08T19:00", endDateTime: "2026-10-08T20:00",
+    }] : [];
+    proposal.workItems = [{ ...proposal.workItems[0]!, relatedCalendarKeys: entry === "incomplete" ? ["event"] : [],
+      existingProjectId: 10, existingProjectRevision: 2 }];
+    const initial = { ...record(entry === "partially_applied" ? entry : "ready"), draft: proposal,
+      existingProjects: [{ id: 10, title: "Existing active", status: "active", revision: 2 }] };
+    const refreshed = { ...initial, status: "ready", revision: entry === "partially_applied" ? 3 : initial.revision, error: null,
+      existingProjects: [{ id: 10, title: "Existing active", status: "active", revision: 3 }] };
+    mockedApi.getIntake.mockResolvedValueOnce(initial as never).mockResolvedValue(refreshed as never);
+    mockedApi.applyIntake.mockRejectedValueOnce(new ApiError(400, "Review the project destinations.", "intake_draft_invalid", {
+      issues: [{ path: ["workItems", 0, "existingProjectId"], code: "invalid_parent",
+        message: "The destination is unavailable or has changed. Choose a destination again or remove the association." }],
+    }));
+    mockedApi.updateIntakeDraft.mockImplementation(async (_id, body) => ({
+      ...refreshed, revision: body.expectedRevision + 1, draft: body.draft,
+    } as never));
+    renderPage();
+    if (entry === "partially_applied") {
+      fireEvent.click(await screen.findByRole("button", { name: "Erneut versuchen" }));
+    } else {
+      await screen.findByRole("heading", { name: proposal.workItems[0]!.title });
+      fireEvent.click(entry === "incomplete" ? screen.getByRole("button", { name: "Unvollständig übernehmen" }) : applyButton());
+    }
+    const guidance = /Das Projektziel hat sich geändert oder ist nicht mehr verfügbar.*erneut.*entferne/;
+    await waitFor(() => expect(mockedApi.getIntake).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText(guidance)).toBeInTheDocument());
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(mockedApi.getIntake.mock.calls.length).toBeGreaterThanOrEqual(3));
+    expect(screen.getByText(guidance)).toBeInTheDocument();
+    expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    if (entry !== "partially_applied") {
+      expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]?.existingProjectRevision).toBe(2);
+      expect(mockedApi.applyIntake.mock.calls[0]?.[1].acceptIncomplete).toBe(entry === "incomplete" ? true : undefined);
+    }
+    const editor = await openEditor(proposal.workItems[0]!.title);
+    closeEditor(editor);
+    expect(screen.getByText(guidance)).toBeInTheDocument();
+    const reopened = await openEditor(proposal.workItems[0]!.title);
+    fireEvent.click(reopened.getByRole("button", { name: correction === "remove" ? "Kein bestehendes Projekt" : /Existing active/ }));
+    expect(screen.queryByText(guidance)).not.toBeInTheDocument();
+    closeEditor(reopened);
+    fireEvent.click(entry === "incomplete" ? screen.getByRole("button", { name: "Unvollständig übernehmen" }) : applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1].draft?.workItems[0]).toMatchObject({
+      existingProjectId: correction === "remove" ? null : 10,
+      existingProjectRevision: correction === "remove" ? null : 3,
+    });
+    expect(await screen.findByRole("heading", { name: "Verarbeitung übernommen" })).toBeInTheDocument();
+    expect(screen.queryByText(guidance)).not.toBeInTheDocument();
+  });
+
+  it("localizes preclaim guidance in English and discards it when leaving the intake record", async () => {
+    const { ApiError } = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+    const proposal = { ...draft, calendarEvents: [], workItems: [{
+      ...draft.workItems[0]!, relatedCalendarKeys: [], existingProjectId: 10, existingProjectRevision: 2,
+    }] };
+    const initial = { ...record(), draft: proposal,
+      existingProjects: [{ id: 10, title: "Existing active", status: "active", revision: 3 }] };
+    const other = { ...record(), id: "i2", draft: { ...proposal, workItems: [{ ...proposal.workItems[0]!, title: "Unrelated review" }] } };
+    mockedApi.getIntake.mockImplementation(async (id) => (id === "i1" ? initial : other) as never);
+    mockedApi.applyIntake.mockRejectedValueOnce(new ApiError(400, "Review the project destinations.", "intake_draft_invalid", {
+      issues: [{ path: ["workItems", 0, "existingProjectId"], code: "invalid_parent", message: "Unavailable" }],
+    }));
+    function OtherIntake() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate("/intake/i2")}>Other intake</button>;
+    }
+    renderWithProviders(<>
+      <Routes><Route path="/intake/:id" element={<IntakeReviewPage />} /></Routes>
+      <OtherIntake /><BrowserBackControl />
+    </>, { initialEntries: ["/intake/i1"], locale: "en" });
+    fireEvent.click(await screen.findByRole("button", { name: "Apply 1 item" }));
+    const guidance = /The project destination has changed or is no longer available.*Choose the destination again or remove the association/;
+    expect(await screen.findByText(guidance)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Other intake" }));
+    await screen.findByRole("heading", { name: "Unrelated review" });
+    expect(screen.queryByText(guidance)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    await screen.findByRole("heading", { name: proposal.workItems[0]!.title });
+    expect(screen.queryByText(guidance)).not.toBeInTheDocument();
+    expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["ready", "partially_applied"] as const)("keeps source-only destination recovery from %s editable without automatically reconfirming the stale destination", async (status) => {
+    const proposal = structuredClone(draft);
+    proposal.calendarEvents = [];
+    proposal.workItems = proposal.workItems.map((item) => ({ ...item, relatedCalendarKeys: [] }));
+    proposal.workItems[0] = { ...proposal.workItems[0]!, existingProjectId: 10, existingProjectRevision: 2 };
+    proposal.retainSourceInPaperless = true;
+    const initial = { ...record(status), draft: proposal,
+      existingProjects: [{ id: 10, title: "Existing active", status: "active", revision: 2 }] };
+    const recovered = { ...initial, status: "ready", revision: 4,
+      existingProjects: [{ id: 10, title: "Existing active", status: "active", revision: 3 }],
+      applyResults: { work: [], calendar: [], paperlessDocumentIds: [111] }, error: {
+      code: "intake_draft_invalid", message: "Review project destinations.", retryable: true,
+      details: { issues: [{ path: ["workItems", 0, "existingProjectId"], code: "invalid_parent", message: "Unavailable" }] },
+    } };
+    mockedApi.getIntake.mockResolvedValueOnce(initial as never).mockResolvedValue(recovered as never);
+    const failure = Object.assign(new Error("Review project destinations."), { code: "intake_draft_invalid" });
+    mockedApi.applyIntake.mockRejectedValueOnce(failure).mockRejectedValueOnce(failure);
+    mockedApi.updateIntakeDraft.mockImplementation(async (_id, body) => ({
+      ...recovered, revision: body.expectedRevision + 1, draft: body.draft,
+    } as never));
+    renderPage();
+    if (status === "ready") {
+      await screen.findByRole("heading", { name: proposal.workItems[0]!.title });
+      fireEvent.click(applyButton());
+    } else {
+      fireEvent.click(await screen.findByRole("button", { name: "Erneut versuchen" }));
+    }
+    await waitFor(() => expect(mockedApi.getIntake).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(applyButton()).not.toBeDisabled());
+    expect(screen.getByRole("button", { name: `Bearbeiten: ${proposal.workItems[0]!.title}` })).toBeEnabled();
+    expect(screen.queryByText(/Starte die übrigen Schritte aus der Quelle neu/)).not.toBeInTheDocument();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.getIntake).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(applyButton()).not.toBeDisabled());
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({
+      expectedRevision: 4, draft: { workItems: [expect.objectContaining({ existingProjectRevision: 2 }), expect.anything()] },
+    });
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    const editor = await openEditor(proposal.workItems[0]!.title);
+    fireEvent.click(editor.getByRole("button", { name: /Existing active/ }));
+    await waitFor(() => expect(mockedApi.updateIntakeDraft).toHaveBeenCalledWith("i1",
+      expect.objectContaining({ expectedRevision: 4, draft: expect.objectContaining({
+        retainSourceInPaperless: true,
+        workItems: expect.arrayContaining([expect.objectContaining({ existingProjectId: 10, existingProjectRevision: 3 })]),
+      }) })), { timeout: 2_000 });
+    closeEditor(editor);
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(3));
+    expect(mockedApi.applyIntake.mock.calls[2]?.[1]).toMatchObject({
+      expectedRevision: 5, draft: { workItems: [expect.objectContaining({ existingProjectRevision: 3 }), expect.anything()] },
+    });
+  });
+
+  it("shows inherited project destinations and explicitly reconfirms, removes, or replaces them through existing editors", async () => {
+    const proposal = structuredClone(draft);
+    proposal.calendarEvents = [];
+    proposal.workItems = proposal.workItems.map((item) => ({ ...item, relatedCalendarKeys: [] }));
+    proposal.workItems[0] = { ...proposal.workItems[0]!, kind: "action",
+      existingProjectId: 10, existingProjectRevision: 2 };
+    const initial = { ...record(), draft: proposal, existingProjectIndexComplete: false,
+      existingProjects: [
+        { id: 10, title: "Existing active", status: "active", revision: 3 },
+        { id: 11, title: "Existing backlog", status: "backlog", revision: 8 },
+      ] };
+    mockedApi.getIntake.mockResolvedValue(initial as never);
+    mockedApi.updateIntakeDraft.mockImplementation(async (_id, body) => ({ ...initial,
+      revision: body.expectedRevision + 1, draft: body.draft } as never));
+    renderPage();
+    expect(await screen.findAllByText("Bestehendes Projekt: Existing active · Aktiv")).toHaveLength(2);
+    expect(screen.getByText(/Zu viele Projekte für den KI-Kontext/)).toBeInTheDocument();
+    const title = proposal.workItems[0]!.title;
+    let editor = await openEditor(title);
+    fireEvent.click(editor.getByRole("button", { name: /Existing backlog/ }));
+    await waitFor(() => expect(mockedApi.updateIntakeDraft).toHaveBeenCalledWith("i1",
+      expect.objectContaining({ draft: expect.objectContaining({ workItems: expect.arrayContaining([
+        expect.objectContaining({ existingProjectId: 11, existingProjectRevision: 8 }),
+      ]) }) })), { timeout: 2_000 });
+    fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
+    expect(screen.getAllByText("Bestehendes Projekt: Existing backlog · Später / noch nicht aktiv")).toHaveLength(2);
+    editor = await openEditor(title);
+    fireEvent.click(editor.getByRole("button", { name: "Kein bestehendes Projekt" }));
+    fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
+    expect(screen.queryByText("Bestehendes Projekt: Existing backlog · Später / noch nicht aktiv")).not.toBeInTheDocument();
+    editor = await openEditor(title);
+    fireEvent.click(editor.getByRole("button", { name: /Existing active/ }));
+    fireEvent.change(editor.getByRole("combobox", { name: "Art" }), { target: { value: "project" } });
+    fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
+    expect(screen.queryByText("Bestehendes Projekt: Existing active · Aktiv")).not.toBeInTheDocument();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
+    expect(mockedApi.applyIntake.mock.calls[0]![1].draft?.workItems[0]).toMatchObject({
+      kind: "project", existingProjectId: null, existingProjectRevision: null,
+    });
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });

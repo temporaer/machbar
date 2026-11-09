@@ -32,6 +32,24 @@ function readFixture(name: string): unknown {
 }
 
 describe("intake plan contracts", () => {
+  it("keeps persisted project identity distinct from proposal parents and requires reviewed revisions", () => {
+    const raw = { summary: "Plan", workItems: [{ key: "step", kind: "action", title: "New step", existingProjectId: 42 }] };
+    const plan = normalizeIntakePlanInput(raw) as IntakePlan;
+    expect(intakePlanIssues(plan)).toEqual([]);
+    expect(plan.workItems[0]).toMatchObject({ existingProjectId: 42, parentKey: null });
+    const draft = buildDraftFromPlan(plan, []);
+    expect(intakeDraftIssues(draft, { memberIds: [], paperlessAvailable: false, hasFiles: false }))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ path: ["workItems", 0, "existingProjectId"] })]));
+    draft.workItems[0]!.existingProjectRevision = 3;
+    expect(intakeDraftSchema.safeParse(draft).success).toBe(true);
+    for (const extra of [{ kind: "project" }, { kind: "reference" }, { parentKey: "step" }, { existingProjectId: -1 }]) {
+      const invalid = { ...plan, workItems: [{ ...plan.workItems[0]!, ...extra }] } as IntakePlan;
+      expect(intakePlanIssues(invalid).some((issue) => issue.path.at(-1) === "existingProjectId")).toBe(true);
+    }
+    const old = normalizeStoredIntakeDraft({ ...draft, workItems: draft.workItems.map(({ existingProjectId, existingProjectRevision, ...item }) => item) })!;
+    expect(intakeDraftSchema.safeParse(old).success).toBe(true);
+  });
+
   it("accepts every valid fixture", () => {
     for (const name of readdirSync(fixtures).filter((file) => file.startsWith("valid-"))) {
       const result = intakePlanSchema.safeParse(readFixture(name));
