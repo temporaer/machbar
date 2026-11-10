@@ -308,19 +308,6 @@ describe("Paperless integration routes", () => {
           }
           return jsonResponse(200, { count: 0, results: [] });
         },
-        sleep: (ms, signal) =>
-          new Promise<void>((resolve, reject) => {
-            const onAbort = () => {
-              clearTimeout(timer);
-              reject(signal?.reason);
-            };
-            const finish = () => {
-              signal?.removeEventListener("abort", onAbort);
-              resolve();
-            };
-            const timer = setTimeout(finish, ms);
-            signal?.addEventListener("abort", onAbort, { once: true });
-          }),
       });
       await closeTestContext(ctx);
       ctx = createTestContext({ paperless: paperlessConfig, paperlessClient: client });

@@ -271,10 +271,8 @@ export function createPaperlessClient(
         signal,
       });
     } catch (cause) {
-      if (signal.aborted) throw processingTimeout();
       throw unavailable(cause);
     }
-    if (signal.aborted) throw processingTimeout();
     if (result.response.status === 401 || result.response.status === 403) {
       throw authenticationFailed();
     }
@@ -340,39 +338,41 @@ export function createPaperlessClient(
 
       try {
         for (;;) {
-          const remaining = deadline - now();
-          if (remaining <= 0) throw processingTimeout();
-
-          const task = await fetchTaskByUuid(taskId, controller.signal);
-          if (controller.signal.aborted || now() >= deadline) {
-            throw processingTimeout();
-          }
-          if (task) {
-            if (task.status === "success") {
-              if (task.documentId !== null) {
-                return task.documentId;
-              }
-              throw responseInvalid(
-                "Paperless reported a successful upload without a document ID.",
-              );
-            }
-            if (task.status === "failure" || task.status === "revoked") {
-              throw AppError.badRequest(
-                "paperless_upload_rejected",
-                "Paperless failed to process the uploaded document.",
-                { status: task.status, result: task.result },
-              );
-            }
-          }
-
-          const sleepMs = Math.min(intervalMs, deadline - now());
-          if (sleepMs <= 0) throw processingTimeout();
           try {
+            const remaining = deadline - now();
+            if (remaining <= 0) throw processingTimeout();
+
+            const task = await fetchTaskByUuid(taskId, controller.signal);
+            if (controller.signal.aborted || now() >= deadline) {
+              throw processingTimeout();
+            }
+            if (task) {
+              if (task.status === "success") {
+                if (task.documentId !== null) {
+                  return task.documentId;
+                }
+                throw responseInvalid(
+                  "Paperless reported a successful upload without a document ID.",
+                );
+              }
+              if (task.status === "failure" || task.status === "revoked") {
+                throw AppError.badRequest(
+                  "paperless_upload_rejected",
+                  "Paperless failed to process the uploaded document.",
+                  { status: task.status, result: task.result },
+                );
+              }
+            }
+
+            const sleepMs = Math.min(intervalMs, deadline - now());
+            if (sleepMs <= 0) throw processingTimeout();
             await (options.sleep
               ? options.sleep(sleepMs, controller.signal)
               : abortableSleep(sleepMs, controller.signal));
           } catch (cause) {
-            if (controller.signal.aborted) throw processingTimeout();
+            if (controller.signal.aborted || now() >= deadline) {
+              throw processingTimeout();
+            }
             throw cause;
           }
         }

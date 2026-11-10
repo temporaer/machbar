@@ -420,6 +420,46 @@ describe("PaperlessClient", () => {
       }
     });
 
+    it("prefers elapsed-clock timeout over late status and shape errors", async () => {
+      for (const lateResponse of [
+        jsonResponse(200, {
+          count: 1,
+          results: [
+            {
+              task_id: "task-1",
+              status: "success",
+              related_document_ids: [42],
+            },
+          ],
+        }),
+        jsonResponse(503, { detail: "late failure" }),
+        jsonResponse(200, { unexpected: [] }),
+      ]) {
+        let time = 0;
+        let resolveResponse: ((response: Response) => void) | undefined;
+        const client = createPaperlessClient(config, {
+          fetch: fakeFetch(
+            () =>
+              new Promise<Response>((resolve) => {
+                resolveResponse = resolve;
+              }),
+          ),
+          now: () => time,
+        });
+        const pending = client.awaitDocumentId("task-1", {
+          timeoutMs: 10,
+          intervalMs: 10,
+        });
+        await Promise.resolve();
+        time = 11;
+        resolveResponse!(lateResponse);
+
+        await expect(pending).rejects.toMatchObject({
+          code: "paperless_processing_timeout",
+        });
+      }
+    });
+
     it("bounds the final sleep by the remaining deadline", async () => {
       vi.useFakeTimers();
       const sleeps: number[] = [];
