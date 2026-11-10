@@ -63,6 +63,16 @@ describe("capture short syntax", () => {
     ).toEqual(["2026-09-08", "2026-09-11"]);
   });
 
+  it("does not turn recognized invalid dates into capture planning values", () => {
+    expect(
+      autoResolvedCaptureTokens(
+        "Birthday ~31.04.2024 !04/31/2024",
+        "en",
+        new Date(2024, 2, 1, 12),
+      ),
+    ).toEqual([]);
+  });
+
   it("offers entity-backed suggestions without resolving unknown tags", () => {
     const tagSuggestions = captureSyntaxSuggestions({
       input: "Milch #Haus",
