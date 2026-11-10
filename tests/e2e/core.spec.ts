@@ -419,6 +419,11 @@ test("a stale project deadline can reload requirements after an outage without r
   await page.getByRole("button", { name: "+ Deadline hinzufügen", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Projekt-Deadline", exact: true });
   const date = dialog.getByLabel("Fällig", { exact: true });
+  await date.fill("31.04.2024");
+  await date.press("Tab");
+  await expect(dialog.getByRole("alert")).toHaveText("Datum nicht erkannt");
+  await expect(date).toHaveValue("31.04.2024");
+  await expect(date).toHaveAttribute("aria-invalid", "true");
   await date.fill("15.12.2099");
   await date.press("Enter");
   const retry = dialog.getByRole("button", { name: "Erneut versuchen", exact: true });

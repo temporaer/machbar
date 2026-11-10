@@ -104,6 +104,48 @@ describe("parseNaturalDate", () => {
     expect(parseNaturalDate("Kartoffeln", reference)).toBeNull();
     expect(parseNaturalDate("", reference)).toBeNull();
   });
+
+  it.each([
+    ["Feb 29", "en", new Date(2024, 2, 1, 12)],
+    ["Feb 30", "en", new Date(2024, 2, 1, 12)],
+    ["31. April", "de", new Date(2024, 2, 1, 12)],
+    ["29. Februar", "de", new Date(2024, 2, 1, 12)],
+    ["04/31/2024", "en", new Date(2024, 2, 1, 12)],
+    ["31.04.2024", "de", new Date(2024, 2, 1, 12)],
+    ["31 April, 2024", "en", new Date(2024, 2, 1, 12)],
+    ["April 31st 2024", "en", new Date(2024, 2, 1, 12)],
+    ["Feb 30th", "en", new Date(2024, 2, 1, 12)],
+  ] as const)("rejects recognized invalid date %s", (input, locale, date) => {
+    expect(parseNaturalDate(input, date, locale)).toBeNull();
+  });
+
+  it.each([
+    ["Feb 29", new Date(2024, 1, 28, 12), "2024-02-29"],
+    ["Feb 29", new Date(2024, 1, 29, 12), "2024-02-29"],
+    ["Feb 29", new Date(2024, 2, 1, 12), null],
+    ["Feb 28", new Date(2024, 2, 1, 12), "2025-02-28"],
+    ["Feb 29", new Date(2023, 1, 28, 12), null],
+    ["Feb 29", new Date(2023, 2, 1, 12), "2024-02-29"],
+  ] as const)(
+    "validates the inferred year for %s around a leap-day boundary",
+    (input, date, expected) => {
+      expect(parseNaturalDate(input, date, "en")).toBe(expected);
+    },
+  );
+
+  it("validates explicit word dates without changing the existing valid syntax", () => {
+    expect(parseNaturalDate("28. August 2026", reference)).toBe("2026-08-28");
+    expect(parseNaturalDate("Feb 29, 2028", reference, "en")).toBe(
+      "2028-02-29",
+    );
+    expect(parseNaturalDate("April 30th 2024", reference, "en")).toBe(
+      "2024-04-30",
+    );
+    expect(parseNaturalDate("30th April, 2024", reference, "en")).toBe(
+      "2024-04-30",
+    );
+    expect(parseNaturalDate("Feb 29, 2026", reference, "en")).toBeNull();
+  });
 });
 
 describe("toIsoCalendarDate", () => {
