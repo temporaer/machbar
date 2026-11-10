@@ -431,6 +431,27 @@ describe("Paperless integration routes", () => {
       expect(response.rawPayload).toEqual(bytes);
     });
 
+    it("serializes Unicode download filenames without a 500 response", async () => {
+      const download = vi.fn(async () =>
+        binaryOf(Buffer.from("file-bytes"), {
+          contentType: "application/pdf",
+          filename: "Rechnung-€.pdf",
+        }),
+      );
+      client = fakePaperlessClient({ download });
+      ctx = createTestContext({ paperless: paperlessConfig, paperlessClient: client });
+
+      const response = await ctx.app.inject({
+        method: "GET",
+        url: `${BASE}/7/download`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-disposition"]).toBe(
+        'attachment; filename="Rechnung-?.pdf"; filename*=UTF-8\'\'Rechnung-%E2%82%AC.pdf',
+      );
+    });
+
     it("sends the preview inline", async () => {
       const bytes = Buffer.from("preview-bytes");
       const preview = vi.fn(async () =>

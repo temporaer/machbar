@@ -1,4 +1,8 @@
 import { Readable } from "node:stream";
+import {
+  decodeExtended,
+  parse as parseContentDisposition,
+} from "content-disposition";
 import createClient from "openapi-fetch";
 import type { PaperlessDocumentSummary } from "@machbar/shared";
 import type { PaperlessConfig } from "../env.js";
@@ -172,16 +176,25 @@ function normalizeTask(
 /** Extracts the `filename` parameter from a `Content-Disposition` header. */
 function parseFilename(header: string | null): string | null {
   if (!header) return null;
-  const starMatch = /filename\*\s*=\s*(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
-  if (starMatch?.[1]) {
-    try {
-      return decodeURIComponent(starMatch[1]);
-    } catch {
-      return starMatch[1];
-    }
+  let parsed: ReturnType<typeof parseContentDisposition>;
+  try {
+    parsed = parseContentDisposition(header);
+  } catch {
+    throw responseInvalid(
+      "Paperless returned an invalid Content-Disposition header.",
+    );
   }
-  const match = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
-  return match?.[1] ?? null;
+  const extendedFilename = parsed.parameters["filename*"];
+  if (
+    extendedFilename !== undefined &&
+    (parsed.parameters.filename === undefined ||
+      decodeExtended(extendedFilename) === undefined)
+  ) {
+    throw responseInvalid(
+      "Paperless returned an invalid extended filename parameter.",
+    );
+  }
+  return parsed.parameters.filename ?? null;
 }
 
 /** Projects a raw Paperless document into the shared summary shape. */
@@ -196,15 +209,25 @@ function toSummary(
   };
 }
 
-function toBinary(response: Response, body: ReadableStream<Uint8Array> | null): PaperlessBinary {
+async function toBinary(
+  response: Response,
+  body: ReadableStream<Uint8Array> | null,
+): Promise<PaperlessBinary> {
   if (!body) {
     throw responseInvalid("Paperless returned an empty file body.");
   }
   const contentLengthHeader = response.headers.get("content-length");
+  let filename: string | null;
+  try {
+    filename = parseFilename(response.headers.get("content-disposition"));
+  } catch (error) {
+    await body.cancel().catch(() => undefined);
+    throw error;
+  }
   return {
     contentType: response.headers.get("content-type") ?? "application/octet-stream",
     contentLength: contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : null,
-    filename: parseFilename(response.headers.get("content-disposition")),
+    filename,
     body: Readable.fromWeb(
       body as Parameters<typeof Readable.fromWeb>[0],
     ),
