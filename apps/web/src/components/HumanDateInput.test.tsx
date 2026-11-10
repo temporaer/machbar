@@ -37,6 +37,23 @@ describe("HumanDateInput", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("keeps a recognized invalid calendar date visible and unchanged", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2024, 2, 1, 12));
+    const onChange = vi.fn();
+    render(<HumanDateInput id="date" value="2024-03-15" onChange={onChange} />);
+    const input = screen.getByRole("textbox");
+
+    fireEvent.change(input, { target: { value: "Feb 29" } });
+    fireEvent.blur(input);
+
+    expect(input).toHaveValue("Feb 29");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent("Datum nicht erkannt");
+    expect(onChange).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("clears an existing value and accepts the native calendar selection", async () => {
     const onChange = vi.fn();
     const { container } = render(
