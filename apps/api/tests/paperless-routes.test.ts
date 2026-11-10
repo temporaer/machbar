@@ -13,6 +13,7 @@ import type {
   PaperlessSearchResult,
   PaperlessUploadResult,
 } from "../src/paperless/client.js";
+import { createPaperlessClient } from "../src/paperless/client.js";
 import type { PaperlessDocumentSummary } from "@machbar/shared";
 import { AppError } from "../src/errors.js";
 import {
@@ -138,6 +139,13 @@ function multipartBody(
   return { boundary, body };
 }
 
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 const BASE = "/api/integrations/paperless/documents";
 const STATUS = "/api/integrations/paperless/status";
 
@@ -150,6 +158,7 @@ describe("Paperless integration routes", () => {
     });
 
     afterEach(async () => {
+      vi.useRealTimers();
       await closeTestContext(ctx);
     });
 
@@ -205,6 +214,7 @@ describe("Paperless integration routes", () => {
     });
 
     afterEach(async () => {
+      vi.useRealTimers();
       await closeTestContext(ctx);
     });
 
@@ -285,6 +295,55 @@ describe("Paperless integration routes", () => {
       });
       expect(awaitDocumentId).toHaveBeenCalledWith("task-1");
       expect(getDocument).toHaveBeenCalledWith(55);
+    });
+
+    it("serializes a real processing timeout without retrying the upload", async () => {
+      vi.useFakeTimers();
+      let uploadPosts = 0;
+      client = createPaperlessClient(paperlessConfig, {
+        fetch: async (input) => {
+          if (new Request(input).url.includes("/post_document/")) {
+            uploadPosts += 1;
+            return jsonResponse(200, "task-1");
+          }
+          return jsonResponse(200, { count: 0, results: [] });
+        },
+        sleep: (ms, signal) =>
+          new Promise<void>((resolve, reject) => {
+            const onAbort = () => {
+              clearTimeout(timer);
+              reject(signal?.reason);
+            };
+            const finish = () => {
+              signal?.removeEventListener("abort", onAbort);
+              resolve();
+            };
+            const timer = setTimeout(finish, ms);
+            signal?.addEventListener("abort", onAbort, { once: true });
+          }),
+      });
+      await closeTestContext(ctx);
+      ctx = createTestContext({ paperless: paperlessConfig, paperlessClient: client });
+
+      const { boundary, body } = multipartBody(
+        "document",
+        "receipt.pdf",
+        "application/pdf",
+        Buffer.from("pdf-bytes"),
+      );
+      const pending = ctx.app.inject({
+        method: "POST",
+        url: BASE,
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+      await vi.waitFor(() => expect(uploadPosts).toBe(1));
+      await vi.advanceTimersByTimeAsync(20_000);
+      const response = await pending;
+
+      expect(response.statusCode).toBe(504);
+      expect(response.json().error.code).toBe("paperless_processing_timeout");
+      expect(uploadPosts).toBe(1);
     });
 
     it("prepares a bounded no-store image without uploading it to Paperless", async () => {

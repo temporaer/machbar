@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PaperlessConfig } from "../src/env.js";
 import { createPaperlessClient } from "../src/paperless/client.js";
 
@@ -32,6 +32,10 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe("PaperlessClient", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   describe("upload", () => {
     it("returns the task ID Paperless assigns to the upload", async () => {
       const client = createPaperlessClient(config, {
@@ -340,6 +344,121 @@ describe("PaperlessClient", () => {
       await expect(
         client.awaitDocumentId("task-1", { timeoutMs: 2000, intervalMs: 500 }),
       ).rejects.toMatchObject({ code: "paperless_processing_timeout" });
+    });
+
+    it("aborts an in-flight status request at the deadline", async () => {
+      vi.useFakeTimers();
+      let aborted = false;
+      const client = createPaperlessClient(config, {
+        fetch: fakeFetch((request) => {
+          request.signal.addEventListener("abort", () => {
+            aborted = true;
+          });
+          return new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(
+              () => resolve(jsonResponse(200, { count: 0, results: [] })),
+              45,
+            );
+            request.signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(request.signal.reason);
+            });
+          });
+        }),
+      });
+
+      const pending = client.awaitDocumentId("task-1", {
+        timeoutMs: 1,
+        intervalMs: 10,
+      });
+      const result = expect(pending).rejects.toMatchObject({
+        code: "paperless_processing_timeout",
+      });
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(aborted).toBe(true);
+      await result;
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("prefers timeout over a late success or upstream error response", async () => {
+      vi.useFakeTimers();
+      for (const lateResponse of [
+        jsonResponse(200, {
+          count: 1,
+          results: [
+            {
+              task_id: "task-1",
+              status: "success",
+              related_document_ids: [42],
+            },
+          ],
+        }),
+        jsonResponse(503, { detail: "late failure" }),
+      ]) {
+        const client = createPaperlessClient(config, {
+          fetch: fakeFetch(
+            (request) =>
+              new Promise<Response>((resolve) => {
+                request.signal.addEventListener("abort", () =>
+                  queueMicrotask(() => resolve(lateResponse)),
+                );
+              }),
+          ),
+        });
+        const pending = client.awaitDocumentId("task-1", {
+          timeoutMs: 1,
+          intervalMs: 10,
+        });
+        const result = expect(pending).rejects.toMatchObject({
+          code: "paperless_processing_timeout",
+        });
+
+        await vi.advanceTimersByTimeAsync(1);
+        await result;
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    });
+
+    it("bounds the final sleep by the remaining deadline", async () => {
+      vi.useFakeTimers();
+      const sleeps: number[] = [];
+      const client = createPaperlessClient(config, {
+        fetch: fakeFetch(() => jsonResponse(200, { count: 0, results: [] })),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+          await new Promise<void>((resolve) => setTimeout(resolve, ms));
+        },
+      });
+
+      const pending = client.awaitDocumentId("task-1", {
+        timeoutMs: 10,
+        intervalMs: 50,
+      });
+      const result = expect(pending).rejects.toMatchObject({
+        code: "paperless_processing_timeout",
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      await result;
+      expect(sleeps).toEqual([10]);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("preserves upstream rejection and malformed response errors", async () => {
+      const rejected = createPaperlessClient(config, {
+        fetch: fakeFetch(() => jsonResponse(503, { detail: "busy" })),
+      });
+      await expect(
+        rejected.awaitDocumentId("task-1", { timeoutMs: 100 }),
+      ).rejects.toMatchObject({ code: "paperless_unavailable" });
+
+      const malformed = createPaperlessClient(config, {
+        fetch: fakeFetch(() => jsonResponse(200, { unexpected: [] })),
+      });
+      await expect(
+        malformed.awaitDocumentId("task-1", { timeoutMs: 100 }),
+      ).rejects.toMatchObject({ code: "paperless_response_invalid" });
     });
   });
 

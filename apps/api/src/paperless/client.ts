@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import createClient from "openapi-fetch";
 import type { PaperlessDocumentSummary } from "@machbar/shared";
 import type { PaperlessConfig } from "../env.js";
@@ -68,8 +69,8 @@ export interface PaperlessClient {
 export interface PaperlessClientOptions {
   /** Overridable for tests; defaults to the global `fetch`. */
   fetch?: typeof fetch;
-  /** Overridable for tests so bounded polling does not sleep in real time. */
-  sleep?: (ms: number) => Promise<void>;
+  /** Overridable for tests; implementations should reject when signal aborts. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Overridable clock for tests. */
   now?: () => number;
 }
@@ -87,8 +88,8 @@ interface NormalizedPaperlessTask {
   result: unknown;
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return delay(ms, undefined, { signal }).then(() => undefined);
 }
 
 function unavailable(cause?: unknown): AppError {
@@ -110,6 +111,14 @@ function authenticationFailed(): AppError {
 
 function responseInvalid(message: string): AppError {
   return new AppError(502, "paperless_response_invalid", message);
+}
+
+function processingTimeout(): AppError {
+  return new AppError(
+    504,
+    "paperless_processing_timeout",
+    "Timed out waiting for Paperless to finish processing the document.",
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -223,7 +232,6 @@ export function createPaperlessClient(
   options: PaperlessClientOptions = {},
 ): PaperlessClient {
   const fetchImpl = options.fetch ?? fetch;
-  const sleep = options.sleep ?? defaultSleep;
   const now = options.now ?? (() => Date.now());
   let apiVersion = API_VERSION;
   const versionedFetch: typeof fetch = async (input, init) => {
@@ -254,15 +262,19 @@ export function createPaperlessClient(
 
   async function fetchTaskByUuid(
     taskId: string,
+    signal: AbortSignal,
   ): Promise<NormalizedPaperlessTask | null> {
     let result;
     try {
       result = await client.GET("/api/tasks/", {
         params: { query: { task_id: taskId } },
+        signal,
       });
     } catch (cause) {
+      if (signal.aborted) throw processingTimeout();
       throw unavailable(cause);
     }
+    if (signal.aborted) throw processingTimeout();
     if (result.response.status === 401 || result.response.status === 403) {
       throw authenticationFailed();
     }
@@ -320,34 +332,53 @@ export function createPaperlessClient(
       const timeoutMs = pollOptions.timeoutMs ?? DEFAULT_POLL_TIMEOUT_MS;
       const intervalMs = pollOptions.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
       const deadline = now() + timeoutMs;
+      const controller = new AbortController();
+      const deadlineTimer = setTimeout(
+        () => controller.abort(),
+        Math.max(0, deadline - now()),
+      );
 
-      for (;;) {
-        const task = await fetchTaskByUuid(taskId);
-        if (task) {
-          if (task.status === "success") {
-            if (task.documentId !== null) {
-              return task.documentId;
+      try {
+        for (;;) {
+          const remaining = deadline - now();
+          if (remaining <= 0) throw processingTimeout();
+
+          const task = await fetchTaskByUuid(taskId, controller.signal);
+          if (controller.signal.aborted || now() >= deadline) {
+            throw processingTimeout();
+          }
+          if (task) {
+            if (task.status === "success") {
+              if (task.documentId !== null) {
+                return task.documentId;
+              }
+              throw responseInvalid(
+                "Paperless reported a successful upload without a document ID.",
+              );
             }
-            throw responseInvalid(
-              "Paperless reported a successful upload without a document ID.",
-            );
+            if (task.status === "failure" || task.status === "revoked") {
+              throw AppError.badRequest(
+                "paperless_upload_rejected",
+                "Paperless failed to process the uploaded document.",
+                { status: task.status, result: task.result },
+              );
+            }
           }
-          if (task.status === "failure" || task.status === "revoked") {
-            throw AppError.badRequest(
-              "paperless_upload_rejected",
-              "Paperless failed to process the uploaded document.",
-              { status: task.status, result: task.result },
-            );
+
+          const sleepMs = Math.min(intervalMs, deadline - now());
+          if (sleepMs <= 0) throw processingTimeout();
+          try {
+            await (options.sleep
+              ? options.sleep(sleepMs, controller.signal)
+              : abortableSleep(sleepMs, controller.signal));
+          } catch (cause) {
+            if (controller.signal.aborted) throw processingTimeout();
+            throw cause;
           }
         }
-        if (now() >= deadline) {
-          throw new AppError(
-            504,
-            "paperless_processing_timeout",
-            "Timed out waiting for Paperless to finish processing the document.",
-          );
-        }
-        await sleep(intervalMs);
+      } finally {
+        clearTimeout(deadlineTimer);
+        if (!controller.signal.aborted) controller.abort();
       }
     },
 
