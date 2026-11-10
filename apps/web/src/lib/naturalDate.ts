@@ -12,15 +12,13 @@ const ENGLISH_CALENDAR_WEEK_PATTERN =
   /^(?:w|wk|week)\s*(\d{1,2})(?:\s*(?:\/|,)?\s*(\d{4}))?$/i;
 
 /**
- * Month-name lookup (full + common abbreviation) per locale, used only by
- * `parseYearlessMonthDay` below. Sugar's own month-name parsing is what
- * previously handled "oct 11"/"oktober 11" — but for German it silently
- * fell back to an unrelated absolute-date interpretation (observed:
- * "oktober 11" -> 2001-11-01) instead of failing, and for a yearless date
- * already past this year it never rolled over to next year. Matching the
- * month name explicitly here, before the generic Sugar fallback, avoids
- * both problems without touching any of the already-explicit patterns
- * above (ISO/localized-numeric/compact-relative/calendar-week).
+ * Month-name lookup (full + common abbreviation) per locale. Sugar's own
+ * month-name parsing is what previously handled "oct 11"/"oktober 11" —
+ * but for German it silently fell back to an unrelated absolute-date
+ * interpretation (observed: "oktober 11" -> 2001-11-01) instead of failing,
+ * and a yearless date already past this year never rolled over to next year.
+ * Matching the month name explicitly here, before the generic Sugar fallback,
+ * avoids both problems for explicit and yearless word dates.
  */
 const MONTH_NAMES: Record<Locale, readonly string[][]> = {
   de: [
@@ -69,51 +67,48 @@ function monthIndexFor(word: string, locale: Locale): number | null {
   return null;
 }
 
-const MONTH_DAY_WORD_PATTERN = /^([a-zà-ÿ]+)\.?\s+(\d{1,2})\.?$/i;
-const DAY_MONTH_WORD_PATTERN = /^(\d{1,2})\.?\s+([a-zà-ÿ]+)\.?$/i;
+const MONTH_DAY_WORD_PATTERN =
+  /^([a-zà-ÿ]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\.?(?:(?:,\s*|\s+)(\d{4}))?$/i;
+const DAY_MONTH_WORD_PATTERN =
+  /^(\d{1,2})(?:st|nd|rd|th)?\.?\s+([a-zà-ÿ]+)\.?(?:(?:,\s*|\s+)(\d{4}))?$/i;
+
+type RecognizedDateResult = Date | "invalid" | null;
 
 /**
- * Yearless "month name + day" input in either word order (`oct 11`,
- * `11 oct`, `oktober 11`, `11. Oktober`). Infers the current year from
- * `referenceDate`, rolling over to next year if that date already passed
- * (date-only comparison) — an explicit year elsewhere in the input is
- * handled by the numeric-date patterns above and never reaches here.
+ * Word-date input in either order (`oct 11`, `11 oct`, `oktober 11`,
+ * `11. Oktober`) with an optional explicit year. Yearless dates infer the
+ * reference year, rolling over to the immediate next year if the month/day
+ * already passed. Recognized impossible dates return "invalid" so Sugar
+ * cannot normalize them into a different day.
  */
-function parseYearlessMonthDay(
+function parseWordDate(
   input: string,
   referenceDate: Date,
   locale: Locale,
-): Date | null {
+): RecognizedDateResult {
   const monthDayMatch = MONTH_DAY_WORD_PATTERN.exec(input);
   const dayMonthMatch = DAY_MONTH_WORD_PATTERN.exec(input);
-  let monthWord: string | null = null;
-  let dayStr: string | null = null;
-  if (monthDayMatch) {
-    monthWord = monthDayMatch[1]!;
-    dayStr = monthDayMatch[2]!;
-  } else if (dayMonthMatch) {
-    dayStr = dayMonthMatch[1]!;
-    monthWord = dayMonthMatch[2]!;
-  } else {
-    return null;
-  }
-
+  if (!monthDayMatch && !dayMonthMatch) return null;
+  const monthWord = monthDayMatch?.[1] ?? dayMonthMatch?.[2];
+  const dayStr = monthDayMatch?.[2] ?? dayMonthMatch?.[1];
+  const yearStr = monthDayMatch?.[3] ?? dayMonthMatch?.[3];
+  if (!monthWord || !dayStr) return null;
   const month = monthIndexFor(monthWord, locale);
   if (month === null) return null;
   const day = Number(dayStr);
-  const referenceYear = referenceDate.getFullYear();
-  if (!isValidDateParts(referenceYear, month, day)) return null;
-
-  let candidate = new Date(referenceYear, month - 1, day);
-  const referenceDateOnly = new Date(
-    referenceDate.getFullYear(),
-    referenceDate.getMonth(),
-    referenceDate.getDate(),
-  );
-  if (candidate.getTime() < referenceDateOnly.getTime()) {
-    candidate = new Date(referenceYear + 1, month - 1, day);
-  }
-  return candidate;
+  const year = yearStr
+    ? Number(yearStr)
+    : referenceDate.getFullYear() +
+      (month < referenceDate.getMonth() + 1 ||
+      (month === referenceDate.getMonth() + 1 &&
+        day < referenceDate.getDate())
+        ? 1
+        : 0);
+  // An impossible recognized date is rejected rather than normalized by
+  // Sugar to a different day. In particular, do not search for a future
+  // leap year when the inferred reference/next year has no February 29.
+  if (!isValidDateParts(year, month, day)) return "invalid";
+  return new Date(year, month - 1, day);
 }
 
 function isValidDateParts(year: number, month: number, day: number): boolean {
@@ -250,7 +245,11 @@ export function parseNaturalDate(
     locale === "en"
       ? parseGermanCalendarDate(input)
       : parseEnglishCalendarDate(input);
+
   if (alternateDate) return alternateDate;
+  const alternateDatePattern =
+    locale === "en" ? GERMAN_DATE_PATTERN : ENGLISH_DATE_PATTERN;
+  if (alternateDatePattern.test(input)) return null;
 
   const compactDate = parseCompactRelative(input, referenceDate);
   if (compactDate) return toIsoCalendarDate(compactDate);
@@ -262,8 +261,9 @@ export function parseNaturalDate(
       : GERMAN_CALENDAR_WEEK_PATTERN;
   if (localizedWeekPattern.test(input)) return null;
 
-  const yearlessMonthDay = parseYearlessMonthDay(input, referenceDate, locale);
-  if (yearlessMonthDay) return toIsoCalendarDate(yearlessMonthDay);
+  const wordDate = parseWordDate(input, referenceDate, locale);
+  if (wordDate === "invalid") return null;
+  if (wordDate) return toIsoCalendarDate(wordDate);
 
   const parsed =
     parseWithSugar(input, locale, referenceDate) ??
