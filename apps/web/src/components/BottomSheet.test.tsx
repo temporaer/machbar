@@ -152,6 +152,63 @@ describe("BottomSheet", () => {
     opener.remove();
   });
 
+  it("skips effectively disabled fieldset controls while preserving its first legend", async () => {
+    const user = userEvent.setup();
+    render(
+      <BottomSheet
+        title="Pending"
+        onClose={vi.fn()}
+        headerActions={<button type="button">Header action</button>}
+      >
+        <fieldset disabled>
+          <legend><button type="button">Legend action</button></legend>
+          <button type="button">Disabled content</button>
+        </fieldset>
+      </BottomSheet>,
+    );
+
+    const headerAction = screen.getByRole("button", { name: "Header action" });
+    const close = screen.getByRole("button", { name: "Schließen" });
+    const legendAction = screen.getByRole("button", { name: "Legend action" });
+    expect(legendAction).toHaveFocus();
+
+    await user.tab();
+    expect(headerAction).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.tab();
+    expect(legendAction).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(close).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Disabled content" })).toBeDisabled();
+  });
+
+  it("wraps enabled header controls around disabled content", async () => {
+    const user = userEvent.setup();
+    render(
+      <BottomSheet
+        title="Pending"
+        onClose={vi.fn()}
+        headerActions={<button type="button">Header action</button>}
+      >
+        <fieldset disabled>
+          <input aria-label="Disabled content" />
+          <button type="button">Disabled action</button>
+        </fieldset>
+      </BottomSheet>,
+    );
+
+    const headerAction = screen.getByRole("button", { name: "Header action" });
+    const close = screen.getByRole("button", { name: "Schließen" });
+    expect(headerAction).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.tab();
+    expect(headerAction).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(close).toHaveFocus();
+  });
+
   it("restores focus after a close control removes itself during its click", async () => {
     const user = userEvent.setup();
 
@@ -183,6 +240,19 @@ describe("BottomSheet", () => {
 
     expect(screen.getByRole("dialog")).toHaveFocus();
     expect(screen.getByRole("dialog")).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("falls back to the dialog when all form controls are disabled by a fieldset", () => {
+    render(
+      <BottomSheet onClose={vi.fn()}>
+        <fieldset disabled>
+          <input aria-label="Pending input" />
+          <button type="button">Pending action</button>
+        </fieldset>
+      </BottomSheet>,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveFocus();
   });
 
   it("traps focus on a closed disclosure summary and skips its hidden controls", async () => {

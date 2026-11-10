@@ -50,7 +50,7 @@ function focusableElements(dialog: HTMLElement) {
   return Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(
     (element) =>
       element.tabIndex >= 0 &&
-      !element.hasAttribute("disabled") &&
+      !element.matches(":disabled") &&
       !element.closest('[hidden], [aria-hidden="true"], [inert]') &&
       !isHiddenByClosedDetails(element),
   );
