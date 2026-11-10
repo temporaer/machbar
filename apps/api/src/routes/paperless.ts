@@ -1,5 +1,6 @@
 import multipart from "@fastify/multipart";
 import type { PaperlessIntegrationStatus } from "@machbar/shared";
+import { create as createContentDisposition } from "content-disposition";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
 import type { Env } from "../env.js";
@@ -46,7 +47,7 @@ function sendBinary(
   if (binary.filename) {
     reply.header(
       "content-disposition",
-      `${disposition}; filename="${binary.filename.replace(/"/g, "")}"`,
+      createContentDisposition(binary.filename, { type: disposition }),
     );
   } else {
     reply.header("content-disposition", disposition);
