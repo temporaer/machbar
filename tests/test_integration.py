@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant.core import Event
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -138,6 +139,168 @@ async def test_unload_cleans_up_listener_and_pending_push(hass):
         await hass.async_block_till_done()
 
     push.assert_awaited_once()
+
+
+async def test_overlapping_snapshot_events_serialize_and_publish_trailing_state(hass):
+    """A slow push keeps ownership and publishes one trailing snapshot."""
+    hass.states.async_set("person.alex", "unknown", {"friendly_name": "Alex"})
+    entry = _entry()
+    publisher = SnapshotPublisher(hass, entry)
+    first_started = asyncio.Event()
+    release_first = asyncio.Event()
+    second_started = asyncio.Event()
+    release_second = asyncio.Event()
+    active = 0
+    max_active = 0
+    calls = 0
+    snapshots = []
+
+    async def push() -> None:
+        nonlocal active, max_active, calls
+        calls += 1
+        snapshots.append(build_snapshot(hass, entry))
+        active += 1
+        max_active = max(max_active, active)
+        try:
+            if calls == 1:
+                first_started.set()
+                await release_first.wait()
+            else:
+                second_started.set()
+                await release_second.wait()
+        finally:
+            active -= 1
+
+    with patch(
+        "custom_components.machbar.client.MachbarClient.push_snapshot",
+        AsyncMock(),
+    ):
+        await publisher.async_start()
+        publisher._async_push = push
+        publisher._scheduled_push(None)
+        await first_started.wait()
+        owned_task = publisher._push_task
+        hass.states.async_set("person.alex", "home")
+        publisher._scheduled_push(None)
+        release_first.set()
+        await second_started.wait()
+
+        assert publisher._push_task is owned_task
+        assert max_active == 1
+        release_second.set()
+        await owned_task
+
+    assert calls == 2
+    assert snapshots[0]["people"][0]["state"] == "unknown"
+    assert snapshots[1]["people"][0]["state"] == "known"
+    assert publisher._push_task is None
+    await publisher.async_stop()
+
+
+async def test_unload_awaits_inflight_snapshot_cancellation_and_blocks_dispatch(hass):
+    """Unload waits for cancellation cleanup and rejects later timer callbacks."""
+    entry = _entry()
+    publisher = SnapshotPublisher(hass, entry)
+    push_started = asyncio.Event()
+    cleanup_started = asyncio.Event()
+    cleanup_finished = asyncio.Event()
+    release_cleanup = asyncio.Event()
+
+    async def push() -> None:
+        push_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleanup_started.set()
+            await release_cleanup.wait()
+            cleanup_finished.set()
+
+    with patch(
+        "custom_components.machbar.client.MachbarClient.push_snapshot",
+        AsyncMock(),
+    ):
+        await publisher.async_start()
+        publisher._async_push = push
+        publisher._scheduled_push(None)
+        await push_started.wait()
+        stop_task = asyncio.create_task(publisher.async_stop())
+        await cleanup_started.wait()
+
+        assert not stop_task.done()
+        release_cleanup.set()
+        await stop_task
+        assert cleanup_finished.is_set()
+        assert publisher._push_task is None
+        publisher._scheduled_push(None)
+        await asyncio.sleep(0)
+        assert publisher._push_task is None
+
+        await publisher.async_stop()
+
+
+async def test_immediate_snapshot_completion_releases_task_for_later_events(hass):
+    """Eager Home Assistant scheduling cannot leave a completed owner behind."""
+    entry = _entry()
+    publisher = SnapshotPublisher(hass, entry)
+    calls = 0
+
+    async def push() -> None:
+        nonlocal calls
+        calls += 1
+
+    with patch(
+        "custom_components.machbar.client.MachbarClient.push_snapshot",
+        AsyncMock(),
+    ):
+        await publisher.async_start()
+        publisher._async_push = push
+        publisher._scheduled_push(None)
+        await hass.async_block_till_done()
+        assert calls == 1
+        assert publisher._push_task is None
+
+        publisher._scheduled_push(None)
+        await hass.async_block_till_done()
+
+    assert calls == 2
+    await publisher.async_stop()
+
+
+async def test_immediate_stop_clears_queued_snapshot_owner(hass):
+    """Stopping a queued task clears ownership even before its first step."""
+    entry = _entry()
+    publisher = SnapshotPublisher(hass, entry)
+    with patch(
+        "custom_components.machbar.client.MachbarClient.push_snapshot",
+        AsyncMock(),
+    ):
+        await publisher.async_start()
+        publisher._async_push = AsyncMock()
+        publisher._scheduled_push(None)
+        task = publisher._push_task
+        await publisher.async_stop()
+
+    assert task is not None
+    assert task.cancelled()
+    assert publisher._push_task is None
+    publisher._async_push.assert_not_awaited()
+
+
+async def test_stale_state_listener_callback_after_stop_does_not_schedule(hass):
+    """A queued listener callback cannot create work after stop."""
+    entry = _entry()
+    publisher = SnapshotPublisher(hass, entry)
+    with patch(
+        "custom_components.machbar.client.MachbarClient.push_snapshot",
+        AsyncMock(),
+    ):
+        await publisher.async_start()
+        await publisher.async_stop()
+        publisher._state_changed(
+            Event("state_changed", {"entity_id": "person.alex"})
+        )
+
+    assert publisher._cancel_scheduled is None
 
 
 async def test_sync_task_service_maps_reactivation_and_note_options(hass):

@@ -213,6 +213,7 @@ class SnapshotPublisher:
         self._cancel_listener: Any = None
         self._cancel_scheduled: Any = None
         self._push_task: asyncio.Task[None] | None = None
+        self._push_pending = False
         self._stopped = False
 
     async def async_start(self) -> None:
@@ -224,6 +225,8 @@ class SnapshotPublisher:
 
     @callback
     def _state_changed(self, event: Event) -> None:
+        if self._stopped:
+            return
         entity_id = event.data.get("entity_id", "")
         configured = {
             self._entry.options.get("ai_task_entity_id"),
@@ -242,18 +245,27 @@ class SnapshotPublisher:
         self._cancel_scheduled = None
         if self._stopped:
             return
-        self._push_task = self._hass.async_create_task(
-            self._async_push_safely(), f"{DOMAIN} snapshot push"
-        )
+        self._push_pending = True
+        if self._push_task is None:
+            self._push_task = self._hass.async_create_task(
+                self._async_push_safely(), f"{DOMAIN} snapshot push", eager_start=False
+            )
 
     async def _async_push(self) -> None:
         await self._client.push_snapshot(build_snapshot(self._hass, self._entry))
 
     async def _async_push_safely(self) -> None:
         try:
-            await self._async_push()
-        except MachbarError:
-            _LOGGER.warning("Unable to publish Machbar physical context", exc_info=True)
+            while True:
+                self._push_pending = False
+                try:
+                    await self._async_push()
+                except MachbarError:
+                    _LOGGER.warning(
+                        "Unable to publish Machbar physical context", exc_info=True
+                    )
+                if self._stopped or not self._push_pending:
+                    return
         finally:
             self._push_task = None
 
@@ -267,9 +279,11 @@ class SnapshotPublisher:
             self._cancel_scheduled()
             self._cancel_scheduled = None
         if self._push_task is not None:
-            self._push_task.cancel()
-            await asyncio.gather(self._push_task, return_exceptions=True)
+            task = self._push_task
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
             self._push_task = None
+        self._push_pending = False
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
