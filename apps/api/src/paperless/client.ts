@@ -364,8 +364,9 @@ export function createPaperlessClient(
               }
             }
 
-            const sleepMs = Math.min(intervalMs, deadline - now());
-            if (sleepMs <= 0) throw processingTimeout();
+            const remainingAfterPoll = deadline - now();
+            if (remainingAfterPoll <= 0) throw processingTimeout();
+            const sleepMs = Math.min(intervalMs, remainingAfterPoll);
             await (options.sleep
               ? options.sleep(sleepMs, controller.signal)
               : abortableSleep(sleepMs, controller.signal));

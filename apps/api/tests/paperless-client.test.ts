@@ -222,6 +222,40 @@ describe("PaperlessClient", () => {
       expect(calls).toBe(2);
     });
 
+    it("preserves back-to-back polls for nonpositive intervals", async () => {
+      for (const intervalMs of [0, -1]) {
+        let calls = 0;
+        const requestedDelays: number[] = [];
+        const client = createPaperlessClient(config, {
+          fetch: fakeFetch(() => {
+            calls += 1;
+            if (calls === 1) {
+              return jsonResponse(200, { count: 0, results: [] });
+            }
+            return jsonResponse(200, {
+              count: 1,
+              results: [
+                {
+                  task_id: "task-1",
+                  status: "success",
+                  related_document_ids: [42],
+                },
+              ],
+            });
+          }),
+          sleep: async (ms) => {
+            requestedDelays.push(ms);
+          },
+        });
+
+        await expect(
+          client.awaitDocumentId("task-1", { timeoutMs: 100, intervalMs }),
+        ).resolves.toBe(42);
+        expect(calls).toBe(2);
+        expect(requestedDelays).toEqual([intervalMs]);
+      }
+    });
+
     it("maps an API v9 failure without waiting for timeout", async () => {
       const client = createPaperlessClient(config, {
         fetch: fakeFetch(() =>
