@@ -157,6 +157,59 @@ test("detail completion control is visible on touch and desktop", async ({ page 
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${item.id}`)).json()).status).toBe("done");
 });
 
+test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {
+  const item = await task(page);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`**/api/tasks/${item.id}`, async route => {
+    if (route.request().method() === "PATCH") {
+      await held;
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/#/tasks/${item.id}`);
+  const titleField = page.locator(".task-detail-title-field");
+  await expect(titleField).toBeVisible();
+  await titleField.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  const titleInput = titleField.locator("#task-title");
+  await titleInput.fill(`${item.title} pending`);
+  const patch = page.waitForRequest(request =>
+    request.url().endsWith(`/api/tasks/${item.id}`) && request.method() === "PATCH",
+  );
+  await titleField.getByRole("button", { name: "Speichern", exact: true }).click();
+  await patch;
+
+  const content = page.locator("fieldset.task-detail-content");
+  await expect(content).toHaveAttribute("disabled", "");
+  const close = page.getByRole("button", { name: "Schließen", exact: true });
+  const summaries = page.getByRole("dialog").locator("summary");
+  await expect(summaries.first()).toBeVisible();
+  const firstSummary = summaries.first();
+  const disabledInput = content.locator("input").first();
+  await expect(disabledInput).toBeDisabled();
+  await disabledInput.focus();
+  await expect(disabledInput).not.toBeFocused();
+
+  await firstSummary.focus();
+  await expect(firstSummary).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("dialog")).toContainText("Teilaufgaben");
+
+  const lastSummary = page.getByRole("dialog").locator("summary:visible").last();
+  await expect(lastSummary).toBeVisible();
+  await close.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(lastSummary).toBeFocused();
+  await lastSummary.focus();
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+
+  release();
+  await expect(page.getByRole("heading", { name: `${item.title} pending`, exact: true })).toBeVisible();
+  await expect(content).not.toHaveAttribute("disabled");
+});
+
 test("attachment dialog returns focus to the stable actions trigger", async ({ page }) => {
   const item = await task(page);
   await page.goto(`/#/tasks/${item.id}`);
