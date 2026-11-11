@@ -2386,14 +2386,18 @@ accept the new field as ordinary reconciliation.
 
 The existing `syncExternalTask` transaction looks up an occurrence receipt first,
 rejects unseen older/same-day occurrences, then finds open tasks among both the
-stable link and all historical receipts. An open instance is retained unchanged
+stable link, durable routine membership and all historical receipts. An open instance is retained unchanged
 and associated with the new occurrence; completing it later that day still does
 not create another. With no open instance the canonical `createTask` path creates
 a new task and advances the stable link, preserving previous tasks and their
 completion/cancellation history. Legacy sync calls against an opted-in routine
 are rejected. Deleted tasks leave receipt tombstones; the same occurrence cannot
 resurrect them. A reopened historical task participates in subsequent open-work
-checks. The lookup, creation and receipt commit together; no model decides
+checks. Adopting a legacy source records the old target in `external_task_routine_members`
+before advancing its stable link, so even a later reopen after deletion of the
+newer instance remains visible. Converted task/project members make occurrence
+sync fail closed, including historical conversions, rather than duplicating the
+preserved child action. The lookup, membership, creation and receipt commit together; no model decides
 uniqueness. This adds migration 0032, with chained snapshot metadata.
 
 Scheduling and eligibility remain the caller's responsibility in Home Assistant.

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { TaskReminderInput, TaskSize } from "@machbar/shared";
 import { isIsoCalendarDate } from "./calendarDate.js";
 import type { Db } from "../db/client.js";
@@ -254,6 +254,12 @@ export function syncExternalTask(
         source: SOURCE, sourceKey: input.sourceKey, occurrenceKey: input.occurrenceKey!,
         scheduledDate: input.scheduledDate!, taskId,
       }).run();
+      // Preserve the legacy target before the stable link advances. This is
+      // membership, not a fabricated past occurrence or execution date.
+      const memberIds = [...new Set([taskId, ...(existing ? [existing.taskId] : [])])];
+      tx.insert(schema.externalTaskRoutineMembers).values(memberIds.map(id => ({
+        source: SOURCE, sourceKey: input.sourceKey, taskId: id,
+      }))).onConflictDoNothing().run();
     };
     if (input.occurrenceKey !== undefined) {
       const receipts = tx.select().from(schema.externalTaskOccurrences)
@@ -268,11 +274,21 @@ export function syncExternalTask(
       if (receipts[0] && input.scheduledDate! <= receipts[0].scheduledDate) {
         throw AppError.conflict("stale_write_conflict", "An older unseen routine occurrence cannot be backfilled.");
       }
-      const ids = [...new Set([...receipts.map(r => r.taskId).filter((id): id is number => id !== null), ...(existing ? [existing.taskId] : [])])];
-      const open = ids.length === 0 ? undefined : tx.select().from(schema.workItems).where(and(
-        inArray(schema.workItems.id, ids), eq(schema.workItems.role, "task"),
-        notInArray(schema.workItems.status, ["done", "cancelled"]),
-      )).orderBy(asc(schema.workItems.id)).get();
+      const members = tx.select({ taskId: schema.externalTaskRoutineMembers.taskId })
+        .from(schema.externalTaskRoutineMembers).where(and(
+          eq(schema.externalTaskRoutineMembers.source, SOURCE),
+          eq(schema.externalTaskRoutineMembers.sourceKey, input.sourceKey),
+        )).all();
+      const ids = [...new Set([
+        ...receipts.map(r => r.taskId).filter((id): id is number => id !== null),
+        ...members.map(member => member.taskId), ...(existing ? [existing.taskId] : []),
+      ])];
+      const tracked = ids.length === 0 ? [] : tx.select().from(schema.workItems)
+        .where(inArray(schema.workItems.id, ids)).orderBy(asc(schema.workItems.id)).all();
+      if (tracked.some(item => item.role !== "task")) {
+        throw AppError.notFound("task_not_found", "A routine instance is no longer a task. Resolve its project conversion before synchronizing new occurrences.");
+      }
+      const open = tracked.find(item => item.status !== "done" && item.status !== "cancelled");
       if (open) {
         recordOccurrence(open.id);
         return { taskId: open.id, state: "active" as const };

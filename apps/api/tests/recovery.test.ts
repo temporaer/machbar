@@ -28,6 +28,7 @@ describe("durable upgrade, restart and restore", () => {
       const replay = await ctx.app.inject(request);
       expect(replay.statusCode, replay.body).toBe(200);
       expect(replay.json().taskId).toBe(first.json().taskId);
+      expect(ctx.handle.sqlite.prepare("SELECT task_id AS taskId FROM external_task_routine_members").all()).toEqual([{ taskId: first.json().taskId }]);
       expect(ctx.handle.sqlite.prepare("SELECT count(*) AS n FROM work_items").get()).toEqual({ n: 1 });
       await closeTestContext(ctx); ctx = undefined;
     }
@@ -59,7 +60,7 @@ describe("durable upgrade, restart and restore", () => {
     old.sqlite.prepare("INSERT INTO work_items (role, title, status) VALUES ('task', 'Pre-upgrade', 'active')").run();
     const journal = JSON.parse(readFileSync(new URL("../drizzle/meta/_journal.json", import.meta.url), "utf8"));
     const receiptMigration = journal.entries.find((entry: { tag: string }) => entry.tag === "0031_creation_receipts");
-    old.sqlite.exec("DROP TABLE external_task_occurrences; DROP TABLE creation_receipts");
+    old.sqlite.exec("DROP TABLE external_task_routine_members; DROP TABLE external_task_occurrences; DROP TABLE creation_receipts");
     old.sqlite.prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?").run(receiptMigration.when);
     old.close();
     ctx = createTestContext({ databasePath: file, dataDir: directory });

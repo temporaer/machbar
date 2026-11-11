@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "896db18e-65be-4ca5-9006-812b8325886e",
+  "id": "6e28ea35-bd78-416c-b0c9-90bea62498e1",
   "prevId": "3cc278d8-6a76-426e-896b-d2134c49f1e6",
   "tables": {
     "activity_events": {
@@ -939,6 +939,60 @@
             "occurrence_key"
           ],
           "name": "external_task_occurrences_source_source_key_occurrence_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "external_task_routine_members": {
+      "name": "external_task_routine_members",
+      "columns": {
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_key": {
+          "name": "source_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "external_task_routine_members_task_id_work_items_id_fk": {
+          "name": "external_task_routine_members_task_id_work_items_id_fk",
+          "tableFrom": "external_task_routine_members",
+          "tableTo": "work_items",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "external_task_routine_members_source_source_key_task_id_pk": {
+          "columns": [
+            "source",
+            "source_key",
+            "task_id"
+          ],
+          "name": "external_task_routine_members_source_source_key_task_id_pk"
         }
       },
       "uniqueConstraints": {},

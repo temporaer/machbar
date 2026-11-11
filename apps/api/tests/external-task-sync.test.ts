@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { syncExternalTask } from "../src/domain/externalTaskSync.js";
 import { updateTask } from "../src/domain/taskCrud.js";
+import { convertTaskToStory } from "../src/domain/roleConversion.js";
 import { cancelTask, completeTask, reopenTask } from "../src/domain/taskWorkflow.js";
 import { createTestDatabase } from "./database.js";
 
@@ -44,6 +45,44 @@ describe("Home Assistant external task reconciliation", () => {
     sourceKey: "example:weekly-check", relevant: true, title: "Weekly check",
     scheduledDate: day, occurrenceKey: day, notes: "Routinebeschreibung", ...extra,
   } as Parameters<typeof syncExternalTask>[2])!;
+
+  it.each(["current", "historical", "legacy"])("rejects converted %s routine instances without creating duplicate work", stage => {
+    const first = stage === "legacy"
+      ? syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: true, title: "Weekly check", scheduledDate: "2026-11-09" })!
+      : run("2026-11-09");
+    if (stage === "historical") {
+      completeTask(handle.db, first.taskId, "leave_open");
+      const second = run("2026-11-16");
+      completeTask(handle.db, second.taskId, "leave_open");
+      reopenTask(handle.db, first.taskId);
+    }
+    const task = updateTask(handle.db, first.taskId, { ownerMemberId: memberId, ownerInheritanceMode: "explicit" });
+    convertTaskToStory(handle.db, first.taskId, {
+      status: "active", expectedRevision: task.revision,
+      activationResolution: { expectedProjects: [{ projectId: task.id, revision: task.revision }], drivers: [] },
+    });
+    expect(handle.db.select().from(schema.workItems).all().some(t => t.parentId === first.taskId && t.role === "task")).toBe(true);
+    const before = handle.sqlite.serialize();
+    expect(() => run("2026-11-23")).toThrow("no longer a task");
+    expect(handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it.each([
+    { terminal: "done", latest: "completed" }, { terminal: "cancelled", latest: "completed" },
+    { terminal: "done", latest: "deleted" }, { terminal: "cancelled", latest: "deleted" },
+  ])("retains legacy membership after opt-in and subsequent latest-instance lifecycle: %j", ({ terminal, latest }) => {
+    const legacy = syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: true, title: "Legacy check" })!;
+    if (terminal === "done") completeTask(handle.db, legacy.taskId, "leave_open");
+    else cancelTask(handle.db, legacy.taskId, "leave_open");
+    const newInstance = run("2026-11-09");
+    expect(newInstance.taskId).not.toBe(legacy.taskId);
+    if (latest === "deleted") handle.db.delete(schema.workItems).where(eq(schema.workItems.id, newInstance.taskId)).run();
+    else completeTask(handle.db, newInstance.taskId, "leave_open");
+    reopenTask(handle.db, legacy.taskId);
+    const before = handle.db.select().from(schema.workItems).all();
+    expect(run("2026-11-16").taskId).toBe(legacy.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toEqual(before);
+  });
 
   it("keeps open occurrences unchanged across weeks and records skipped days", () => {
     const first = run("2026-11-09");
