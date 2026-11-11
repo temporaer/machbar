@@ -40,6 +40,90 @@ describe("Home Assistant external task reconciliation", () => {
 
   afterEach(() => handle.close());
 
+  const run = (day: string, extra = {}) => syncExternalTask(handle.db, integrationId, {
+    sourceKey: "school:lars:weekplan", relevant: true, title: "Wochenplan prüfen",
+    scheduledDate: day, occurrenceKey: day, notes: "Routinebeschreibung", ...extra,
+  } as Parameters<typeof syncExternalTask>[2])!;
+
+  it("keeps open occurrences unchanged across school weeks and records skipped days", () => {
+    const first = run("2026-11-09");
+    updateTask(handle.db, first.taskId, { title: "Manuell angepasst", notes: "Eigene Notizen", scheduledDate: "2026-11-10" });
+    const before = handle.db.select().from(schema.workItems).get()!;
+    expect(run("2026-11-16").taskId).toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).get()).toEqual(before);
+    completeTask(handle.db, first.taskId, "leave_open");
+    expect(run("2026-11-16").taskId).toBe(first.taskId);
+    const next = run("2026-11-23");
+    expect(next.taskId).not.toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(2);
+  });
+
+  it.each(["done", "cancelled"])("leaves %s history terminal and creates one new dated occurrence", status => {
+    const first = run("2026-11-09");
+    if (status === "done") completeTask(handle.db, first.taskId, "leave_open");
+    else cancelTask(handle.db, first.taskId, "leave_open");
+    const before = handle.db.select().from(schema.workItems).get()!;
+    expect(run("2026-11-09").taskId).toBe(first.taskId);
+    const next = run("2026-11-16");
+    expect(next.taskId).not.toBe(first.taskId);
+    expect(run("2026-11-16").taskId).toBe(next.taskId);
+    expect(handle.db.select().from(schema.workItems).all().find(t => t.id === first.taskId)).toEqual(before);
+    expect(handle.db.select().from(schema.workItems).all().find(t => t.id === next.taskId))
+      .toMatchObject({ scheduledDate: "2026-11-16", dueDate: null, repeatAfterDays: null });
+    expect(run("2026-11-09").taskId).toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(2);
+  });
+
+  it("finds a reopened earlier occurrence even after the current occurrence was completed", () => {
+    const first = run("2026-11-09"); completeTask(handle.db, first.taskId, "leave_open");
+    const second = run("2026-11-16"); completeTask(handle.db, second.taskId, "leave_open");
+    reopenTask(handle.db, first.taskId);
+    expect(run("2026-11-23").taskId).toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(2);
+  });
+
+  it("rejects an unseen stale occurrence without creating past work", () => {
+    run("2026-11-16");
+    expect(() => run("2026-11-09")).toThrow();
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+  });
+
+  it("uses one ISO week identity even when its first school day is Tuesday", () => {
+    const first = run("2026-11-10", { occurrenceKey: "2026-W46" });
+    completeTask(handle.db, first.taskId, "leave_open");
+    expect(run("2026-11-11", { occurrenceKey: "2026-W46" }).taskId).toBe(first.taskId);
+    expect(run("2026-11-16", { occurrenceKey: "2026-W47" }).taskId).not.toBe(first.taskId);
+  });
+
+  it("preserves replay tombstones after deletion, but allows a later occurrence", () => {
+    const first = run("2026-11-09");
+    handle.db.delete(schema.workItems).where(eq(schema.workItems.id, first.taskId)).run();
+    expect(() => run("2026-11-09")).toThrow("deleted");
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    expect(run("2026-11-16").taskId).toBeGreaterThan(first.taskId);
+  });
+
+  it.each([
+    { relevant: false }, { scheduledDate: null }, { scheduledDate: "not-a-date" },
+    { reactivateCompleted: true }, { title: "" }, { occurrenceKey: " " },
+  ])("rejects invalid occurrence input without writes: %j", extra => {
+    const before = handle.sqlite.serialize();
+    expect(() => run("2026-11-09", extra)).toThrow();
+    expect(handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it("rolls creation and the receipt back on an invalid owner", () => {
+    expect(() => run("2026-11-09", { person: "person.unknown" })).toThrow();
+    expect(handle.db.select().from(schema.externalTaskOccurrences).all()).toHaveLength(0);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    expect(run("2026-11-09").taskId).toBeGreaterThan(0);
+  });
+
+  it("rejects undated legacy updates of an opted-in routine", () => {
+    run("2026-11-09");
+    expect(() => syncExternalTask(handle.db, integrationId, { sourceKey: "school:lars:weekplan", relevant: false })).toThrow("occurrenceKey");
+  });
+
   it("creates idempotently and reconciles only supplied fields", () => {
     const first = syncExternalTask(handle.db, integrationId, {
       sourceKey: "school:lars:sports:2026-09-23",

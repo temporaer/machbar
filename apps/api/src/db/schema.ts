@@ -892,6 +892,15 @@ export const externalTaskLinks = sqliteTable(
   ],
 );
 
+/** Durable external routine receipts. Deletion leaves a replay tombstone. */
+export const externalTaskOccurrences = sqliteTable("external_task_occurrences", {
+  source: text("source").notNull(),
+  sourceKey: text("source_key").notNull(),
+  occurrenceKey: text("occurrence_key").notNull(),
+  scheduledDate: text("scheduled_date").notNull(),
+  taskId: integer("task_id").references(() => workItems.id, { onDelete: "set null" }),
+}, t => [primaryKey({ columns: [t.source, t.sourceKey, t.occurrenceKey] })]);
+
 /**
  * Provenance for calendar objects created by intake. This is not lifecycle
  * authority; unlike externalTaskLinks it never reconciles or withdraws work.

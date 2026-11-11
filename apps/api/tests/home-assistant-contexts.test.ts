@@ -294,6 +294,25 @@ describe("Home Assistant physical contexts", () => {
     });
   });
 
+  it("advertises occurrence support only to the paired HA client and preserves week identity over HTTP", async () => {
+    const { token } = await connect();
+    const url = "/api/integrations/home-assistant/tasks/sync";
+    expect((await ctx.app.inject({ method: "GET", url })).statusCode).toBe(401);
+    const capability = await ctx.app.inject({ method: "GET", url, headers: { authorization: `Bearer ${token}` } });
+    expect(capability.statusCode).toBe(200);
+    expect(capability.json()).toEqual({ occurrenceKeys: true });
+    const input = { sourceKey: "school:lars:weekly", occurrenceKey: "2026-W46", relevant: true, title: "Wochenplan", scheduledDate: "2026-11-10" };
+    const first = await post(url, input, token);
+    expect(first.statusCode, first.body).toBe(200);
+    const repeated = await post(url, { ...input, scheduledDate: "2026-11-11" }, token);
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json().taskId).toBe(first.json().taskId);
+    expect(ctx.handle.db.select().from(schema.workItems).get()).toMatchObject({ scheduledDate: "2026-11-10", dueDate: null });
+    const invalid = await post(url, { ...input, occurrenceKey: "2026-W47", reactivateCompleted: true }, token);
+    expect(invalid.statusCode).toBe(400);
+    expect(ctx.handle.db.select().from(schema.externalTaskOccurrences).all()).toHaveLength(1);
+  });
+
   it("returns 204 without creating a task for an unknown irrelevant source", async () => {
     const token = await connect();
     const response = await post(

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -13,6 +13,26 @@ describe("durable upgrade, restart and restore", () => {
   let ctx: TestContext | undefined;
   beforeEach(() => { directory = mkdtempSync(join(tmpdir(), "machbar-recovery-")); });
   afterEach(async () => { if (ctx) await closeTestContext(ctx); ctx = undefined; rmSync(directory, { recursive: true, force: true }); });
+  it("retains routine occurrence identity across restart and backup restore", async () => {
+    const databasePath = join(directory, "routine.sqlite");
+    ctx = createTestContext({ databasePath, dataDir: directory });
+    const code = (await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pairing-code" })).json().code;
+    const { token } = (await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pair", payload: { pairingCode: code, protocolVersion: 3 } })).json();
+    const request = { method: "POST" as const, url: "/api/integrations/home-assistant/tasks/sync", headers: { authorization: `Bearer ${token}` }, payload: { sourceKey: "school:lars", occurrenceKey: "2026-W46", relevant: true, title: "Week plan", scheduledDate: "2026-11-10" } };
+    const first = await ctx.app.inject(request);
+    expect(first.statusCode, first.body).toBe(200);
+    await ctx.handle.sqlite.backup(join(directory, "routine-backup.sqlite"));
+    await closeTestContext(ctx); ctx = undefined;
+    for (const name of ["routine.sqlite", "routine-backup.sqlite"]) {
+      ctx = createTestContext({ databasePath: join(directory, name), dataDir: directory });
+      const replay = await ctx.app.inject(request);
+      expect(replay.statusCode, replay.body).toBe(200);
+      expect(replay.json().taskId).toBe(first.json().taskId);
+      expect(ctx.handle.sqlite.prepare("SELECT count(*) AS n FROM work_items").get()).toEqual({ n: 1 });
+      await closeTestContext(ctx); ctx = undefined;
+    }
+  });
+
   it("replays a committed creation after restart and after restoring an online SQLite backup", async () => {
     const databasePath = join(directory, "live.sqlite");
     ctx = createTestContext({ databasePath, dataDir: directory });
@@ -37,7 +57,10 @@ describe("durable upgrade, restart and restore", () => {
     const file = join(directory, "old.sqlite");
     const old = openDb(file); runMigrations(old.db);
     old.sqlite.prepare("INSERT INTO work_items (role, title, status) VALUES ('task', 'Pre-upgrade', 'active')").run();
-    old.sqlite.exec("DROP TABLE creation_receipts; DELETE FROM __drizzle_migrations WHERE created_at = (SELECT max(created_at) FROM __drizzle_migrations)");
+    const journal = JSON.parse(readFileSync(new URL("../drizzle/meta/_journal.json", import.meta.url), "utf8"));
+    const receiptMigration = journal.entries.find((entry: { tag: string }) => entry.tag === "0031_creation_receipts");
+    old.sqlite.exec("DROP TABLE external_task_occurrences; DROP TABLE creation_receipts");
+    old.sqlite.prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?").run(receiptMigration.when);
     old.close();
     ctx = createTestContext({ databasePath: file, dataDir: directory });
     runMigrations(ctx.handle.db);

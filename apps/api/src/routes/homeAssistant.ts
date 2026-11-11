@@ -70,6 +70,9 @@ export function registerHomeAssistantRoutes(
     return null;
   });
 
+  // Old servers reject this preflight before the HA client can send new semantics.
+  app.get(`${ROOT}/tasks/sync`, async () => ({ occurrenceKeys: true }));
+
   app.post(`${ROOT}/tasks/sync`, async (request, reply) => {
     const body = parseOrThrow(homeAssistantSyncTaskSchema, request.body);
     const result = syncExternalTask(db, request.homeAssistantIntegrationId!, body);

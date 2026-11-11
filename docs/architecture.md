@@ -2373,3 +2373,39 @@ viewer-aware graph and omits that optional snapshot if an ancestor is hidden,
 while preserving the readable child document and authorized direct activation.
 The regression matrix exercises reads, stale/fresh deadline writes and visible/
 hidden ancestors, including unchanged database and notification state.
+
+### Externally triggered routine instances
+
+`machbar.sync_task` keeps its existing reconciliation behavior when
+`occurrence_key` is omitted. Opting in uses the stable `source_key` as a routine
+identity and a separate occurrence key (for example an ISO year/week).
+`scheduled_date` remains the actual execution day; no recurrence or deadline is
+inferred. The HA client checks authenticated `GET /tasks/sync` for
+`occurrenceKeys: true` before posting, so old/unreachable servers cannot silently
+accept the new field as ordinary reconciliation.
+
+The existing `syncExternalTask` transaction looks up an occurrence receipt first,
+rejects unseen older/same-day occurrences, then finds open tasks among both the
+stable link and all historical receipts. An open instance is retained unchanged
+and associated with the new occurrence; completing it later that day still does
+not create another. With no open instance the canonical `createTask` path creates
+a new task and advances the stable link, preserving previous tasks and their
+completion/cancellation history. Legacy sync calls against an opted-in routine
+are rejected. Deleted tasks leave receipt tombstones; the same occurrence cannot
+resurrect them. A reopened historical task participates in subsequent open-work
+checks. The lookup, creation and receipt commit together; no model decides
+uniqueness. This adds migration 0032, with chained snapshot metadata.
+
+The deployable school example is in
+`docs/examples/home-assistant-school-routines.yaml`. It uses existing BW raw
+ferien/holiday sensors, their combined binary sensor and the configured BW
+Workday sensor. All must have known values; raw-source failures cannot be hidden
+by the combined binary sensor's `off` fallback. Locally configured bridge/movable
+days are honored; the state-wide feed cannot infer a school's unconfigured days.
+The week-plan check runs on school weekdays from 16:00 until 20:00, including
+Tuesday after a Monday holiday. Friday mail/bags stays Friday-only. Quarter-hour
+retries and HA startup recover only the current day's window, never a backlog of
+past weeks. Script `dry_run: true` returns its intended payload without contacting
+Machbar; errors remain visible in the script/automation trace. Install server
+0.27.0 (root 0.38.0) before HA component 0.9.0, restart HA, replace the example's
+config-entry placeholder with the existing paired entry, then enable automations.

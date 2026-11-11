@@ -68,6 +68,10 @@
         "size": {
           "name": "Size",
           "description": "Task size."
+        },
+        "occurrence_key": {
+          "name": "Routine occurrence key",
+          "description": "Stable instance identity, e.g. 2026-W46. Open work is retained; completed work is never reopened. scheduled_date is the actual execution date."
         }
       }
     }
