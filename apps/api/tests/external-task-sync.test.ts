@@ -3,6 +3,8 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { syncExternalTask } from "../src/domain/externalTaskSync.js";
 import { updateTask } from "../src/domain/taskCrud.js";
+import { deleteProject } from "../src/domain/storyCrud.js";
+import { convertTaskToStory } from "../src/domain/roleConversion.js";
 import { cancelTask, completeTask, reopenTask } from "../src/domain/taskWorkflow.js";
 import { createTestDatabase } from "./database.js";
 
@@ -39,6 +41,181 @@ describe("Home Assistant external task reconciliation", () => {
   });
 
   afterEach(() => handle.close());
+
+  const run = (day: string, extra = {}) => syncExternalTask(handle.db, integrationId, {
+    sourceKey: "example:weekly-check", relevant: true, title: "Weekly check",
+    scheduledDate: day, occurrenceKey: day, notes: "Routinebeschreibung", ...extra,
+  } as Parameters<typeof syncExternalTask>[2])!;
+
+  const convert = (taskId: number) => {
+    const task = updateTask(handle.db, taskId, { ownerMemberId: memberId, ownerInheritanceMode: "explicit" });
+    convertTaskToStory(handle.db, taskId, {
+      status: "active", expectedRevision: task.revision,
+      activationResolution: { expectedProjects: [{ projectId: task.id, revision: task.revision }], drivers: [] },
+    });
+  };
+
+  it.each(["current", "historical", "legacy"])("rejects converted %s routine instances without creating duplicate work", stage => {
+    const first = stage === "legacy"
+      ? syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: true, title: "Weekly check", scheduledDate: "2026-11-09" })!
+      : run("2026-11-09");
+    if (stage === "historical") {
+      completeTask(handle.db, first.taskId, "leave_open");
+      const second = run("2026-11-16");
+      completeTask(handle.db, second.taskId, "leave_open");
+      reopenTask(handle.db, first.taskId);
+    }
+    convert(first.taskId);
+    expect(handle.db.select().from(schema.workItems).all().some(t => t.parentId === first.taskId && t.role === "task")).toBe(true);
+    const before = handle.sqlite.serialize();
+    expect(() => run("2026-11-23")).toThrow("no longer a task");
+    expect(handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it.each([
+    { stage: "current", deleteTasks: false }, { stage: "historical", deleteTasks: false },
+    { stage: "legacy", deleteTasks: false }, { stage: "current", deleteTasks: true },
+    { stage: "historical", deleteTasks: true }, { stage: "legacy", deleteTasks: true },
+  ])("preserves routine work across conversion and project deletion: %j", ({ stage, deleteTasks }) => {
+    const first = stage === "legacy"
+      ? syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: true, title: "Weekly check", scheduledDate: "2026-11-09" })!
+      : run("2026-11-09");
+    if (stage === "historical") {
+      completeTask(handle.db, first.taskId, "leave_open");
+      const second = run("2026-11-16");
+      completeTask(handle.db, second.taskId, "leave_open");
+      reopenTask(handle.db, first.taskId);
+    }
+    convert(first.taskId);
+    const preserved = handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, first.taskId)).get()!;
+    expect(preserved.role).toBe("task");
+    deleteProject(handle.db, first.taskId, { deleteTasks });
+    const before = handle.db.select().from(schema.workItems).all();
+    const next = run("2026-11-23");
+    if (deleteTasks) {
+      expect(next.taskId).not.toBe(preserved.id);
+    } else {
+      expect(next.taskId).toBe(preserved.id);
+      expect(handle.db.select().from(schema.workItems).all()).toEqual(before);
+      completeTask(handle.db, preserved.id, "leave_open");
+      expect(run("2026-11-23").taskId).toBe(preserved.id);
+      expect(run("2026-11-30").taskId).not.toBe(preserved.id);
+    }
+    if (stage !== "legacy") {
+      const snapshot = handle.sqlite.serialize();
+      expect(() => run("2026-11-09")).toThrow("deleted");
+      expect(handle.sqlite.serialize()).toEqual(snapshot);
+    }
+  });
+
+  it("keeps membership through repeated conversions after the original link and receipt target disappear", () => {
+    let taskId = run("2026-11-09").taskId;
+    for (let index = 0; index < 3; index++) {
+      convert(taskId);
+      const child = handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, taskId)).get()!;
+      deleteProject(handle.db, taskId);
+      taskId = child.id;
+    }
+    const before = handle.db.select().from(schema.workItems).all();
+    expect(run("2026-11-16").taskId).toBe(taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toEqual(before);
+  });
+
+  it.each([
+    { terminal: "done", latest: "completed" }, { terminal: "cancelled", latest: "completed" },
+    { terminal: "done", latest: "deleted" }, { terminal: "cancelled", latest: "deleted" },
+  ])("retains legacy membership after opt-in and subsequent latest-instance lifecycle: %j", ({ terminal, latest }) => {
+    const legacy = syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: true, title: "Legacy check" })!;
+    if (terminal === "done") completeTask(handle.db, legacy.taskId, "leave_open");
+    else cancelTask(handle.db, legacy.taskId, "leave_open");
+    const newInstance = run("2026-11-09");
+    expect(newInstance.taskId).not.toBe(legacy.taskId);
+    if (latest === "deleted") handle.db.delete(schema.workItems).where(eq(schema.workItems.id, newInstance.taskId)).run();
+    else completeTask(handle.db, newInstance.taskId, "leave_open");
+    reopenTask(handle.db, legacy.taskId);
+    const before = handle.db.select().from(schema.workItems).all();
+    expect(run("2026-11-16").taskId).toBe(legacy.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toEqual(before);
+  });
+
+  it("keeps open occurrences unchanged across weeks and records skipped days", () => {
+    const first = run("2026-11-09");
+    updateTask(handle.db, first.taskId, { title: "Manuell angepasst", notes: "Eigene Notizen", scheduledDate: "2026-11-10" });
+    const before = handle.db.select().from(schema.workItems).get()!;
+    expect(run("2026-11-16").taskId).toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).get()).toEqual(before);
+    completeTask(handle.db, first.taskId, "leave_open");
+    expect(run("2026-11-16").taskId).toBe(first.taskId);
+    const next = run("2026-11-23");
+    expect(next.taskId).not.toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(2);
+  });
+
+  it.each(["done", "cancelled"])("leaves %s history terminal and creates one new dated occurrence", status => {
+    const first = run("2026-11-09");
+    if (status === "done") completeTask(handle.db, first.taskId, "leave_open");
+    else cancelTask(handle.db, first.taskId, "leave_open");
+    const before = handle.db.select().from(schema.workItems).get()!;
+    expect(run("2026-11-09").taskId).toBe(first.taskId);
+    const next = run("2026-11-16");
+    expect(next.taskId).not.toBe(first.taskId);
+    expect(run("2026-11-16").taskId).toBe(next.taskId);
+    expect(handle.db.select().from(schema.workItems).all().find(t => t.id === first.taskId)).toEqual(before);
+    expect(handle.db.select().from(schema.workItems).all().find(t => t.id === next.taskId))
+      .toMatchObject({ scheduledDate: "2026-11-16", dueDate: null, repeatAfterDays: null });
+    expect(run("2026-11-09").taskId).toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(2);
+  });
+
+  it("finds a reopened earlier occurrence even after the current occurrence was completed", () => {
+    const first = run("2026-11-09"); completeTask(handle.db, first.taskId, "leave_open");
+    const second = run("2026-11-16"); completeTask(handle.db, second.taskId, "leave_open");
+    reopenTask(handle.db, first.taskId);
+    expect(run("2026-11-23").taskId).toBe(first.taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(2);
+  });
+
+  it("rejects an unseen stale occurrence without creating past work", () => {
+    run("2026-11-16");
+    expect(() => run("2026-11-09")).toThrow();
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+  });
+
+  it("uses one ISO week identity when execution moves to another weekday", () => {
+    const first = run("2026-11-10", { occurrenceKey: "2026-W46" });
+    completeTask(handle.db, first.taskId, "leave_open");
+    expect(run("2026-11-11", { occurrenceKey: "2026-W46" }).taskId).toBe(first.taskId);
+    expect(run("2026-11-16", { occurrenceKey: "2026-W47" }).taskId).not.toBe(first.taskId);
+  });
+
+  it("preserves replay tombstones after deletion, but allows a later occurrence", () => {
+    const first = run("2026-11-09");
+    handle.db.delete(schema.workItems).where(eq(schema.workItems.id, first.taskId)).run();
+    expect(() => run("2026-11-09")).toThrow("deleted");
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    expect(run("2026-11-16").taskId).toBeGreaterThan(first.taskId);
+  });
+
+  it.each([
+    { relevant: false }, { scheduledDate: null }, { scheduledDate: "not-a-date" },
+    { reactivateCompleted: true }, { title: "" }, { occurrenceKey: " " },
+  ])("rejects invalid occurrence input without writes: %j", extra => {
+    const before = handle.sqlite.serialize();
+    expect(() => run("2026-11-09", extra)).toThrow();
+    expect(handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it("rolls creation and the receipt back on an invalid owner", () => {
+    expect(() => run("2026-11-09", { person: "person.unknown" })).toThrow();
+    expect(handle.db.select().from(schema.externalTaskOccurrences).all()).toHaveLength(0);
+    expect(handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+    expect(run("2026-11-09").taskId).toBeGreaterThan(0);
+  });
+
+  it("rejects undated legacy updates of an opted-in routine", () => {
+    run("2026-11-09");
+    expect(() => syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: false })).toThrow("occurrenceKey");
+  });
 
   it("creates idempotently and reconciles only supplied fields", () => {
     const first = syncExternalTask(handle.db, integrationId, {

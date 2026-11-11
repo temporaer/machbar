@@ -345,6 +345,24 @@ async def test_sync_task_service_maps_reactivation_and_note_options(hass):
         await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_sync_task_service_forwards_week_identity_without_due_date(hass):
+    entry = _entry()
+    entry.add_to_hass(hass)
+    with patch("custom_components.machbar.client.MachbarClient.push_snapshot", AsyncMock()), patch("custom_components.machbar.client.MachbarClient.sync_task", AsyncMock()) as sync, patch("custom_components.machbar.worker.RequestWorker.async_start", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.services.async_call(DOMAIN, "sync_task", {
+            "config_entry_id": entry.entry_id, "source_key": "example:weekly-check",
+            "occurrence_key": "2026-W46", "relevant": True, "title": "Weekly check",
+            "scheduled_date": "2026-11-10",
+        }, blocking=True)
+        payload = sync.await_args.args[0]
+        assert payload["occurrenceKey"] == "2026-W46"
+        assert payload["scheduledDate"] == "2026-11-10"
+        assert "dueDate" not in payload
+        assert payload["reactivateCompleted"] is False
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_sync_task_service_maps_deadline_reminders_and_omits_them_when_absent(hass):
     """Deadline reminder payloads use API casing and omitted values stay omitted."""
     entry = _entry()

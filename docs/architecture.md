@@ -2373,3 +2373,40 @@ viewer-aware graph and omits that optional snapshot if an ancestor is hidden,
 while preserving the readable child document and authorized direct activation.
 The regression matrix exercises reads, stale/fresh deadline writes and visible/
 hidden ancestors, including unchanged database and notification state.
+
+### Externally triggered routine instances
+
+`machbar.sync_task` keeps its existing reconciliation behavior when
+`occurrence_key` is omitted. Opting in uses the stable `source_key` as a routine
+identity and a separate occurrence key (for example an ISO year/week).
+`scheduled_date` remains the actual execution day; no recurrence or deadline is
+inferred. The HA client checks authenticated `GET /tasks/sync` for
+`occurrenceKeys: true` before posting, so old/unreachable servers cannot silently
+accept the new field as ordinary reconciliation.
+
+The existing `syncExternalTask` transaction looks up an occurrence receipt first,
+rejects unseen older/same-day occurrences, then finds open tasks among both the
+stable link, durable routine membership and all historical receipts. An open instance is retained unchanged
+and associated with the new occurrence; completing it later that day still does
+not create another. With no open instance the canonical `createTask` path creates
+a new task and advances the stable link, preserving previous tasks and their
+completion/cancellation history. Legacy sync calls against an opted-in routine
+are rejected. Deleted tasks leave receipt tombstones; the same occurrence cannot
+resurrect them. A reopened historical task participates in subsequent open-work
+checks. Adopting a legacy source records the old target in `external_task_routine_members`
+before advancing its stable link, so even a later reopen after deletion of the
+newer instance remains visible. Converted task/project members make occurrence
+sync fail closed, including historical conversions, rather than duplicating the
+preserved child action. Canonical task-to-project conversion also records routine
+membership on its preserved action step in the same transaction, from links,
+receipts and prior membership (including legacy and historical sources). Deleting
+the converted project with “keep tasks” therefore retains the open routine work;
+its old receipt remains a deletion tombstone. Deleting the whole subtree removes
+the work and permits a later new occurrence. The lookup, membership, creation and receipt commit together; no model decides
+uniqueness. This adds migration 0032, with chained snapshot metadata.
+
+Scheduling and eligibility remain the caller's responsibility in Home Assistant.
+Machbar stores routine and occurrence identity; it does not evaluate school
+calendars, weekdays or execution windows. Deploy server API 0.27.0 (root 0.38.0)
+before updating HA component 0.9.0 and restarting Home Assistant. Existing
+non-occurrence sync calls remain compatible.

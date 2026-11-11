@@ -88,12 +88,27 @@ def _sync_task_schema() -> vol.Schema:
             )
         return value
 
+    def validate_occurrence(value: dict[str, Any]) -> dict[str, Any]:
+        if "occurrence_key" in value and (
+            not value["occurrence_key"].strip()
+            or not value["relevant"]
+            or not value.get("title", "").strip()
+            or not value.get("scheduled_date")
+            or value.get("reactivate_completed") is True
+        ):
+            raise vol.Invalid(
+                "Routine occurrences require relevant=true, a title, scheduled_date "
+                "and a nonempty occurrence_key, without reactivate_completed."
+            )
+        return value
+
     return vol.Schema(
         vol.All(
             {
                 vol.Required("config_entry_id"): str,
                 vol.Required("source_key"): selector.TemplateSelector(),
                 vol.Required("relevant"): bool,
+                vol.Optional("occurrence_key"): vol.All(str, vol.Length(min=1, max=128)),
                 vol.Optional("title"): str,
                 vol.Optional("person"): vol.Any(
                     selector.EntitySelector(
@@ -117,6 +132,7 @@ def _sync_task_schema() -> vol.Schema:
                 vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
             },
             validate_sync_task_availability,
+            validate_occurrence,
         )
     )
 
@@ -154,6 +170,7 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
             "relevant": call.data["relevant"],
         }
         for source, target_name in (
+            ("occurrence_key", "occurrenceKey"),
             ("title", "title"),
             ("person", "person"),
             ("scheduled_date", "scheduledDate"),

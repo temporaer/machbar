@@ -1,5 +1,6 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { TaskReminderInput, TaskSize } from "@machbar/shared";
+import { isIsoCalendarDate } from "./calendarDate.js";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -9,6 +10,8 @@ import { cancelTask, reopenTask } from "./taskWorkflow.js";
 export interface ExternalTaskSyncInput {
   sourceKey: string;
   relevant: boolean;
+  /** Stable occurrence identity (e.g. ISO week), independent of execution date. */
+  occurrenceKey?: string;
   title?: string;
   person?: string | null;
   scheduledDate?: string | null;
@@ -222,6 +225,13 @@ export function syncExternalTask(
   integrationId: number,
   input: ExternalTaskSyncInput,
 ) {
+  if (input.occurrenceKey !== undefined && (
+    !input.occurrenceKey.trim() || input.occurrenceKey.length > 128 || !input.relevant ||
+    !input.scheduledDate || !isIsoCalendarDate(input.scheduledDate) || !input.title?.trim() ||
+    input.reactivateCompleted === true
+  )) {
+    throw AppError.badRequest("malformed_request", "A routine occurrence requires relevant=true, a title, scheduledDate and a nonempty occurrenceKey, with no reactivation.");
+  }
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const existing = tx
@@ -234,6 +244,58 @@ export function syncExternalTask(
         ),
       )
       .get();
+
+    const routineWhere = and(
+      eq(schema.externalTaskOccurrences.source, SOURCE),
+      eq(schema.externalTaskOccurrences.sourceKey, input.sourceKey),
+    );
+    const recordOccurrence = (taskId: number) => {
+      tx.insert(schema.externalTaskOccurrences).values({
+        source: SOURCE, sourceKey: input.sourceKey, occurrenceKey: input.occurrenceKey!,
+        scheduledDate: input.scheduledDate!, taskId,
+      }).run();
+      // Preserve the legacy target before the stable link advances. This is
+      // membership, not a fabricated past occurrence or execution date.
+      const memberIds = [...new Set([taskId, ...(existing ? [existing.taskId] : [])])];
+      tx.insert(schema.externalTaskRoutineMembers).values(memberIds.map(id => ({
+        source: SOURCE, sourceKey: input.sourceKey, taskId: id,
+      }))).onConflictDoNothing().run();
+    };
+    if (input.occurrenceKey !== undefined) {
+      const receipts = tx.select().from(schema.externalTaskOccurrences)
+        .where(routineWhere).orderBy(desc(schema.externalTaskOccurrences.scheduledDate)).all();
+      const prior = receipts.find(r => r.occurrenceKey === input.occurrenceKey);
+      if (prior) {
+        if (prior.taskId === null) throw AppError.notFound("task_not_found", "The routine occurrence was deleted.");
+        const task = tx.select().from(schema.workItems).where(eq(schema.workItems.id, prior.taskId)).get();
+        if (!task || task.role !== "task") throw AppError.notFound("task_not_found", "The routine occurrence is no longer a task.");
+        return { taskId: task.id, state: "active" as const };
+      }
+      if (receipts[0] && input.scheduledDate! <= receipts[0].scheduledDate) {
+        throw AppError.conflict("stale_write_conflict", "An older unseen routine occurrence cannot be backfilled.");
+      }
+      const members = tx.select({ taskId: schema.externalTaskRoutineMembers.taskId })
+        .from(schema.externalTaskRoutineMembers).where(and(
+          eq(schema.externalTaskRoutineMembers.source, SOURCE),
+          eq(schema.externalTaskRoutineMembers.sourceKey, input.sourceKey),
+        )).all();
+      const ids = [...new Set([
+        ...receipts.map(r => r.taskId).filter((id): id is number => id !== null),
+        ...members.map(member => member.taskId), ...(existing ? [existing.taskId] : []),
+      ])];
+      const tracked = ids.length === 0 ? [] : tx.select().from(schema.workItems)
+        .where(inArray(schema.workItems.id, ids)).orderBy(asc(schema.workItems.id)).all();
+      if (tracked.some(item => item.role !== "task")) {
+        throw AppError.notFound("task_not_found", "A routine instance is no longer a task. Resolve its project conversion before synchronizing new occurrences.");
+      }
+      const open = tracked.find(item => item.status !== "done" && item.status !== "cancelled");
+      if (open) {
+        recordOccurrence(open.id);
+        return { taskId: open.id, state: "active" as const };
+      }
+    } else if (tx.select().from(schema.externalTaskOccurrences).where(routineWhere).get()) {
+      throw AppError.badRequest("malformed_request", "A routine cannot be reconciled without occurrenceKey.");
+    }
 
     if (!input.relevant) {
       if (!existing) return null;
@@ -288,7 +350,7 @@ export function syncExternalTask(
       return { taskId: existing.taskId, state: "withdrawn" as const };
     }
 
-    if (!existing) {
+    if (!existing || input.occurrenceKey !== undefined) {
       if (input.title === undefined) {
         throw AppError.badRequest(
           "external_task_title_required",
@@ -320,16 +382,14 @@ export function syncExternalTask(
           timezone: reminder.timezone,
         })),
       });
-      const link = tx
-        .insert(schema.externalTaskLinks)
-        .values({
-          source: SOURCE,
-          sourceKey: input.sourceKey,
-          taskId: task.id,
-          state: "active",
-        })
-        .returning()
-        .get();
+      // Move only the stable pointer; receipts preserve earlier task identities.
+      const link = existing
+        ? tx.update(schema.externalTaskLinks).set({ taskId: task.id, state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
+          .where(eq(schema.externalTaskLinks.id, existing.id)).returning().get()!
+        : tx.insert(schema.externalTaskLinks).values({ source: SOURCE, sourceKey: input.sourceKey, taskId: task.id, state: "active" }).returning().get();
+      if (existing) tx.delete(schema.externalTaskLinkManagedReminders)
+        .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, existing.id)).run();
+      if (input.occurrenceKey !== undefined) recordOccurrence(task.id);
       const requested = managedReminderRequest(input);
       if (requested && requested.reminders.length > 0) {
         const reminderRows = tx

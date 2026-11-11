@@ -294,6 +294,49 @@ describe("Home Assistant physical contexts", () => {
     });
   });
 
+  it("advertises occurrence support only to the paired HA client and preserves week identity over HTTP", async () => {
+    const { token } = await connect();
+    const url = "/api/integrations/home-assistant/tasks/sync";
+    expect((await ctx.app.inject({ method: "GET", url })).statusCode).toBe(401);
+    const capability = await ctx.app.inject({ method: "GET", url, headers: { authorization: `Bearer ${token}` } });
+    expect(capability.statusCode).toBe(200);
+    expect(capability.json()).toEqual({ occurrenceKeys: true });
+    const input = { sourceKey: "example:weekly-check", occurrenceKey: "2026-W46", relevant: true, title: "Weekly check", scheduledDate: "2026-11-10" };
+    const first = await post(url, input, token);
+    expect(first.statusCode, first.body).toBe(200);
+    const repeated = await post(url, { ...input, scheduledDate: "2026-11-11" }, token);
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json().taskId).toBe(first.json().taskId);
+    expect(ctx.handle.db.select().from(schema.workItems).get()).toMatchObject({ scheduledDate: "2026-11-10", dueDate: null });
+    const invalid = await post(url, { ...input, occurrenceKey: "2026-W47", reactivateCompleted: true }, token);
+    expect(invalid.statusCode).toBe(400);
+    expect(ctx.handle.db.select().from(schema.externalTaskOccurrences).all()).toHaveLength(1);
+  });
+
+  it("rejects converted routine members through the paired public endpoint without writes", async () => {
+    const { token } = await connect();
+    const url = "/api/integrations/home-assistant/tasks/sync";
+    const input = { sourceKey: "example:converted-routine", occurrenceKey: "2026-W46", relevant: true, title: "Weekly check", scheduledDate: "2026-11-09" };
+    const created = await post(url, input, token);
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().taskId;
+    const owner = (await post("/api/members", { name: "Owner" })).json();
+    const updated = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${id}`, payload: { ownerMemberId: owner.id, ownerInheritanceMode: "explicit", expectedRevision: 1 } });
+    expect(updated.statusCode, updated.body).toBe(200);
+    const conversion = await post(`/api/tasks/${id}/convert-to-story`, {
+      status: "active", expectedRevision: updated.json().revision,
+      activationResolution: { expectedProjects: [{ projectId: id, revision: updated.json().revision }], drivers: [] },
+    });
+    expect(conversion.statusCode, conversion.body).toBe(201);
+    const before = ctx.handle.sqlite.serialize();
+    for (const occurrence of [{ occurrenceKey: "2026-W46", scheduledDate: "2026-11-09" }, { occurrenceKey: "2026-W47", scheduledDate: "2026-11-16" }]) {
+      const result = await post(url, { ...input, ...occurrence }, token);
+      expect(result.statusCode, result.body).toBe(404);
+      expect(result.json().error.code).toBe("task_not_found");
+      expect(ctx.handle.sqlite.serialize()).toEqual(before);
+    }
+  });
+
   it("returns 204 without creating a task for an unknown irrelevant source", async () => {
     const token = await connect();
     const response = await post(

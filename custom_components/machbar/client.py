@@ -80,6 +80,12 @@ class MachbarClient:
         await self._post(CONTEXT_PATH, snapshot, authenticated=True)
 
     async def sync_task(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        if "occurrenceKey" in payload:
+            capabilities = await self._json(await self._request(
+                "GET", SYNC_TASK_PATH, authenticated=True
+            ))
+            if capabilities.get("occurrenceKeys") is not True:
+                raise UnsupportedVersion
         response = await self._post(SYNC_TASK_PATH, payload, authenticated=True)
         if response.status == 204:
             response.release()

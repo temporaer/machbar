@@ -92,3 +92,23 @@ async def test_python_client_rejects_real_api_invalid_auth(live_api):
     client = MachbarClient(session, origin, "invalid_test_token")
     with pytest.raises(InvalidAuth):
         await client.next_request(0)
+
+
+async def test_python_occurrence_client_preserves_completed_history_and_week_identity(live_api):
+    session, origin = live_api
+    async with session.post(origin + "/api/integrations/home-assistant/pairing-code", json={}) as response:
+        code = (await response.json())["code"]
+    pairing = await MachbarClient(session, origin).pair(code)
+    client = MachbarClient(session, origin, pairing["token"])
+    payload = {"sourceKey": "example:weekly-check", "occurrenceKey": "2026-W46", "relevant": True, "title": "Weekly check", "scheduledDate": "2026-11-10"}
+    first = await client.sync_task(payload)
+    assert (await client.sync_task({**payload, "scheduledDate": "2026-11-11"}))["taskId"] == first["taskId"]
+    async with session.get(origin + f"/api/tasks/{first['taskId']}") as response:
+        task = await response.json()
+    async with session.post(origin + f"/api/tasks/{first['taskId']}/complete", json={"expectedRevision": task["revision"]}) as response:
+        assert response.status == 200, await response.text()
+    second = await client.sync_task({**payload, "occurrenceKey": "2026-W47", "scheduledDate": "2026-11-16"})
+    assert second["taskId"] != first["taskId"]
+    assert (await client.sync_task(payload))["taskId"] == first["taskId"]
+    async with session.get(origin + f"/api/tasks/{first['taskId']}") as response:
+        assert (await response.json())["status"] == "done"

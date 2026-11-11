@@ -77,6 +77,7 @@ const managedDeadlineRemindersSchema = z
 export const homeAssistantSyncTaskSchema = z
   .object({
     sourceKey: z.string().min(1),
+    occurrenceKey: z.string().trim().min(1).max(128).optional(),
     relevant: z.boolean(),
     title: z.string().min(1).optional(),
     person: z.string().min(1).nullable().optional(),
@@ -92,6 +93,9 @@ export const homeAssistantSyncTaskSchema = z
     size: z.enum(taskSizes).nullable().optional(),
   })
   .superRefine((input, context) => {
+    if (input.occurrenceKey !== undefined && (!input.relevant || !input.title?.trim() || !input.scheduledDate || input.reactivateCompleted === true)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["occurrenceKey"], message: "Routine occurrences require a title, relevant=true, scheduledDate and no reactivation." });
+    }
     if (input.deadlineReminder !== undefined && input.deadlineReminders !== undefined) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

@@ -68,6 +68,10 @@
         "size": {
           "name": "Größe",
           "description": "Aufgabengröße."
+        },
+        "occurrence_key": {
+          "name": "Routine-Instanz",
+          "description": "Stabile Instanzkennung, z. B. 2026-W46. Offene Aufgaben bleiben erhalten; erledigte werden nicht wieder geöffnet. scheduled_date ist der tatsächliche Ausführungstag."
         }
       }
     }

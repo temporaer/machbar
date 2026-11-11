@@ -9,6 +9,11 @@ sync_task:
       required: true
       selector:
         template:
+    occurrence_key:
+      name: Routine occurrence key
+      description: "Optional: source_key identifies the routine, occurrence_key its week/event (e.g. 2026-W46), scheduled_date the actual execution day. Retains open work and creates new tasks without reopening history. Update server first."
+      selector:
+        text:
     relevant:
       required: true
       selector:
