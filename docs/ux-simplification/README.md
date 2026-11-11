@@ -64,6 +64,14 @@ approved. Search and maintenance work should not delay correctness repair.
   subsequent recovery effort and the 2026-11-08 decision to restart from merged
   #252. Preserves regression evidence and rejected approaches, with a narrow
   backend/Activation tranche; the original audit above remains unchanged.
+- [TanStack Query migration plan](query-migration-plan.md): replacement-first
+  ownership migration from merged #263/#264, starting with a Project-resource
+  deletion map and LOC budget; separate from the historical UX audit above.
+- [Query Step 1 map and budget](query-migration-step-1.md): current owners,
+  affected callers, replace/delete boundaries and the pre-implementation verdict.
+- [Whole-migration deletion budget](query-migration-budget.md): named end-state
+  removals and replacement costs, counting shared setup once and allowing
+  temporary Project-pilot growth under the revised, approved acceptance gate.
 
 ## Evidence limits
 
