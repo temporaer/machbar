@@ -2397,7 +2397,12 @@ checks. Adopting a legacy source records the old target in `external_task_routin
 before advancing its stable link, so even a later reopen after deletion of the
 newer instance remains visible. Converted task/project members make occurrence
 sync fail closed, including historical conversions, rather than duplicating the
-preserved child action. The lookup, membership, creation and receipt commit together; no model decides
+preserved child action. Canonical task-to-project conversion also records routine
+membership on its preserved action step in the same transaction, from links,
+receipts and prior membership (including legacy and historical sources). Deleting
+the converted project with “keep tasks” therefore retains the open routine work;
+its old receipt remains a deletion tombstone. Deleting the whole subtree removes
+the work and permits a later new occurrence. The lookup, membership, creation and receipt commit together; no model decides
 uniqueness. This adds migration 0032, with chained snapshot metadata.
 
 Scheduling and eligibility remain the caller's responsibility in Home Assistant.

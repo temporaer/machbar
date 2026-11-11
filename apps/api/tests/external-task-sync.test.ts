@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { syncExternalTask } from "../src/domain/externalTaskSync.js";
 import { updateTask } from "../src/domain/taskCrud.js";
+import { deleteProject } from "../src/domain/storyCrud.js";
 import { convertTaskToStory } from "../src/domain/roleConversion.js";
 import { cancelTask, completeTask, reopenTask } from "../src/domain/taskWorkflow.js";
 import { createTestDatabase } from "./database.js";
@@ -46,6 +47,14 @@ describe("Home Assistant external task reconciliation", () => {
     scheduledDate: day, occurrenceKey: day, notes: "Routinebeschreibung", ...extra,
   } as Parameters<typeof syncExternalTask>[2])!;
 
+  const convert = (taskId: number) => {
+    const task = updateTask(handle.db, taskId, { ownerMemberId: memberId, ownerInheritanceMode: "explicit" });
+    convertTaskToStory(handle.db, taskId, {
+      status: "active", expectedRevision: task.revision,
+      activationResolution: { expectedProjects: [{ projectId: task.id, revision: task.revision }], drivers: [] },
+    });
+  };
+
   it.each(["current", "historical", "legacy"])("rejects converted %s routine instances without creating duplicate work", stage => {
     const first = stage === "legacy"
       ? syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: true, title: "Weekly check", scheduledDate: "2026-11-09" })!
@@ -56,15 +65,60 @@ describe("Home Assistant external task reconciliation", () => {
       completeTask(handle.db, second.taskId, "leave_open");
       reopenTask(handle.db, first.taskId);
     }
-    const task = updateTask(handle.db, first.taskId, { ownerMemberId: memberId, ownerInheritanceMode: "explicit" });
-    convertTaskToStory(handle.db, first.taskId, {
-      status: "active", expectedRevision: task.revision,
-      activationResolution: { expectedProjects: [{ projectId: task.id, revision: task.revision }], drivers: [] },
-    });
+    convert(first.taskId);
     expect(handle.db.select().from(schema.workItems).all().some(t => t.parentId === first.taskId && t.role === "task")).toBe(true);
     const before = handle.sqlite.serialize();
     expect(() => run("2026-11-23")).toThrow("no longer a task");
     expect(handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it.each([
+    { stage: "current", deleteTasks: false }, { stage: "historical", deleteTasks: false },
+    { stage: "legacy", deleteTasks: false }, { stage: "current", deleteTasks: true },
+    { stage: "historical", deleteTasks: true }, { stage: "legacy", deleteTasks: true },
+  ])("preserves routine work across conversion and project deletion: %j", ({ stage, deleteTasks }) => {
+    const first = stage === "legacy"
+      ? syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: true, title: "Weekly check", scheduledDate: "2026-11-09" })!
+      : run("2026-11-09");
+    if (stage === "historical") {
+      completeTask(handle.db, first.taskId, "leave_open");
+      const second = run("2026-11-16");
+      completeTask(handle.db, second.taskId, "leave_open");
+      reopenTask(handle.db, first.taskId);
+    }
+    convert(first.taskId);
+    const preserved = handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, first.taskId)).get()!;
+    expect(preserved.role).toBe("task");
+    deleteProject(handle.db, first.taskId, { deleteTasks });
+    const before = handle.db.select().from(schema.workItems).all();
+    const next = run("2026-11-23");
+    if (deleteTasks) {
+      expect(next.taskId).not.toBe(preserved.id);
+    } else {
+      expect(next.taskId).toBe(preserved.id);
+      expect(handle.db.select().from(schema.workItems).all()).toEqual(before);
+      completeTask(handle.db, preserved.id, "leave_open");
+      expect(run("2026-11-23").taskId).toBe(preserved.id);
+      expect(run("2026-11-30").taskId).not.toBe(preserved.id);
+    }
+    if (stage !== "legacy") {
+      const snapshot = handle.sqlite.serialize();
+      expect(() => run("2026-11-09")).toThrow("deleted");
+      expect(handle.sqlite.serialize()).toEqual(snapshot);
+    }
+  });
+
+  it("keeps membership through repeated conversions after the original link and receipt target disappear", () => {
+    let taskId = run("2026-11-09").taskId;
+    for (let index = 0; index < 3; index++) {
+      convert(taskId);
+      const child = handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, taskId)).get()!;
+      deleteProject(handle.db, taskId);
+      taskId = child.id;
+    }
+    const before = handle.db.select().from(schema.workItems).all();
+    expect(run("2026-11-16").taskId).toBe(taskId);
+    expect(handle.db.select().from(schema.workItems).all()).toEqual(before);
   });
 
   it.each([

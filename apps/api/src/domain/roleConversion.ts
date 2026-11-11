@@ -310,6 +310,23 @@ export function convertTaskToStoryInTransaction(
         position: nextPositionForGroup(txDb, null, project.id),
       });
       preservedStepId = preserved.id;
+      // Keep the preserved work associated with its external routine even if
+      // the converted container is later deleted with "keep tasks". Retain the
+      // container membership too: synchronization still fails closed while it
+      // exists, and old occurrence receipts keep their original identity.
+      const routineIdentities = [
+        ...txDb.select({ source: schema.externalTaskLinks.source, sourceKey: schema.externalTaskLinks.sourceKey })
+          .from(schema.externalTaskLinks).where(eq(schema.externalTaskLinks.taskId, taskId)).all(),
+        ...txDb.select({ source: schema.externalTaskOccurrences.source, sourceKey: schema.externalTaskOccurrences.sourceKey })
+          .from(schema.externalTaskOccurrences).where(eq(schema.externalTaskOccurrences.taskId, taskId)).all(),
+        ...txDb.select({ source: schema.externalTaskRoutineMembers.source, sourceKey: schema.externalTaskRoutineMembers.sourceKey })
+          .from(schema.externalTaskRoutineMembers).where(eq(schema.externalTaskRoutineMembers.taskId, taskId)).all(),
+      ];
+      if (routineIdentities.length > 0) {
+        txDb.insert(schema.externalTaskRoutineMembers)
+          .values(routineIdentities.map(identity => ({ ...identity, taskId: preserved.id })))
+          .onConflictDoNothing().run();
+      }
       if (explicitPhysicalContexts.length > 0) {
         txDb.insert(schema.workItemPhysicalContexts).values(
           explicitPhysicalContexts.map(({ contextId }) => ({
