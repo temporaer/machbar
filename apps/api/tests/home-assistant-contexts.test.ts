@@ -301,7 +301,7 @@ describe("Home Assistant physical contexts", () => {
     const capability = await ctx.app.inject({ method: "GET", url, headers: { authorization: `Bearer ${token}` } });
     expect(capability.statusCode).toBe(200);
     expect(capability.json()).toEqual({ occurrenceKeys: true });
-    const input = { sourceKey: "school:lars:weekly", occurrenceKey: "2026-W46", relevant: true, title: "Wochenplan", scheduledDate: "2026-11-10" };
+    const input = { sourceKey: "example:weekly-check", occurrenceKey: "2026-W46", relevant: true, title: "Weekly check", scheduledDate: "2026-11-10" };
     const first = await post(url, input, token);
     expect(first.statusCode, first.body).toBe(200);
     const repeated = await post(url, { ...input, scheduledDate: "2026-11-11" }, token);

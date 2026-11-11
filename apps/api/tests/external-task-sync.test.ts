@@ -41,11 +41,11 @@ describe("Home Assistant external task reconciliation", () => {
   afterEach(() => handle.close());
 
   const run = (day: string, extra = {}) => syncExternalTask(handle.db, integrationId, {
-    sourceKey: "school:lars:weekplan", relevant: true, title: "Wochenplan prüfen",
+    sourceKey: "example:weekly-check", relevant: true, title: "Weekly check",
     scheduledDate: day, occurrenceKey: day, notes: "Routinebeschreibung", ...extra,
   } as Parameters<typeof syncExternalTask>[2])!;
 
-  it("keeps open occurrences unchanged across school weeks and records skipped days", () => {
+  it("keeps open occurrences unchanged across weeks and records skipped days", () => {
     const first = run("2026-11-09");
     updateTask(handle.db, first.taskId, { title: "Manuell angepasst", notes: "Eigene Notizen", scheduledDate: "2026-11-10" });
     const before = handle.db.select().from(schema.workItems).get()!;
@@ -88,7 +88,7 @@ describe("Home Assistant external task reconciliation", () => {
     expect(handle.db.select().from(schema.workItems).all()).toHaveLength(1);
   });
 
-  it("uses one ISO week identity even when its first school day is Tuesday", () => {
+  it("uses one ISO week identity when execution moves to another weekday", () => {
     const first = run("2026-11-10", { occurrenceKey: "2026-W46" });
     completeTask(handle.db, first.taskId, "leave_open");
     expect(run("2026-11-11", { occurrenceKey: "2026-W46" }).taskId).toBe(first.taskId);
@@ -121,7 +121,7 @@ describe("Home Assistant external task reconciliation", () => {
 
   it("rejects undated legacy updates of an opted-in routine", () => {
     run("2026-11-09");
-    expect(() => syncExternalTask(handle.db, integrationId, { sourceKey: "school:lars:weekplan", relevant: false })).toThrow("occurrenceKey");
+    expect(() => syncExternalTask(handle.db, integrationId, { sourceKey: "example:weekly-check", relevant: false })).toThrow("occurrenceKey");
   });
 
   it("creates idempotently and reconciles only supplied fields", () => {

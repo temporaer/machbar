@@ -2396,16 +2396,8 @@ resurrect them. A reopened historical task participates in subsequent open-work
 checks. The lookup, creation and receipt commit together; no model decides
 uniqueness. This adds migration 0032, with chained snapshot metadata.
 
-The deployable school example is in
-`docs/examples/home-assistant-school-routines.yaml`. It uses existing BW raw
-ferien/holiday sensors, their combined binary sensor and the configured BW
-Workday sensor. All must have known values; raw-source failures cannot be hidden
-by the combined binary sensor's `off` fallback. Locally configured bridge/movable
-days are honored; the state-wide feed cannot infer a school's unconfigured days.
-The week-plan check runs on school weekdays from 16:00 until 20:00, including
-Tuesday after a Monday holiday. Friday mail/bags stays Friday-only. Quarter-hour
-retries and HA startup recover only the current day's window, never a backlog of
-past weeks. Script `dry_run: true` returns its intended payload without contacting
-Machbar; errors remain visible in the script/automation trace. Install server
-0.27.0 (root 0.38.0) before HA component 0.9.0, restart HA, replace the example's
-config-entry placeholder with the existing paired entry, then enable automations.
+Scheduling and eligibility remain the caller's responsibility in Home Assistant.
+Machbar stores routine and occurrence identity; it does not evaluate school
+calendars, weekdays or execution windows. Deploy server API 0.27.0 (root 0.38.0)
+before updating HA component 0.9.0 and restarting Home Assistant. Existing
+non-occurrence sync calls remain compatible.

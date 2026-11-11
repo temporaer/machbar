@@ -18,7 +18,7 @@ describe("durable upgrade, restart and restore", () => {
     ctx = createTestContext({ databasePath, dataDir: directory });
     const code = (await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pairing-code" })).json().code;
     const { token } = (await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pair", payload: { pairingCode: code, protocolVersion: 3 } })).json();
-    const request = { method: "POST" as const, url: "/api/integrations/home-assistant/tasks/sync", headers: { authorization: `Bearer ${token}` }, payload: { sourceKey: "school:lars", occurrenceKey: "2026-W46", relevant: true, title: "Week plan", scheduledDate: "2026-11-10" } };
+    const request = { method: "POST" as const, url: "/api/integrations/home-assistant/tasks/sync", headers: { authorization: `Bearer ${token}` }, payload: { sourceKey: "example:weekly-check", occurrenceKey: "2026-W46", relevant: true, title: "Weekly check", scheduledDate: "2026-11-10" } };
     const first = await ctx.app.inject(request);
     expect(first.statusCode, first.body).toBe(200);
     await ctx.handle.sqlite.backup(join(directory, "routine-backup.sqlite"));

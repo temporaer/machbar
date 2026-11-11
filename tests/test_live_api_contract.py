@@ -100,7 +100,7 @@ async def test_python_occurrence_client_preserves_completed_history_and_week_ide
         code = (await response.json())["code"]
     pairing = await MachbarClient(session, origin).pair(code)
     client = MachbarClient(session, origin, pairing["token"])
-    payload = {"sourceKey": "school:lars:weekplan", "occurrenceKey": "2026-W46", "relevant": True, "title": "Week plan", "scheduledDate": "2026-11-10"}
+    payload = {"sourceKey": "example:weekly-check", "occurrenceKey": "2026-W46", "relevant": True, "title": "Weekly check", "scheduledDate": "2026-11-10"}
     first = await client.sync_task(payload)
     assert (await client.sync_task({**payload, "scheduledDate": "2026-11-11"}))["taskId"] == first["taskId"]
     async with session.get(origin + f"/api/tasks/{first['taskId']}") as response:
