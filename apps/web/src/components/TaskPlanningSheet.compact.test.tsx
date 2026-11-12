@@ -10,6 +10,7 @@ import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import type { TaskPlanningTarget } from "../lib/commands";
+import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({ api: {
   previewTaskUpdate: vi.fn(),
@@ -154,7 +155,7 @@ describe("compact planning", () => {
       await user.click(screen.getByRole("button", { name: title }));
       await screen.findByRole("heading", { name: title, level: 1 });
       expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Weitere Optionen" }));
+      await user.click(screen.getByRole("button", { name: strings.detailMoreOptions }));
       await user.click(screen.getByRole("button", { name: "Erinnern am …" }));
       const inspectedPlanning = await screen.findByRole("dialog", { name: "Planung" });
       expect(within(inspectedPlanning).getByText(title, { selector: "p" })).toBeInTheDocument();

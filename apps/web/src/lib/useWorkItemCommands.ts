@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { startTransition, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 import type { ProjectWithActions } from "./api";
@@ -247,7 +247,12 @@ export function useWorkItemCommands() {
         case "task.open":
         case "workItem.open":
           if (command.type === "workItem.open" && command.workItem.role !== "task") {
-            navigate(`/projects/${command.workItem.id}`);
+            // Close with the router transition so a task deep-link's close
+            // effect cannot redirect to Today before navigation commits.
+            startTransition(() => {
+              taskDetail.close();
+              navigate(`/projects/${command.workItem.id}`);
+            });
             return;
           }
           if (taskWorkflow.current && taskWorkflow.current !== taskWorkflow.detailInspection?.planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {

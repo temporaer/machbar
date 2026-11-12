@@ -84,7 +84,7 @@ export function RecentActivity({
 
   return (
     <details
-      className="section contextual-activity"
+      className="section contextual-activity detail-history"
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >

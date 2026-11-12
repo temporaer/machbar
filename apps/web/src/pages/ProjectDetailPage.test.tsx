@@ -66,7 +66,16 @@ vi.mock("../lib/api", () => ({
 const mockedApi = vi.mocked(api, true);
 
 async function openDetailActions() {
-  await userEvent.click(await screen.findByRole("button", { name: "Aktionen" }));
+  await screen.findByRole("heading", { level: 1 });
+  await userEvent.click(detailActionsTrigger());
+}
+
+function detailActionsTrigger() {
+  return within(document.querySelector<HTMLElement>(".project-page-actions")!).getByRole("button", { name: strings.detailActions });
+}
+
+async function openStatusActions() {
+  await userEvent.click(screen.getByRole("button", { name: strings.changeProjectStatus }));
 }
 
 
@@ -238,28 +247,29 @@ describe("ProjectDetailPage task explanations", () => {
     mockedApi.completeProject.mockImplementation(() => new Promise((resolve, reject) => { finishWrite = resolve; failWrite = reject; }));
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByRole("heading", { name: original.title });
-    const status = screen.getByRole("button", { name: /Status.*Aktiv/ });
+    const status = screen.getByRole("button", { name: strings.changeProjectStatus });
     expect(status).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(status);
     expect(status).toHaveAttribute("aria-expanded", "true");
     await userEvent.click(within(screen.getByRole("group", { name: strings.status })).getByRole("button", { name: strings.completeProjectAction }));
-    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: strings.changeProjectStatus })).toBeDisabled();
     if (outcome === "write-failure") {
       await act(async () => failWrite(new Error("Write rejected")));
       expect(await screen.findByRole("alert")).toHaveTextContent("Write rejected");
-      expect(screen.getByRole("button", { name: /Status.*Aktiv/ })).toBeEnabled();
+      expect(screen.getByRole("button", { name: strings.changeProjectStatus })).toBeEnabled();
       return;
     }
     await act(async () => finishWrite(confirmed));
     await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: strings.changeProjectStatus })).toBeDisabled();
     if (outcome === "read-failure") {
       await act(async () => failRead(new Error("Refresh offline")));
       expect(await screen.findByRole("alert")).toHaveTextContent(strings.detailRefreshError);
       mockedApi.getProject.mockResolvedValue(confirmed);
       await userEvent.click(screen.getByRole("button", { name: strings.retry }));
     } else await act(async () => finishRead(confirmed));
-    expect(await screen.findByRole("button", { name: /Status.*Abgeschlossen/ })).toBeEnabled();
+    await waitFor(() => expect(screen.getByText(strings.projectStatusLabels.completed)).toHaveClass("detail-project-status"));
+    expect(screen.getByRole("button", { name: strings.changeProjectStatus })).toBeEnabled();
     expect(mockedApi.completeProject).toHaveBeenCalledOnce();
   });
 
@@ -483,7 +493,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(sparkles).toHaveAttribute("title", strings.workRefinement);
     await userEvent.click(within(actions).getByRole("button", { name: strings.edit }));
     expect(within(actions).getByRole("button", { name: strings.edit })).toBeDisabled();
-    expect(within(actions).getByRole("button", { name: "Aktionen" })).toBeEnabled();
+    expect(within(actions).getByRole("button", { name: strings.detailActions })).toBeEnabled();
     await userEvent.click(within(header).getByRole("button", { name: strings.cancel }));
     await userEvent.click(sparkles);
     const launcher = await screen.findByRole("dialog", { name: `${strings.workRefinement}: ${project.title}` });
@@ -535,7 +545,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders present project facts as direct controls including the clickable status badge", async () => {
+  it("renders project facts with contextual ownership and a read-only status beside its explicit action", async () => {
     const office = makeTag({ id: 10, name: "büro" });
     mockedApi.getTags.mockResolvedValue([office]);
     mockedApi.getProject.mockResolvedValue({
@@ -569,10 +579,11 @@ describe("ProjectDetailPage task explanations", () => {
 
     const overview = await screen.findByLabelText(strings.projectOverview);
     const statusBadge = within(overview).getByText("Aktiv");
-    expect(statusBadge.closest("button")).toHaveClass("detail-meta-status-button");
-    expect(statusBadge.closest("button")).not.toBeNull();
+    expect(statusBadge).toHaveClass("detail-project-status");
+    expect(statusBadge.closest("button")).toBeNull();
+    expect(within(overview).getByRole("button", { name: strings.changeProjectStatus })).toBeVisible();
     expect(
-      within(overview).getByRole("button", { name: /Verantwortlich.*Mira/ }),
+      within(overview).getByRole("button", {  name: /Projektverantwortung.*Mira/ }),
     ).toBeInTheDocument();
     expect(
       within(overview).getByRole("button", { name: /Fällig.*15\.09\.2026/ }),
@@ -660,12 +671,10 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
 
     const overview = await screen.findByLabelText(strings.projectOverview);
-    expect(within(overview).getByText("Aktiv").closest("button")).toHaveClass(
-      "detail-meta-status-button",
-    );
+    expect(within(overview).getByText("Aktiv").closest("button")).toBeNull();
     expect(within(overview).queryByText("Niemand zugewiesen")).not.toBeInTheDocument();
     expect(
-      within(overview).getByRole("button", { name: strings.addDriver }),
+      within(overview).getByRole("button", { name: `${strings.projectOwner} ${strings.addDriver}` }),
     ).toBeInTheDocument();
     expect(
       within(overview).getByRole("button", { name: strings.addDeadline }),
@@ -689,11 +698,11 @@ describe("ProjectDetailPage task explanations", () => {
     mockedApi.getProject.mockResolvedValue(project);
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { name: project.title });
-    expect(screen.getByRole("button", { name: strings.addDriver })).toBeVisible();
+    expect(screen.getByRole("button", { name: `${strings.projectOwner} ${strings.addDriver}` })).toBeVisible();
     expect(screen.getByRole("button", { name: strings.addDeadline })).toBeVisible();
     expect(screen.getByRole("button", { name: strings.addTags })).toBeVisible();
     expect(screen.getByRole("button", { name: strings.addContexts })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Weitere Optionen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: strings.detailMoreOptions })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Erst wieder anzeigen ab|Wartet auf|Erinnern am|Wiederholen alle|Priorität setzen|Kann erst beginnen nach|Geplant/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Wieder ansehen am/ }) !== null).toBe(status === "backlog");
     const outcome = screen.getByRole("heading", { name: strings.outcomeSectionTitle }).closest("section")!;
@@ -705,11 +714,20 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.getByText(/Aufgaben: 0 offen/)).toBeVisible();
     expect(screen.queryByRole("button", { name: strings.projectTasksTitle }) !== null).toBe(status === "active" || status === "backlog");
     await openDetailActions();
-    const menu = screen.getByRole("dialog", { name: "Aktionen" });
+    const menu = screen.getByRole("dialog", { name: strings.detailActions });
     for (const action of project.availableActions) {
-      expect(within(menu).getByRole("button", { name: projectWorkflowLabel(action, strings, status) })).toBeVisible();
+      expect(within(menu).queryByRole("button", { name: projectWorkflowLabel(action, strings, status) })).not.toBeInTheDocument();
     }
     expect(within(menu).queryByRole("button", { name: /Priorität|Wiederholen|Erinnern|Jetzt klären|weitere nächste Aktion/ })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole("button", { name: strings.detailEditStructure })).not.toBeInTheDocument();
+    await userEvent.click(within(menu).getByRole("button", { name: strings.close }));
+    await openStatusActions();
+    const lifecycle = screen.getByRole("group", { name: strings.status });
+    for (const action of project.availableActions) {
+      expect(within(lifecycle).getByRole("button", {
+        name: action === "complete" ? strings.completeProjectAction : projectWorkflowLabel(action, strings, status),
+      })).toBeVisible();
+    }
   });
 
   it("does not show a backlog revisit when the project is archived via archivedAt", async () => {
@@ -727,7 +745,7 @@ describe("ProjectDetailPage task explanations", () => {
     mockedApi.returnProjectToBacklog.mockResolvedValue({ ...project, status: "backlog", revision: 4, archivedAt: null });
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { name: project.title });
-    await openDetailActions();
+    await openStatusActions();
     await userEvent.click(screen.getByRole("button", { name: status === "active" ? strings.returnToBacklogStory : strings.restoreProjectToBacklog }));
     const dialog = await screen.findByRole("dialog", { name: status === "active" ? strings.deferProject : strings.restoreProjectToBacklog });
     expect(within(dialog).getByText(strings.projectDeferQuestion)).toBeVisible();
@@ -747,12 +765,33 @@ describe("ProjectDetailPage task explanations", () => {
     mockedApi.getProject.mockResolvedValue(project);
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { name: project.title });
-    await openDetailActions();
+    await openStatusActions();
     await userEvent.click(screen.getByRole("button", { name: strings.activateStory }));
     const dialog = await screen.findByRole("dialog", { name: strings.activateStory });
     expect(within(dialog).getByRole("combobox", { name: strings.commitmentDriverFor(project.title) })).toBeVisible();
     expect(within(dialog).getByRole("button", { name: strings.activateStory })).toBeDisabled();
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
+  });
+
+  it.each(["outcome", "structure"] as const)("keeps the %s heading action operable when collapsed", async (sectionKind) => {
+    const project = makeProject({ id: 42, title: "Collapsed project section" });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    renderProjectRoute("/projects/42");
+    await screen.findByRole("heading", { name: project.title });
+    const action = screen.getByRole("button", {
+      name: sectionKind === "outcome" ? strings.structureEditOutcome : strings.detailEditStructure,
+    });
+    const details = action.closest("section")!.querySelector("details")!;
+    await userEvent.click(details.querySelector("summary")!);
+    expect(details).not.toHaveAttribute("open");
+    expect(action).toBeVisible();
+    action.focus();
+    await userEvent.keyboard("{Enter}");
+    const dialog = await screen.findByRole("dialog", {
+      name: `${sectionKind === "outcome" ? strings.criteria : strings.structure}: ${project.title}`,
+    });
+    expect(dialog).toBeVisible();
+    expect(details).not.toHaveAttribute("open");
   });
 
   it("opens the canonical defer workflow from a backlog project's Wiedervorlage property", async () => {
@@ -814,11 +853,11 @@ describe("ProjectDetailPage task explanations", () => {
     if (kind === "context-rich") expect(within(notes).getByText("Keep the room dimensions and constraints in view.")).toBeVisible();
     if (kind === "nested") expect(within(section).getByText("Wände vorbereiten")).toBeVisible();
     expect(
-      within(section).getByRole("button", { name: strings.structure }),
+      within(section).getByRole("button", { name: strings.detailEditStructure }),
     ).toBeInTheDocument();
 
     await userEvent.click(
-      within(section).getByRole("button", { name: strings.structure }),
+      within(section).getByRole("button", { name: strings.detailEditStructure }),
     );
     expect(
       await screen.findByRole("dialog", {
@@ -833,7 +872,7 @@ describe("ProjectDetailPage task explanations", () => {
     const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
     const section = tasks.closest("section")!;
     await userEvent.click(
-      within(section).getByRole("button", { name: strings.structure }),
+      within(section).getByRole("button", { name: strings.detailEditStructure }),
     );
 
     const structureSheet = await screen.findByRole("dialog", {
@@ -926,7 +965,7 @@ describe("ProjectDetailPage task explanations", () => {
     const successor = within(section).getByRole("form", { name: strings.addSuccessor });
     expect(within(successor).getByPlaceholderText(strings.successorPlaceholder)).toBeVisible();
     await userEvent.click(within(successor).getByRole("button", { name: strings.cancel }));
-    await userEvent.click(within(section).getByRole("button", { name: strings.structure }));
+    await userEvent.click(within(section).getByRole("button", { name: strings.detailEditStructure }));
     const structure = await screen.findByRole("dialog", { name: `${strings.structure}: Long project` });
     await userEvent.click(within(structure).getByRole("button", { name: strings.projectTasksTitle }));
     expect(await screen.findByRole("dialog", { name: strings.projectTasksTitle })).toBeVisible();
@@ -943,7 +982,7 @@ describe("ProjectDetailPage task explanations", () => {
     const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
     const section = tasks.closest("section")!;
     await userEvent.click(
-      within(section).getByRole("button", { name: strings.structure }),
+      within(section).getByRole("button", { name: strings.detailEditStructure }),
     );
     const structureSheet = await screen.findByRole("dialog", {
       name: `${strings.structure}: Sommerfest planen`,
@@ -976,9 +1015,7 @@ describe("ProjectDetailPage task explanations", () => {
       const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
       const section = tasks.closest("section")!;
       expect(screen.queryByRole("button", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
-      expect(
-        within(section).queryByRole("button", { name: strings.structure }),
-      ).not.toBeInTheDocument();
+      expect(within(section).getByRole("button", { name: strings.detailEditStructure })).toBeVisible();
       unmount();
     }
   });
@@ -1108,16 +1145,16 @@ describe("ProjectDetailPage task explanations", () => {
     // While the canonical notes save is in flight, other mutating controls
     // for the same project are locked — but navigation stays usable.
     expect(
-      screen.getByRole("button", { name: /Verantwortlich/ }),
+      screen.getByRole("button", {  name: /Projektverantwortung/ }),
     ).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: /Status.*Wird gespeichert/ }),
+      screen.getByRole("button", { name: strings.changeProjectStatus }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ort reservieren" })).toBeEnabled();
     expect(screen.getByRole("button", { name: strings.workRefinement })).toBeDisabled();
     const opener = within(screen.getByLabelText(strings.projectOverview)).getByRole("button", { name: strings.projectTasksTitle });
     expect(opener).toBeDisabled();
-    expect(screen.getByRole("button", { name: strings.structure })).toBeDisabled();
+    expect(screen.getByRole("button", { name: strings.detailEditStructure })).toBeDisabled();
     await userEvent.click(opener);
     expect(screen.queryByRole("dialog", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
 
@@ -1129,11 +1166,11 @@ describe("ProjectDetailPage task explanations", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: /Verantwortlich/ }),
+        screen.getByRole("button", {  name: /Projektverantwortung/ }),
       ).toBeEnabled(),
     );
     expect(opener).toBeEnabled();
-    expect(screen.getByRole("button", { name: strings.structure })).toBeEnabled();
+    expect(screen.getByRole("button", { name: strings.detailEditStructure })).toBeEnabled();
   });
 
   it("marks the derived canonical Next Action, an eligible additional one, and a merely-marked-but-blocked task distinctly", async () => {
@@ -1200,7 +1237,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(notesSection).queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("shows status as a clickable badge that reveals only legal transitions", async () => {
+  it("reveals legal transitions only through the explicit Change status control", async () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
 
@@ -1208,7 +1245,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.queryByRole("group", { name: strings.status })).not.toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole("button", { name: new RegExp(`Status.*${strings.projectStatusLabels.active}`) }),
+      screen.getByRole("button", { name: strings.changeProjectStatus }),
     );
 
     const statuses = screen.getByRole("group", { name: strings.status });
@@ -1226,7 +1263,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Aktionen" }),
+      detailActionsTrigger(),
     );
     const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
     await userEvent.click(deleteButton);
@@ -1250,7 +1287,7 @@ describe("ProjectDetailPage task explanations", () => {
     await screen.findByText("Ort reservieren");
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Aktionen" }),
+      detailActionsTrigger(),
     );
     await userEvent.click(screen.getByRole("button", { name: strings.deleteProject }));
 
@@ -1267,12 +1304,12 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("separates destructive deletion inside the shared header action menu", async () => {
+  it("renders deletion as a regular red action row, not a separate dialog-like button", async () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
     await openDetailActions();
-    expect(screen.getByRole("button", { name: strings.deleteProject })).toHaveClass("btn-danger", "detail-menu-danger");
-    expect(screen.queryByRole("heading", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: strings.deleteProject })).toHaveClass("action-tile", "action-tile-danger");
+    expect(screen.getByRole("button", { name: strings.deleteProject })).not.toHaveClass("btn-danger");
   });
 
   it("shows Calendar export beside Share only for a dated Project", async () => {
@@ -1328,7 +1365,7 @@ describe("ProjectDetailPage task explanations", () => {
     const shareButton = await screen.findByRole("button", { name: "Teilen" });
     await userEvent.click(shareButton);
 
-    expect(within(screen.getByRole("dialog", { name: "Aktionen" })).getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");
+    expect(within(screen.getByRole("dialog", { name: strings.detailActions })).getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");
     expect(shareButton.closest(".native-share-control")?.querySelector("[role='status']")).toBeVisible();
   });
 
@@ -1336,11 +1373,11 @@ describe("ProjectDetailPage task explanations", () => {
     mockedApi.getProject.mockResolvedValue({ ...makeProject({ id: 42, title: "Attachment focus" }), tasks: [] });
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { name: "Attachment focus" });
-    const trigger = screen.getByRole("button", { name: "Aktionen" });
+    const trigger = detailActionsTrigger();
     await userEvent.click(trigger);
     await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
     const attachment = await screen.findByRole("dialog", { name: "Anhang" });
-    expect(screen.queryByRole("dialog", { name: "Aktionen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: strings.detailActions })).not.toBeInTheDocument();
     await userEvent.click(within(attachment).getByRole("button", { name: "Schließen" }));
     await waitFor(() => expect(trigger).toHaveFocus());
     expect(mockedApi.updateProject).not.toHaveBeenCalled();

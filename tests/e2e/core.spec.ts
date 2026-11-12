@@ -160,6 +160,102 @@ test("detail status control is visible on touch and desktop", async ({ page }) =
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${item.id}`)).json()).status).toBe("done");
 });
 
+test("detail documents retain heading actions, ownership and breadcrumb navigation at narrow and large-text sizes", async ({ page }, testInfo) => {
+  async function checkHeadingLayout(kind: "task" | "project") {
+    for (const [width, fontSize] of [[320, "100%"], [390, "100%"], [320, "200%"]] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(size => { document.documentElement.style.fontSize = size; }, fontSize);
+      for (const summary of await page.locator(".detail-history > summary").all()) {
+        expect(await summary.evaluate(node => {
+          const style = getComputedStyle(node);
+          return { weight: style.fontWeight, transform: style.textTransform };
+        })).toEqual({ weight: "500", transform: "none" });
+      }
+      for (const section of await page.locator(".detail-disclosure-with-actions").all()) {
+        const actionBounds = await section.locator(".detail-disclosure-actions button").boundingBox();
+        const headingBounds = await section.locator(".task-detail-disclosure-heading").boundingBox();
+        const summaryBounds = await section.locator("summary").boundingBox();
+        expect(actionBounds!.height).toBeGreaterThanOrEqual(44);
+        expect(actionBounds!.width).toBeGreaterThanOrEqual(44);
+        expect(headingBounds!.x + headingBounds!.width).toBeLessThanOrEqual(actionBounds!.x);
+        expect(actionBounds!.y).toBeGreaterThanOrEqual(summaryBounds!.y - 1);
+        expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(summaryBounds!.y + summaryBounds!.height + 1);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      if (kind === "task") {
+        expect(await page.getByRole("dialog").evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+      }
+      await page.locator(".detail-disclosure-with-actions").first().scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`${kind}-details-${width}-${fontSize}.png`), fullPage: true });
+    }
+    await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
+  }
+  await page.goto("/#/today");
+  const memberId = Number(await page.evaluate(() => localStorage.getItem("machbar:identity-member-id")));
+  const projectResponse = await page.request.post("/api/projects", {
+    data: { title: `Familienprojekt mit einem langen erklärenden Namen ${randomUUID()}`, ownerMemberId: memberId },
+  });
+  expect(projectResponse.status()).toBe(201);
+  const project = await projectResponse.json();
+  const item = await task(page, {
+    projectId: project.id, ownerInheritanceMode: "inherit", repeatAfterDays: 7, allowedDeviationDays: 0,
+    scheduledDate: "2099-05-10",
+    title: `Eine ausführlich beschriebene Aufgabe ${randomUUID()}`,
+  });
+  await page.goto(`/#/tasks/${item.id}`);
+  await expect(page.getByText("Vom Projekt geerbt", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Aufgabenverantwortung/ })).toBeVisible();
+  await expect(page.locator(".detail-history")).toHaveCount(2);
+  for (const history of await page.locator(".detail-history").all()) {
+    await expect(history).not.toHaveAttribute("open");
+  }
+  const taskStructure = page.getByRole("button", { name: "Struktur bearbeiten", exact: true });
+  await expect(taskStructure).toBeVisible();
+  await expect(taskStructure.locator("..").locator("..").locator("details")).not.toHaveAttribute("open");
+  await checkHeadingLayout("task");
+  const taskActions = page.getByRole("dialog").getByRole("button", { name: "Weitere Aktionen", exact: true });
+  await taskActions.click();
+  const deleteAction = page.getByRole("button", { name: "Löschen", exact: true });
+  await expect(deleteAction).toHaveClass(/action-tile-danger/);
+  await deleteAction.click();
+  await page.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(taskActions).toBeFocused();
+  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("button", { name: project.title, exact: true }).click();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Projektverantwortung/ })).toBeVisible();
+  await expect(page.locator(".detail-project-status")).toBeVisible();
+  await expect(page.locator(".detail-project-status")).not.toHaveRole("button");
+  await page.locator(".project-page-actions").getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+  await expect(page.getByRole("dialog").locator("[data-workflow-action]")).toHaveCount(0);
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Projekt starten", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const projectDetail = await (await page.request.get(`/api/projects/${project.id}`)).json();
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
+  await expect(page.locator("[data-workflow-action]")).toHaveCount(projectDetail.availableActions.length);
+  for (const action of projectDetail.availableActions) {
+    await expect(page.locator(`[data-workflow-action="${action}"]`)).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
+
+  await checkHeadingLayout("project");
+  for (const [label, dialogName] of [
+    ["Ergebnis bearbeiten", `Erledigt, wenn …: ${project.title}`],
+    ["Struktur bearbeiten", `Struktur: ${project.title}`],
+  ] as const) {
+    const action = page.getByRole("button", { name: label, exact: true });
+    const details = action.locator("..").locator("..").locator("details");
+    await details.locator("summary").click();
+    await expect(details).not.toHaveAttribute("open");
+    await action.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: dialogName, exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(action).toBeFocused();
+    await expect(details).not.toHaveAttribute("open");
+  }
+});
+
 test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {
   const item = await task(page);
   let release!: () => void;
@@ -216,7 +312,7 @@ test("pending detail writes retain enabled disclosure navigation and modal bound
 test("attachment dialog returns focus to the stable actions trigger", async ({ page }) => {
   const item = await task(page);
   await page.goto(`/#/tasks/${item.id}`);
-  const actions = page.getByRole("button", { name: "Aktionen", exact: true });
+  const actions = page.getByRole("button", { name: "Weitere Aktionen", exact: true });
   await actions.click();
   await page.getByRole("button", { name: "Anhang hinzufügen", exact: true }).click();
   const dialog = page.getByRole("dialog").last();
@@ -632,7 +728,7 @@ for (const targetType of ["task", "project"] as const) {
       await page.goto(`/#/${targetType}s/${item.id}`);
       await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
       if (targetType === "project") {
-        await page.getByRole("button", { name: "Struktur", exact: true }).click();
+        await page.getByRole("button", { name: "Struktur bearbeiten", exact: true }).click();
       }
       await page.getByRole("dialog").getByRole("button", { name: "Mit KI klären…", exact: true }).click();
       await page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true }).click();
@@ -880,7 +976,7 @@ test("project activation ends on denial and an explicit reopen starts with empty
     return route.continue();
   });
 
-  await page.locator(".detail-meta-status-button").click();
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
   await page.locator('[data-workflow-action="activate"]').click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel(/Verantwortlich für/)).toBeVisible();
@@ -906,7 +1002,7 @@ test("project activation ends on denial and an explicit reopen starts with empty
   phase = "restored";
   await page.getByRole("button", { name: "Erneut versuchen", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
-  await page.locator(".detail-meta-status-button").click();
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
   await page.locator('[data-workflow-action="activate"]').click();
   await expect(dialog.locator('select[id^="commitment-driver-"]')).toHaveValue("");
   await expect(dialog.locator("#commitment-next-action")).toHaveValue("");

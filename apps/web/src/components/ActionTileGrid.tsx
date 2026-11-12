@@ -6,6 +6,7 @@ export interface ActionTileDescriptor {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  danger?: boolean;
 }
 
 /** Labelled semantic action choices. DetailActionMenu supplies compact list
@@ -18,7 +19,7 @@ export function ActionTileGrid({ items }: { items: readonly ActionTileDescriptor
         <button
           key={item.key}
           type="button"
-          className="action-tile"
+          className={`action-tile${item.danger ? " action-tile-danger" : ""}`}
           disabled={item.disabled}
           onClick={item.onClick}
         >

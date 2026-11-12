@@ -103,9 +103,12 @@ for (const role of ["task", "project"] as const) {
         else await route.continue();
       });
       await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
-      const status = page.locator(".detail-meta-status-button");
+      const status = role === "task" ? page.locator(".detail-meta-status-button")
+        : page.getByRole("button", { name: "Status ändern", exact: true });
+      const statusValue = role === "task" ? status : page.locator(".detail-project-status");
+      const feedback = role === "task" ? status : page.locator(".detail-status-feedback");
       await expect(status).toHaveAttribute("aria-expanded", "false");
-      const originalStatus = (await status.textContent())!;
+      const originalStatus = (await statusValue.textContent())!;
       const row = role === "task" ? page.locator(".detail-status-row") : page.locator(".project-detail-overview-row");
       expect((await row.boundingBox())!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
       await status.focus();
@@ -114,28 +117,32 @@ for (const role of ["task", "project"] as const) {
       if (role === "task") await page.getByRole("group", { name: "Status", exact: true }).getByRole("button", { name: "Aufgabe abschließen", exact: true }).click();
       else await page.locator('[data-workflow-action="archive"]').click();
       await expect.poll(() => writes).toBe(1);
-      await expect(status).toContainText("Wird gespeichert");
+      await expect(feedback).toContainText("Wird gespeichert");
       await expect(status).toBeDisabled();
+      if (role === "project") await expect(statusValue).toHaveText(originalStatus);
       releaseWrite();
       if (outcome === "write-failure") {
-        await expect(status).toHaveText(originalStatus);
+        await expect(statusValue).toHaveText(originalStatus);
+        await expect(status).toBeEnabled();
         await expect(page.getByRole("alert")).toBeVisible();
         expect(readStarted).toBe(false);
         releaseRead();
         return;
       }
       await expect.poll(() => readStarted).toBe(true);
-      await expect(status).toContainText("Wird gespeichert");
+      await expect(feedback).toContainText("Wird gespeichert");
       await expect(status).toBeDisabled();
+      if (role === "project") await expect(statusValue).toHaveText(originalStatus);
       releaseRead();
       if (outcome === "read-failure") {
         await expect(page.getByRole("alert")).toContainText("Details konnten nicht aktualisiert werden");
-        await expect(status).toHaveText(originalStatus);
+        await expect(statusValue).toHaveText(originalStatus);
         failRead = false;
         await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
       }
-      await expect(status).toContainText(role === "task" ? "Erledigt" : "Archiviert");
+      await expect(statusValue).toContainText(role === "task" ? "Erledigt" : "Archiviert");
       await expect(status).toBeEnabled();
+      if (role === "project") await expect(feedback).toHaveCount(0);
       expect(writes).toBe(1);
     });
   }

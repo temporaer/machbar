@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 import { taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -410,9 +409,6 @@ export function TaskDetailSheet() {
     task?.dependencies.filter((dependency) => !dependency.resolved).length ?? 0;
   const attachments = extractPaperlessReferences(notesDraft);
   const referenceContent = task && isReference ? parseReferenceContent(task.notes) : null;
-  const projectOwner = task
-    ? members.find((member) => member.id === task.projectOwnerMemberId)
-    : undefined;
   const effectiveOwner = task
     ? members.find((member) => member.id === task.effectiveOwnerId)
     : undefined;
@@ -492,13 +488,14 @@ export function TaskDetailSheet() {
                   onClick: () => { void dispatch({ type: "task.setClarification", task, requested: !task.needsClarification })?.catch(() => {}); } }] : []),
                 ...(!isReference && task.needsClarification ? [{ key: "clarifyLater", icon: "schedule" as const,
                   label: strings.clarifyLater, onClick: () => runCommand("task.deferClarification") }] : []),
-                { key: "structure", icon: "split", label: strings.actionTileLabels["task.structure"], onClick: () => runCommand("task.structure") },
                 ...(!isReference && !taskIsCapturedInboxItem && task.projectId !== null ? [{
                   key: "additional", icon: "actionable" as const,
                   label: task.additionalNextAction ? strings.unmarkAdditionalNextAction : strings.markAdditionalNextAction,
                   onClick: () => { void dispatch({ type: "task.toggleAdditionalNextAction", task }); },
                 }] : []),
                 { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => setAttachmentOpen(true) },
+                { key: "delete", icon: "discard", label: strings.delete, danger: true,
+                  onClick: () => setConfirmingDelete(true) },
               ]}>
             <NativeShareButton showLabel
               title={task.title}
@@ -517,7 +514,6 @@ export function TaskDetailSheet() {
               showStatus
             />
 
-              <button type="button" className="btn btn-danger detail-menu-danger" disabled={deleting || taskMutationPending} onClick={() => setConfirmingDelete(true)}>{strings.delete}</button>
             </DetailActionMenu>
           </>
         ) : null
@@ -589,18 +585,6 @@ export function TaskDetailSheet() {
 
           {isReference ? (
             <div className="task-detail-reference-header">
-              {task.projectId !== null && task.projectTitle ? (
-                <span className="detail-meta-static">
-                  <span className="detail-meta-label">{strings.project}</span>
-                  <Link
-                    className="task-project-context-link"
-                    to={`/projects/${task.projectId}`}
-                    onClick={close}
-                  >
-                    {task.projectTitle}
-                  </Link>
-                </span>
-              ) : null}
               {referenceContent?.primaryWebLink ? (
                 <a
                   href={referenceContent.primaryWebLink.url}
@@ -666,30 +650,21 @@ export function TaskDetailSheet() {
               {refreshError ? <ErrorState message={`${strings.detailRefreshError} ${refreshError}`} onRetry={reload} /> : null}
             </div> : null}
             {!isReference ? <div className="detail-summary-group detail-meta-row" aria-label={strings.detailResponsibility}>
-            {task.projectId !== null && task.projectTitle ? (
-              <span className="detail-meta-static">
-                <span className="detail-meta-label">{strings.project}</span>
-                <Link
-                  className="task-project-context-link"
-                  to={`/projects/${task.projectId}`}
-                  onClick={close}
-                >
-                  {task.projectTitle}
-                </Link>
-                {projectOwner ? (
-                  <MemberLabel member={projectOwner} size="xs" />
-                ) : null}
-              </span>
-            ) : null}
+            <h2 className="detail-property-heading">{strings.detailResponsibility}</h2>
             {effectiveOwner ? (
               <DetailPropertyPill
-                label={strings.detailResponsibility}
+                label={strings.taskOwner}
                 onClick={() => runCommand("task.assignOwner")}
               >
-                <MemberLabel member={effectiveOwner} size="xs" />
+                <span className="detail-owner-value">
+                  <MemberLabel member={effectiveOwner} size="xs" />
+                  {task.effectiveOwnerSource === "project" ? <small>{strings.ownerInheritedFromProject}</small>
+                    : task.effectiveOwnerSource === "parent" ? <small>{strings.ownerInheritedFromParent}</small> : null}
+                </span>
               </DetailPropertyPill>
             ) : (
               <DetailPropertyPill
+                label={strings.taskOwner}
                 variant="unset"
                 onClick={() => runCommand("task.assignOwner")}
               >
@@ -724,7 +699,20 @@ export function TaskDetailSheet() {
 
             </div> : null}
             {!isReference ? <>
-              <div className="detail-summary-group detail-meta-row" aria-label={strings.planning}>
+              <div className="detail-summary-group" aria-label={strings.planning}>
+                <div className="detail-property-header">
+                  <h2 className="detail-property-heading">{strings.planning}</h2>
+                  <DetailActionMenu label={strings.detailMoreOptions} resetKey={task.id}
+                    disabled={savingTextFields || classificationBusy || deleting}
+                    items={[
+                      ...(!revisitAtValue ? [{ key: "revisit", icon: "schedule" as const, label: strings.detailAddRevisit, onClick: () => runCommand("task.availability") }] : []),
+                      ...(!task.reminders.length ? [{ key: "reminder", icon: "today" as const, label: strings.detailAddReminder, onClick: () => runCommand("task.reminders") }] : []),
+                      ...(task.repeatAfterDays === null ? [{ key: "recurrence", icon: "recurrence" as const, label: strings.detailAddRecurrence, onClick: () => runCommand("task.recurrence") }] : []),
+                      ...(task.priority === null ? [{ key: "priority", icon: "priority" as const, label: strings.detailAddPriority, onClick: () => runCommand("task.priority") }] : []),
+                      ...(!task.dependencies.length ? [{ key: "dependencies", icon: "criteria" as const, label: strings.detailAddPrerequisites, onClick: () => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" }) }] : []),
+                    ]} />
+                </div>
+                <div className="detail-meta-row">
                 <DetailPropertyPill label={task.scheduledDate ? strings.detailPlanned : undefined}
                   variant={task.scheduledDate ? "set" : "unset"}
                   onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "scheduled" })}>
@@ -750,8 +738,6 @@ export function TaskDetailSheet() {
                 {task.repeatAfterDays !== null ? <DetailPropertyPill onClick={() => runCommand("task.recurrence")}>
                   {strings.detailRecurrence(task.repeatAfterDays)}
                 </DetailPropertyPill> : null}
-              </div>
-              {task.priority !== null || task.dependencies.length > 0 ? <div className="detail-summary-group detail-meta-row">
                 {task.priority !== null ? <DetailPropertyPill label={strings.priority} onClick={() => runCommand("task.priority")}>
                   {strings.detailPriorityNames[String(task.priority) as keyof typeof strings.detailPriorityNames] ?? task.priority}
                 </DetailPropertyPill> : null}
@@ -759,22 +745,17 @@ export function TaskDetailSheet() {
                   onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" })}>
                   {task.dependencies.map((dep) => dep.title ?? `#${dep.dependsOnTaskId}`).join(" · ")}
                 </DetailPropertyPill> : null}
-              </div> : null}
+                </div>
+              </div>
             </> : null}
             <div className="detail-summary-group detail-shortcuts detail-meta-row">
+              <h2 className="detail-property-heading">{strings.detailOrganization}</h2>
               <DetailPropertyPill ariaLabel={task.effectiveTags.length ? `${strings.tags}: ${task.effectiveTags.map((tag) => tag.name).join(", ")}` : undefined} variant={task.effectiveTags.length ? "set" : "unset"} onClick={() => runCommand("task.tags")}>
                 {task.effectiveTags.length ? <>{strings.tags}: {task.effectiveTags.map((tag) => <span key={tag.id}>{tag.name}</span>)}</> : strings.addTags}
               </DetailPropertyPill>
               <DetailPropertyPill ariaLabel={task.effectiveContexts.length ? `${strings.physicalContexts}: ${task.effectiveContexts.map((context) => context.name).join(", ")}` : undefined} variant={task.effectiveContexts.length ? "set" : "unset"} onClick={() => runCommand("task.contexts")}>
                 {task.effectiveContexts.length ? <>{strings.physicalContexts}: {task.effectiveContexts.map((context) => <span key={context.id}>{context.name}</span>)}</> : strings.addContexts}
               </DetailPropertyPill>
-              {!isReference ? <DetailActionMenu label={strings.detailMoreOptions} resetKey={task.id} items={[
-                ...(!revisitAtValue ? [{ key: "revisit", icon: "schedule" as const, label: strings.detailAddRevisit, onClick: () => runCommand("task.availability") }] : []),
-                ...(!task.reminders.length ? [{ key: "reminder", icon: "today" as const, label: strings.detailAddReminder, onClick: () => runCommand("task.reminders") }] : []),
-                ...(task.repeatAfterDays === null ? [{ key: "recurrence", icon: "recurrence" as const, label: strings.detailAddRecurrence, onClick: () => runCommand("task.recurrence") }] : []),
-                ...(task.priority === null ? [{ key: "priority", icon: "priority" as const, label: strings.detailAddPriority, onClick: () => runCommand("task.priority") }] : []),
-                ...(!task.dependencies.length ? [{ key: "dependencies", icon: "criteria" as const, label: strings.detailAddPrerequisites, onClick: () => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" }) }] : []),
-              ]} /> : null}
             </div>
           </div>
 
@@ -938,6 +919,9 @@ export function TaskDetailSheet() {
             }
             defaultOpen={task.children.length > 0 || (loadedTask?.childStories?.length ?? 0) > 0}
             resetKey={task.id}
+            actions={<IconActionButton kind="edit" label={strings.detailEditStructure}
+              disabled={taskMutationPending || savingTextFields || classificationBusy || deleting}
+              onClick={() => runCommand("task.structure")} />}
             className={!task.children.length && !loadedTask?.childStories?.length ? "detail-empty-content" : ""}
           >
             <div className="field">
@@ -1048,9 +1032,8 @@ export function TaskDetailSheet() {
                     )
                   : undefined
               }
-              defaultOpen={task.repeatAfterDays !== null}
               resetKey={task.id}
-              className="recurrence-history"
+              className="recurrence-history detail-history"
             >
               {recurrenceHistoryLoading && !recurrenceHistory ? (
                 <p className="text-muted">{strings.loading}</p>

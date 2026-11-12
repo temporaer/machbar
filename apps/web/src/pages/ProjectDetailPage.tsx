@@ -27,7 +27,7 @@ import { NativeShareButton } from "../components/NativeShareButton";
 import { CalendarExportButton } from "../components/CalendarExportButton";
 import { serializeProjectForShare } from "../lib/shareText";
 import { buildProjectShareUrl } from "../lib/shareUrls";
-import { PageHeader } from "../components/PageHeader";
+import { WorkItemDetailDisclosure } from "../components/WorkItemDetailSection";
 import { MemberLabel } from "../components/MemberAvatar";
 import { IconActionButton } from "../components/IconActionButton";
 import { ProjectStatusBadge } from "../components/StatusBadge";
@@ -460,15 +460,11 @@ export function ProjectDetailPage() {
                   />
                   <DetailActionMenu label={strings.detailActions} resetKey={project.id} disabled={projectMutationPending}
                     items={[
-                      ...project.availableActions.map((action) => ({
-                        key: `lifecycle-${action}`, icon: "project" as const,
-                        label: projectWorkflowLabel(action, strings, project.status),
-                        onClick: () => dispatch(storyWorkflowCommand(project, action)),
-                      })),
                       { key: "discussion", icon: "followUp", label: project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
                         onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.catch(() => {}); } },
-                      { key: "structure", icon: "split", label: strings.actionTileLabels["task.structure"], onClick: () => dispatch({ type: "story.structure", story: project }) },
                       { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => { setAttachmentError(null); setAttachmentOpen(true); } },
+                      { key: "delete", icon: "discard", label: strings.deleteProject, danger: true,
+                        onClick: () => setConfirmingDelete(true) },
                     ]}>
                   <NativeShareButton showLabel
                     title={project.title}
@@ -487,7 +483,6 @@ export function ProjectDetailPage() {
                     showStatus
                         />
 
-                    <button type="button" className="btn btn-danger detail-menu-danger" disabled={projectMutationPending} onClick={() => setConfirmingDelete(true)}>{strings.deleteProject}</button>
                   </DetailActionMenu>
                 </div>
               </div>
@@ -497,14 +492,14 @@ export function ProjectDetailPage() {
               >
                 <div className="project-detail-overview-row">
                   <span className="sr-only">{strings.projectStatus}: </span>
-                  <ProjectStatusBadge
-                    status={project.status}
-                    disabled={projectMutationPending}
-                    busy={projectMutationPending}
-                    expanded={lifecycleOpen}
-                    controls={statusActionsId}
-                    onClick={() => setLifecycleOpen((current) => !current)}
-                  />
+                  <ProjectStatusBadge status={project.status} />
+                  {project.availableActions.length > 0 ? <button type="button"
+                    className="detail-menu-trigger" disabled={projectMutationPending}
+                    aria-expanded={lifecycleOpen} aria-controls={statusActionsId}
+                    aria-busy={projectMutationPending || undefined}
+                    onClick={() => setLifecycleOpen((current) => !current)}>
+                    {strings.changeProjectStatus}
+                  </button> : null}
                   <span className="project-detail-task-progress">
                     {strings.taskProgress}: {taskCounts.open}{" "}
                     {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
@@ -561,10 +556,11 @@ export function ProjectDetailPage() {
                 {!contentError && projectActions.errors[project.id] ? <WorkItemInlineError message={projectActions.errors[project.id]!} /> : null}
                 {projectRefreshError ? <ErrorState message={`${strings.detailRefreshError} ${projectRefreshError}`} onRetry={reloadProject} /> : null}
                 <div className="detail-summary">
-                  <div className="detail-summary-group detail-meta-row" aria-label={strings.driver}>
+                  <div className="detail-summary-group detail-meta-row" aria-label={strings.detailResponsibility}>
+                  <h2 className="detail-property-heading">{strings.detailResponsibility}</h2>
                   {owner ? (
                     <DetailPropertyPill
-                      label={strings.driver}
+                      label={strings.projectOwner}
                       disabled={projectMutationPending}
                       onClick={() => dispatch({ type: "story.assignDriver", story: project })}
                     >
@@ -572,6 +568,7 @@ export function ProjectDetailPage() {
                     </DetailPropertyPill>
                   ) : (
                     <DetailPropertyPill
+                      label={strings.projectOwner}
                       variant="unset"
                       disabled={projectMutationPending}
                       onClick={() => dispatch({ type: "story.assignDriver", story: project })}
@@ -608,6 +605,7 @@ export function ProjectDetailPage() {
 
                   </div>
                   <div className="detail-summary-group detail-meta-row" aria-label={strings.planning}>
+                    <h2 className="detail-property-heading">{strings.planning}</h2>
                     <DetailPropertyPill label={dueDate ? strings.due : undefined} variant={dueDate ? "set" : "unset"} disabled={projectMutationPending}
                       onClick={() => dispatch({ type: "story.deadline", story: project })}>{dueDate || strings.addDeadline}</DetailPropertyPill>
                     {showProjectRevisit ? <DetailPropertyPill label={revisitDate ? strings.projectReviewOn : undefined}
@@ -615,6 +613,7 @@ export function ProjectDetailPage() {
                       onClick={() => dispatch({ type: "story.defer", story: project })}>{revisitDate || strings.projectAddReviewOn}</DetailPropertyPill> : null}
                   </div>
                   <div className="detail-summary-group detail-shortcuts detail-meta-row">
+                    <h2 className="detail-property-heading">{strings.detailOrganization}</h2>
                     <DetailPropertyPill ariaLabel={project.tags.length ? `${strings.tags}: ${project.tags.map((tag) => tag.name).join(", ")}` : undefined} variant={project.tags.length ? "set" : "unset"} disabled={projectMutationPending}
                       onClick={() => dispatch({ type: "story.tags", story: project })}>
                       {project.tags.length ? <>{strings.tags}: {project.tags.map((tag) => <span key={tag.id}>{tag.name}</span>)}</> : strings.addTags}
@@ -704,25 +703,16 @@ export function ProjectDetailPage() {
               )}
 
 </section>
-            <section className="section project-outcome-section">
-              <div className="row-between">
-                <h2 className="section-title" id="project-outcome-label">
-                  {strings.outcomeSectionTitle}
-                  {criteriaTotal > 0 ? (
-                    <span className="project-outcome-count">
-                      {" "}
-                      {strings.outcomeSectionCount(criteriaDone, criteriaTotal)}
-                    </span>
-                  ) : null}
-                </h2>
-                {criteriaTotal > 0 ? <IconActionButton
-                  kind="criteria"
+            <WorkItemDetailDisclosure title={strings.outcomeSectionTitle}
+              headingLevel={2}
+              summary={criteriaTotal > 0 ? strings.outcomeSectionCount(criteriaDone, criteriaTotal) : undefined}
+              defaultOpen resetKey={project.id} className="project-outcome-section"
+              actions={<IconActionButton
+                  kind="edit"
                   label={strings.structureEditOutcome}
                   disabled={projectMutationPending}
                   onClick={() => dispatch({ type: "story.editOutcome", story: project })}
-                /> : <button type="button" className="btn btn-sm" disabled={projectMutationPending}
-                  onClick={() => dispatch({ type: "story.editOutcome", story: project })}>{strings.structureEditOutcome}</button>}
-              </div>
+                />}>
               {criteriaTotal > 0 ? (
                 <span className="criteria-progress" aria-hidden="true">
                   <span style={{ width: `${criteriaPct}%` }} />
@@ -733,30 +723,12 @@ export function ProjectDetailPage() {
                 workItemId={project.id}
                 criteria={project.acceptanceCriteria}
               />
-            </section>
-            <section className="section project-content-tasks">
-              <PageHeader
-                title={strings.taskSummary}
-                headingLevel={2}
-                actions={
-                  project.status !== "completed" &&
-                  project.status !== "archived" &&
-                  !project.archivedAt ? (
-                    <div className="row project-task-header-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={projectMutationPending}
-                        onClick={() =>
-                          dispatch({ type: "story.structure", story: project })
-                        }
-                      >
-                        {strings.structure}
-                      </button>
-                    </div>
-                  ) : null
-                }
-              />
+            </WorkItemDetailDisclosure>
+            <WorkItemDetailDisclosure title={strings.taskSummary} headingLevel={2}
+              defaultOpen resetKey={project.id} className="project-content-tasks"
+              actions={<IconActionButton kind="edit" label={strings.detailEditStructure}
+                disabled={projectMutationPending}
+                onClick={() => dispatch({ type: "story.structure", story: project })} />}>
               {!project.tasks.length && !project.childStories?.length ? <p className="text-muted">{strings.projectEmptyStepsHint}</p> : null}
               {project.childStories?.length ? (
                 <ul className="project-story-list">
@@ -778,7 +750,7 @@ export function ProjectDetailPage() {
                   ),
                 }}
               /> : null}
-            </section>
+            </WorkItemDetailDisclosure>
             <RecentActivity
               key={`project-activity-${project.id}`}
               filters={{ projectId: project.id }}
