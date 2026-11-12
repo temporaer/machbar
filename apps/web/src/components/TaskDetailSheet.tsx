@@ -125,7 +125,6 @@ export function TaskDetailSheet() {
   const notesRef = useRef<MarkdownEditorHandle>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
-  const revisionRef = useRef<number | null>(null);
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
@@ -185,7 +184,6 @@ export function TaskDetailSheet() {
   useEffect(() => {
     if (!loadedTask) {
       lastLoadedTaskIdRef.current = null;
-      revisionRef.current = null;
       setTextFieldsBaseline(null);
       setTitleDraft("");
       setNotesDraft("");
@@ -196,7 +194,6 @@ export function TaskDetailSheet() {
       setConfirmingDelete(false);
       return;
     }
-    revisionRef.current = loadedTask.revision;
     const nextBaseline = textFieldsSnapshot(loadedTask);
     const isNewTask = lastLoadedTaskIdRef.current !== loadedTask.id;
     if (isNewTask) {
@@ -308,6 +305,15 @@ export function TaskDetailSheet() {
     textFieldsBaseline !== null && notesDraft !== textFieldsBaseline.notes;
   const contentDirty = titleDirty || notesDirty;
 
+  // All authored-text callbacks use the same live query comparison. A confirmed
+  // write can still populate its draft if refresh failed, but can never replace
+  // a newer detail snapshot that arrived while another read was pending.
+  const newerQueryText = (updated: Task): TextFieldsSnapshot | null => {
+    const latest = currentTaskRef.current;
+    return latest?.id === updated.id && latest.revision > updated.revision
+      ? textFieldsSnapshot(latest) : null;
+  };
+
   const saveContentField = async (
     field: "title" | "notes",
   ): Promise<boolean> => {
@@ -326,9 +332,14 @@ export function TaskDetailSheet() {
         true,
       );
       if (!updated || opening !== contentOpeningRef.current) return false;
-      revisionRef.current = updated.revision;
+      // A newer detail may have arrived while another invalidated read was
+      // pending. Finish this editor against that query text, not the older
+      // write response, so the next edit cannot silently overwrite it.
+      const savedValue = newerQueryText(updated)?.[field] ?? value;
+      if (field === "title") setTitleDraft(savedValue);
+      else setNotesDraft(savedValue);
       setTextFieldsBaseline((current) =>
-        current ? { ...current, [field]: value } : current,
+        current ? { ...current, [field]: savedValue } : current,
       );
       return true;
     } catch (err) {
@@ -847,7 +858,11 @@ export function TaskDetailSheet() {
               const opening = contentOpeningRef.current;
               const updated = await taskActions.appendNotes(task, content);
               if (opening !== contentOpeningRef.current) return false;
-              if (updated) { revisionRef.current = updated.revision; setTextFieldsBaseline(current => current ? { ...current, notes: updated.notes } : current); setNotesDraft(updated.notes); }
+              if (updated) {
+                const notes = newerQueryText(updated)?.notes ?? updated.notes;
+                setTextFieldsBaseline(current => current ? { ...current, notes } : current);
+                setNotesDraft(notes);
+              }
               return updated;
             }} />
             {notesEditing ? (
@@ -1171,15 +1186,11 @@ export function TaskDetailSheet() {
           const nextNotes = appendTextBlock(task.notes, markdown);
           setSaveError(null);
           try {
-            const updated = await taskActions.update(
-              task,
-              { notes: nextNotes },
-              true,
-            );
+            const updated = await taskActions.update(task, { notes: nextNotes }, true);
             if (updated && opening === contentOpeningRef.current) {
-              revisionRef.current = updated.revision;
-              setNotesDraft(updated.notes);
-              setTextFieldsBaseline(textFieldsSnapshot(updated));
+              const text = newerQueryText(updated) ?? textFieldsSnapshot(updated);
+              setNotesDraft(text.notes);
+              setTextFieldsBaseline(text);
             }
           } catch (cause) {
             if (opening !== contentOpeningRef.current) throw cause;

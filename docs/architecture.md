@@ -2433,7 +2433,12 @@ all server-provided lifecycle actions from the same status-control convention.
 Choices remain local presentation; canonical task/project commands and workflow
 hosts own transitions, criteria, descendants and activation decisions. Saving
 feedback appears at the initiating control or confirmation dialog through query
-settlement. Refresh errors do not replay a committed write.
+settlement. Refresh errors do not replay a committed write. Task authored-text
+callbacks share a live-query revision check: append, attachment insertion and
+title/notes saves prefer any newer published detail text over their older write
+response. A confirmed write still supplies local authored text if refresh failed.
+No query data is patched. Subsequent editors and revision-checked writes retain
+the newer content rather than silently replacing another person's addition.
 
 Both details use `DetailNotesPreview` inside a lightly tinted, padded notes
 section. It measures rendered Markdown with ResizeObserver (including image and
