@@ -220,7 +220,18 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
   await deleteAction.click();
   await page.getByRole("button", { name: "Abbrechen", exact: true }).click();
   await expect(taskActions).toBeFocused();
-  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("button", { name: project.title, exact: true }).click();
+  const projectLink = page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true });
+  await expect(projectLink).toHaveAttribute("href", `#/projects/${project.id}`);
+  for (const activation of ["Control", "middle"] as const) {
+    const popup = page.context().waitForEvent("page");
+    if (activation === "Control") await projectLink.click({ modifiers: ["Control"] });
+    else await projectLink.click({ button: "middle" });
+    const otherTab = await popup;
+    await expect(otherTab.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+    await otherTab.close();
+    await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+  }
+  await projectLink.click();
   await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Projektverantwortung/ })).toBeVisible();
@@ -254,6 +265,73 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
     await expect(action).toBeFocused();
     await expect(details).not.toHaveAttribute("open");
   }
+});
+
+test("collapsed project tasks cannot be moved or planned by shortcuts", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Keyboard project ${randomUUID()}` },
+  })).json();
+  const first = await task(page, { projectId: project.id });
+  const second = await task(page, { projectId: project.id });
+  const storedOrder = async () => {
+    const result = await page.request.get(`/api/projects/${project.id}`);
+    expect(result.ok()).toBe(true);
+    const detail = await result.json();
+    return detail.tasks.map((item: { id: number }) => item.id);
+  };
+  await page.goto(`/#/projects/${project.id}`);
+  const firstRow = page.locator(`[data-workitem-id="${first.id}"] .task-row-main`);
+  await expect(firstRow).toBeVisible();
+  await page.keyboard.press("j");
+  await expect(firstRow).toBeFocused();
+  const tasksDisclosure = page.locator(".project-content-tasks");
+  await tasksDisclosure.locator("summary").click();
+  await expect(firstRow).not.toBeVisible();
+  let moves = 0;
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().endsWith(`/api/tasks/${first.id}/move`)) moves += 1;
+  });
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.keyboard.press("s");
+  await page.waitForLoadState("networkidle");
+  expect(moves).toBe(0);
+  expect(await storedOrder()).toEqual([first.id, second.id]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await tasksDisclosure.locator("summary").click();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(storedOrder).toEqual([second.id, first.id]);
+  expect(moves).toBe(1);
+});
+
+test("project navigation leaves an inspected planner suspended until returning", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Inspection project ${randomUUID()}` },
+  })).json();
+  const prerequisite = await task(page, { projectId: project.id });
+  const item = await task(page);
+  const dependency = await page.request.post(`/api/tasks/${item.id}/dependencies`, {
+    data: { dependsOnTaskId: prerequisite.id, expectedRevision: item.revision },
+  });
+  expect(dependency.ok()).toBe(true);
+  await page.goto(`/#/tasks/${item.id}`);
+  await page.getByRole("button", { name: "+ Planen", exact: true }).click();
+  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
+  const date = planner.getByLabel("Geplant für", { exact: true });
+  await date.fill("10.05.2099");
+  await date.press("Tab");
+  await planner.getByRole("button", { name: prerequisite.title, exact: true }).click();
+  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true }).click();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
+
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(planner).toBeVisible();
+  await expect(date).toHaveValue("10.05.2099");
+  await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
 });
 
 test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {

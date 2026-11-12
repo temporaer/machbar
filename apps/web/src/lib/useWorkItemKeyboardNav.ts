@@ -72,21 +72,22 @@ export function useWorkItemKeyboardNav() {
       if (event.metaKey || event.ctrlKey) return;
       if (shouldSuppressGlobalShortcuts(event.target)) return;
 
+      const ids = visibleWorkItemIds();
+      const activeId = scope.activeId !== null && ids.includes(scope.activeId) ? scope.activeId : null;
       if (event.altKey) {
         const direction = ALT_DIRECTIONS[event.key];
-        if (!direction || scope.activeId === null || !scope.moveBy) return;
+        if (!direction || activeId === null || !scope.moveBy) return;
         event.preventDefault();
-        scope.moveBy(scope.activeId, direction);
+        scope.moveBy(activeId, direction);
         return;
       }
 
       switch (event.key) {
         case "j":
         case "k": {
-          const ids = visibleWorkItemIds();
           if (ids.length === 0) return;
           event.preventDefault();
-          const currentIndex = scope.activeId === null ? -1 : ids.indexOf(scope.activeId);
+          const currentIndex = activeId === null ? -1 : ids.indexOf(activeId);
           let nextIndex: number;
           if (event.key === "j") {
             nextIndex = currentIndex === -1 ? 0 : Math.min(currentIndex + 1, ids.length - 1);
@@ -100,14 +101,14 @@ export function useWorkItemKeyboardNav() {
           return;
         }
         case "h":
-          if (scope.activeId === null) return;
+          if (activeId === null) return;
           event.preventDefault();
-          dispatch({ type: "outline.collapse", workItemId: scope.activeId });
+          dispatch({ type: "outline.collapse", workItemId: activeId });
           return;
         case "l":
-          if (scope.activeId === null) return;
+          if (activeId === null) return;
           event.preventDefault();
-          dispatch({ type: "outline.expand", workItemId: scope.activeId });
+          dispatch({ type: "outline.expand", workItemId: activeId });
           return;
         case "c":
           if (!scope.captureOpen) return;
@@ -120,11 +121,11 @@ export function useWorkItemKeyboardNav() {
           scope.helpOpen();
           return;
         default:
-          if (scope.activeId !== null) {
+          if (activeId !== null) {
             const commandFactory = TASK_COMMAND_KEYS[event.key];
-            if (commandFactory && activeTaskRow(scope.activeId)) {
+            if (commandFactory && activeTaskRow(activeId)) {
               event.preventDefault();
-              dispatch(commandFactory(scope.activeId));
+              dispatch(commandFactory(activeId));
             }
           }
       }

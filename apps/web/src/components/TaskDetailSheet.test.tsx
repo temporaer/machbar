@@ -1214,7 +1214,7 @@ describe("TaskDetailSheet", () => {
     expect(await waitForTaskTitle("Bericht schreiben")).toBeInTheDocument();
 
     const breadcrumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(breadcrumbs).getByRole("button", { name: "Jahresbericht" })).toBeVisible();
+    expect(within(breadcrumbs).getByRole("link", { name: "Jahresbericht" })).toHaveAttribute("href", "/projects/7");
     expect(screen.getAllByText("Jahresbericht")).toHaveLength(1);
     expect(screen.getByText("eilig")).toBeInTheDocument();
 
@@ -1363,7 +1363,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Bericht prüfen");
 
-    await userEvent.click(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("button", { name: "Jahresbericht" }));
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "Jahresbericht" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );

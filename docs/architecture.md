@@ -546,6 +546,9 @@ share the `WorkItemAncestor = { id, role: "story" | "task", title }` shape from
 `apps/web/src/components/WorkItemBreadcrumbs.tsx` above the detail title —
 task detail and project detail do not maintain separate breadcrumb
 implementations.
+Project ancestors are real router links, preserving modified/middle-click and
+assistive link navigation. Unmodified primary activation still dispatches the
+canonical `workItem.open` command.
 
 Projects additionally carry:
 
@@ -1636,6 +1639,10 @@ operation launched there to occupy the foreground. Closing detail restores the
 most recent planning workflow and, where applicable, the prior detail/queue snapshot using
 `TaskDetailProvider`'s existing handoff methods. No planning state is serialized
 or committed for navigation, and no separate prerequisite viewer is introduced.
+Navigating from an inspected task to a project suspends that detail through the
+existing handoff instead of closing it: closing means returning to the planner.
+The project opens without task sheets; the live planning draft remains mounted
+for an explicit return to the inspection.
 
 ### Paperless-backed Markdown attachments
 
@@ -1832,6 +1839,9 @@ are independent of the fixed action rail's presentation. Both keyboard hooks
 suppress themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
+Rows inside closed native disclosures are excluded from both traversal and
+active-row commands, including structural moves and focused task shortcuts.
+Selection can resume when the disclosure reopens, but cannot mutate hidden work.
 
 **Command rails.** Left swipe means “What should happen next with this item?”
 `workItemRail.ts` owns pure, deterministic task/project selection and typed

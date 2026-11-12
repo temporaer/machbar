@@ -250,7 +250,10 @@ export function useWorkItemCommands() {
             // Close with the router transition so a task deep-link's close
             // effect cannot redirect to Today before navigation commits.
             startTransition(() => {
-              taskDetail.close();
+              // Navigation leaves an inspection suspended, rather than
+              // signaling the host to restore its planner and prior detail.
+              if (taskWorkflow.detailInspection) taskDetail.suspendForHandoff();
+              else taskDetail.close();
               navigate(`/projects/${command.workItem.id}`);
             });
             return;

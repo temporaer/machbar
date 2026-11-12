@@ -394,6 +394,36 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     expect(mainButtonFor("Erste")).toHaveFocus();
   });
 
+  it.each(["{Alt>}{ArrowDown}{/Alt}", "{Alt>}{ArrowRight}{/Alt}", "s", "w", "a", "m"])(
+    "ignores %s for the selected row while its disclosure is closed",
+    async (key) => {
+      const first = makeTask({ id: 1, title: "Erste", position: 0 });
+      const second = makeTask({ id: 2, title: "Zweite", position: 1 });
+      mockedApi.moveTask.mockResolvedValue(first);
+      renderWithProviders(
+        <>
+          <WorkItemKeyboardNavMount />
+          <details open>
+            <summary>Projektaufgaben</summary>
+            <TaskOutline tasks={[first, second]} emptyMessage="Nichts da" organizable />
+          </details>
+          <OpenTaskProbe />
+          <OpenWorkflowProbe />
+        </>,
+      );
+      await screen.findByText("Erste");
+      await userEvent.keyboard("j");
+      expect(mainButtonFor("Erste")).toHaveFocus();
+      if (key.includes("ArrowRight")) await userEvent.keyboard("j");
+      await userEvent.click(screen.getByText("Projektaufgaben"));
+      await userEvent.keyboard(key);
+
+      expect(mockedApi.moveTask).not.toHaveBeenCalled();
+      expect(screen.getByTestId("open-task-id")).toHaveTextContent("none|none");
+      expect(screen.getByTestId("open-workflow")).toHaveTextContent("none|none");
+    },
+  );
+
   it("Alt+ArrowRight (indent/reparent) keeps focus on the moved item", async () => {
     mockedApi.moveTask.mockResolvedValue(makeTask({ id: 2, parentTaskId: 1 }));
     const first = makeTask({ id: 1, title: "Erste", position: 0, children: [] });

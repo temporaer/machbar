@@ -538,7 +538,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Wände vorbereiten")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Haus verbessern" }));
+    await userEvent.click(screen.getByRole("link", { name: "Haus verbessern" }));
 
     expect(
       await screen.findByRole("heading", { name: "Haus verbessern" }),

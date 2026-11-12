@@ -184,6 +184,42 @@ describe("compact planning", () => {
       expect(await screen.findByRole("heading", { name: "Example planning", level: 1 })).toBeInTheDocument();
     }
   }, 15000);
+  it.each([false, true])("navigates from an inspected task without resuming or discarding planning (detail origin: %s)", async (fromDetail) => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 1, title: "Original planning", dependencies: [
+      { id: 1, taskId: 1, dependsOnTaskId: 2, title: "Inspected task", resolved: false },
+    ] });
+    mocked.getTask.mockImplementation(async (id) => ({
+      ...(id === 1 ? task : makeTask({ id, title: id === 2 ? "Inspected task" : "Another task" })),
+      ancestors: id === 2 ? [{ id: 7, role: "story", title: "Parent project" }] : [],
+      childStories: [], externalRefs: [], hierarchyRevisions: [],
+    }) as never);
+    renderWithProviders(<Harness fromDetail={fromDetail} />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    if (fromDetail) {
+      await screen.findByRole("heading", { name: "Original planning", level: 1 });
+      await user.click(screen.getByRole("button", { name: "+ Planen" }));
+    }
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-scheduled"));
+    const date = screen.getByLabelText("Geplant für");
+    fireEvent.change(date, { target: { value: "20.10.2026" } });
+    fireEvent.blur(date);
+    await user.click(screen.getByRole("button", { name: "Inspected task" }));
+    await screen.findByRole("heading", { name: "Inspected task", level: 1 });
+    await user.click(screen.getByText("Parent project"));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(date).toHaveValue("20.10.2026");
+    await user.click(screen.getByRole("button", { name: "Generic linked task" }));
+    await screen.findByRole("heading", { name: "Another task", level: 1 });
+    await user.keyboard("{Escape}");
+    await screen.findByRole("dialog", { name: "Planung" });
+    expect(screen.getByLabelText("Geplant für")).toBe(date);
+    expect(date).toHaveValue("20.10.2026");
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("returns through nested prerequisite planners (detail origin: %s)", async (fromDetail) => {
     const user = userEvent.setup();
     const tasks = [1, 2, 3].map((id) => makeTask({ id, title: `Nested task ${id}`, revision: 1,
