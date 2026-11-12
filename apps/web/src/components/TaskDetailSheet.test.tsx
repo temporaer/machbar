@@ -467,9 +467,9 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle(task.title);
     if (mode === "append") {
-      await userEvent.click(screen.getByRole("button", { name: strings.appendNote, exact: true }));
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
       setMarkdownValue(screen.getByRole("textbox", { name: strings.appendNote }), "Our saved notes");
-      await userEvent.click(screen.getByRole("button", { name: strings.appendNote, exact: true }));
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
     } else if (mode === "attachment") {
       await openDetailActions();
       await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
@@ -481,7 +481,7 @@ describe("TaskDetailSheet", () => {
       const editor = await openTitleEditor();
       await userEvent.clear(editor);
       await userEvent.type(editor, written.title);
-      await userEvent.click(screen.getByRole("button", { name: strings.save, exact: true }));
+      await userEvent.click(screen.getByRole("button", { name: strings.save }));
     }
     // A title editor stays open until its write callback finishes, so use
     // the independently clean notes field to observe the newer query there.
@@ -496,7 +496,7 @@ describe("TaskDetailSheet", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /Status.*Machbar/ })).toBeEnabled());
     // Read the next editor as a user would; no stale response may reset either baseline.
     expect(await openTitleEditor()).toHaveValue(latest.title);
-    await userEvent.click(screen.getByRole("button", { name: strings.cancel, exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: strings.cancel }));
     const notesEditor = await openNotesEditor();
     expect(markdownValue(notesEditor)).toBe(latest.notes);
     setMarkdownValue(notesEditor, `${latest.notes}\nOur next edit`);
@@ -517,9 +517,9 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle(task.title);
     if (mode === "append") {
-      await userEvent.click(screen.getByRole("button", { name: strings.appendNote, exact: true }));
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
       setMarkdownValue(screen.getByRole("textbox", { name: strings.appendNote }), "Our addition");
-      await userEvent.click(screen.getByRole("button", { name: strings.appendNote, exact: true }));
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
     } else {
       await openDetailActions();
       await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
