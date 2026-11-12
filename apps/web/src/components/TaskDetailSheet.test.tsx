@@ -1395,7 +1395,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle(original.title);
     expect(document.querySelector(".task-detail-title-row .task-row-checkbox")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: strings.detailComplete }));
+    const statuses = await openStatusChoices();
+    await userEvent.click(within(statuses).getByRole("button", { name: strings.completeTaskAction }));
     expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
     if (outcome === "write-failure") {
       await act(async () => failWrite(new Error("Write rejected")));
@@ -1407,7 +1408,7 @@ describe("TaskDetailSheet", () => {
     await act(async () => finishWrite(confirmed));
     await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: strings.detailComplete }));
+    fireEvent.click(screen.getByRole("button", { name: /Status.*Wird gespeichert/ }));
     expect(mockedApi.completeTask).toHaveBeenCalledOnce();
     if (outcome === "read-failure") {
       await act(async () => failRead(new Error("Refresh offline")));

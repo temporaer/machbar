@@ -144,16 +144,19 @@ test("Today keeps a future recurring plan out despite its reached revisit", asyn
   expect(writes).toBe(0);
 });
 
-test("detail completion control is visible on touch and desktop", async ({ page }) => {
+test("detail status control is visible on touch and desktop", async ({ page }) => {
   const item = await task(page);
   await page.goto(`/#/tasks/${item.id}`);
-  const control = page.getByRole("button", { name: "Erledigen", exact: true });
+  const control = page.locator(".detail-meta-status-button");
   await expect(control).toBeVisible();
   const bounds = await control.boundingBox();
   expect(bounds!.width).toBeGreaterThan(0);
   expect(bounds!.height).toBeGreaterThanOrEqual(44);
   await expect(page.locator(".task-detail-title-row .task-row-checkbox")).toHaveCount(0);
   await control.click();
+  await page.getByRole("group", { name: "Status", exact: true })
+    .getByRole("button", { name: "Aufgabe abschließen", exact: true })
+    .click();
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${item.id}`)).json()).status).toBe("done");
 });
 
