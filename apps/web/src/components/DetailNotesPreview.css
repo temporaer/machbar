@@ -15,6 +15,7 @@
 }
 .detail-notes-expand { margin-top: 0.35rem; }
 .detail-status-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.detail-status-row > .btn { min-height: 44px; }
 .detail-status-section { min-width: 0; }
 .detail-status-section > [role="group"] { margin-top: 0.5rem; }
 .detail-status-feedback { margin: 0.25rem 0; font-size: 0.875rem; }
