@@ -154,7 +154,10 @@ test("task descendant confirmation hands saving feedback back to details", async
     await route.continue();
   });
   await page.goto(`/#/tasks/${item.id}`);
-  await page.getByRole("button", { name: "Erledigen", exact: true }).click();
+  await page.locator(".detail-meta-status-button").click();
+  await page.getByRole("group", { name: "Status", exact: true })
+    .getByRole("button", { name: "Aufgabe abschließen", exact: true })
+    .click();
   const dialog = page.getByRole("dialog", { name: "Diese Aufgabe hat offene Teilaufgaben.", exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: /Nur diese Aufgabe/ }).click();
