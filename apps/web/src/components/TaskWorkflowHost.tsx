@@ -38,6 +38,8 @@ import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "
 export function TaskWorkflowHost() {
   const workflow = useTaskWorkflow();
   const taskDetail = useTaskDetail();
+  const location = useLocation();
+  const previousLocationKey = useRef(location.key);
   const { currentMemberId } = useIdentity();
   const mounted = useRef(false);
   useLayoutEffect(() => {
@@ -55,6 +57,16 @@ export function TaskWorkflowHost() {
       workflow.resumeFromDetail();
     }
   }, [workflow.detailInspection, taskDetail.openTaskId]);
+  useEffect(() => {
+    if (previousLocationKey.current === location.key) return;
+    previousLocationKey.current = location.key;
+    if (!workflow.detailInspection || taskDetail.openTaskId === null) return;
+    if (location.key === workflow.detailInspection.originLocationKey) {
+      taskDetail.resumeAfterHandoff();
+    } else {
+      taskDetail.suspendForHandoff();
+    }
+  }, [location.key, workflow.detailInspection, taskDetail]);
   // Each planning slot keeps its React position when another prerequisite is
   // inspected. Only the foreground operation registers a visible modal.
   const retained = workflow.detailInspections;

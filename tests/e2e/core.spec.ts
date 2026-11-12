@@ -304,7 +304,8 @@ test("collapsed project tasks cannot be moved or planned by shortcuts", async ({
   expect(moves).toBe(1);
 });
 
-test("project navigation leaves an inspected planner suspended until returning", async ({ page }) => {
+for (const fromDetail of [false, true]) {
+test(`project navigation leaves an inspected planner suspended until returning (detail origin: ${fromDetail})`, async ({ page }) => {
   const project = await (await page.request.post("/api/projects", {
     data: { title: `Inspection project ${randomUUID()}` },
   })).json();
@@ -314,9 +315,23 @@ test("project navigation leaves an inspected planner suspended until returning",
     data: { dependsOnTaskId: prerequisite.id, expectedRevision: item.revision },
   });
   expect(dependency.ok()).toBe(true);
-  await page.goto(`/#/tasks/${item.id}`);
-  await page.getByRole("button", { name: "+ Planen", exact: true }).click();
+  await page.goto(fromDetail ? `/#/tasks/${item.id}` : "/#/more/all");
+  if (fromDetail) {
+    await page.getByRole("button", { name: "+ Planen", exact: true }).click();
+  } else {
+    await page.getByRole("textbox", { name: "Suchen", exact: true }).fill(item.title);
+    const row = page.locator(`[data-workitem-id="${item.id}"] .task-row-main`);
+    await expect(row).toBeVisible();
+    await expect(page.locator("[data-workitem-id]")).toHaveCount(1);
+    await row.focus();
+    await page.keyboard.press("j");
+    await expect(row).toBeFocused();
+    await page.keyboard.press("s");
+  }
   const planner = page.getByRole("dialog", { name: "Planung", exact: true });
+  if (!fromDetail) {
+    await planner.locator('section:has([id^="planning-scheduled"]) .task-planning-summary button').click();
+  }
   const date = planner.getByLabel("Geplant für", { exact: true });
   await date.fill("10.05.2099");
   await date.press("Tab");
@@ -327,12 +342,20 @@ test("project navigation leaves an inspected planner suspended until returning",
   expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
 
   await page.goBack();
-  await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+  const returnTitle = fromDetail ? item.title : prerequisite.title;
+  await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(planner).toBeVisible();
   await expect(date).toHaveValue("10.05.2099");
   await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
 });
+}
 
 test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {
   const item = await task(page);

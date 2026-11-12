@@ -1,5 +1,5 @@
 import { startTransition, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 import type { ProjectWithActions } from "./api";
 import type { WorkItemCommand } from "./commands";
@@ -174,6 +174,7 @@ export function useWorkItemCommands() {
   const taskWorkflow = useTaskWorkflow();
   const projectWorkflow = useProjectWorkflow();
   const navigate = useNavigate();
+  const location = useLocation();
   const scope = useOptionalInteractionScope();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
@@ -259,7 +260,7 @@ export function useWorkItemCommands() {
             return;
           }
           if (taskWorkflow.current && taskWorkflow.current !== taskWorkflow.detailInspection?.planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
-            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff());
+            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff(), location.key);
           }
           if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
           else taskDetail.open(command.workItem.id);
@@ -548,6 +549,7 @@ export function useWorkItemCommands() {
       taskWorkflow,
       projectWorkflow,
       navigate,
+      location.key,
       scope,
       resolveStoryPrerequisite,
       continueStoryLifecycle,

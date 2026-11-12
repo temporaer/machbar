@@ -11,6 +11,7 @@ import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import type { TaskPlanningTarget } from "../lib/commands";
 import { de as strings } from "../i18n/de";
+import { useNavigate } from "react-router-dom";
 
 vi.mock("../lib/api", () => ({ api: {
   previewTaskUpdate: vi.fn(),
@@ -26,7 +27,8 @@ function openSection(element: HTMLElement) {
 }
 function Harness({ fromDetail = false }: { fromDetail?: boolean }) {
   const dispatch = useWorkItemCommands();
-  return <><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><button onClick={() => dispatch({ type: "workItem.open", workItem: { id: 3, role: "task" } })}>Generic linked task</button><TaskDetailSheet /><TaskWorkflowHost /></>;
+  const navigate = useNavigate();
+  return <><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><button onClick={() => dispatch({ type: "workItem.open", workItem: { id: 3, role: "task" } })}>Generic linked task</button><button onClick={() => navigate(-1)}>Browser Back</button><button onClick={() => navigate(1)}>Browser Forward</button><TaskDetailSheet /><TaskWorkflowHost /></>;
 }
 
 beforeEach(() => {
@@ -211,6 +213,11 @@ describe("compact planning", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(date).toHaveValue("20.10.2026");
+    await user.click(screen.getByRole("button", { name: "Browser Back" }));
+    await screen.findByRole("heading", { name: "Inspected task", level: 1 });
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Browser Forward", hidden: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Generic linked task" }));
     await screen.findByRole("heading", { name: "Another task", level: 1 });
     await user.keyboard("{Escape}");
