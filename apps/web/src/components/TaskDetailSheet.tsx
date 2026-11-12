@@ -637,10 +637,6 @@ export function TaskDetailSheet() {
           <div className="detail-summary">
             {!isReference ? <div className="detail-status-section">
               <div className="detail-status-row">
-                {!taskIsCapturedInboxItem ? <button type="button" className="btn btn-sm"
-                  disabled={taskMutationPending} onClick={() => dispatch({ type: "task.toggleDone", task })}>
-                  <span aria-hidden="true">✓ </span>{task.status === "done" || task.status === "cancelled" ? strings.reopen : strings.detailComplete}
-                </button> : null}
                 <StatusBadge status={task.status} busy={taskMutationPending} expanded={lifecycleOpen}
                   controls={statusActionsId} {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })} />
               </div>
