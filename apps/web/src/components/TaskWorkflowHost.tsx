@@ -17,7 +17,7 @@ import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { TaskClarificationSheet } from "./TaskClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
 import { BottomSheet } from "./BottomSheet";
 import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
@@ -39,6 +39,7 @@ export function TaskWorkflowHost() {
   const workflow = useTaskWorkflow();
   const taskDetail = useTaskDetail();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const previousLocationKey = useRef(location.key);
   const { currentMemberId } = useIdentity();
   const mounted = useRef(false);
@@ -60,13 +61,13 @@ export function TaskWorkflowHost() {
   useEffect(() => {
     if (previousLocationKey.current === location.key) return;
     previousLocationKey.current = location.key;
-    if (!workflow.detailInspection || taskDetail.openTaskId === null) return;
-    if (location.key === workflow.detailInspection.originLocationKey) {
+    if (navigationType !== "POP" || !workflow.detailInspection || taskDetail.openTaskId === null) return;
+    if (`${location.pathname}${location.search}` === workflow.detailInspection.originPath) {
       taskDetail.resumeAfterHandoff();
     } else {
       taskDetail.suspendForHandoff();
     }
-  }, [location.key, workflow.detailInspection, taskDetail]);
+  }, [location.key, location.pathname, location.search, navigationType, workflow.detailInspection, taskDetail]);
   // Each planning slot keeps its React position when another prerequisite is
   // inspected. Only the foreground operation registers a visible modal.
   const retained = workflow.detailInspections;
@@ -79,7 +80,7 @@ export function TaskWorkflowHost() {
       return <TaskWorkflowContent
         key={`${currentMemberId}:${openings.current.get(state)}`}
         state={state}
-        suspended={index < retained.length}
+        suspended={index < retained.length || (workflow.detailInspection !== null && taskDetail.suspended)}
         isCurrent={() => mounted.current && current.current.opening === state && current.current.currentMemberId === currentMemberId}
       />;
     })}

@@ -260,7 +260,7 @@ export function useWorkItemCommands() {
             return;
           }
           if (taskWorkflow.current && taskWorkflow.current !== taskWorkflow.detailInspection?.planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
-            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff(), location.key);
+            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff(), `${location.pathname}${location.search}`);
           }
           if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
           else taskDetail.open(command.workItem.id);

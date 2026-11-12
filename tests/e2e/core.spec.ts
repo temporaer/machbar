@@ -344,18 +344,80 @@ test(`project navigation leaves an inspected planner suspended until returning (
   await page.goBack();
   const returnTitle = fromDetail ? item.title : prerequisite.title;
   await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
+  if (!fromDetail) {
+    await page.getByRole("button", { name: "+ Planen", exact: true }).click();
+    await date.fill("11.05.2099");
+    await date.press("Tab");
+  }
   await page.goForward();
   await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.goBack();
+  if (!fromDetail) {
+    await expect(planner).toBeVisible();
+    await expect(date).toHaveValue("11.05.2099");
+    await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  }
   await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(planner).toBeVisible();
   await expect(date).toHaveValue("10.05.2099");
   await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
   expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
+  expect((await (await page.request.get(`/api/tasks/${prerequisite.id}`)).json()).scheduledDate).toBeNull();
 });
 }
+
+test("refinement returns to an inspected list task without hiding its retained planner", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Refinement return ${randomUUID()}` },
+  })).json();
+  const prerequisite = await task(page, { projectId: project.id });
+  const item = await task(page);
+  expect((await page.request.post(`/api/tasks/${item.id}/dependencies`, {
+    data: { dependsOnTaskId: prerequisite.id, expectedRevision: item.revision },
+  })).ok()).toBe(true);
+  const code = await (await page.request.post("/api/integrations/home-assistant/pairing-code")).json();
+  const paired = await (await page.request.post("/api/integrations/home-assistant/pair", {
+    data: { pairingCode: code.code, protocolVersion: 3 },
+  })).json();
+  expect((await page.request.post("/api/integrations/home-assistant/context", {
+    headers: { authorization: `Bearer ${paired.token}` },
+    data: { protocolVersion: 3, observedAt: new Date().toISOString(), contexts: [], people: [],
+      intake: { aiTask: { entityId: "ai_task.browser", state: "ok", supportsAttachments: true },
+        calendar: { entityId: "calendar.browser", state: "ok" } } },
+  })).ok()).toBe(true);
+  await page.goto("/#/more/all");
+  await page.getByRole("textbox", { name: "Suchen", exact: true }).fill(item.title);
+  const row = page.locator(`[data-workitem-id="${item.id}"] .task-row-main`);
+  await expect(page.locator("[data-workitem-id]")).toHaveCount(1);
+  await row.focus();
+  await page.keyboard.press("j");
+  await page.keyboard.press("s");
+  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
+  await planner.locator('section:has([id^="planning-scheduled"]) .task-planning-summary button').click();
+  const date = planner.getByLabel("Geplant für", { exact: true });
+  await date.fill("10.05.2099");
+  await date.press("Tab");
+  await planner.getByRole("button", { name: prerequisite.title, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mit KI klären…", exact: true }).click();
+  await page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true }).click();
+  await expect(page).toHaveURL(/#\/intake\//);
+  await page.getByRole("button", { name: "Zurück zur Aufgabe", exact: true }).click();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await expect(page.getByRole("heading", { name: prerequisite.title, exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true }).click();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: prerequisite.title, exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(planner).toBeVisible();
+  await expect(date).toHaveValue("10.05.2099");
+  await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
+  expect((await (await page.request.get(`/api/tasks/${prerequisite.id}`)).json()).revision).toBe(prerequisite.revision);
+});
 
 test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {
   const item = await task(page);

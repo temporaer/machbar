@@ -1641,11 +1641,14 @@ most recent planning workflow and, where applicable, the prior detail/queue snap
 or committed for navigation, and no separate prerequisite viewer is introduced.
 Navigating from an inspected task to a project suspends that detail through the
 existing handoff instead of closing it: closing means returning to the planner.
-The inspection records its originating router history key. The host suspends
-detail on navigation away and resumes it on return to that exact history entry,
-including list origins without a task route adapter. Forward navigation hides
-it again. The project opens without task sheets; the live planning draft remains
-mounted throughout, and closing the returned inspection restores that draft.
+The inspection records its originating path and search. On browser history
+traversals, the host resumes detail at that origin and suspends it elsewhere,
+including list origins without a task route adapter. A planner opened from the
+inspection shares its suspension, so Forward hides both and Back restores the
+same mounted inputs. Explicit refinement returns retain their existing handoff
+authority: replacing the origin entry must not hide the restored inspection.
+The project opens without planning/detail sheets; live planning drafts remain
+mounted throughout, and closing the returned inspection restores its planner.
 
 ### Paperless-backed Markdown attachments
 
