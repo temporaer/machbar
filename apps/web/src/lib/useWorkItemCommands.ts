@@ -1,5 +1,5 @@
-import { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { startTransition, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 import type { ProjectWithActions } from "./api";
 import type { WorkItemCommand } from "./commands";
@@ -174,6 +174,7 @@ export function useWorkItemCommands() {
   const taskWorkflow = useTaskWorkflow();
   const projectWorkflow = useProjectWorkflow();
   const navigate = useNavigate();
+  const location = useLocation();
   const scope = useOptionalInteractionScope();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
@@ -247,11 +248,19 @@ export function useWorkItemCommands() {
         case "task.open":
         case "workItem.open":
           if (command.type === "workItem.open" && command.workItem.role !== "task") {
-            navigate(`/projects/${command.workItem.id}`);
+            // Close with the router transition so a task deep-link's close
+            // effect cannot redirect to Today before navigation commits.
+            startTransition(() => {
+              // Navigation leaves an inspection suspended, rather than
+              // signaling the host to restore its planner and prior detail.
+              if (taskWorkflow.detailInspection) taskDetail.suspendForHandoff();
+              else taskDetail.close();
+              navigate(`/projects/${command.workItem.id}`);
+            });
             return;
           }
           if (taskWorkflow.current && taskWorkflow.current !== taskWorkflow.detailInspection?.planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
-            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff());
+            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff(), `${location.pathname}${location.search}`);
           }
           if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
           else taskDetail.open(command.workItem.id);
@@ -540,6 +549,7 @@ export function useWorkItemCommands() {
       taskWorkflow,
       projectWorkflow,
       navigate,
+      location.key,
       scope,
       resolveStoryPrerequisite,
       continueStoryLifecycle,

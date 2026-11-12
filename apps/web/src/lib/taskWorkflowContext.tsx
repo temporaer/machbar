@@ -45,6 +45,7 @@ export interface TaskWorkflowState {
 interface PlanningDetailInspection {
   previousDetail: TaskDetailHandoff | null;
   planningWorkflow: TaskWorkflowState;
+  originPath: string;
 }
 
 interface TaskWorkflowContextValue {
@@ -53,7 +54,7 @@ interface TaskWorkflowContextValue {
   close: () => void;
   detailInspection: PlanningDetailInspection | null;
   detailInspections: PlanningDetailInspection[];
-  suspendForDetail: (previousDetail: TaskDetailHandoff | null) => void;
+  suspendForDetail: (previousDetail: TaskDetailHandoff | null, originPath: string) => void;
   resumeFromDetail: () => void;
 }
 
@@ -68,9 +69,9 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       current,
       detailInspection,
       detailInspections,
-      suspendForDetail: (previousDetail) => {
+      suspendForDetail: (previousDetail, originPath) => {
         if (current && current !== detailInspection?.planningWorkflow) {
-          setDetailInspections((previous) => [...previous, { previousDetail, planningWorkflow: current }]);
+          setDetailInspections((previous) => [...previous, { previousDetail, planningWorkflow: current, originPath }]);
         }
       },
       resumeFromDetail: () => {

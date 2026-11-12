@@ -546,6 +546,9 @@ share the `WorkItemAncestor = { id, role: "story" | "task", title }` shape from
 `apps/web/src/components/WorkItemBreadcrumbs.tsx` above the detail title —
 task detail and project detail do not maintain separate breadcrumb
 implementations.
+Project ancestors are real router links, preserving modified/middle-click and
+assistive link navigation. Unmodified primary activation still dispatches the
+canonical `workItem.open` command.
 
 Projects additionally carry:
 
@@ -1277,8 +1280,9 @@ The row shows **one** progress bar — task completion, marked up as a real `rol
 ### Status disclosure and explicit transition buttons
 
 No surface offers status as a `<select>`. Lists keep read-only status badges;
-task and project details use a labeled current-status disclosure with a chevron
-and `aria-expanded`. Their choices sit directly below the control and dispatch
+task details use a labeled current-status disclosure with a chevron and
+`aria-expanded`. Project details separate the read-only status badge from an
+explicit Change status button. Their choices sit directly below and dispatch
 canonical task/project commands. Project choices come from `availableActions`
 and `storyWorkflowCommand()`; task terminal transitions retain criteria and child
 policy decisions. Captured Inbox classification remains separate. Tests assert
@@ -1422,16 +1426,19 @@ A household has at most ~5 members, so every focused assignment popup renders th
 - Chips keep a ~44 px touch target (`.choice-chip`) and wrap rather than scroll.
 
 `TaskDetailSheet` and `ProjectDetailPage` read as documents. Authored title
-and notes keep explicit Edit/Save/Cancel. The summary groups status,
-responsibility/scope, timing, optional current values and direct tag/place
-shortcuts; it is neither an inspector form nor a pill catalog. Scheduled dates
+and notes keep explicit Edit/Save/Cancel. The summary labels Responsibility,
+Planning and Organization, separating status from scalar-property editing and
+authored content. Task owner and Project owner name the respective existing
+owner/driver workflow; inherited task ownership identifies the parent-task or
+project source from `effectiveOwnerSource`. Project ancestry appears once in
+clickable breadcrumbs, not as a second ownership/property control. Scheduled dates
 and deadlines have separate buttons and target the same planning draft.
 
 `DetailPropertyPill` remains the shared current-value control. Detail summary
 CSS makes it quiet and wraps long values while keeping 44px touch targets;
 focused editors retain their existing presentation. Every current value opens
 its canonical editor directly. Unset tags/places always have a direct labelled
-shortcut. The optional-property menu contains only applicable unset revisit,
+shortcut. Add details beside Planning contains only applicable unset revisit,
 reminder, recurrence, priority and prerequisite entries. Missing external waits
 have a direct entry in the planning summary, through the same waiting command.
 Clearing a value brings its add entry back; no domain eligibility rules change.
@@ -1441,16 +1448,23 @@ precedes optional AI in Structure; both retain their existing workflow hosts.
 
 `DetailActionMenu` is a shared presentation wrapper over `BottomSheet` and
 `ActionTileGrid`, with no mutation or workflow routing. Its header instance
-owns discussion, manual clarification (tasks), structure, additional-next-action
-(tasks), attachments, sharing/export and a separately styled confirmed delete.
+owns discussion, manual clarification (tasks), additional-next-action (tasks),
+attachments, sharing/export and confirmed delete as a normal red action tile.
+Project lifecycle choices live only under Change status, not in this menu.
 The AI shortcut remains beside it. A selected command dismisses the menu before
 dispatching to the existing workflow host; sharing keeps its feedback in the
 menu. The old lower Weitere Aktionen and danger catalogs are removed. Contextual
 step, outcome and prerequisite actions remain at their content sections.
+`WorkItemDetailDisclosure` places outcome/structure heading actions outside the
+native summary; the 44px icon controls remain reachable when collapsed.
+Project outcome and project task sections start expanded, preserving their initial
+content visibility. Task structure retains its existing default-open behavior
+and all variants retain the Structure workflow entry.
 Empty content has quiet add access instead of a prominent empty panel.
-Created/updated metadata is inside the final activity disclosure; recurrence
-history remains near that history area. Material/provenance and breadcrumbs keep
-their existing navigation.
+Created/updated metadata is inside the final activity disclosure; both activity
+and recurrence history use quiet collapsed disclosures. Material/provenance keep
+their existing navigation. Breadcrumbs dispatch `workItem.open`; opening a
+project closes any task detail sheet before navigating.
 
 Focused task workflows may derive optional structured suggestions from the
 task title through the React-free `lib/captionHints.ts` primitive. It retains
@@ -1625,6 +1639,16 @@ operation launched there to occupy the foreground. Closing detail restores the
 most recent planning workflow and, where applicable, the prior detail/queue snapshot using
 `TaskDetailProvider`'s existing handoff methods. No planning state is serialized
 or committed for navigation, and no separate prerequisite viewer is introduced.
+Navigating from an inspected task to a project suspends that detail through the
+existing handoff instead of closing it: closing means returning to the planner.
+The inspection records its originating path and search. On browser history
+traversals, the host resumes detail at that origin and suspends it elsewhere,
+including list origins without a task route adapter. A planner opened from the
+inspection shares its suspension, so Forward hides both and Back restores the
+same mounted inputs. Explicit refinement returns retain their existing handoff
+authority: replacing the origin entry must not hide the restored inspection.
+The project opens without planning/detail sheets; live planning drafts remain
+mounted throughout, and closing the returned inspection restores its planner.
 
 ### Paperless-backed Markdown attachments
 
@@ -1821,6 +1845,9 @@ are independent of the fixed action rail's presentation. Both keyboard hooks
 suppress themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
+Rows inside closed native disclosures are excluded from both traversal and
+active-row commands, including structural moves and focused task shortcuts.
+Selection can resume when the disclosure reopens, but cannot mutate hidden work.
 
 **Command rails.** Left swipe means “What should happen next with this item?”
 `workItemRail.ts` owns pure, deterministic task/project selection and typed

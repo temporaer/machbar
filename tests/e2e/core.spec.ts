@@ -160,6 +160,265 @@ test("detail status control is visible on touch and desktop", async ({ page }) =
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${item.id}`)).json()).status).toBe("done");
 });
 
+test("detail documents retain heading actions, ownership and breadcrumb navigation at narrow and large-text sizes", async ({ page }, testInfo) => {
+  async function checkHeadingLayout(kind: "task" | "project") {
+    for (const [width, fontSize] of [[320, "100%"], [390, "100%"], [320, "200%"]] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(size => { document.documentElement.style.fontSize = size; }, fontSize);
+      for (const summary of await page.locator(".detail-history > summary").all()) {
+        expect(await summary.evaluate(node => {
+          const style = getComputedStyle(node);
+          return { weight: style.fontWeight, transform: style.textTransform };
+        })).toEqual({ weight: "500", transform: "none" });
+      }
+      for (const section of await page.locator(".detail-disclosure-with-actions").all()) {
+        const actionBounds = await section.locator(".detail-disclosure-actions button").boundingBox();
+        const headingBounds = await section.locator(".task-detail-disclosure-heading").boundingBox();
+        const summaryBounds = await section.locator("summary").boundingBox();
+        expect(actionBounds!.height).toBeGreaterThanOrEqual(44);
+        expect(actionBounds!.width).toBeGreaterThanOrEqual(44);
+        expect(headingBounds!.x + headingBounds!.width).toBeLessThanOrEqual(actionBounds!.x);
+        expect(actionBounds!.y).toBeGreaterThanOrEqual(summaryBounds!.y - 1);
+        expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(summaryBounds!.y + summaryBounds!.height + 1);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      if (kind === "task") {
+        expect(await page.getByRole("dialog").evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+      }
+      await page.locator(".detail-disclosure-with-actions").first().scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`${kind}-details-${width}-${fontSize}.png`), fullPage: true });
+    }
+    await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
+  }
+  await page.goto("/#/today");
+  const memberId = Number(await page.evaluate(() => localStorage.getItem("machbar:identity-member-id")));
+  const projectResponse = await page.request.post("/api/projects", {
+    data: { title: `Familienprojekt mit einem langen erklärenden Namen ${randomUUID()}`, ownerMemberId: memberId },
+  });
+  expect(projectResponse.status()).toBe(201);
+  const project = await projectResponse.json();
+  const item = await task(page, {
+    projectId: project.id, ownerInheritanceMode: "inherit", repeatAfterDays: 7, allowedDeviationDays: 0,
+    scheduledDate: "2099-05-10",
+    title: `Eine ausführlich beschriebene Aufgabe ${randomUUID()}`,
+  });
+  await page.goto(`/#/tasks/${item.id}`);
+  await expect(page.getByText("Vom Projekt geerbt", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Aufgabenverantwortung/ })).toBeVisible();
+  await expect(page.locator(".detail-history")).toHaveCount(2);
+  for (const history of await page.locator(".detail-history").all()) {
+    await expect(history).not.toHaveAttribute("open");
+  }
+  const taskStructure = page.getByRole("button", { name: "Struktur bearbeiten", exact: true });
+  await expect(taskStructure).toBeVisible();
+  await expect(taskStructure.locator("..").locator("..").locator("details")).not.toHaveAttribute("open");
+  await checkHeadingLayout("task");
+  const taskActions = page.getByRole("dialog").getByRole("button", { name: "Weitere Aktionen", exact: true });
+  await taskActions.click();
+  const deleteAction = page.getByRole("button", { name: "Löschen", exact: true });
+  await expect(deleteAction).toHaveClass(/action-tile-danger/);
+  await deleteAction.click();
+  await page.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(taskActions).toBeFocused();
+  const projectLink = page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true });
+  await expect(projectLink).toHaveAttribute("href", `#/projects/${project.id}`);
+  for (const activation of ["Control", "middle"] as const) {
+    const popup = page.context().waitForEvent("page");
+    if (activation === "Control") await projectLink.click({ modifiers: ["Control"] });
+    else await projectLink.click({ button: "middle" });
+    const otherTab = await popup;
+    await expect(otherTab.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+    await otherTab.close();
+    await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
+  }
+  await projectLink.click();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Projektverantwortung/ })).toBeVisible();
+  await expect(page.locator(".detail-project-status")).toBeVisible();
+  await expect(page.locator(".detail-project-status")).not.toHaveRole("button");
+  await page.locator(".project-page-actions").getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+  await expect(page.getByRole("dialog").locator("[data-workflow-action]")).toHaveCount(0);
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Projekt starten", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const projectDetail = await (await page.request.get(`/api/projects/${project.id}`)).json();
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
+  await expect(page.locator("[data-workflow-action]")).toHaveCount(projectDetail.availableActions.length);
+  for (const action of projectDetail.availableActions) {
+    await expect(page.locator(`[data-workflow-action="${action}"]`)).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
+
+  await checkHeadingLayout("project");
+  for (const [label, dialogName] of [
+    ["Ergebnis bearbeiten", `Erledigt, wenn …: ${project.title}`],
+    ["Struktur bearbeiten", `Struktur: ${project.title}`],
+  ] as const) {
+    const action = page.getByRole("button", { name: label, exact: true });
+    const details = action.locator("..").locator("..").locator("details");
+    await details.locator("summary").click();
+    await expect(details).not.toHaveAttribute("open");
+    await action.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: dialogName, exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(action).toBeFocused();
+    await expect(details).not.toHaveAttribute("open");
+  }
+});
+
+test("collapsed project tasks cannot be moved or planned by shortcuts", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Keyboard project ${randomUUID()}` },
+  })).json();
+  const first = await task(page, { projectId: project.id });
+  const second = await task(page, { projectId: project.id });
+  const storedOrder = async () => {
+    const result = await page.request.get(`/api/projects/${project.id}`);
+    expect(result.ok()).toBe(true);
+    const detail = await result.json();
+    return detail.tasks.map((item: { id: number }) => item.id);
+  };
+  await page.goto(`/#/projects/${project.id}`);
+  const firstRow = page.locator(`[data-workitem-id="${first.id}"] .task-row-main`);
+  await expect(firstRow).toBeVisible();
+  await page.keyboard.press("j");
+  await expect(firstRow).toBeFocused();
+  const tasksDisclosure = page.locator(".project-content-tasks");
+  await tasksDisclosure.locator("summary").click();
+  await expect(firstRow).not.toBeVisible();
+  let moves = 0;
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().endsWith(`/api/tasks/${first.id}/move`)) moves += 1;
+  });
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.keyboard.press("s");
+  await page.waitForLoadState("networkidle");
+  expect(moves).toBe(0);
+  expect(await storedOrder()).toEqual([first.id, second.id]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await tasksDisclosure.locator("summary").click();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(storedOrder).toEqual([second.id, first.id]);
+  expect(moves).toBe(1);
+});
+
+for (const fromDetail of [false, true]) {
+test(`project navigation leaves an inspected planner suspended until returning (detail origin: ${fromDetail})`, async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Inspection project ${randomUUID()}` },
+  })).json();
+  const prerequisite = await task(page, { projectId: project.id });
+  const item = await task(page);
+  const dependency = await page.request.post(`/api/tasks/${item.id}/dependencies`, {
+    data: { dependsOnTaskId: prerequisite.id, expectedRevision: item.revision },
+  });
+  expect(dependency.ok()).toBe(true);
+  await page.goto(fromDetail ? `/#/tasks/${item.id}` : "/#/more/all");
+  if (fromDetail) {
+    await page.getByRole("button", { name: "+ Planen", exact: true }).click();
+  } else {
+    await page.getByRole("textbox", { name: "Suchen", exact: true }).fill(item.title);
+    const row = page.locator(`[data-workitem-id="${item.id}"] .task-row-main`);
+    await expect(row).toBeVisible();
+    await expect(page.locator("[data-workitem-id]")).toHaveCount(1);
+    await row.focus();
+    await page.keyboard.press("j");
+    await expect(row).toBeFocused();
+    await page.keyboard.press("s");
+  }
+  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
+  if (!fromDetail) {
+    await planner.locator('section:has([id^="planning-scheduled"]) .task-planning-summary button').click();
+  }
+  const date = planner.getByLabel("Geplant für", { exact: true });
+  await date.fill("10.05.2099");
+  await date.press("Tab");
+  await planner.getByRole("button", { name: prerequisite.title, exact: true }).click();
+  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true }).click();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
+
+  await page.goBack();
+  const returnTitle = fromDetail ? item.title : prerequisite.title;
+  await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
+  if (!fromDetail) {
+    await page.getByRole("button", { name: "+ Planen", exact: true }).click();
+    await date.fill("11.05.2099");
+    await date.press("Tab");
+  }
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goBack();
+  if (!fromDetail) {
+    await expect(planner).toBeVisible();
+    await expect(date).toHaveValue("11.05.2099");
+    await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  }
+  await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(planner).toBeVisible();
+  await expect(date).toHaveValue("10.05.2099");
+  await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
+  expect((await (await page.request.get(`/api/tasks/${prerequisite.id}`)).json()).scheduledDate).toBeNull();
+});
+}
+
+test("refinement returns to an inspected list task without hiding its retained planner", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Refinement return ${randomUUID()}` },
+  })).json();
+  const prerequisite = await task(page, { projectId: project.id });
+  const item = await task(page);
+  expect((await page.request.post(`/api/tasks/${item.id}/dependencies`, {
+    data: { dependsOnTaskId: prerequisite.id, expectedRevision: item.revision },
+  })).ok()).toBe(true);
+  const code = await (await page.request.post("/api/integrations/home-assistant/pairing-code")).json();
+  const paired = await (await page.request.post("/api/integrations/home-assistant/pair", {
+    data: { pairingCode: code.code, protocolVersion: 3 },
+  })).json();
+  expect((await page.request.post("/api/integrations/home-assistant/context", {
+    headers: { authorization: `Bearer ${paired.token}` },
+    data: { protocolVersion: 3, observedAt: new Date().toISOString(), contexts: [], people: [],
+      intake: { aiTask: { entityId: "ai_task.browser", state: "ok", supportsAttachments: true },
+        calendar: { entityId: "calendar.browser", state: "ok" } } },
+  })).ok()).toBe(true);
+  await page.goto("/#/more/all");
+  await page.getByRole("textbox", { name: "Suchen", exact: true }).fill(item.title);
+  const row = page.locator(`[data-workitem-id="${item.id}"] .task-row-main`);
+  await expect(page.locator("[data-workitem-id]")).toHaveCount(1);
+  await row.focus();
+  await page.keyboard.press("j");
+  await page.keyboard.press("s");
+  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
+  await planner.locator('section:has([id^="planning-scheduled"]) .task-planning-summary button').click();
+  const date = planner.getByLabel("Geplant für", { exact: true });
+  await date.fill("10.05.2099");
+  await date.press("Tab");
+  await planner.getByRole("button", { name: prerequisite.title, exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mit KI klären…", exact: true }).click();
+  await page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true }).click();
+  await expect(page).toHaveURL(/#\/intake\//);
+  await page.getByRole("button", { name: "Zurück zur Aufgabe", exact: true }).click();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await expect(page.getByRole("heading", { name: prerequisite.title, exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true }).click();
+  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: prerequisite.title, exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(planner).toBeVisible();
+  await expect(date).toHaveValue("10.05.2099");
+  await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
+  expect((await (await page.request.get(`/api/tasks/${prerequisite.id}`)).json()).revision).toBe(prerequisite.revision);
+});
+
 test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {
   const item = await task(page);
   let release!: () => void;
@@ -216,7 +475,7 @@ test("pending detail writes retain enabled disclosure navigation and modal bound
 test("attachment dialog returns focus to the stable actions trigger", async ({ page }) => {
   const item = await task(page);
   await page.goto(`/#/tasks/${item.id}`);
-  const actions = page.getByRole("button", { name: "Aktionen", exact: true });
+  const actions = page.getByRole("button", { name: "Weitere Aktionen", exact: true });
   await actions.click();
   await page.getByRole("button", { name: "Anhang hinzufügen", exact: true }).click();
   const dialog = page.getByRole("dialog").last();
@@ -632,7 +891,7 @@ for (const targetType of ["task", "project"] as const) {
       await page.goto(`/#/${targetType}s/${item.id}`);
       await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
       if (targetType === "project") {
-        await page.getByRole("button", { name: "Struktur", exact: true }).click();
+        await page.getByRole("button", { name: "Struktur bearbeiten", exact: true }).click();
       }
       await page.getByRole("dialog").getByRole("button", { name: "Mit KI klären…", exact: true }).click();
       await page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true }).click();
@@ -880,7 +1139,7 @@ test("project activation ends on denial and an explicit reopen starts with empty
     return route.continue();
   });
 
-  await page.locator(".detail-meta-status-button").click();
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
   await page.locator('[data-workflow-action="activate"]').click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel(/Verantwortlich für/)).toBeVisible();
@@ -906,7 +1165,7 @@ test("project activation ends on denial and an explicit reopen starts with empty
   phase = "restored";
   await page.getByRole("button", { name: "Erneut versuchen", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
-  await page.locator(".detail-meta-status-button").click();
+  await page.getByRole("button", { name: "Status ändern", exact: true }).click();
   await page.locator('[data-workflow-action="activate"]').click();
   await expect(dialog.locator('select[id^="commitment-driver-"]')).toHaveValue("");
   await expect(dialog.locator("#commitment-next-action")).toHaveValue("");

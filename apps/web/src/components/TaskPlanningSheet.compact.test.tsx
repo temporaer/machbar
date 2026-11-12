@@ -10,6 +10,8 @@ import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import type { TaskPlanningTarget } from "../lib/commands";
+import { de as strings } from "../i18n/de";
+import { useNavigate } from "react-router-dom";
 
 vi.mock("../lib/api", () => ({ api: {
   previewTaskUpdate: vi.fn(),
@@ -25,7 +27,8 @@ function openSection(element: HTMLElement) {
 }
 function Harness({ fromDetail = false }: { fromDetail?: boolean }) {
   const dispatch = useWorkItemCommands();
-  return <><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><button onClick={() => dispatch({ type: "workItem.open", workItem: { id: 3, role: "task" } })}>Generic linked task</button><TaskDetailSheet /><TaskWorkflowHost /></>;
+  const navigate = useNavigate();
+  return <><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><button onClick={() => dispatch({ type: "workItem.open", workItem: { id: 3, role: "task" } })}>Generic linked task</button><button onClick={() => navigate(-1)}>Browser Back</button><button onClick={() => navigate(1)}>Browser Forward</button><TaskDetailSheet /><TaskWorkflowHost /></>;
 }
 
 beforeEach(() => {
@@ -154,7 +157,7 @@ describe("compact planning", () => {
       await user.click(screen.getByRole("button", { name: title }));
       await screen.findByRole("heading", { name: title, level: 1 });
       expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Weitere Optionen" }));
+      await user.click(screen.getByRole("button", { name: strings.detailMoreOptions }));
       await user.click(screen.getByRole("button", { name: "Erinnern am …" }));
       const inspectedPlanning = await screen.findByRole("dialog", { name: "Planung" });
       expect(within(inspectedPlanning).getByText(title, { selector: "p" })).toBeInTheDocument();
@@ -183,6 +186,60 @@ describe("compact planning", () => {
       expect(await screen.findByRole("heading", { name: "Example planning", level: 1 })).toBeInTheDocument();
     }
   }, 15000);
+  it.each([false, true])("navigates from an inspected task without resuming or discarding planning (detail origin: %s)", async (fromDetail) => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 1, title: "Original planning", dependencies: [
+      { id: 1, taskId: 1, dependsOnTaskId: 2, title: "Inspected task", resolved: false },
+    ] });
+    mocked.getTask.mockImplementation(async (id) => ({
+      ...(id === 1 ? task : makeTask({ id, title: id === 2 ? "Inspected task" : "Another task" })),
+      ancestors: id === 2 ? [{ id: 7, role: "story", title: "Parent project" }] : [],
+      childStories: [], externalRefs: [], hierarchyRevisions: [],
+    }) as never);
+    renderWithProviders(<Harness fromDetail={fromDetail} />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    if (fromDetail) {
+      await screen.findByRole("heading", { name: "Original planning", level: 1 });
+      await user.click(screen.getByRole("button", { name: "+ Planen" }));
+    }
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-scheduled"));
+    const date = screen.getByLabelText("Geplant für");
+    fireEvent.change(date, { target: { value: "20.10.2026" } });
+    fireEvent.blur(date);
+    await user.click(screen.getByRole("button", { name: "Inspected task" }));
+    await screen.findByRole("heading", { name: "Inspected task", level: 1 });
+    await user.click(screen.getByText("Parent project"));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(date).toHaveValue("20.10.2026");
+    await user.click(screen.getByRole("button", { name: "Browser Back" }));
+    await screen.findByRole("heading", { name: "Inspected task", level: 1 });
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ Planen" }));
+    const inspectedPlanner = await screen.findByRole("dialog", { name: "Planung" });
+    const inspectedDate = within(inspectedPlanner).getByLabelText("Geplant für");
+    fireEvent.change(inspectedDate, { target: { value: "21.10.2026" } });
+    fireEvent.blur(inspectedDate);
+    fireEvent.click(screen.getByRole("button", { name: "Browser Forward", hidden: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Browser Back" }));
+    expect(await screen.findByRole("dialog", { name: "Planung" })).toBe(inspectedPlanner);
+    expect(within(inspectedPlanner).getByLabelText("Geplant für")).toBe(inspectedDate);
+    expect(inspectedDate).toHaveValue("21.10.2026");
+    expect(date).toHaveValue("20.10.2026");
+    await user.click(within(inspectedPlanner).getByRole("button", { name: "Abbrechen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Browser Forward", hidden: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Generic linked task" }));
+    await screen.findByRole("heading", { name: "Another task", level: 1 });
+    await user.keyboard("{Escape}");
+    await screen.findByRole("dialog", { name: "Planung" });
+    expect(screen.getByLabelText("Geplant für")).toBe(date);
+    expect(date).toHaveValue("20.10.2026");
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+  }, 15000);
+
   it.each([false, true])("returns through nested prerequisite planners (detail origin: %s)", async (fromDetail) => {
     const user = userEvent.setup();
     const tasks = [1, 2, 3].map((id) => makeTask({ id, title: `Nested task ${id}`, revision: 1,

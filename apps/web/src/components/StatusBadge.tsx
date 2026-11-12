@@ -29,7 +29,9 @@ export function StatusBadge({ status, ...props }: StatusControlProps & { status:
     : <span className={`badge badge-status-${status}`}>{text}</span>;
 }
 
-export function ProjectStatusBadge({ status, ...props }: StatusControlProps & { status: ProjectStatus; onClick: () => void }) {
+export function ProjectStatusBadge({ status, ...props }: StatusControlProps & { status: ProjectStatus }) {
   const strings = useStrings();
-  return <StatusControl status={status} text={strings.projectStatusLabels[status]} {...props} />;
+  const text = strings.projectStatusLabels[status];
+  return props.onClick ? <StatusControl status={status} text={text} {...props} />
+    : <span className={`badge detail-project-status status-${status}`}>{text}</span>;
 }

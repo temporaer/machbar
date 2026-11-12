@@ -247,10 +247,16 @@ section on the Projekte tab, does not silently disappear: leaving the handoff
 (rather than opening the project directly) navigates to Projekte with that
 section auto-expanded and the new project briefly highlighted.
 
-Task and project details show a current-status button with a chevron. It opens
-the legal transitions directly below; tasks also have a labeled completion or
-reopen shortcut. Saving feedback stays visible until the refreshed details
-arrive. Notes sit in a lightly tinted section; long notes expand with Show more
+Task details show a current-status button with a chevron. Project details show
+a read-only status badge and a separate Change status button instead of
+duplicating lifecycle actions in More actions. Both reveal legal transitions
+directly below; tasks also have a labeled completion or reopen shortcut.
+Responsibility, Planning and Organization label the immediate-save properties,
+with distinct task/project ownership labels and inherited-owner provenance.
+Outcome and structure editing sit beside their collapsible headings, remaining
+available when collapsed; activity and recurrence history are quiet disclosures.
+Saving feedback stays visible until the refreshed details arrive.
+Notes sit in a lightly tinted section; long notes expand with Show more
 without opening a separate scrolling area.
 
 ### 3. Execute
