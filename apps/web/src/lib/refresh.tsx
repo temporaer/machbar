@@ -36,7 +36,7 @@ function refreshDiagnostic(reason: string, version: number) {
  */
 interface RefreshContextValue {
   version: number;
-  bump: () => void;
+  bump: () => Promise<void>;
 }
 
 const RefreshContext = createContext<RefreshContextValue | null>(null);
@@ -60,7 +60,7 @@ export function RefreshProvider({
     setVersion((v) => v + 1);
     return invalidateReads(queryClient, reason === "mutation");
   }, [queryClient]);
-  const bump = useCallback(() => { void invalidate("mutation"); }, [invalidate]);
+  const bump = useCallback(() => invalidate("mutation"), [invalidate]);
 
   // Leading refresh plus one trailing refresh; continuous events cannot
   // postpone convergence or invalidate all queries several times per second.

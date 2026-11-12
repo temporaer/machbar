@@ -211,7 +211,7 @@ describe("RefreshProvider synchronization", () => {
     const stream = MockEventSource.instances[0]!;
     act(() => stream.onopen?.());
     act(() => window.dispatchEvent(new Event("focus")));
-    act(() => bump());
+    act(() => { void bump(); });
     expect(screen.getByLabelText("version")).toHaveTextContent("2");
     act(() => vi.advanceTimersByTime(EXTERNAL_REFRESH_INTERVAL_MS));
     expect(screen.getByLabelText("version")).toHaveTextContent("3");

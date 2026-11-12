@@ -227,6 +227,42 @@ describe("ProjectDetailPage task explanations", () => {
     });
   });
 
+  it.each(["success", "write-failure", "read-failure"])("keeps project status feedback through write and reload: %s", async outcome => {
+    const original = { ...makeProject({ id: 42, title: "Status project", status: "active", ownerMemberId: 1 }), tasks: [] };
+    const confirmed = { ...original, revision: 2, status: "completed" as const, availableActions: ["reopen", "archive"] as ("reopen" | "archive")[] };
+    let finishWrite!: (project: typeof confirmed) => void;
+    let failWrite!: (cause: Error) => void;
+    let finishRead!: (project: typeof confirmed) => void;
+    let failRead!: (cause: Error) => void;
+    mockedApi.getProject.mockResolvedValueOnce(original).mockImplementation(() => new Promise((resolve, reject) => { finishRead = resolve; failRead = reject; }));
+    mockedApi.completeProject.mockImplementation(() => new Promise((resolve, reject) => { finishWrite = resolve; failWrite = reject; }));
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByRole("heading", { name: original.title });
+    const status = screen.getByRole("button", { name: /Status.*Aktiv/ });
+    expect(status).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(status);
+    expect(status).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(within(screen.getByRole("group", { name: strings.status })).getByRole("button", { name: strings.completeProjectAction }));
+    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    if (outcome === "write-failure") {
+      await act(async () => failWrite(new Error("Write rejected")));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Write rejected");
+      expect(screen.getByRole("button", { name: /Status.*Aktiv/ })).toBeEnabled();
+      return;
+    }
+    await act(async () => finishWrite(confirmed));
+    await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    if (outcome === "read-failure") {
+      await act(async () => failRead(new Error("Refresh offline")));
+      expect(await screen.findByRole("alert")).toHaveTextContent(strings.detailRefreshError);
+      mockedApi.getProject.mockResolvedValue(confirmed);
+      await userEvent.click(screen.getByRole("button", { name: strings.retry }));
+    } else await act(async () => finishRead(confirmed));
+    expect(await screen.findByRole("button", { name: /Status.*Abgeschlossen/ })).toBeEnabled();
+    expect(mockedApi.completeProject).toHaveBeenCalledOnce();
+  });
+
   afterEach(() => { vi.useRealTimers(); });
 
   it.each([401, 403, 404])("ends inline project editing when a %s read revokes access", async status => {
@@ -1075,7 +1111,7 @@ describe("ProjectDetailPage task explanations", () => {
       screen.getByRole("button", { name: /Verantwortlich/ }),
     ).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: /Status.*Aktiv/ }),
+      screen.getByRole("button", { name: /Status.*Wird gespeichert/ }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ort reservieren" })).toBeEnabled();
     expect(screen.getByRole("button", { name: strings.workRefinement })).toBeDisabled();
@@ -1177,7 +1213,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     const statuses = screen.getByRole("group", { name: strings.status });
     expect(
-      within(statuses).getByRole("button", { name: strings.completeStory }),
+      within(statuses).getByRole("button", { name: strings.completeProjectAction }),
     ).toBeInTheDocument();
     expect(
       within(statuses).queryByRole("button", { name: strings.reopen }),

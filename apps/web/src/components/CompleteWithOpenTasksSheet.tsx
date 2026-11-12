@@ -117,7 +117,7 @@ export function CompleteWithOpenTasksSheet({
               setBusy(false);
             }
           }}
-        >{strings.completeProjectAction}</button>
+        >{busy ? strings.saving : strings.completeProjectAction}</button>
         <button type="button" className="btn btn-block" disabled={busy} onClick={onClose}>{strings.close}</button>
       </div>
     </BottomSheet>

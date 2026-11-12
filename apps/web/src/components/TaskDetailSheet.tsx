@@ -1,6 +1,7 @@
 import { NotesAppend } from "./NotesAppend";
 import {
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -30,7 +31,7 @@ import { ConfirmDeleteSheet } from "./ConfirmDeleteSheet";
 import { WorkItemInlineError } from "./WorkItemInlineError";
 import { MemberLabel } from "./MemberAvatar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
-import { MarkdownNotes } from "./MarkdownNotes";
+import { DetailNotesPreview } from "./DetailNotesPreview";
 import { NativeShareButton } from "./NativeShareButton";
 import { CalendarExportButton } from "./CalendarExportButton";
 import { IconActionButton } from "./IconActionButton";
@@ -111,6 +112,7 @@ export function TaskDetailSheet() {
   const [notesEditing, setNotesEditing] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
+  const statusActionsId = useId();
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [makeActionBusy, setMakeActionBusy] = useState(false);
@@ -130,6 +132,7 @@ export function TaskDetailSheet() {
     data: loadedTask,
     loading,
     error,
+    refreshError,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
   const taskActions = useTaskActions();
@@ -559,12 +562,6 @@ export function TaskDetailSheet() {
               </>
             ) : (
               <div className="task-detail-title-row">
-                {!isReference && !taskIsCapturedInboxItem ? <button type="button"
-                  className="detail-complete-trigger"
-                  aria-label={task.status === "done" || task.status === "cancelled" ? strings.reopen : strings.done}
-                  onClick={() => dispatch({ type: "task.toggleDone", task })}>
-                  <span aria-hidden="true" className={`task-row-checkbox${task.status === "done" ? " done" : ""}${task.status === "cancelled" ? " cancelled" : ""}`}>{task.status === "done" ? "✓" : task.status === "cancelled" ? "×" : ""}</span>
-                </button> : null}
                 <h1>
                   {task.title}
                 </h1>
@@ -627,8 +624,39 @@ export function TaskDetailSheet() {
           ) : null}
 
           <div className="detail-summary">
-            {!isReference ? <div className="detail-summary-status">
-              <StatusBadge status={task.status} {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })} />
+            {!isReference ? <div className="detail-status-section">
+              <div className="detail-status-row">
+                {!taskIsCapturedInboxItem ? <button type="button" className="btn btn-sm"
+                  disabled={taskMutationPending} onClick={() => dispatch({ type: "task.toggleDone", task })}>
+                  <span aria-hidden="true">✓ </span>{task.status === "done" || task.status === "cancelled" ? strings.reopen : strings.detailComplete}
+                </button> : null}
+                <StatusBadge status={task.status} busy={taskMutationPending} expanded={lifecycleOpen}
+                  controls={statusActionsId} {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })} />
+              </div>
+          {lifecycleOpen ? (
+            <div id={statusActionsId} className="task-row-lifecycle" role="group" aria-label={strings.status}>
+              {taskStatuses
+                .filter((status) => status !== "captured" || task.status === "captured")
+                .map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={task.status === status}
+                    aria-current={task.status === status ? "true" : undefined}
+                    onClick={() => {
+                      setLifecycleOpen(false);
+                      dispatch({ type: "task.setStatus", task, status });
+                    }}
+                  >
+                    {status === task.status ? strings.taskStatusLabels[status] : status === "done" ? strings.completeTaskAction : status === "cancelled" ? strings.cancelTask : strings.taskStatusLabels[status]}
+                  </button>
+                ))}
+            </div>
+          ) : null}
+              {taskMutationPending ? <p role="status" className="detail-status-feedback">{strings.saving}</p> : null}
+              {!saveError && taskActions.errors[task.id] ? <WorkItemInlineError message={taskActions.errors[task.id]!} /> : null}
+              {refreshError ? <ErrorState message={`${strings.detailRefreshError} ${refreshError}`} onRetry={reload} /> : null}
             </div> : null}
             {!isReference ? <div className="detail-summary-group detail-meta-row" aria-label={strings.detailResponsibility}>
             {task.projectId !== null && task.projectTitle ? (
@@ -743,31 +771,11 @@ export function TaskDetailSheet() {
             </div>
           </div>
 
-          {lifecycleOpen ? (
-            <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
-              {taskStatuses
-                .filter((status) => status !== "captured" || task.status === "captured")
-                .map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={task.status === status}
-                    aria-current={task.status === status ? "true" : undefined}
-                    onClick={() => {
-                      setLifecycleOpen(false);
-                      dispatch({ type: "task.setStatus", task, status });
-                    }}
-                  >
-                    {strings.taskStatusLabels[status]}
-                  </button>
-                ))}
-            </div>
-          ) : null}
 
 
 
-          {saveError ?? taskActions.errors[task.id] ? (
+
+          {saveError ?? (isReference ? taskActions.errors[task.id] : null) ? (
             <WorkItemInlineError message={saveError ?? taskActions.errors[task.id]!} />
           ) : null}
 
@@ -879,7 +887,7 @@ export function TaskDetailSheet() {
                 </div>
               </>
             ) : notesDraft.trim() ? (
-              <MarkdownNotes value={notesDraft} />
+              <DetailNotesPreview key={task.id} value={notesDraft} />
             ) : (
               <p className="text-muted">{strings.noNotes}</p>
             )}

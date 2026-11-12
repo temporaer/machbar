@@ -246,7 +246,7 @@ describe("TaskDetailSheet", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     expect(within(screen.getByRole("dialog")).getByText(strings.loading)).toBeInTheDocument();
-    for (let index = 0; index < 5; index++) act(() => bump());
+    for (let index = 0; index < 5; index++) act(() => { void bump(); });
     expect(mockedApi.getTask).toHaveBeenCalledOnce();
     await act(async () => resolve(task));
     await waitForTaskTitle("Slow task");
@@ -971,7 +971,7 @@ describe("TaskDetailSheet", () => {
     expect(opener).toHaveFocus();
     await act(async () => releaseRefresh());
     await waitFor(() => expect(opener).not.toBeInTheDocument());
-    expect(within(document.querySelector<HTMLElement>(".task-detail-title-field")!).getByRole("button", { name: strings.done })).toHaveFocus();
+    expect(within(document.querySelector<HTMLElement>(".task-detail-title-field")!).getByRole("button", { name: strings.edit })).toHaveFocus();
     expect(screen.getByRole("button", { name: "Existing step" })).toBeVisible();
     expect(screen.getByRole("button", { name: "First new step" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Second new step" })).toBeVisible();
@@ -1298,6 +1298,46 @@ describe("TaskDetailSheet", () => {
     expect(statusButton).toHaveClass("detail-meta-status-button");
   });
 
+  it.each(["success", "write-failure", "read-failure"])("keeps status feedback through write and reload: %s", async outcome => {
+    const original = makeTask({ id: 45, title: "Status feedback", status: "actionable" });
+    const confirmed = { ...original, revision: 2, status: "done" as const };
+    let finishWrite!: (task: Task) => void;
+    let failWrite!: (cause: Error) => void;
+    let finishRead!: (task: Task) => void;
+    let failRead!: (cause: Error) => void;
+    mockedApi.getTask.mockResolvedValueOnce(original).mockImplementation(() => new Promise((resolve, reject) => { finishRead = resolve; failRead = reject; }));
+    mockedApi.completeTask.mockImplementation(() => new Promise((resolve, reject) => { finishWrite = resolve; failWrite = reject; }));
+    renderSheet(45);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(original.title);
+    expect(document.querySelector(".task-detail-title-row .task-row-checkbox")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: strings.detailComplete }));
+    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    if (outcome === "write-failure") {
+      await act(async () => failWrite(new Error("Write rejected")));
+      expect(screen.getByRole("button", { name: /Status.*Machbar/ })).toBeEnabled();
+      expect(await screen.findByRole("alert")).toHaveTextContent("Write rejected");
+      expect(mockedApi.getTask).toHaveBeenCalledTimes(1);
+      return;
+    }
+    await act(async () => finishWrite(confirmed));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: strings.detailComplete }));
+    expect(mockedApi.completeTask).toHaveBeenCalledOnce();
+    if (outcome === "read-failure") {
+      await act(async () => failRead(new Error("Refresh offline")));
+      expect(await screen.findByRole("alert")).toHaveTextContent(strings.detailRefreshError);
+      expect(screen.getByRole("button", { name: /Status.*Machbar/ })).toBeEnabled();
+      mockedApi.getTask.mockResolvedValue(confirmed);
+      await userEvent.click(screen.getByRole("button", { name: strings.retry }));
+    } else {
+      await act(async () => finishRead(confirmed));
+    }
+    expect(await screen.findByRole("button", { name: /Status.*Erledigt/ })).toBeEnabled();
+    expect(mockedApi.completeTask).toHaveBeenCalledOnce();
+  });
+
   async function openStatusChoices() {
     await userEvent.click(screen.getByRole("button", { name: /Status/ }));
     return screen.getByRole("group", { name: "Status" });
@@ -1317,7 +1357,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Status korrekt ändern");
 
     const statuses = await openStatusChoices();
-    await userEvent.click(within(statuses).getByRole("button", { name: "Erledigt" }));
+    await userEvent.click(within(statuses).getByRole("button", { name: strings.completeTaskAction }));
 
     await waitFor(() =>
       expect(mockedApi.completeTask).toHaveBeenCalledWith(46, "leave_open", undefined, 1),
@@ -1367,7 +1407,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Doch erledigt");
 
     const statuses = await openStatusChoices();
-    await userEvent.click(within(statuses).getByRole("button", { name: "Erledigt" }));
+    await userEvent.click(within(statuses).getByRole("button", { name: strings.completeTaskAction }));
 
     await waitFor(() =>
       expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(

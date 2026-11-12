@@ -1,6 +1,6 @@
 import { ProjectTaskEntrySheet } from "../components/ProjectTaskEntrySheet";
 import { NotesAppend } from "../components/NotesAppend";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   useParams,
   Link,
@@ -22,7 +22,7 @@ import { formatRevisitAt } from "../lib/relativeDate";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
 import { ExternalRefBadge } from "../components/ExternalRefBadge";
-import { MarkdownNotes } from "../components/MarkdownNotes";
+import { DetailNotesPreview } from "../components/DetailNotesPreview";
 import { NativeShareButton } from "../components/NativeShareButton";
 import { CalendarExportButton } from "../components/CalendarExportButton";
 import { serializeProjectForShare } from "../lib/shareText";
@@ -81,6 +81,7 @@ export function ProjectDetailPage() {
   const [savingContent, setSavingContent] = useState(false);
   const [contentError, setContentError] = useState<string | null>(null);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
+  const statusActionsId = useId();
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const contentBaselineRef = useRef<{
@@ -117,6 +118,7 @@ export function ProjectDetailPage() {
     data: loadedProject,
     loading: projectLoading,
     error: projectError,
+    refreshError: projectRefreshError,
     reload: reloadProject,
   } = useAsync(() => api.getProject(projectId), [projectId]);
   // Recency is a soft ranking boost for search/pickers, not domain state —
@@ -498,6 +500,9 @@ export function ProjectDetailPage() {
                   <ProjectStatusBadge
                     status={project.status}
                     disabled={projectMutationPending}
+                    busy={projectMutationPending}
+                    expanded={lifecycleOpen}
+                    controls={statusActionsId}
                     onClick={() => setLifecycleOpen((current) => !current)}
                   />
                   <span className="project-detail-task-progress">
@@ -522,6 +527,7 @@ export function ProjectDetailPage() {
                 </div>
                 {lifecycleOpen ? (
                   <div
+                    id={statusActionsId}
                     className="story-row-lifecycle"
                     role="group"
                     aria-label={strings.status}
@@ -546,11 +552,14 @@ export function ProjectDetailPage() {
                           dispatch(storyWorkflowCommand(project, action));
                         }}
                       >
-                        {projectWorkflowLabel(action, strings, project.status)}
+                        {action === "complete" ? strings.completeProjectAction : projectWorkflowLabel(action, strings, project.status)}
                       </button>
                     ))}
                   </div>
                 ) : null}
+                {projectMutationPending ? <p role="status" className="detail-status-feedback">{strings.saving}</p> : null}
+                {!contentError && projectActions.errors[project.id] ? <WorkItemInlineError message={projectActions.errors[project.id]!} /> : null}
+                {projectRefreshError ? <ErrorState message={`${strings.detailRefreshError} ${projectRefreshError}`} onRetry={reloadProject} /> : null}
                 <div className="detail-summary">
                   <div className="detail-summary-group detail-meta-row" aria-label={strings.driver}>
                   {owner ? (
@@ -626,9 +635,9 @@ export function ProjectDetailPage() {
             {project.stuckReason ? (
               <ProjectStuckNotice reason={project.stuckReason} />
             ) : null}
-            {contentError ?? projectActions.errors[project.id] ? (
+            {contentError ? (
               <WorkItemInlineError
-                message={contentError ?? projectActions.errors[project.id]!}
+                message={contentError}
               />
             ) : null}
             <ExternalRefBadge refs={project.externalRefs ?? []} />
@@ -689,7 +698,7 @@ export function ProjectDetailPage() {
                   </div>
                 </>
               ) : notesDraft.trim() ? (
-                <MarkdownNotes value={notesDraft} />
+                <DetailNotesPreview key={project.id} value={notesDraft} />
               ) : (
                 <p className="text-muted">{strings.noNotes}</p>
               )}

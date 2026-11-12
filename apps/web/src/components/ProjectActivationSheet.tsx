@@ -131,7 +131,7 @@ export function ProjectActivationSheet({
         <div className="row">
           <button type="button" className="btn" disabled={saving} onClick={onClose}>{strings.cancel}</button>
           <button type="button" className="btn btn-primary" disabled={saving || resolution === null} onClick={() => void submit()}>
-            {action === "reopen" ? strings.reopen : strings.activateStory}
+            {saving ? strings.saving : action === "reopen" ? strings.reopen : strings.activateStory}
           </button>
         </div>
       </div>
