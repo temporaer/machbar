@@ -36,7 +36,7 @@ function refreshDiagnostic(reason: string, version: number) {
  */
 interface RefreshContextValue {
   version: number;
-  bump: () => void;
+  bump: () => Promise<void>;
 }
 
 const RefreshContext = createContext<RefreshContextValue | null>(null);
@@ -54,13 +54,27 @@ export function RefreshProvider({
   const coalesceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastExternalRefresh = useRef<number | null>(null);
   const diagnosticVersion = useRef(0);
+  const latestInvalidation = useRef<Promise<void> | null>(null);
   const invalidate = useCallback((reason: string) => {
     diagnosticVersion.current += 1;
     refreshDiagnostic(reason, diagnosticVersion.current);
     setVersion((v) => v + 1);
-    return invalidateReads(queryClient, reason === "mutation");
+    const work = invalidateReads(queryClient, reason === "mutation");
+    latestInvalidation.current = work;
+    return (async () => {
+      // Native invalidation can cancel an older refetch. Its completion is
+      // not fresh data: callers must follow the replacement's settlement.
+      // These are only native read promises, never DTOs or another read queue.
+      let pending = work;
+      for (;;) {
+        try { await pending; }
+        catch (error) { if (latestInvalidation.current === pending) throw error; }
+        if (latestInvalidation.current === pending) return;
+        pending = latestInvalidation.current!;
+      }
+    })();
   }, [queryClient]);
-  const bump = useCallback(() => { void invalidate("mutation"); }, [invalidate]);
+  const bump = useCallback(() => invalidate("mutation"), [invalidate]);
 
   // Leading refresh plus one trailing refresh; continuous events cannot
   // postpone convergence or invalidate all queries several times per second.

@@ -7,6 +7,7 @@ import type { Task } from "@machbar/shared";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider, useRefresh } from "../lib/refresh";
+import { useAsync } from "../lib/useAsync";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import {
@@ -246,7 +247,7 @@ describe("TaskDetailSheet", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     expect(within(screen.getByRole("dialog")).getByText(strings.loading)).toBeInTheDocument();
-    for (let index = 0; index < 5; index++) act(() => bump());
+    for (let index = 0; index < 5; index++) act(() => { void bump(); });
     expect(mockedApi.getTask).toHaveBeenCalledOnce();
     await act(async () => resolve(task));
     await waitForTaskTitle("Slow task");
@@ -446,6 +447,89 @@ describe("TaskDetailSheet", () => {
     expect(
       screen.queryByRole("navigation", { name: "Breadcrumb" }),
     ).not.toBeInTheDocument();
+  });
+
+  it.each(["append", "attachment", "save-notes", "save-title"])("keeps newer query text when a %s response settles after a sibling read", async mode => {
+    const task = makeTask({ id: 42, title: "Original title", notes: "Original notes", revision: 1 });
+    const written = { ...task, revision: 2,
+      title: mode === "save-title" ? "Our saved title" : task.title,
+      notes: mode === "attachment" ? "Original notes\n\n[receipt.pdf](paperless:91)" : "Our saved notes",
+    };
+    const latest = { ...written, revision: 3, title: "Newer title", notes: `${written.notes}\n\nOther person's addition` };
+    mockedApi.getTask.mockResolvedValueOnce(task).mockResolvedValue(latest);
+    mockedApi.appendTaskNotes.mockResolvedValue(written);
+    mockedApi.updateTask.mockResolvedValueOnce(written).mockResolvedValue({ ...latest, revision: 4 });
+    let releaseSibling!: (value: string) => void;
+    const held = new Promise<string>(resolve => { releaseSibling = resolve; });
+    const sibling = vi.fn().mockResolvedValueOnce("initial").mockReturnValue(held);
+    function SiblingRead() { useAsync(sibling); return null; }
+    renderWithProviders(<OpenerHarness taskId={42}><SiblingRead /><TaskDetailSheet /><TaskWorkflowHost /></OpenerHarness>);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    if (mode === "append") {
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+      setMarkdownValue(screen.getByRole("textbox", { name: strings.appendNote }), "Our saved notes");
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+    } else if (mode === "attachment") {
+      await openDetailActions();
+      await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+      await userEvent.upload(screen.getByLabelText("Datei auswählen"), new File(["pdf"], "receipt.pdf", { type: "application/pdf" }));
+    } else if (mode === "save-notes") {
+      setMarkdownValue(await openNotesEditor(), written.notes);
+      await userEvent.click(screen.getByRole("button", { name: strings.saveNotes }));
+    } else {
+      const editor = await openTitleEditor();
+      await userEvent.clear(editor);
+      await userEvent.type(editor, written.title);
+      await userEvent.click(screen.getByRole("button", { name: strings.save }));
+    }
+    // A title editor stays open until its write callback finishes, so use
+    // the independently clean notes field to observe the newer query there.
+    if (mode === "save-title") await screen.findByText("Other person's addition", { exact: false });
+    else await waitForTaskTitle(latest.title);
+    await waitFor(() => expect(sibling).toHaveBeenCalledTimes(2));
+    // The attachment dialog correctly makes the underlying detail inert.
+    const pendingControl = document.querySelector<HTMLButtonElement>(".detail-meta-status-button")!;
+    expect(pendingControl).toHaveTextContent(strings.saving);
+    expect(pendingControl).toBeDisabled();
+    await act(async () => releaseSibling("settled"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Status.*Machbar/ })).toBeEnabled());
+    // Read the next editor as a user would; no stale response may reset either baseline.
+    expect(await openTitleEditor()).toHaveValue(latest.title);
+    await userEvent.click(screen.getByRole("button", { name: strings.cancel }));
+    const notesEditor = await openNotesEditor();
+    expect(markdownValue(notesEditor)).toBe(latest.notes);
+    setMarkdownValue(notesEditor, `${latest.notes}\nOur next edit`);
+    await userEvent.click(screen.getByRole("button", { name: strings.saveNotes }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenLastCalledWith(task.id, {
+      notes: `${latest.notes}\nOur next edit`, expectedRevision: latest.revision,
+    }));
+  });
+
+  it.each(["append", "attachment"])("retains confirmed %s text when its detail refresh fails", async mode => {
+    const task = makeTask({ id: 42, title: "Original title", notes: "Original notes", revision: 1 });
+    const written = { ...task, revision: 2, notes: mode === "attachment"
+      ? "Original notes\n\n[receipt.pdf](paperless:91)" : "Original notes\n\nOur addition" };
+    mockedApi.getTask.mockResolvedValueOnce(task).mockRejectedValue(new Error("Read offline"));
+    mockedApi.appendTaskNotes.mockResolvedValue(written);
+    mockedApi.updateTask.mockResolvedValue(written);
+    renderSheet(42);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(task.title);
+    if (mode === "append") {
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+      setMarkdownValue(screen.getByRole("textbox", { name: strings.appendNote }), "Our addition");
+      await userEvent.click(screen.getByRole("button", { name: strings.appendNote }));
+    } else {
+      await openDetailActions();
+      await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+      await userEvent.upload(screen.getByLabelText("Datei auswählen"), new File(["pdf"], "receipt.pdf", { type: "application/pdf" }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Anhang" })).not.toBeInTheDocument());
+    }
+    expect(await screen.findByRole("alert")).toHaveTextContent(strings.detailRefreshError);
+    expect(markdownValue(await openNotesEditor())).toBe(written.notes);
+    expect(mockedApi.appendTaskNotes).toHaveBeenCalledTimes(mode === "append" ? 1 : 0);
+    expect(mockedApi.updateTask).toHaveBeenCalledTimes(mode === "attachment" ? 1 : 0);
   });
 
   it("appends a direct attachment through the revision-safe task action", async () => {
@@ -971,7 +1055,7 @@ describe("TaskDetailSheet", () => {
     expect(opener).toHaveFocus();
     await act(async () => releaseRefresh());
     await waitFor(() => expect(opener).not.toBeInTheDocument());
-    expect(within(document.querySelector<HTMLElement>(".task-detail-title-field")!).getByRole("button", { name: strings.done })).toHaveFocus();
+    expect(within(document.querySelector<HTMLElement>(".task-detail-title-field")!).getByRole("button", { name: strings.edit })).toHaveFocus();
     expect(screen.getByRole("button", { name: "Existing step" })).toBeVisible();
     expect(screen.getByRole("button", { name: "First new step" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Second new step" })).toBeVisible();
@@ -1298,6 +1382,46 @@ describe("TaskDetailSheet", () => {
     expect(statusButton).toHaveClass("detail-meta-status-button");
   });
 
+  it.each(["success", "write-failure", "read-failure"])("keeps status feedback through write and reload: %s", async outcome => {
+    const original = makeTask({ id: 45, title: "Status feedback", status: "actionable" });
+    const confirmed = { ...original, revision: 2, status: "done" as const };
+    let finishWrite!: (task: Task) => void;
+    let failWrite!: (cause: Error) => void;
+    let finishRead!: (task: Task) => void;
+    let failRead!: (cause: Error) => void;
+    mockedApi.getTask.mockResolvedValueOnce(original).mockImplementation(() => new Promise((resolve, reject) => { finishRead = resolve; failRead = reject; }));
+    mockedApi.completeTask.mockImplementation(() => new Promise((resolve, reject) => { finishWrite = resolve; failWrite = reject; }));
+    renderSheet(45);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle(original.title);
+    expect(document.querySelector(".task-detail-title-row .task-row-checkbox")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: strings.detailComplete }));
+    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    if (outcome === "write-failure") {
+      await act(async () => failWrite(new Error("Write rejected")));
+      expect(screen.getByRole("button", { name: /Status.*Machbar/ })).toBeEnabled();
+      expect(await screen.findByRole("alert")).toHaveTextContent("Write rejected");
+      expect(mockedApi.getTask).toHaveBeenCalledTimes(1);
+      return;
+    }
+    await act(async () => finishWrite(confirmed));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: /Status.*Wird gespeichert/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: strings.detailComplete }));
+    expect(mockedApi.completeTask).toHaveBeenCalledOnce();
+    if (outcome === "read-failure") {
+      await act(async () => failRead(new Error("Refresh offline")));
+      expect(await screen.findByRole("alert")).toHaveTextContent(strings.detailRefreshError);
+      expect(screen.getByRole("button", { name: /Status.*Machbar/ })).toBeEnabled();
+      mockedApi.getTask.mockResolvedValue(confirmed);
+      await userEvent.click(screen.getByRole("button", { name: strings.retry }));
+    } else {
+      await act(async () => finishRead(confirmed));
+    }
+    expect(await screen.findByRole("button", { name: /Status.*Erledigt/ })).toBeEnabled();
+    expect(mockedApi.completeTask).toHaveBeenCalledOnce();
+  });
+
   async function openStatusChoices() {
     await userEvent.click(screen.getByRole("button", { name: /Status/ }));
     return screen.getByRole("group", { name: "Status" });
@@ -1317,7 +1441,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Status korrekt ändern");
 
     const statuses = await openStatusChoices();
-    await userEvent.click(within(statuses).getByRole("button", { name: "Erledigt" }));
+    await userEvent.click(within(statuses).getByRole("button", { name: strings.completeTaskAction }));
 
     await waitFor(() =>
       expect(mockedApi.completeTask).toHaveBeenCalledWith(46, "leave_open", undefined, 1),
@@ -1367,7 +1491,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Doch erledigt");
 
     const statuses = await openStatusChoices();
-    await userEvent.click(within(statuses).getByRole("button", { name: "Erledigt" }));
+    await userEvent.click(within(statuses).getByRole("button", { name: strings.completeTaskAction }));
 
     await waitFor(() =>
       expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(

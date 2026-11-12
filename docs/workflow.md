@@ -247,10 +247,11 @@ section on the Projekte tab, does not silently disappear: leaving the handoff
 (rather than opening the project directly) navigates to Projekte with that
 section auto-expanded and the new project briefly highlighted.
 
-The project's status is a clickable badge in its detail view (mirroring the
-task detail view's clickable status), not a hidden control several taps deep
--- it opens the same legal-transitions panel used elsewhere, right where the
-status is shown.
+Task and project details show a current-status button with a chevron. It opens
+the legal transitions directly below; tasks also have a labeled completion or
+reopen shortcut. Saving feedback stays visible until the refreshed details
+arrive. Notes sit in a lightly tinted section; long notes expand with Show more
+without opening a separate scrolling area.
 
 ### 3. Execute
 

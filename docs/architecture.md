@@ -724,7 +724,14 @@ the page with its foreground error state. Each mounted read and its logical
 dependencies identify a cache entry; no normalized entity graph is maintained.
 Entries are collected on unmount rather than reused across navigation.
 Successful local writes cancel obsolete reads and refetch active results;
-mutation DTOs are not published across list/detail/aggregate caches. External
+`useItemMutations` awaits read settlement before releasing its per-item pending
+gate. Refresh promises follow superseding native invalidations: cancelling one
+refetch cannot release its callers while a replacement read is still pending.
+Following settlement starts no extra reads and stores no query results.
+Confirming dialogs close with refreshed, enabled opener controls. Detail status
+controls show saving feedback through this interval; failed revalidation keeps
+the last confirmed read with an explicit read-only retry.
+Mutation DTOs are not published across list/detail/aggregate caches. External
 events join an in-flight initial read and share one trailing revalidation.
 Consumed cancellation signals prevent an obsolete request from publishing.
 `useAsync` also supplies that signal to fetchers; fetcher-side failure callbacks
@@ -1267,9 +1274,15 @@ The four targeted actions render as icon-only 44 px buttons (`.story-row-chip-ic
 
 The row shows **one** progress bar — task completion, marked up as a real `role="progressbar"` with `aria-valuenow/min/max` and `aria-valuetext` (`2/4`). Acceptance-criteria progress is core outcome content instead: `ProjectDetailPage` renders a visible **Ergebnis** checklist with its `done/total` count, direct check/uncheck, and an explicit `story.editOutcome` entry into the structural editor.
 
-### Status is a badge, transitions are buttons
+### Status disclosure and explicit transition buttons
 
-No surface offers the project status as a `<select>`. `ProjectStoryRow` and `ProjectDetailPage` both render the status as a read-only badge (`projectStatusLabels`, plus an `.sr-only` "Status:" prefix on the row) and expose the change itself as thumb-sized, explicitly named buttons for exactly the transitions in `availableActions`, grouped in a `role="group"` labelled `Status`. Both reach them through `story.lifecycle` and map the chosen action onto its `story.*` command with the shared `storyWorkflowCommand()` in `commands.ts`. Tests assert the absence of a status combobox, so a dropdown cannot creep back in.
+No surface offers status as a `<select>`. Lists keep read-only status badges;
+task and project details use a labeled current-status disclosure with a chevron
+and `aria-expanded`. Their choices sit directly below the control and dispatch
+canonical task/project commands. Project choices come from `availableActions`
+and `storyWorkflowCommand()`; task terminal transitions retain criteria and child
+policy decisions. Captured Inbox classification remains separate. Tests assert
+there is no status combobox and preserve all legal transitions.
 
 ### One headless horizontal-swipe primitive
 
@@ -2410,3 +2423,30 @@ Machbar stores routine and occurrence identity; it does not evaluate school
 calendars, weekdays or execution windows. Deploy server API 0.27.0 (root 0.38.0)
 before updating HA component 0.9.0 and restarting Home Assistant. Existing
 non-occurrence sync calls remain compatible.
+
+
+### Detail status controls and notes (#281)
+
+Task details use a labeled completion/reopen shortcut beside a disclosure of the
+current status; captured Inbox classification remains separate. Projects disclose
+all server-provided lifecycle actions from the same status-control convention.
+Choices remain local presentation; canonical task/project commands and workflow
+hosts own transitions, criteria, descendants and activation decisions. Saving
+feedback appears at the initiating control or confirmation dialog through query
+settlement. Refresh errors do not replay a committed write. Task authored-text
+callbacks share a live-query revision check: append, attachment insertion and
+title/notes saves prefer any newer published detail text over their older write
+response. A confirmed write still supplies local authored text if refresh failed.
+No query data is patched. Subsequent editors and revision-checked writes retain
+the newer content rather than silently replacing another person's addition.
+
+Both details use `DetailNotesPreview` inside a lightly tinted, padded notes
+section. It measures rendered Markdown with ResizeObserver (including image and
+viewport changes), truncates only overflowing content at about five text lines,
+and fades only the clipped bottom edge. Show more/less uses an announced
+disclosure and the document remains the scroll surface. Clipped links have
+disabled activation and no tab stop until expansion, while
+the Markdown text remains in the browser accessibility tree. Their original
+link attributes are restored when expanded. Full editing, quick append, save/cancel and Markdown rendering retain their existing
+components and mutation owners. No task/project notes or lifecycle values are
+stored in a separate cache.

@@ -187,6 +187,7 @@ export function ProjectDeferSheet({
           </div>
         ) : null}
 
+        {saving ? <p role="status">{strings.saving}</p> : null}
         {error ? (
           <div className="task-row-error" role="alert">
             {error}

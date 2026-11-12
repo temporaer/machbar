@@ -101,7 +101,7 @@ export function CompleteWithCriteriaSheet({
             }
           }}
         >
-          {workItemType === "project" ? strings.completeProjectAction : strings.completeTaskAction}
+          {busy ? strings.saving : workItemType === "project" ? strings.completeProjectAction : strings.completeTaskAction}
         </button>
         <button type="button" className="btn btn-block" disabled={busy} onClick={onClose}>
           {strings.close}

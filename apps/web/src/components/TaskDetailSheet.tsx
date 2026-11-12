@@ -1,6 +1,7 @@
 import { NotesAppend } from "./NotesAppend";
 import {
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -30,7 +31,7 @@ import { ConfirmDeleteSheet } from "./ConfirmDeleteSheet";
 import { WorkItemInlineError } from "./WorkItemInlineError";
 import { MemberLabel } from "./MemberAvatar";
 import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
-import { MarkdownNotes } from "./MarkdownNotes";
+import { DetailNotesPreview } from "./DetailNotesPreview";
 import { NativeShareButton } from "./NativeShareButton";
 import { CalendarExportButton } from "./CalendarExportButton";
 import { IconActionButton } from "./IconActionButton";
@@ -111,6 +112,7 @@ export function TaskDetailSheet() {
   const [notesEditing, setNotesEditing] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
+  const statusActionsId = useId();
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [makeActionBusy, setMakeActionBusy] = useState(false);
@@ -123,13 +125,13 @@ export function TaskDetailSheet() {
   const notesRef = useRef<MarkdownEditorHandle>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
-  const revisionRef = useRef<number | null>(null);
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
     data: loadedTask,
     loading,
     error,
+    refreshError,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
   const taskActions = useTaskActions();
@@ -182,7 +184,6 @@ export function TaskDetailSheet() {
   useEffect(() => {
     if (!loadedTask) {
       lastLoadedTaskIdRef.current = null;
-      revisionRef.current = null;
       setTextFieldsBaseline(null);
       setTitleDraft("");
       setNotesDraft("");
@@ -193,7 +194,6 @@ export function TaskDetailSheet() {
       setConfirmingDelete(false);
       return;
     }
-    revisionRef.current = loadedTask.revision;
     const nextBaseline = textFieldsSnapshot(loadedTask);
     const isNewTask = lastLoadedTaskIdRef.current !== loadedTask.id;
     if (isNewTask) {
@@ -305,6 +305,15 @@ export function TaskDetailSheet() {
     textFieldsBaseline !== null && notesDraft !== textFieldsBaseline.notes;
   const contentDirty = titleDirty || notesDirty;
 
+  // All authored-text callbacks use the same live query comparison. A confirmed
+  // write can still populate its draft if refresh failed, but can never replace
+  // a newer detail snapshot that arrived while another read was pending.
+  const newerQueryText = (updated: Task): TextFieldsSnapshot | null => {
+    const latest = currentTaskRef.current;
+    return latest?.id === updated.id && latest.revision > updated.revision
+      ? textFieldsSnapshot(latest) : null;
+  };
+
   const saveContentField = async (
     field: "title" | "notes",
   ): Promise<boolean> => {
@@ -323,9 +332,14 @@ export function TaskDetailSheet() {
         true,
       );
       if (!updated || opening !== contentOpeningRef.current) return false;
-      revisionRef.current = updated.revision;
+      // A newer detail may have arrived while another invalidated read was
+      // pending. Finish this editor against that query text, not the older
+      // write response, so the next edit cannot silently overwrite it.
+      const savedValue = newerQueryText(updated)?.[field] ?? value;
+      if (field === "title") setTitleDraft(savedValue);
+      else setNotesDraft(savedValue);
       setTextFieldsBaseline((current) =>
-        current ? { ...current, [field]: value } : current,
+        current ? { ...current, [field]: savedValue } : current,
       );
       return true;
     } catch (err) {
@@ -559,12 +573,6 @@ export function TaskDetailSheet() {
               </>
             ) : (
               <div className="task-detail-title-row">
-                {!isReference && !taskIsCapturedInboxItem ? <button type="button"
-                  className="detail-complete-trigger"
-                  aria-label={task.status === "done" || task.status === "cancelled" ? strings.reopen : strings.done}
-                  onClick={() => dispatch({ type: "task.toggleDone", task })}>
-                  <span aria-hidden="true" className={`task-row-checkbox${task.status === "done" ? " done" : ""}${task.status === "cancelled" ? " cancelled" : ""}`}>{task.status === "done" ? "✓" : task.status === "cancelled" ? "×" : ""}</span>
-                </button> : null}
                 <h1>
                   {task.title}
                 </h1>
@@ -627,8 +635,39 @@ export function TaskDetailSheet() {
           ) : null}
 
           <div className="detail-summary">
-            {!isReference ? <div className="detail-summary-status">
-              <StatusBadge status={task.status} {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })} />
+            {!isReference ? <div className="detail-status-section">
+              <div className="detail-status-row">
+                {!taskIsCapturedInboxItem ? <button type="button" className="btn btn-sm"
+                  disabled={taskMutationPending} onClick={() => dispatch({ type: "task.toggleDone", task })}>
+                  <span aria-hidden="true">✓ </span>{task.status === "done" || task.status === "cancelled" ? strings.reopen : strings.detailComplete}
+                </button> : null}
+                <StatusBadge status={task.status} busy={taskMutationPending} expanded={lifecycleOpen}
+                  controls={statusActionsId} {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })} />
+              </div>
+          {lifecycleOpen ? (
+            <div id={statusActionsId} className="task-row-lifecycle" role="group" aria-label={strings.status}>
+              {taskStatuses
+                .filter((status) => status !== "captured" || task.status === "captured")
+                .map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={task.status === status}
+                    aria-current={task.status === status ? "true" : undefined}
+                    onClick={() => {
+                      setLifecycleOpen(false);
+                      dispatch({ type: "task.setStatus", task, status });
+                    }}
+                  >
+                    {status === task.status ? strings.taskStatusLabels[status] : status === "done" ? strings.completeTaskAction : status === "cancelled" ? strings.cancelTask : strings.taskStatusLabels[status]}
+                  </button>
+                ))}
+            </div>
+          ) : null}
+              {taskMutationPending ? <p role="status" className="detail-status-feedback">{strings.saving}</p> : null}
+              {!saveError && taskActions.errors[task.id] ? <WorkItemInlineError message={taskActions.errors[task.id]!} /> : null}
+              {refreshError ? <ErrorState message={`${strings.detailRefreshError} ${refreshError}`} onRetry={reload} /> : null}
             </div> : null}
             {!isReference ? <div className="detail-summary-group detail-meta-row" aria-label={strings.detailResponsibility}>
             {task.projectId !== null && task.projectTitle ? (
@@ -743,31 +782,11 @@ export function TaskDetailSheet() {
             </div>
           </div>
 
-          {lifecycleOpen ? (
-            <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
-              {taskStatuses
-                .filter((status) => status !== "captured" || task.status === "captured")
-                .map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={task.status === status}
-                    aria-current={task.status === status ? "true" : undefined}
-                    onClick={() => {
-                      setLifecycleOpen(false);
-                      dispatch({ type: "task.setStatus", task, status });
-                    }}
-                  >
-                    {strings.taskStatusLabels[status]}
-                  </button>
-                ))}
-            </div>
-          ) : null}
 
 
 
-          {saveError ?? taskActions.errors[task.id] ? (
+
+          {saveError ?? (isReference ? taskActions.errors[task.id] : null) ? (
             <WorkItemInlineError message={saveError ?? taskActions.errors[task.id]!} />
           ) : null}
 
@@ -839,7 +858,11 @@ export function TaskDetailSheet() {
               const opening = contentOpeningRef.current;
               const updated = await taskActions.appendNotes(task, content);
               if (opening !== contentOpeningRef.current) return false;
-              if (updated) { revisionRef.current = updated.revision; setTextFieldsBaseline(current => current ? { ...current, notes: updated.notes } : current); setNotesDraft(updated.notes); }
+              if (updated) {
+                const notes = newerQueryText(updated)?.notes ?? updated.notes;
+                setTextFieldsBaseline(current => current ? { ...current, notes } : current);
+                setNotesDraft(notes);
+              }
               return updated;
             }} />
             {notesEditing ? (
@@ -879,7 +902,7 @@ export function TaskDetailSheet() {
                 </div>
               </>
             ) : notesDraft.trim() ? (
-              <MarkdownNotes value={notesDraft} />
+              <DetailNotesPreview key={task.id} value={notesDraft} />
             ) : (
               <p className="text-muted">{strings.noNotes}</p>
             )}
@@ -1163,15 +1186,11 @@ export function TaskDetailSheet() {
           const nextNotes = appendTextBlock(task.notes, markdown);
           setSaveError(null);
           try {
-            const updated = await taskActions.update(
-              task,
-              { notes: nextNotes },
-              true,
-            );
+            const updated = await taskActions.update(task, { notes: nextNotes }, true);
             if (updated && opening === contentOpeningRef.current) {
-              revisionRef.current = updated.revision;
-              setNotesDraft(updated.notes);
-              setTextFieldsBaseline(textFieldsSnapshot(updated));
+              const text = newerQueryText(updated) ?? textFieldsSnapshot(updated);
+              setNotesDraft(text.notes);
+              setTextFieldsBaseline(text);
             }
           } catch (cause) {
             if (opening !== contentOpeningRef.current) throw cause;

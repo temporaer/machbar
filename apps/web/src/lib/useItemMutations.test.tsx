@@ -33,6 +33,33 @@ describe("server-confirmed item commands", () => {
     expect(bump).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps feedback and the duplicate guard through independently delayed read revalidation", async () => {
+    let finishRefresh!: () => void;
+    bump.mockImplementationOnce(() => new Promise<void>(resolve => { finishRefresh = resolve; }));
+    const { result } = renderHook(() => useItemMutations());
+    let command!: Promise<string | undefined>;
+    await act(async () => {
+      command = result.current.run({ id: 1, mutate: async () => "confirmed" });
+      await Promise.resolve();
+    });
+    expect(result.current.isPending(1)).toBe(true);
+    const duplicate = vi.fn(async () => "duplicate");
+    await act(async () => { await result.current.run({ id: 1, mutate: duplicate }); });
+    expect(duplicate).not.toHaveBeenCalled();
+    await act(async () => { finishRefresh(); expect(await command).toBe("confirmed"); });
+    expect(result.current.isPending(1)).toBe(false);
+  });
+
+  it("does not turn a committed write into a failed command when read revalidation fails", async () => {
+    bump.mockImplementationOnce(() => Promise.reject(new Error("Read offline")));
+    const { result } = renderHook(() => useItemMutations());
+    await act(async () => {
+      expect(await result.current.run({ id: 1, mutate: async () => "confirmed", throwOnError: true })).toBe("confirmed");
+    });
+    expect(result.current.errors[1]).toBeUndefined();
+    expect(result.current.isPending(1)).toBe(false);
+  });
+
   it("publishes explicit errors and preserves the actual rejection for throwing callers", async () => {
     bump.mockClear();
     const failure = new Error("server rejected");

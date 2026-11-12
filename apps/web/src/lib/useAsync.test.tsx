@@ -92,7 +92,7 @@ describe("useAsync", () => {
     );
     await waitFor(() => expect(result.current.async.data).toBe("old"));
 
-    act(() => result.current.refresh.bump());
+    act(() => { void result.current.refresh.bump(); });
     await waitFor(() => expect(result.current.async.refreshing).toBe(true));
     expect(result.current.async).toMatchObject({
       data: "old",
