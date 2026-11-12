@@ -84,6 +84,7 @@ type Expected = {
   detail: number | null;
   planner: number | null;
   draft: string | null;
+  dialog: "none" | "visible" | "known-history-forward" | "known-destination-shortcut";
 };
 
 function routePath() {
@@ -96,18 +97,15 @@ function visibleDialog() {
 
 function expectObservable(expected: Expected) {
   expect(routePath()).toBe(expected.route);
-  if (expected.route === "/projects/7" || expected.route === "/intake/9") {
+  if (expected.dialog === "none") {
     expect(visibleDialog()).not.toBeInTheDocument();
   }
-  if (expected.detail === null && expected.planner === null) {
-    expect(visibleDialog()).not.toBeInTheDocument();
-  }
-  if (expected.planner !== null && expected.route !== "/intake/9") {
+  if (expected.dialog === "visible") {
     const dialog = visibleDialog();
     expect(dialog).toBeInTheDocument();
     expect(dialog).toBeVisible();
   }
-  if (expected.detail !== null && expected.planner === null && expected.route !== "/projects/7" && expected.route !== "/intake/9") {
+  if (expected.detail !== null && expected.planner === null && expected.route !== "/intake/9") {
     expect(screen.getByRole("heading", { level: 1, name: expected.detail === A ? "A" : "B" })).toBeVisible();
   }
   if (expected.draft !== null && expected.route === "/all" && expected.planner === A) {
@@ -147,7 +145,7 @@ function ControllerHarness() {
   const returnToOrigin = () => {
     const origin = (location.state as { refinementOrigin?: { originPath: string; taskDetail?: Parameters<typeof detail.resumeAfterHandoff>[0] } } | null)?.refinementOrigin;
     if (origin?.taskDetail) detail.resumeAfterHandoff(origin.taskDetail);
-    navigate(origin?.originPath ?? "/all");
+    navigate(origin?.originPath ?? "/all", { replace: true });
   };
   const destinationPlanner = () => {
     if (location.pathname === "/projects/7") {
@@ -239,7 +237,7 @@ describe("task inspection sequence contract", () => {
       fc.constantFrom<Event>(
         "list-open-a", "open-a-planner", "inspect-b", "edit-draft",
         "open-project", "destination-open-b", "back", "forward", "open-b-planner",
-        "open-b-waiting", "return-refinement", "close-inspection",
+        "open-b-waiting", "return-refinement", "intake-return", "close-inspection",
       ),
       { minLength: 4, maxLength: 9 },
     );
@@ -248,7 +246,7 @@ describe("task inspection sequence contract", () => {
       fc.asyncProperty(events, async (sequence) => {
         const rendered = renderController();
         try {
-          const expected: Expected = { route: "/all", detail: null, planner: null, draft: null };
+          const expected: Expected = { route: "/all", detail: null, planner: null, draft: null, dialog: "none" };
           let projectHistory = false;
           for (const event of sequence) {
             const writesBefore = vi.mocked(api.updateTask).mock.calls.length;
@@ -258,18 +256,21 @@ describe("task inspection sequence contract", () => {
                 expected.route = "/all";
                 expected.detail = A;
                 expected.planner = null;
+                expected.dialog = "visible";
                 break;
               case "open-a-planner":
                 if (expected.detail !== null) break;
                 await click("open-a-planner");
                 expected.planner = A;
                 expected.detail = null;
+                expected.dialog = "visible";
                 break;
               case "inspect-b":
                 if (expected.planner !== A) break;
                 await click("inspect-b");
                 expected.detail = B;
                 expected.planner = null;
+                expected.dialog = "visible";
                 break;
               case "edit-draft":
                 if (expected.planner !== A || expected.route !== "/all") break;
@@ -281,6 +282,7 @@ describe("task inspection sequence contract", () => {
                 await click("open-project");
                 expected.route = "/projects/7";
                 expected.detail = null;
+                expected.dialog = "none";
                 projectHistory = true;
                 break;
               case "destination-open-b":
@@ -292,36 +294,49 @@ describe("task inspection sequence contract", () => {
                 await click("back");
                 expected.route = "/all";
                 expected.detail = B;
+                expected.dialog = "visible";
                 break;
               case "forward":
                 if (!projectHistory || expected.route !== "/all") break;
                 await click("forward");
                 expected.route = "/projects/7";
                 expected.detail = null;
+                expected.dialog = "known-history-forward";
                 break;
               case "open-b-planner":
                 if (!((expected.detail === B && expected.route === "/all") || expected.route === "/projects/7")) break;
                 await click("open-b-planner");
                 expected.planner = B;
                 expected.detail = null;
+                expected.dialog = expected.route === "/projects/7" ? "known-destination-shortcut" : "visible";
                 break;
               case "open-b-waiting":
                 if (!((expected.detail === B && expected.route === "/all") || expected.route === "/projects/7")) break;
                 await click("open-b-waiting");
                 expected.planner = B;
                 expected.detail = null;
+                expected.dialog = expected.route === "/projects/7" ? "known-destination-shortcut" : "visible";
                 break;
               case "return-refinement":
                 if (expected.detail !== B) break;
                 await click("return-refinement");
                 expected.route = "/intake/9";
                 expected.detail = null;
+                expected.dialog = "none";
+                break;
+              case "intake-return":
+                if (expected.route !== "/intake/9") break;
+                await click("intake-return");
+                expected.route = "/all";
+                expected.detail = B;
+                expected.dialog = "visible";
                 break;
               case "close-inspection": {
                 const closedDetail = expected.detail;
                 await click("close-inspection");
                 expected.detail = null;
                 if (expected.route === "/all" && closedDetail === B) expected.planner = A;
+                expected.dialog = expected.planner === A ? "visible" : "none";
                 break;
               }
             }
@@ -332,7 +347,7 @@ describe("task inspection sequence contract", () => {
           rendered.unmount();
         }
       }),
-      { seed: 28601, numRuns: 12, endOnFailure: true },
+      { seed: 28601, numRuns: 12 },
     );
   });
 
@@ -343,7 +358,8 @@ describe("task inspection sequence contract", () => {
     await click("open-project");
     await click("back");
     await click("forward");
-    expect(visibleDialog()).not.toBeInTheDocument();
+    await waitFor(() => expect(routePath()).toBe("/projects/7"));
+    await waitFor(() => expect(visibleDialog()).not.toBeInTheDocument());
   });
 
   it.fails("reproduces destination planner inheriting inspection suspension (known #288 baseline)", async () => {
@@ -355,7 +371,8 @@ describe("task inspection sequence contract", () => {
     await click("open-project");
     await click("destination-open-b");
     await click("open-b-planner");
-    expect(visibleDialog()).toBeInTheDocument();
+    await waitFor(() => expect(routePath()).toBe("/projects/7"));
+    await waitFor(() => expect(visibleDialog()).toBeInTheDocument());
   });
 
   it.fails("reproduces destination waiting shortcut inheriting inspection suspension (known #288 baseline)", async () => {
@@ -367,7 +384,8 @@ describe("task inspection sequence contract", () => {
     await click("open-project");
     await click("destination-open-b");
     await click("open-b-waiting");
-    expect(visibleDialog()).toBeInTheDocument();
+    await waitFor(() => expect(routePath()).toBe("/projects/7"));
+    await waitFor(() => expect(visibleDialog()).toBeInTheDocument());
   });
 
   it("keeps explicit refinement return separate from retained inspection", async () => {
@@ -380,6 +398,9 @@ describe("task inspection sequence contract", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await click("intake-return");
     await waitFor(() => expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible());
+    await click("back");
+    await waitFor(() => expect(routePath()).toBe("/all"));
+    expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible();
     expect(vi.mocked(api.updateTask)).not.toHaveBeenCalled();
   });
 });
