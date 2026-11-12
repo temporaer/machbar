@@ -26,6 +26,17 @@ for (const role of ["task", "project"] as const) {
     const more = section.getByRole("button", { name: "Mehr anzeigen", exact: true });
     await expect(more).toBeVisible();
     await expect(more).toHaveAttribute("aria-expanded", "false");
+    // Inspect Chromium's actual accessibility tree: DOM-based role snapshots
+    // can still include text beneath an inert ancestor.
+    const accessibility = await page.context().newCDPSession(page);
+    const tree = await accessibility.send("Accessibility.getFullAXTree");
+    expect(tree.nodes.some(node => !node.ignored && typeof node.name?.value === "string" && node.name.value.includes("Paragraph 0"))).toBe(true);
+    await accessibility.detach();
+    const reference = section.locator('a[href="https://example.com/"]');
+    await expect(reference).toHaveAttribute("tabindex", "-1");
+    await expect(reference).toHaveAttribute("aria-disabled", "true");
+    // Programmatic activation also represents assistive-technology activation.
+    expect(await reference.evaluate(link => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })))).toBe(false);
     expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(130);
     expect(await section.evaluate(node => getComputedStyle(node).paddingTop)).not.toBe("0px");
     expect(await section.evaluate(node => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
@@ -38,6 +49,8 @@ for (const role of ["task", "project"] as const) {
     await page.keyboard.press("Enter");
     const less = section.getByRole("button", { name: "Weniger anzeigen", exact: true });
     await expect(less).toHaveAttribute("aria-expanded", "true");
+    await expect(reference).not.toHaveAttribute("tabindex");
+    await expect(reference).not.toHaveAttribute("aria-disabled");
     expect((await preview.boundingBox())!.height).toBeGreaterThan(130);
     expect(await preview.evaluate(node => getComputedStyle(node).overflowY)).toBe("visible");
     expect(await preview.evaluate(node => getComputedStyle(node).opacity)).toBe("1");

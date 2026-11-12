@@ -725,9 +725,13 @@ dependencies identify a cache entry; no normalized entity graph is maintained.
 Entries are collected on unmount rather than reused across navigation.
 Successful local writes cancel obsolete reads and refetch active results;
 `useItemMutations` awaits read settlement before releasing its per-item pending
-gate. Confirming dialogs therefore close with refreshed, enabled opener controls. Detail status controls show saving feedback through this interval;
-failed revalidation keeps the last confirmed read with an explicit read-only retry.
-mutation DTOs are not published across list/detail/aggregate caches. External
+gate. Refresh promises follow superseding native invalidations: cancelling one
+refetch cannot release its callers while a replacement read is still pending.
+Following settlement starts no extra reads and stores no query results.
+Confirming dialogs close with refreshed, enabled opener controls. Detail status
+controls show saving feedback through this interval; failed revalidation keeps
+the last confirmed read with an explicit read-only retry.
+Mutation DTOs are not published across list/detail/aggregate caches. External
 events join an in-flight initial read and share one trailing revalidation.
 Consumed cancellation signals prevent an obsolete request from publishing.
 `useAsync` also supplies that signal to fetchers; fetcher-side failure callbacks
@@ -2435,8 +2439,9 @@ Both details use `DetailNotesPreview` inside a lightly tinted, padded notes
 section. It measures rendered Markdown with ResizeObserver (including image and
 viewport changes), truncates only overflowing content at about five text lines,
 and fades only the clipped bottom edge. Show more/less uses an announced
-disclosure and the document remains the scroll surface. Clipped links are inert
-until expansion so keyboard focus cannot disappear into hidden content. Full
-editing, quick append, save/cancel and Markdown rendering retain their existing
+disclosure and the document remains the scroll surface. Clipped links have
+disabled activation and no tab stop until expansion, while
+the Markdown text remains in the browser accessibility tree. Their original
+link attributes are restored when expanded. Full editing, quick append, save/cancel and Markdown rendering retain their existing
 components and mutation owners. No task/project notes or lifecycle values are
 stored in a separate cache.
