@@ -58,6 +58,7 @@ interface TaskDetailContextValue {
   advanceQueue: () => void;
   close: () => void;
   suspendForHandoff: () => TaskDetailHandoff | null;
+  getHandoff: () => TaskDetailHandoff | null;
   resumeAfterHandoff: (snapshot?: TaskDetailHandoff) => void;
   /** Consumed by the sheet once it has applied the requested focus. */
   clearFocusField: () => void;
@@ -118,6 +119,10 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
     setSuspended(true);
     return snapshot;
   };
+  const getHandoff = (): TaskDetailHandoff | null =>
+    openTaskId === null
+      ? null
+      : { taskId: openTaskId, queueTaskIds: [...queue], queueActive, focusField };
 
   const resumeAfterHandoff = (snapshot?: TaskDetailHandoff) => {
     if (snapshot) {
@@ -132,7 +137,7 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
   const clearFocusField = () => setFocusField(null);
 
   const value = useMemo<TaskDetailContextValue>(
-    () => ({ openTaskId, queueActive, focusField, suspended, open, openQueue, advanceQueue, close, suspendForHandoff, resumeAfterHandoff, clearFocusField }),
+    () => ({ openTaskId, queueActive, focusField, suspended, open, openQueue, advanceQueue, close, suspendForHandoff, getHandoff, resumeAfterHandoff, clearFocusField }),
     [openTaskId, queueActive, focusField, suspended, queue],
   );
   return <TaskDetailContext.Provider value={value}>{children}</TaskDetailContext.Provider>;

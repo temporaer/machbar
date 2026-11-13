@@ -43,6 +43,7 @@ export interface TaskWorkflowState {
   kind: TaskWorkflowKind;
   taskId: number;
   planningTarget?: TaskPlanningTarget;
+  originDetail?: TaskDetailHandoff | null;
 }
 export interface PlanningDetailInspection {
   previousDetail: TaskDetailHandoff | null;
@@ -144,7 +145,7 @@ const inspectionMachine = createMachine({
 
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
-  open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;
+  open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget, originDetail?: TaskDetailHandoff | null) => void;
   close: () => void;
   closeDetail: () => void;
   detailReturn: TaskDetailHandoff | null;
@@ -196,16 +197,17 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
           setCurrent(detailInspection.planningWorkflow);
         }
       },
-      open: (kind, taskId, planningTarget) =>
+      open: (kind, taskId, planningTarget, originDetail) =>
         setCurrent({
           kind,
           taskId,
           ...(planningTarget ? { planningTarget } : {}),
+          ...(originDetail !== undefined ? { originDetail } : {}),
         }),
       close: () => {
         if (current && pendingDetailWorkflow.current === current) {
           detailCloseRequested.current = false;
-          setDetailReturn(pendingDetailReturn.current);
+          setDetailReturn(pendingDetailReturn.current ?? detailInspection?.previousDetail ?? current.originDetail ?? null);
           pendingDetailWorkflow.current = null;
           pendingDetailReturn.current = null;
           send({ type: "CLOSE" });

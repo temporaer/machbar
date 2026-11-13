@@ -272,7 +272,7 @@ export function useWorkItemCommands() {
           else taskDetail.open(command.workItem.id);
           return;
         case "task.plan":
-          taskWorkflow.open("plan", command.taskId, command.target);
+          taskWorkflow.open("plan", command.taskId, command.target, taskDetail.getHandoff());
           return;
         case "task.availability":
           taskWorkflow.open("availability", command.taskId, "availability");
