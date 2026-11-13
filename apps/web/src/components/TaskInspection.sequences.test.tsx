@@ -78,6 +78,7 @@ type Event =
   | "open-b-waiting"
   | "return-refinement"
   | "close-inspection"
+  | "close-workflow"
   | "intake-return";
 
 type Expected = {
@@ -192,6 +193,7 @@ function ControllerHarness() {
       <button data-testid="return-refinement" onClick={returnFromRefinement}>Return from refinement</button>
       <button data-testid="intake-return" onClick={returnToOrigin}>Return to origin</button>
       <button data-testid="close-inspection" onClick={() => detail.close()}>Close inspection</button>
+      <button data-testid="close-workflow" onClick={() => taskWorkflow.close()}>Close workflow</button>
       <TaskDetailSheet />
       <TaskWorkflowHost />
     </>
@@ -365,6 +367,22 @@ describe("task inspection sequence contract", () => {
     await click("forward");
     await waitFor(() => expect(routePath()).toBe("/projects/7"));
     await waitFor(() => expect(visibleDialog()).not.toBeInTheDocument());
+  });
+
+  it("returns to the list when closing a restored planner with no prior detail", async () => {
+    renderController();
+    await click("list-open-a");
+    await click("close-inspection");
+    await click("open-a-planner");
+    await click("inspect-b");
+    await click("open-project");
+    await click("back");
+    await click("close-inspection");
+    await click("close-workflow");
+    await waitFor(() => expect(routePath()).toBe("/all"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "A", level: 1 })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "B", level: 1 })).not.toBeInTheDocument();
   });
 
   it.fails("reproduces destination planner inheriting inspection suspension (known #288 baseline)", async () => {

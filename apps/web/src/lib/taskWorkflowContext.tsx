@@ -205,14 +205,7 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       close: () => {
         if (current && pendingDetailWorkflow.current === current) {
           detailCloseRequested.current = false;
-          setDetailReturn(
-            pendingDetailReturn.current ?? {
-              taskId: current.taskId,
-              queueTaskIds: [],
-              queueActive: false,
-              focusField: null,
-            },
-          );
+          setDetailReturn(pendingDetailReturn.current);
           pendingDetailWorkflow.current = null;
           pendingDetailReturn.current = null;
           send({ type: "CLOSE" });
