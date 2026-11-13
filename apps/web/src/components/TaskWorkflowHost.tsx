@@ -44,9 +44,6 @@ export function TaskWorkflowHost() {
   useEffect(() => {
     if (previousLocationKey.current === location.key) return;
     previousLocationKey.current = location.key;
-    if (workflow.current?.kind === "plan" ||
-      workflow.current?.kind === "availability" ||
-      workflow.current?.kind === "waitingLifecycle") return;
     workflow.historyChanged();
   }, [
     location.key,

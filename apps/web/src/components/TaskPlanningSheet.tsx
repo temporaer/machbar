@@ -768,8 +768,15 @@ export function TaskPlanningSheet({
 
   const saveWaitFollowUp = async (afterSuccess?: () => void) => {
     if (!hasExistingWait || followUpSaving || planningConflicts.length > 0) return false;
-    if (followUpChoice === "continue" && (!validity.availability || invalidRevisitSelection)) {
-      reveal("availability");
+    if (!validity.scheduled || !validity.availability || !validity.deadline || invalidRevisitSelection) {
+      reveal(
+        !validity.scheduled
+          ? "scheduled"
+          : !validity.deadline
+            ? "deadline"
+            : "availability",
+      );
+      setWaitingError(strings.invalidDate);
       return false;
     }
     if (reminderDraftPending) {
@@ -796,8 +803,12 @@ export function TaskPlanningSheet({
         const otherDraftChanges =
           windowChanged ||
           (revisitChanged && followUpChoice !== "continue") ||
+          waitingChangedFromBaseline ||
           scheduledChanged ||
           deadlineChanged ||
+          !validity.scheduled ||
+          !validity.availability ||
+          !validity.deadline ||
           recurrenceChanged ||
           remindersChanged ||
           reminderDraftPending ||
@@ -858,7 +869,7 @@ export function TaskPlanningSheet({
   };
 
   const commit = async (afterSuccess?: () => void) => {
-    if (hasExistingWait && (followUpOutcome.trim().length > 0 || followUpChoice !== "continue")) {
+    if (hasExistingWait && (followUpOutcome.length > 0 || followUpChoice !== "continue")) {
       return saveWaitFollowUp(afterSuccess);
     }
     if (
@@ -1743,6 +1754,11 @@ export function TaskPlanningSheet({
         onClose={stayOnClosePrompt}
       >
         <p>{strings.guidedCaptureDiscardDrafts}</p>
+        {waitingError || error ? (
+          <p role="alert" className="task-row-error">
+            {waitingError ?? error}
+          </p>
+        ) : null}
         <div className="row">
           <button type="button" className="btn" onClick={stayOnClosePrompt}>
             {strings.cancel}

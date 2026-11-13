@@ -12,6 +12,7 @@ import { TaskDetailSheet } from "./TaskDetailSheet";
 import type { TaskPlanningTarget } from "../lib/commands";
 import { de as strings } from "../i18n/de";
 import { useLocation, useNavigate } from "react-router-dom";
+import type { Task } from "@machbar/shared";
 
 vi.mock("../lib/api", () => ({ api: {
   previewTaskUpdate: vi.fn(),
@@ -43,6 +44,49 @@ beforeEach(() => {
 });
 
 describe("compact planning", () => {
+  it("does not leave through Save when whitespace follow-up and invalid raw fields remain", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      externalWait: { waitingFor: "Example reply", revisitDate: null },
+    });
+    mocked.getTask.mockResolvedValue(task as never);
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-waiting"));
+    await user.type(screen.getByLabelText("Was ist passiert?"), "   ");
+    openSection(section("planning-scheduled"));
+    const scheduled = screen.getByLabelText("Geplant für");
+    fireEvent.change(scheduled, { target: { value: "kein Datum" } });
+    fireEvent.blur(scheduled);
+
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    const prompt = screen.getByRole("heading", { name: "Verwerfen" }).closest('[role="dialog"]') as HTMLElement;
+    await user.click(within(prompt).getByRole("button", { name: "Speichern" }));
+
+    expect(screen.getByTestId("location")).toHaveTextContent("/");
+    expect(screen.getByRole("heading", { name: "Verwerfen" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Datum nicht erkannt");
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("retires a loading planner when navigation wins before the task read resolves", async () => {
+    const pending: { resolve: (task: Task) => void } = {
+      resolve: () => undefined,
+    };
+    const taskRead = new Promise<Task>((resolve) => {
+      pending.resolve = resolve;
+    });
+    mocked.getTask.mockReturnValue(taskRead as never);
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    await pending.resolve(makeTask({ id: 1 }) as Task);
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Laden …")).not.toBeInTheDocument();
+  });
+
   it.each(["de", "en"] as const)("starts compact in %s and adds a feature without writing", async (locale) => {
     const user = userEvent.setup();
     renderWithProviders(<TaskPlanningSheet task={makeTask({ scheduledDate: "2026-10-20" })} onClose={vi.fn()} />, { locale });

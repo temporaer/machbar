@@ -94,6 +94,7 @@ export function ProjectDetailPage() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const planningTaskRef = useRef<number | null>(null);
   const planningOpeningIdRef = useRef<number | null>(null);
+  const [pendingPlanningTaskId, setPendingPlanningTaskId] = useState<number | null>(null);
   const storyFocusDispatchedRef = useRef<string | null>(null);
   const storyFocusSheetOpenedRef = useRef(false);
   const dispatch = useWorkItemCommands();
@@ -290,8 +291,10 @@ export function ProjectDetailPage() {
     );
     if (!taskToPlan) return;
     planningTaskRef.current = taskToPlan.id;
-    dispatch({ type: "task.plan", taskId: taskToPlan.id, target: "scheduled" });
+    setPendingPlanningTaskId(taskToPlan.id);
+    clearRouteFocus();
   }, [
+    clearRouteFocus,
     planningFocusActive,
     project,
     projectId,
@@ -302,17 +305,24 @@ export function ProjectDetailPage() {
 
   useEffect(() => {
     if (
+      pendingPlanningTaskId === null ||
       planningFocusActive ||
-      planningOpeningIdRef.current === null
+      planningWorkflowTaskId !== null
     ) {
       return;
     }
-    if (taskWorkflow.currentOpeningId === planningOpeningIdRef.current) {
-      taskWorkflow.close();
-    }
-    planningTaskRef.current = null;
-    planningOpeningIdRef.current = null;
-  }, [planningFocusActive, taskWorkflow]);
+    const taskId = pendingPlanningTaskId;
+    const timer = window.setTimeout(() => {
+      dispatch({ type: "task.plan", taskId, target: "scheduled" });
+      setPendingPlanningTaskId(null);
+    });
+    return () => window.clearTimeout(timer);
+  }, [
+    dispatch,
+    pendingPlanningTaskId,
+    planningFocusActive,
+    planningWorkflowTaskId,
+  ]);
 
   useEffect(() => {
     if (!planningFocusActive || planningTaskRef.current === null) return;
@@ -322,14 +332,8 @@ export function ProjectDetailPage() {
       taskWorkflow.currentOpeningId !== null
     ) {
       planningOpeningIdRef.current = taskWorkflow.currentOpeningId;
-    } else if (
-      planningOpeningIdRef.current !== null &&
-      taskWorkflow.currentOpeningId !== planningOpeningIdRef.current
-    ) {
-      clearRouteFocus();
     }
   }, [
-    clearRouteFocus,
     planningFocusActive,
     planningWorkflowTaskId,
     taskWorkflow.current,
