@@ -51,36 +51,116 @@ export function TaskWorkflowHost() {
   current.current = { opening: workflow.current, currentMemberId };
   const openings = useRef(new WeakMap<TaskWorkflowState, number>());
   const sequence = useRef(0);
-  useEffect(() => {
-    if (workflow.detailInspection && taskDetail.openTaskId === null) {
-      const previous = workflow.detailInspection.previousDetail;
-      if (previous) taskDetail.resumeAfterHandoff(previous);
-      workflow.resumeFromDetail();
-    }
-  }, [workflow.detailInspection, taskDetail.openTaskId]);
+  const previousDetailVisible = useRef(workflow.detailVisible);
+  const previousOpenTaskId = useRef(taskDetail.openTaskId);
   useEffect(() => {
     if (previousLocationKey.current === location.key) return;
     previousLocationKey.current = location.key;
-    if (navigationType !== "POP" || !workflow.detailInspection || taskDetail.openTaskId === null) return;
-    if (`${location.pathname}${location.search}` === workflow.detailInspection.originPath) {
+    workflow.historyChanged(location.key, navigationType);
+    const inspection = workflow.detailInspection;
+    if (!inspection) return;
+    if (navigationType === "POP" && location.key === inspection.originKey) {
       taskDetail.resumeAfterHandoff();
-    } else {
+    } else if (taskDetail.openTaskId !== null) {
       taskDetail.suspendForHandoff();
     }
-  }, [location.key, location.pathname, location.search, navigationType, workflow.detailInspection, taskDetail]);
+  }, [location.key, navigationType, taskDetail, workflow]);
+  useEffect(() => {
+    if (
+      workflow.navigationIntent === "refinement" &&
+      workflow.detailVisible &&
+      (taskDetail.suspended || workflow.detailInspection?.previousDetail)
+    ) {
+      taskDetail.resumeAfterHandoff(workflow.detailInspection?.previousDetail ?? undefined);
+      return;
+    }
+    if (previousDetailVisible.current === workflow.detailVisible) return;
+    previousDetailVisible.current = workflow.detailVisible;
+    if (!workflow.detailInspection) return;
+    if (
+      taskDetail.suspended &&
+      (workflow.detailVisible || location.key === workflow.detailInspection.originKey)
+    ) {
+      taskDetail.resumeAfterHandoff();
+      if (workflow.navigationIntent === "refinement") return;
+    } else if (
+      location.key === workflow.detailInspection.originKey &&
+      taskDetail.openTaskId !== null &&
+      !taskDetail.suspended
+    ) {
+      return;
+    } else if (taskDetail.openTaskId !== null) {
+      taskDetail.suspendForHandoff();
+    }
+  }, [location.key, workflow.detailInspection, workflow.detailVisible, taskDetail.openTaskId, taskDetail.suspended, workflow]);
+  useEffect(() => {
+    if (workflow.current === null && workflow.detailReturn) {
+      taskDetail.resumeAfterHandoff(workflow.detailReturn);
+      workflow.consumeDetailReturn();
+      return;
+    }
+    if (
+      workflow.current !== null &&
+      workflow.detailInspection === null &&
+      taskDetail.openTaskId === null &&
+      taskDetail.suspended
+    ) {
+      taskDetail.resumeAfterHandoff();
+      return;
+    }
+    if (
+      workflow.current !== null &&
+      workflow.detailVisible &&
+      workflow.detailInspection !== null &&
+      taskDetail.openTaskId === null &&
+      taskDetail.suspended
+    ) {
+      taskDetail.resumeAfterHandoff();
+      return;
+    }
+    const previousTaskId = previousOpenTaskId.current;
+    previousOpenTaskId.current = taskDetail.openTaskId;
+    if (
+      previousTaskId !== null &&
+      taskDetail.openTaskId === null &&
+      workflow.detailInspection &&
+      workflow.detailVisible &&
+      !taskDetail.suspended
+    ) {
+      workflow.closeDetail();
+    }
+  }, [taskDetail.openTaskId, taskDetail.suspended, workflow]);
   // Each planning slot keeps its React position when another prerequisite is
   // inspected. Only the foreground operation registers a visible modal.
   const retained = workflow.detailInspections;
   const foreground = workflow.current === workflow.detailInspection?.planningWorkflow
     ? null : workflow.current;
+  const states = [...retained.map((inspection) => inspection.planningWorkflow), foreground]
+    .filter((state, index, all): state is TaskWorkflowState =>
+      state !== null && all.indexOf(state) === index);
+  const retainedStates = new Set(retained.map((inspection) => inspection.planningWorkflow));
   return <>
-    {[...retained.map((inspection) => inspection.planningWorkflow), foreground].map((state, index) => {
+    {states.map((state, index) => {
       if (!state) return null;
       if (!openings.current.has(state)) openings.current.set(state, ++sequence.current);
+      const resumedRetained =
+        index === states.length - 1 &&
+        retainedStates.has(state) &&
+        state === workflow.current &&
+        workflow.detailInspection !== null &&
+        workflow.detailVisible &&
+        taskDetail.openTaskId === null &&
+        !taskDetail.suspended;
+      const suspended = (retainedStates.has(state) && !resumedRetained) || (
+        workflow.detailInspection !== null &&
+        (workflow.navigationIntent === "refinement" ||
+          (location.key !== workflow.detailInspection.originKey && !workflow.detailVisible) ||
+          (retainedStates.has(state) && taskDetail.suspended))
+      );
       return <TaskWorkflowContent
         key={`${currentMemberId}:${openings.current.get(state)}`}
         state={state}
-        suspended={index < retained.length || (workflow.detailInspection !== null && taskDetail.suspended)}
+        suspended={suspended}
         isCurrent={() => mounted.current && current.current.opening === state && current.current.currentMemberId === currentMemberId}
       />;
     })}

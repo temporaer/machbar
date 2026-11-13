@@ -160,6 +160,43 @@ test("detail status control is visible on touch and desktop", async ({ page }) =
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${item.id}`)).json()).status).toBe("done");
 });
 
+test("same-project history entries restore inspection only at the origin entry", async ({ page }) => {
+  const projectResponse = await page.request.post("/api/projects", {
+    data: { title: `History project ${randomUUID()}` },
+  });
+  expect(projectResponse.status()).toBe(201);
+  const project = await projectResponse.json();
+  const parent = await task(page, { projectId: project.id, title: `History parent ${randomUUID()}` });
+  const item = await task(page, { projectId: project.id, status: "done", title: `History task ${randomUUID()}` });
+  const dependency = await page.request.post(`/api/tasks/${parent.id}/dependencies`, {
+    data: { dependsOnTaskId: item.id },
+  });
+  expect(dependency.status()).toBe(201);
+
+  await page.goto(`/#/projects/${project.id}`);
+  await expect(page.locator(".project-content-tasks")).toHaveAttribute("open", "");
+  await page.getByText(parent.title, { exact: true }).click();
+  await expect(page.getByRole("heading", { name: parent.title, level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "+ Planen", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Planung" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Planung" }).getByRole("button", { name: /^Voraussetzungen/ }).click();
+  await page.getByRole("button", { name: "Erledigt (1)", exact: true }).click();
+  await page.getByRole("dialog", { name: "Planung" }).getByRole("button", { name: item.title, exact: true }).click();
+  await expect(page.getByRole("dialog").getByText(item.title, { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: project.title, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await expect(page.getByRole("dialog").getByText(item.title, { exact: true })).toBeHidden();
+
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await expect(page.getByRole("dialog").getByText(item.title, { exact: true })).toBeVisible();
+
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await expect(page.getByRole("dialog").getByText(item.title, { exact: true })).toBeHidden();
+});
+
 test("detail documents retain heading actions, ownership and breadcrumb navigation at narrow and large-text sizes", async ({ page }, testInfo) => {
   async function checkHeadingLayout(kind: "task" | "project") {
     for (const [width, fontSize] of [[320, "100%"], [390, "100%"], [320, "200%"]] as const) {

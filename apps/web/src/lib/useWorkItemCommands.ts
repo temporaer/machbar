@@ -253,14 +253,20 @@ export function useWorkItemCommands() {
             startTransition(() => {
               // Navigation leaves an inspection suspended, rather than
               // signaling the host to restore its planner and prior detail.
+              if (taskWorkflow.detailInspection) taskWorkflow.navigateProject();
               if (taskWorkflow.detailInspection) taskDetail.suspendForHandoff();
               else taskDetail.close();
               navigate(`/projects/${command.workItem.id}`);
             });
             return;
           }
-          if (taskWorkflow.current && taskWorkflow.current !== taskWorkflow.detailInspection?.planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
-            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff(), `${location.pathname}${location.search}`);
+          const planningWorkflow = taskWorkflow.current ?? taskWorkflow.detailInspection?.planningWorkflow;
+          if (planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(planningWorkflow.kind)) {
+            taskWorkflow.suspendForDetail(
+              taskDetail.suspendForHandoff(),
+              `${location.pathname}${location.search}`,
+              location.key,
+            );
           }
           if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
           else taskDetail.open(command.workItem.id);

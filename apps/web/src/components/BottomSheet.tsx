@@ -7,6 +7,7 @@ import { IconActionButton } from "./IconActionButton";
 type SheetEntry = {
   id: symbol;
   order: number;
+  priority: number;
   dialog: HTMLDivElement;
   backdrop: HTMLDivElement;
   opener: HTMLElement | null;
@@ -159,7 +160,7 @@ function registerSheet(entry: SheetEntry) {
   }
 
   sheetStack.push(entry);
-  sheetStack.sort((left, right) => left.order - right.order);
+  sheetStack.sort((left, right) => left.priority - right.priority || left.order - right.order);
   updatePageIsolation();
   if (topSheet() === entry) focusSheet(entry, entry.initialFocus);
 }
@@ -203,6 +204,7 @@ export function BottomSheet({
   headerStatus,
   initialFocus = "first-control",
   suspended = false,
+  stackPriority = 0,
 }: {
   title?: string;
   onClose: () => void;
@@ -212,6 +214,7 @@ export function BottomSheet({
   headerStatus?: ReactNode;
   initialFocus?: BottomSheetInitialFocus;
   suspended?: boolean;
+  stackPriority?: number;
 }) {
   const strings = useStrings();
   const internalHeadingId = useId();
@@ -273,6 +276,7 @@ export function BottomSheet({
       order: registrationOrder,
       dialog,
       backdrop,
+      priority: stackPriority,
       opener: openerRef.current,
       close: () => onCloseRef.current(),
       initialFocus,

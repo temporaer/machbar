@@ -18,6 +18,7 @@ import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
 import { parseWorkRefinementOrigin, useTaskDetail } from "../lib/taskDetailContext";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import {
   localizedApiErrorMessage,
   localizedErrorMessage,
@@ -153,6 +154,7 @@ export function IntakeReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const taskDetail = useTaskDetail();
+  const taskWorkflow = useTaskWorkflow();
   const { members, membersLoading } = useIdentity();
   const { version, bump } = useRefresh();
   const refinementOrigin = parseWorkRefinementOrigin((location.state as { refinementOrigin?: unknown } | null)?.refinementOrigin);
@@ -163,9 +165,11 @@ export function IntakeReviewPage() {
     const convertedToProject = afterApply && resultingRole === "story";
     const taskDetailReturn = refinementOrigin.entry === "task_detail" && !convertedToProject;
     if (convertedToProject) {
+      taskWorkflow.refinementReturn();
       taskDetail.close();
       navigate(`/projects/${refinementOrigin.targetId}`, { replace: true });
     } else if (taskDetailReturn) {
+      taskWorkflow.refinementReturn();
       taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail ?? undefined);
       bump();
       navigate(refinementOrigin.originPath, { replace: true });
@@ -176,10 +180,11 @@ export function IntakeReviewPage() {
       bump();
       navigate(route, { replace: true });
     } else {
+      taskWorkflow.refinementReturn();
       if (refinementOrigin.taskDetail) taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail);
       navigate(refinementOrigin.originPath, { replace: true });
     }
-  }, [bump, navigate, refinementOrigin, taskDetail]);
+  }, [bump, navigate, refinementOrigin, taskDetail, taskWorkflow]);
   const refinementHandoffCleanupRef = useRef<() => void>(() => undefined);
   refinementHandoffCleanupRef.current = () => {
     if (refinementHandoffHandledRef.current || !refinementOrigin?.taskDetail) return;

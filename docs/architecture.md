@@ -1630,9 +1630,9 @@ never clears a value.
 
 Prerequisite titles dispatch `task.open`; removal remains a separate explicit
 dependency commit, as does recording a wait follow-up. Unresolved prerequisites
-appear first; resolved links are behind an explicit disclosure. The workflow
-context retains each nested planning workflow during detail inspection. Both
-`task.open` and task-role `workItem.open` suspend the foreground planner.
+appear first; resolved links are behind an explicit disclosure. The task inspection controller retains each nested planning workflow during
+detail inspection. Both `task.open` and task-role `workItem.open` dispatch the
+controller's inspection event and suspend the foreground planner.
 The host keeps each component mounted in its original slot and suspends
 its `BottomSheet` registration, allowing the normal task detail and any focused
 operation launched there to occupy the foreground. Closing detail restores the
@@ -1641,14 +1641,24 @@ most recent planning workflow and, where applicable, the prior detail/queue snap
 or committed for navigation, and no separate prerequisite viewer is introduced.
 Navigating from an inspected task to a project suspends that detail through the
 existing handoff instead of closing it: closing means returning to the planner.
-The inspection records its originating path and search. On browser history
-traversals, the host resumes detail at that origin and suspends it elsewhere,
-including list origins without a task route adapter. A planner opened from the
-inspection shares its suspension, so Forward hides both and Back restores the
-same mounted inputs. Explicit refinement returns retain their existing handoff
-authority: replacing the origin entry must not hide the restored inspection.
+The controller records its originating path and `location.key`; path equality is
+not history identity. The router-bound adapter dispatches explicit history
+leave/return events, so Back restores only the recorded origin entry and Forward
+hides the inspection even when both entries are `/projects/:id`. Project
+navigation, refinement return, and close are separate events; explicit refinement
+return keeps its `REPLACE` intent and cannot be reinterpreted as ordinary history.
+A planner opened from the inspection shares its suspension, so Forward hides both
+and Back restores the same mounted inputs.
 The project opens without planning/detail sheets; live planning drafts remain
 mounted throughout, and closing the returned inspection restores its planner.
+
+| Transition | Event | Observable result |
+| --- | --- | --- |
+| Planner -> task inspection | `INSPECT` | Retain the planner and prior detail handoff; foreground the inspected detail without committing or remounting the planner |
+| Inspection -> project | `PROJECT_NAVIGATE` | Suspend detail and retained planners while the project route transition commits |
+| History leave/return | `HISTORY_CHANGED` | Qualify visibility by `location.key`; origin `POP` restores detail, destination `POP` hides it, regardless of equal paths |
+| Intake refinement -> origin | `REFINEMENT_RETURN` | Restore the handoff through the explicit replacement-return path |
+| Inspection close | `CLOSE` | Remove the foreground inspection and restore the retained planner/detail slot |
 
 ### Paperless-backed Markdown attachments
 

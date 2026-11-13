@@ -970,6 +970,7 @@ export function TaskPlanningSheet({
   return (
     <BottomSheet
       suspended={suspended}
+      stackPriority={1}
       title={strings.planning}
       initialFocus="dialog"
       onClose={() => {

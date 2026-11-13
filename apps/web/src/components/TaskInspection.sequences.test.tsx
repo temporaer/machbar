@@ -5,6 +5,7 @@ import fc from "fast-check";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { renderWithProviders } from "../test/testUtils";
@@ -23,9 +24,9 @@ import { useWorkItemKeyboardNav } from "../lib/useWorkItemKeyboardNav";
  *   restores B's detail rather than replacing A's retained inspection.
  *
  * State owners: the router owns location/history, TaskDetailProvider owns the
- * inspected task and text handoff, and TaskWorkflowProvider owns the retained
- * planner stack. Navigation is read-only; only an explicit save can call the
- * API. The generated sequence only records intended surfaces and compares
+ * mounted inspected task and text handoff, and the task-inspection controller
+ * owns the retained planner stack and navigation/return protocol. Navigation
+ * is read-only; only an explicit save can call the API. The generated sequence only records intended surfaces and compares
  * them with rendered dialogs/routes, rather than reproducing those
  * transitions.
  */
@@ -115,6 +116,7 @@ function expectObservable(expected: Expected) {
 
 function ControllerHarness() {
   const detail = useTaskDetail();
+  const taskWorkflow = useTaskWorkflow();
   const dispatch = useWorkItemCommands();
   const navigate = useNavigate();
   const location = useLocation();
@@ -144,6 +146,7 @@ function ControllerHarness() {
   };
   const returnToOrigin = () => {
     const origin = (location.state as { refinementOrigin?: { originPath: string; taskDetail?: Parameters<typeof detail.resumeAfterHandoff>[0] } } | null)?.refinementOrigin;
+    taskWorkflow.refinementReturn();
     if (origin?.taskDetail) detail.resumeAfterHandoff(origin.taskDetail);
     navigate(origin?.originPath ?? "/all", { replace: true });
   };
@@ -353,7 +356,7 @@ describe("task inspection sequence contract", () => {
     );
   });
 
-  it.fails("reproduces same-project history ownership regression (known #287 baseline)", async () => {
+  it("restores and hides inspection across distinct same-project history entries", async () => {
     renderController(["/projects/7"]);
     await click("open-a-planner");
     await click("inspect-b");
