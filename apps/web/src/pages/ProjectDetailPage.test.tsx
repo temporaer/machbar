@@ -1749,33 +1749,32 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it("does not open a pending planning intent after the project identity is replaced", async () => {
-    let resolveProject42!: (project: Awaited<ReturnType<typeof api.getProject>>) => void;
-    mockedApi.getProject.mockImplementation(async (id) => {
-      if (id === 42) {
-        return new Promise(resolve => {
-          resolveProject42 = resolve;
-        });
-      }
-      return {
+    vi.useFakeTimers();
+    try {
+      mockedApi.getProject.mockImplementation(async id => ({
         ...makeProject({ id, title: `Projekt ${id}`, ownerMemberId: 1 }),
-        tasks: [makeTask({ id: 43, projectId: id })],
-      };
-    });
-    renderProjectRoute("/projects/42?focus=planning");
+        tasks: [makeTask({ id: id === 42 ? 7 : 43, projectId: id })],
+      }));
+      renderProjectRoute("/projects/42?focus=planning");
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
 
-    await userEvent.click(screen.getByRole("button", { name: "Navigate to another project" }));
-    await waitFor(() =>
-      expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/43"),
-    );
-    resolveProject42({
-      ...makeProject({ id: 42, title: "Projekt 42", ownerMemberId: 1 }),
-      tasks: [makeTask({ id: 7, projectId: 42 })],
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
+      expect(screen.getByText("Projekt 42")).toBeInTheDocument();
+      expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus=");
+      fireEvent.click(screen.getByRole("button", { name: "Navigate to another project" }));
+      expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/43");
 
-    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("none|none");
-    expect(screen.queryByRole("dialog", { name: strings.planning })).not.toBeInTheDocument();
+      await act(async () => {
+        vi.runAllTimers();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("none|none");
+      expect(screen.queryByRole("dialog", { name: strings.planning })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
