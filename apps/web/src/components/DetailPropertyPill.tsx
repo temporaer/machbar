@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 /** Current-value control shared by detail summaries and focused planning.
  * Summary groups provide quiet styling; editors keep their existing pill
@@ -16,7 +16,7 @@ export function DetailPropertyPill({
 }: {
   label?: string | undefined;
   children: ReactNode;
-  onClick: () => void;
+  onClick: (event?: MouseEvent<HTMLButtonElement>) => void;
   ariaLabel?: string | undefined;
   variant?: "set" | "unset";
   extraClassName?: string;

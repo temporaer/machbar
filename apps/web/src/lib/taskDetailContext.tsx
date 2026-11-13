@@ -1,5 +1,10 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
+import {
+  TaskWorkflowProvider,
+  useOptionalTaskWorkflow,
+  useTaskWorkflow,
+} from "./taskWorkflowContext";
 
 /**
  * Hints which part of the detail sheet to focus once it opens. This is
@@ -19,6 +24,7 @@ export type TaskDetailHandoff = {
   queueTaskIds: number[];
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
+  openingId?: number;
 };
 
 export type WorkRefinementOrigin = {
@@ -26,8 +32,7 @@ export type WorkRefinementOrigin = {
   targetId: number;
   originPath: string;
   entry: "task_detail" | "page";
-  taskDetail?: TaskDetailHandoff | null;
-};
+}
 
 export function parseWorkRefinementOrigin(value: unknown): WorkRefinementOrigin | null {
   if (!value || typeof value !== "object") return null;
@@ -38,11 +43,6 @@ export function parseWorkRefinementOrigin(value: unknown): WorkRefinementOrigin 
     typeof candidate.originPath !== "string" || !candidate.originPath.startsWith("/") || candidate.originPath.startsWith("//") ||
     (candidate.entry !== "task_detail" && candidate.entry !== "page")
   ) return null;
-  if (candidate.entry === "task_detail" && candidate.taskDetail == null) return null;
-  if (candidate.taskDetail !== undefined && candidate.taskDetail !== null) {
-    const detail = candidate.taskDetail as Record<string, unknown>;
-    if (!detail || typeof detail !== "object" || detail.taskId !== candidate.targetId || !Array.isArray(detail.queueTaskIds) || !detail.queueTaskIds.every((id) => Number.isInteger(id) && id > 0) || typeof detail.queueActive !== "boolean" || ![null, "title", "notes", "attachment", "dependencies"].includes(detail.focusField as string | null)) return null;
-  }
   return candidate as WorkRefinementOrigin;
 }
 
@@ -53,13 +53,12 @@ interface TaskDetailContextValue {
   focusField: TaskDetailFocusField | null;
   suspended: boolean;
   open: (taskId: number, focusField?: TaskDetailFocusField) => void;
+  inspect: (taskId: number, focusField?: TaskDetailFocusField) => void;
   /** Opens the first id and remembers the rest so `advanceQueue` can step through them. */
   openQueue: (taskIds: number[], focusField?: TaskDetailFocusField) => void;
   advanceQueue: () => void;
   close: () => void;
-  suspendForHandoff: () => TaskDetailHandoff | null;
   getHandoff: () => TaskDetailHandoff | null;
-  resumeAfterHandoff: (snapshot?: TaskDetailHandoff) => void;
   /** Consumed by the sheet once it has applied the requested focus. */
   clearFocusField: () => void;
 }
@@ -67,78 +66,63 @@ interface TaskDetailContextValue {
 const TaskDetailContext = createContext<TaskDetailContextValue | null>(null);
 
 export function TaskDetailProvider({ children }: { children: ReactNode }) {
-  const [openTaskId, setOpenTaskId] = useState<number | null>(null);
-  const [queue, setQueue] = useState<number[]>([]);
-  const [queueActive, setQueueActive] = useState(false);
-  const [focusField, setFocusField] = useState<TaskDetailFocusField | null>(null);
-  const [suspended, setSuspended] = useState(false);
+  const outerWorkflow = useOptionalTaskWorkflow();
+  if (!outerWorkflow) {
+    return (
+      <TaskWorkflowProvider>
+        <TaskDetailFacade>{children}</TaskDetailFacade>
+      </TaskWorkflowProvider>
+    );
+  }
+  return <TaskDetailFacade>{children}</TaskDetailFacade>;
+}
 
-  const open = (taskId: number, field?: TaskDetailFocusField) => {
-    setQueueActive(false);
-    setQueue([]);
-    setOpenTaskId(taskId);
-    setFocusField(field ?? null);
-    setSuspended(false);
-  };
-
+function TaskDetailFacade({ children }: { children: ReactNode }) {
+  const workflow = useTaskWorkflow();
+  const detail = workflow.detail;
+  const open = (taskId: number, field?: TaskDetailFocusField) =>
+    workflow.openDetail({
+      taskId,
+      queueTaskIds: [],
+      queueActive: false,
+      focusField: field ?? null,
+    });
+  const inspect = (taskId: number, field?: TaskDetailFocusField) =>
+    workflow.inspectDetail({
+      taskId,
+      queueTaskIds: [],
+      queueActive: false,
+      focusField: field ?? null,
+    });
   const openQueue = (taskIds: number[], field?: TaskDetailFocusField) => {
-    if (taskIds.length === 0) return;
     const [first, ...rest] = taskIds;
-    setQueueActive(true);
-    setQueue(rest);
-    setOpenTaskId(first ?? null);
-    setFocusField(field ?? null);
-    setSuspended(false);
-  };
-
-  const advanceQueue = () => {
-    setFocusField(null);
-    setQueue((current) => {
-      const [next, ...rest] = current;
-      if (next === undefined) {
-        setOpenTaskId(null);
-        setQueueActive(false);
-        return [];
-      }
-      setOpenTaskId(next);
-      return rest;
+    if (first === undefined) return;
+    workflow.openDetail({
+      taskId: first,
+      queueTaskIds: rest,
+      queueActive: true,
+      focusField: field ?? null,
     });
   };
-
-  const close = () => {
-    setOpenTaskId(null);
-    setQueue([]);
-    setQueueActive(false);
-    setFocusField(null);
-    setSuspended(false);
-  };
-
-  const suspendForHandoff = (): TaskDetailHandoff | null => {
-    if (openTaskId === null) return null;
-    const snapshot = { taskId: openTaskId, queueTaskIds: [...queue], queueActive, focusField };
-    setSuspended(true);
-    return snapshot;
-  };
-  const getHandoff = (): TaskDetailHandoff | null =>
-    openTaskId === null
-      ? null
-      : { taskId: openTaskId, queueTaskIds: [...queue], queueActive, focusField };
-
-  const resumeAfterHandoff = (snapshot?: TaskDetailHandoff) => {
-    if (snapshot) {
-      setOpenTaskId(snapshot.taskId);
-      setQueue([...snapshot.queueTaskIds]);
-      setQueueActive(snapshot.queueActive);
-      setFocusField(snapshot.focusField);
-    }
-    setSuspended(false);
-  };
-
-  const clearFocusField = () => setFocusField(null);
+  const close = () => workflow.closeDetailDirectly();
+  const getHandoff = (): TaskDetailHandoff | null => workflow.getDetailHandoff();
+  const clearFocusField = () => workflow.clearDetailFocus();
 
   const value = useMemo<TaskDetailContextValue>(
-    () => ({ openTaskId, queueActive, focusField, suspended, open, openQueue, advanceQueue, close, suspendForHandoff, getHandoff, resumeAfterHandoff, clearFocusField }),
-    [openTaskId, queueActive, focusField, suspended, queue],
+    () => ({
+      openTaskId: detail?.taskId ?? null,
+      queueActive: detail?.queueActive ?? false,
+      focusField: detail?.focusField ?? null,
+      suspended: workflow.detailSuspended,
+      open,
+      inspect,
+      openQueue,
+      advanceQueue: workflow.advanceDetailQueue,
+      close,
+      getHandoff,
+      clearFocusField,
+    }),
+    [detail, workflow],
   );
   return <TaskDetailContext.Provider value={value}>{children}</TaskDetailContext.Provider>;
 }

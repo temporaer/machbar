@@ -1630,37 +1630,30 @@ never clears a value.
 
 Prerequisite titles dispatch `task.open`; removal remains a separate explicit
 dependency commit, as does recording a wait follow-up. Unresolved prerequisites
-appear first; resolved links are behind an explicit disclosure. The reducer-backed
-interaction owner retains each nested planning workflow during detail inspection.
-Both `task.open` and task-role `workItem.open` dispatch the owner's inspection
-event and suspend the foreground planner.
-The host keeps each component mounted in its original slot and suspends
-its `BottomSheet` registration, allowing the normal task detail and any focused
-operation launched there to occupy the foreground. Closing detail restores the
-most recent planning workflow and, where applicable, the prior detail/queue snapshot using
-`TaskDetailProvider`'s existing handoff methods. No planning state is serialized
-or committed for navigation, and no separate prerequisite viewer is introduced.
-Navigating from an inspected task to a project suspends that detail through the
-existing handoff instead of closing it: closing means returning to the planner.
-The owner assigns logical opening IDs and records its originating path and
-`location.key`; path equality is not history identity. The router-bound adapter
-dispatches explicit history
-leave/return events, so Back restores only the recorded origin entry and Forward
-hides the inspection even when both entries are `/projects/:id`. Project
-navigation, refinement return, and close are separate events; explicit refinement
-return keeps its `REPLACE` intent and cannot be reinterpreted as ordinary history.
-A planner opened from the inspection shares its suspension, so Forward hides both
-and Back restores the same mounted inputs.
-The project opens without planning/detail sheets; live planning drafts remain
-mounted throughout, and closing the returned inspection restores its planner.
+appear first; resolved links are behind an explicit disclosure. The workflow
+owner permits one active real-task planner and one read-only prerequisite
+inspection. The inspection keeps the planner mounted and its local draft intact,
+but exposes no planning, classification, notes, child-completion,
+keyboard-mutation, or other canonical editing entry points. Closing the
+inspection returns directly to the planner.
+
+The owner observes router location changes once through `TaskWorkflowHost`.
+Any actual route/history navigation ends the planner and inspection instead of
+retaining or resurrecting them, including equal-URL POP entries and
+`?focus=planning` route effects. A dirty planner must take an explicit save,
+discard, or stay path; invalid or unfinished authored input is dirty, and save
+failures/conflicts retain the draft. The browser unload boundary can only use
+the native warning mechanism because custom in-SPA navigation blockers do not
+cover reload or cross-origin exits. AI proposal review remains a separate batch
+editor with independently editable items and its existing draft-versus-Apply
+boundary.
 
 | Transition | Event | Observable result |
 | --- | --- | --- |
-| Planner -> task inspection | `INSPECT` | Retain the planner and prior detail handoff; foreground the inspected detail without committing or remounting the planner |
-| Inspection -> project | `PROJECT_NAVIGATE` | Suspend detail and retained planners while the project route transition commits |
-| History leave/return | `HISTORY_CHANGED` | Qualify visibility by `location.key`; origin `POP` restores detail, destination `POP` hides it, regardless of equal paths |
-| Intake refinement -> origin | `REFINEMENT_RETURN` | Restore the handoff through the explicit replacement-return path |
-| Inspection close | `CLOSE` | Remove the foreground inspection and restore the retained planner/detail slot |
+| Planner -> task inspection | `INSPECT` | Keep the single planner mounted and foreground one read-only prerequisite detail; no nested workflow opens |
+| Inspection close | `CLOSE` | Remove the read-only inspection and return directly to the mounted planner |
+| Actual route/history navigation | `HISTORY_CHANGED` | Apply the dirty-draft decision and then end the planner/inspection; never resurrect a closed dialog from history |
+| Intake refinement -> origin | `REFINEMENT_RETURN` | Return to the route without restoring a retained task-detail or planner snapshot |
 
 ### Paperless-backed Markdown attachments
 
@@ -1926,11 +1919,11 @@ the shared command/action paths and focused sheets.
 
 AI refinement launched from `TaskDetailSheet` keeps the existing
 `IntakeReviewPage` as the sole job/status/review surface. After a successful
-job start, `TaskDetailProvider` suspends the mounted detail sheet without
-clearing its text draft, focus or clarification queue. The route carries a
-typed return snapshot; leaving the review restores the task context, while an
-applied task-to-project conversion clears the obsolete task sheet and opens
-the project route. Failed starts leave the launcher in place.
+job start, the task workflow closes; the route carries only typed origin
+metadata needed for the review flow. Returning from review does not resurrect a
+task-detail or planner snapshot, while an applied task-to-project conversion
+clears the obsolete task context and opens the project route. Failed starts
+leave the launcher in place.
 
 **Still two separate rows and two separate detail surfaces.** `TaskRow.tsx`
 and `ProjectStoryRow.tsx` render as fully separate components (they now both

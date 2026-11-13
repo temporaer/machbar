@@ -59,13 +59,13 @@ function renderNavHost() {
         <RefreshProvider>
           <TaskActionsProvider>
             <ProjectActionsProvider>
-              <TaskDetailProvider>
-                <TaskWorkflowProvider>
+              <TaskWorkflowProvider>
+                <TaskDetailProvider>
                   <ProjectWorkflowProvider>
                     <GlobalNavHost />
                   </ProjectWorkflowProvider>
-                </TaskWorkflowProvider>
-              </TaskDetailProvider>
+                </TaskDetailProvider>
+              </TaskWorkflowProvider>
             </ProjectActionsProvider>
           </TaskActionsProvider>
         </RefreshProvider>
@@ -107,14 +107,14 @@ describe("useGlobalNavigationKeys (g-prefix)", () => {
           <RefreshProvider>
             <TaskActionsProvider>
               <ProjectActionsProvider>
-                <TaskDetailProvider>
-                  <TaskWorkflowProvider>
+                <TaskWorkflowProvider>
+                  <TaskDetailProvider>
                     <ProjectWorkflowProvider>
                       <input aria-label="Freitext" />
                       <GlobalNavHost />
                     </ProjectWorkflowProvider>
-                  </TaskWorkflowProvider>
-                </TaskDetailProvider>
+                  </TaskDetailProvider>
+                </TaskWorkflowProvider>
               </ProjectActionsProvider>
             </TaskActionsProvider>
           </RefreshProvider>

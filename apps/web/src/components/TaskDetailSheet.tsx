@@ -95,12 +95,18 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
-  const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, clearFocusField, open, inspect, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
   const suspended = detailSuspended;
+  const workflowKind = taskWorkflow.current?.kind ?? null;
+  const readOnlyInspection = taskWorkflow.detailMode === "prerequisite";
+  const dispatchCommand = (...args: Parameters<typeof dispatch>) => {
+    if (readOnlyInspection) return;
+    return dispatch(...args);
+  };
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
@@ -121,10 +127,13 @@ export function TaskDetailSheet() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const splitShortcutRef = useRef<HTMLButtonElement>(null);
   const splitShortcutTaskIdRef = useRef<number | null>(null);
+  const workflowOpenerRef = useRef<HTMLElement | null>(null);
+  const wasSuspendedRef = useRef(suspended);
+  const previousWorkflowOpeningIdRef = useRef(taskWorkflow.currentOpeningId);
   const notesRef = useRef<MarkdownEditorHandle>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
-  const workflowKind = taskWorkflow.current?.kind ?? null;
+  const previousWorkflowKindRef = useRef(workflowKind);
 
   const {
     data: loadedTask,
@@ -263,7 +272,7 @@ export function TaskDetailSheet() {
       return;
     }
     if (focusField === "dependencies") {
-      dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" });
+      dispatchCommand({ type: "task.plan", taskId: task.id, target: "dependencies" });
       clearFocusField();
       return;
     }
@@ -295,7 +304,40 @@ export function TaskDetailSheet() {
     dispatch,
   ]);
 
-  if (openTaskId === null || suspended) return null;
+  useEffect(() => {
+    if (
+      wasSuspendedRef.current &&
+      !suspended &&
+      workflowOpenerRef.current?.isConnected
+    ) {
+      workflowOpenerRef.current.focus();
+    }
+    wasSuspendedRef.current = suspended;
+  }, [suspended]);
+
+  useEffect(() => {
+    if (
+      previousWorkflowOpeningIdRef.current !== null &&
+      taskWorkflow.currentOpeningId === null &&
+      workflowOpenerRef.current?.isConnected
+    ) {
+      workflowOpenerRef.current.focus();
+    }
+    previousWorkflowOpeningIdRef.current = taskWorkflow.currentOpeningId;
+  }, [taskWorkflow.currentOpeningId]);
+
+  useEffect(() => {
+    if (
+      previousWorkflowKindRef.current !== null &&
+      workflowKind === null &&
+      workflowOpenerRef.current?.isConnected
+    ) {
+      workflowOpenerRef.current.focus();
+    }
+    previousWorkflowKindRef.current = workflowKind;
+  }, [workflowKind]);
+
+  if (openTaskId === null) return null;
 
   const titleIsValid = titleDraft.trim().length > 0;
   const titleDirty =
@@ -376,7 +418,7 @@ export function TaskDetailSheet() {
   };
 
   const classifyCapture = async (status: "actionable" | "someday") => {
-    if (!task || classificationBusy || contentDirty) return;
+    if (readOnlyInspection || !task || classificationBusy || contentDirty) return;
     setClassificationBusy(true);
     setSaveError(null);
     try {
@@ -398,8 +440,8 @@ export function TaskDetailSheet() {
   };
 
   const convertTaskToProject = async () => {
-    if (!task || classificationBusy || contentDirty) return;
-    dispatch({ type: "task.convertToProject", taskId: task.id });
+    if (readOnlyInspection || !task || classificationBusy || contentDirty) return;
+    dispatchCommand({ type: "task.convertToProject", taskId: task.id });
   };
 
   const isReference = task?.kind === "reference";
@@ -445,19 +487,28 @@ export function TaskDetailSheet() {
       | "task.contexts"
       | "task.split"
       | "task.structure",
+    opener?: HTMLElement,
   ) => {
     if (!task) return;
+    if (readOnlyInspection) return;
     if (command === "task.lifecycle") {
       setLifecycleOpen((current) => !current);
       return;
     }
-    dispatch({ type: command, taskId: task.id });
+    if (opener) {
+      workflowOpenerRef.current = opener;
+    } else if (document.activeElement instanceof HTMLElement) {
+      workflowOpenerRef.current = document.activeElement;
+    }
+    dispatchCommand({ type: command, taskId: task.id });
   };
 
   return (
     <>
     <BottomSheet
       title={strings.taskDetails}
+      suspended={suspended}
+      stackPriority={readOnlyInspection ? 2 : 0}
       onClose={() => {
         if (
           !savingTextFields &&
@@ -470,28 +521,29 @@ export function TaskDetailSheet() {
       }}
       labelledBy="task-detail-title"
       headerActions={
+        readOnlyInspection ? null :
         task ? (
           <>
             <IconActionButton
               kind="sparkles"
               label={strings.workRefinement}
               disabled={taskMutationPending || savingTextFields || classificationBusy || deleting}
-              onClick={() => dispatch({ type: "task.refine", taskId: task.id })}
+              onClick={() => dispatchCommand({ type: "task.refine", taskId: task.id })}
             />
             <DetailActionMenu label={strings.detailActions} resetKey={task.id}
               disabled={taskMutationPending || savingTextFields || classificationBusy || deleting}
               items={[
                 { key: "discussion", icon: "followUp", label: task.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
-                  onClick: () => { void dispatch({ type: "task.setDiscussion", task, requested: !task.discussionRequested })?.catch(() => {}); } },
+                  onClick: () => { void dispatchCommand({ type: "task.setDiscussion", task, requested: !task.discussionRequested })?.catch(() => {}); } },
                 ...(!isReference && !taskIsCapturedInboxItem ? [{ key: "clarify", icon: "edit" as const,
                   label: task.needsClarification ? strings.clarifyNow : strings.clarifyAgain,
-                  onClick: () => { void dispatch({ type: "task.setClarification", task, requested: !task.needsClarification })?.catch(() => {}); } }] : []),
+                  onClick: () => { void dispatchCommand({ type: "task.setClarification", task, requested: !task.needsClarification })?.catch(() => {}); } }] : []),
                 ...(!isReference && task.needsClarification ? [{ key: "clarifyLater", icon: "schedule" as const,
                   label: strings.clarifyLater, onClick: () => runCommand("task.deferClarification") }] : []),
                 ...(!isReference && !taskIsCapturedInboxItem && task.projectId !== null ? [{
                   key: "additional", icon: "actionable" as const,
                   label: task.additionalNextAction ? strings.unmarkAdditionalNextAction : strings.markAdditionalNextAction,
-                  onClick: () => { void dispatch({ type: "task.toggleAdditionalNextAction", task }); },
+                  onClick: () => { void dispatchCommand({ type: "task.toggleAdditionalNextAction", task }); },
                 }] : []),
                 { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => setAttachmentOpen(true) },
                 { key: "delete", icon: "discard", label: strings.delete, danger: true,
@@ -575,6 +627,7 @@ export function TaskDetailSheet() {
                   <IconActionButton
                     kind="edit"
                     label={strings.edit}
+                    disabled={readOnlyInspection}
                     onClick={() => setTitleEditing(true)}
                   />
               </div>
@@ -637,7 +690,7 @@ export function TaskDetailSheet() {
                     aria-current={task.status === status ? "true" : undefined}
                     onClick={() => {
                       setLifecycleOpen(false);
-                      dispatch({ type: "task.setStatus", task, status });
+                      dispatchCommand({ type: "task.setStatus", task, status });
                     }}
                   >
                     {status === task.status ? strings.taskStatusLabels[status] : status === "done" ? strings.completeTaskAction : status === "cancelled" ? strings.cancelTask : strings.taskStatusLabels[status]}
@@ -674,7 +727,9 @@ export function TaskDetailSheet() {
             {task.parentTaskId === null && task.projectId === null ? (
               <DetailPropertyPill
                 label={strings.detailScope}
+                disabled={readOnlyInspection}
                 onClick={async () => {
+                  if (readOnlyInspection) return;
                   setSaveError(null);
                   try {
                     await taskActions.update(
@@ -709,18 +764,20 @@ export function TaskDetailSheet() {
                       ...(!task.reminders.length ? [{ key: "reminder", icon: "today" as const, label: strings.detailAddReminder, onClick: () => runCommand("task.reminders") }] : []),
                       ...(task.repeatAfterDays === null ? [{ key: "recurrence", icon: "recurrence" as const, label: strings.detailAddRecurrence, onClick: () => runCommand("task.recurrence") }] : []),
                       ...(task.priority === null ? [{ key: "priority", icon: "priority" as const, label: strings.detailAddPriority, onClick: () => runCommand("task.priority") }] : []),
-                      ...(!task.dependencies.length ? [{ key: "dependencies", icon: "criteria" as const, label: strings.detailAddPrerequisites, onClick: () => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" }) }] : []),
+                      ...(!task.dependencies.length ? [{ key: "dependencies", icon: "criteria" as const, label: strings.detailAddPrerequisites, onClick: () => dispatchCommand({ type: "task.plan", taskId: task.id, target: "dependencies" }) }] : []),
                     ]} />
                 </div>
                 <div className="detail-meta-row">
                 <DetailPropertyPill label={task.scheduledDate ? strings.detailPlanned : undefined}
                   variant={task.scheduledDate ? "set" : "unset"}
-                  onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "scheduled" })}>
+                  disabled={readOnlyInspection}
+                  onClick={() => dispatchCommand({ type: "task.plan", taskId: task.id, target: "scheduled" })}>
                   {task.scheduledDate ? localDate(task.scheduledDate) : strings.addPlan}
                 </DetailPropertyPill>
                 <DetailPropertyPill label={task.dueDate ? strings.due : undefined}
                   variant={task.dueDate ? "set" : "unset"}
-                  onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "deadline" })}>
+                  disabled={readOnlyInspection}
+                  onClick={() => dispatchCommand({ type: "task.plan", taskId: task.id, target: "deadline" })}>
                   {task.dueDate ? localDate(task.dueDate) : strings.addDeadline}
                 </DetailPropertyPill>
                 {revisitAtValue ? <DetailPropertyPill label={strings.detailShowAgain} onClick={() => runCommand("task.availability")}>{revisitAtValue}</DetailPropertyPill> : null}
@@ -731,7 +788,7 @@ export function TaskDetailSheet() {
                   {reminderSummary.label}{reminderSummary.overflowCount > 0 ? ` +${reminderSummary.overflowCount}` : ""}
                 </DetailPropertyPill> : null}
                 {task.externalWait ? <DetailPropertyPill label={strings.waitingFor} onClick={() => runCommand("task.waitingLifecycle")}>{waitValue || strings.waiting}</DetailPropertyPill> : (
-                  <DetailPropertyPill variant="unset" onClick={() => runCommand("task.waitingLifecycle")}>
+                  <DetailPropertyPill variant="unset" onClick={(event) => runCommand("task.waitingLifecycle", event?.currentTarget)}>
                     {strings.detailAddWait}
                   </DetailPropertyPill>
                 )}
@@ -742,7 +799,7 @@ export function TaskDetailSheet() {
                   {strings.detailPriorityNames[String(task.priority) as keyof typeof strings.detailPriorityNames] ?? task.priority}
                 </DetailPropertyPill> : null}
                 {task.dependencies.length > 0 ? <DetailPropertyPill label={strings.detailPrerequisites}
-                  onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" })}>
+                  onClick={() => dispatchCommand({ type: "task.plan", taskId: task.id, target: "dependencies" })}>
                   {task.dependencies.map((dep) => dep.title ?? `#${dep.dependsOnTaskId}`).join(" · ")}
                 </DetailPropertyPill> : null}
                 </div>
@@ -775,7 +832,7 @@ export function TaskDetailSheet() {
               <button
                 type="button"
                 className="btn btn-primary capture-shape-action"
-                disabled={classificationBusy || contentDirty}
+                disabled={readOnlyInspection || classificationBusy || contentDirty}
                 onClick={() => void classifyCapture("actionable")}
               >
                 {strings.classifyAsAction}
@@ -783,7 +840,7 @@ export function TaskDetailSheet() {
               <button
                 type="button"
                 className="btn btn-primary capture-shape-action"
-                disabled={classificationBusy || contentDirty}
+                disabled={readOnlyInspection || classificationBusy || contentDirty}
                 onClick={() => void convertTaskToProject()}
               >
                 {strings.classifyAsBacklog}
@@ -791,7 +848,7 @@ export function TaskDetailSheet() {
               <button
                 type="button"
                 className="btn capture-shape-action"
-                disabled={classificationBusy || contentDirty}
+                disabled={readOnlyInspection || classificationBusy || contentDirty}
                 onClick={() => void classifyCapture("someday")}
               >
                 {strings.classifyAsSomeday}
@@ -826,12 +883,14 @@ export function TaskDetailSheet() {
                 <IconActionButton
                   kind="edit"
                   label={strings.edit}
-                  disabled={taskActions.isPending(task.id)}
-                  onClick={() => setNotesEditing(true)}
+                  disabled={readOnlyInspection || taskActions.isPending(task.id)}
+                  onClick={() => {
+                    if (!readOnlyInspection) setNotesEditing(true);
+                  }}
                 />
               ) : null}
             </div>
-            <NotesAppend key={task.id} disabled={notesEditing || savingTextFields || taskMutationPending} onAppend={async content => {
+            <NotesAppend key={task.id} disabled={readOnlyInspection || notesEditing || savingTextFields || taskMutationPending} onAppend={async content => {
               const opening = contentOpeningRef.current;
               const updated = await taskActions.appendNotes(task, content);
               if (opening !== contentOpeningRef.current) return false;
@@ -932,7 +991,7 @@ export function TaskDetailSheet() {
               ].sort((a, b) => a.item.position - b.item.position).map((entry) => {
                 if (entry.role === "story") return (
                   <li key={entry.item.id} className="row-between">
-                    <button type="button" className="btn" onClick={() => dispatch({ type: "workItem.open", workItem: { id: entry.item.id, role: "story" } })}>📁 {entry.item.title}</button>
+                    <button type="button" className="btn" onClick={() => dispatchCommand({ type: "workItem.open", workItem: { id: entry.item.id, role: "story" } })}>📁 {entry.item.title}</button>
                   </li>
                 );
                 const child = entry.item;
@@ -948,15 +1007,16 @@ export function TaskDetailSheet() {
                           type="button"
                           className={`task-row-checkbox${child.status === "done" ? " done" : ""}${child.status === "cancelled" ? " cancelled" : ""}`}
                           aria-label={child.status === "done" || child.status === "cancelled" ? strings.reopen : strings.done}
+                          disabled={readOnlyInspection}
                           onClick={() => {
-                            dispatch({ type: "task.toggleDone", task: child });
+                            dispatchCommand({ type: "task.toggleDone", task: child });
                             reload();
                           }}
                         >
                           {child.status === "done" ? "✓" : child.status === "cancelled" ? "×" : ""}
                         </button>
                       )}
-                      <button type="button" className="link-plain" onClick={() => open(child.id)}>
+                      <button type="button" className="link-plain" onClick={() => (readOnlyInspection ? inspect(child.id) : open(child.id))}>
                         {child.title}
                       </button>
                     </span>
@@ -1008,7 +1068,7 @@ export function TaskDetailSheet() {
               <button
                 type="button"
                 className="btn btn-sm"
-                onClick={() => dispatch({ type: "task.plan", taskId: task.id, target: "dependencies" })}
+                onClick={() => dispatchCommand({ type: "task.plan", taskId: task.id, target: "dependencies" })}
               >
                 {strings.editPrerequisites}
               </button>

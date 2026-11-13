@@ -17,7 +17,7 @@ import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { TaskClarificationSheet } from "./TaskClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
-import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
 import { BottomSheet } from "./BottomSheet";
 import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
@@ -39,106 +39,23 @@ export function TaskWorkflowHost() {
   const workflow = useTaskWorkflow();
   const taskDetail = useTaskDetail();
   const location = useLocation();
-  const navigationType = useNavigationType();
   const previousLocationKey = useRef(location.key);
   const { currentMemberId } = useIdentity();
-  const previousOpenTaskId = useRef(taskDetail.openTaskId);
   useEffect(() => {
-    const locationChanged = previousLocationKey.current !== location.key;
-    if (locationChanged) {
-      previousLocationKey.current = location.key;
-      if (!workflow.detailClosing) {
-        const refinementReturn =
-          workflow.navigationIntent === "refinement" && navigationType === "REPLACE";
-        const inspection = workflow.detailInspection;
-        workflow.historyChanged(location.key, navigationType);
-        if (refinementReturn) {
-          taskDetail.resumeAfterHandoff();
-        } else if (inspection) {
-          if (navigationType === "POP" && location.key === inspection.originKey) {
-            taskDetail.resumeAfterHandoff();
-          } else if (taskDetail.openTaskId !== null) {
-            taskDetail.suspendForHandoff();
-          }
-        }
-      }
-    }
-    if (workflow.current === null && workflow.detailReturn) {
-      taskDetail.resumeAfterHandoff(workflow.detailReturn);
-      workflow.consumeDetailReturn();
-    } else if (
-      workflow.current !== null &&
-      taskDetail.openTaskId === null &&
-      taskDetail.suspended &&
-      (workflow.detailInspection === null || workflow.detailVisible)
-    ) {
-      taskDetail.resumeAfterHandoff();
-    }
-    const previousTaskId = previousOpenTaskId.current;
-    previousOpenTaskId.current = taskDetail.openTaskId;
-    if (
-      previousTaskId !== null &&
-      taskDetail.openTaskId === null &&
-      workflow.detailInspection &&
-      workflow.detailVisible &&
-      !taskDetail.suspended
-    ) {
-      workflow.closeDetail();
-    }
+    if (previousLocationKey.current === location.key) return;
+    previousLocationKey.current = location.key;
+    workflow.historyChanged();
   }, [
     location.key,
-    navigationType,
-    taskDetail.openTaskId,
-    taskDetail.suspended,
     workflow,
   ]);
-  // Each planning slot keeps its React position when another prerequisite is
-  // inspected. Only the foreground operation registers a visible modal.
-  const retained = workflow.detailInspections;
-  const retainedIds = new Set(retained.map((inspection) => inspection.openingId));
-  const currentIsRetained =
-    workflow.current !== null &&
-    workflow.current === workflow.detailInspection?.planningWorkflow;
-  const entries = [
-    ...retained.map((inspection) => ({
-      openingId: inspection.openingId,
-      state: inspection.planningWorkflow,
-      retained: true,
-    })),
-    ...(workflow.current && workflow.currentOpeningId !== null &&
-    !currentIsRetained &&
-    !retainedIds.has(workflow.currentOpeningId)
-      ? [{
-          openingId: workflow.currentOpeningId,
-          state: workflow.current,
-          retained: false,
-        }]
-      : []),
-  ];
-  return <>
-    {entries.map(({ openingId, state, retained: isRetained }) => {
-      const resumedRetained =
-        isRetained &&
-        openingId === workflow.currentOpeningId &&
-        workflow.detailInspection !== null &&
-        workflow.detailVisible &&
-        workflow.detailClosing &&
-        taskDetail.openTaskId === null &&
-        !taskDetail.suspended;
-      const suspended = (isRetained && !resumedRetained) || (
-        workflow.detailInspection !== null &&
-        (workflow.navigationIntent === "refinement" ||
-          (location.key !== workflow.detailInspection.originKey && !workflow.detailVisible) ||
-          (isRetained && taskDetail.suspended))
-      );
-      return <TaskWorkflowContent
-        key={`${currentMemberId}:${openingId}`}
-        state={state}
-        suspended={suspended}
-        openingId={openingId}
-      />;
-    })}
-  </>;
+  if (!workflow.current || workflow.currentOpeningId === null) return null;
+  return <TaskWorkflowContent
+    key={`${currentMemberId}:${workflow.currentOpeningId}`}
+    state={workflow.current}
+    suspended={false}
+    openingId={workflow.currentOpeningId}
+  />;
 }
 
 function TaskWorkflowContent({ state, suspended = false, openingId }: {
@@ -253,8 +170,8 @@ function TaskWorkflowContent({ state, suspended = false, openingId }: {
     case "refinement":
       return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onFailure={endOnDenied} onStarted={(intakeId) => {
         if (!isCurrent() || ended.current) return;
-        const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
-        const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
+        const detail = taskDetail.openTaskId === task.id ? taskDetail.getHandoff() : null;
+        const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page" };
         close();
         navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });
       }} />;

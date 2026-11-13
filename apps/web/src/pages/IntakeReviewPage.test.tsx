@@ -130,7 +130,6 @@ function HandoffBootstrap() {
   const detail = useTaskDetail();
   useEffect(() => {
     detail.openQueue([27, 28], "notes");
-    detail.suspendForHandoff();
   }, []);
   return null;
 }
@@ -2053,7 +2052,7 @@ describe("IntakeReviewPage", () => {
     expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/tasks/27");
   });
 
-  it("returns from queued refinement and restores the suspended detail queue", async () => {
+  it("returns from queued refinement without resurrecting task detail", async () => {
     mockedApi.getIntake.mockResolvedValue({ ...record("queued"), draft: null } as never);
     renderPage({
       pathname: "/intake/i1",
@@ -2064,7 +2063,7 @@ describe("IntakeReviewPage", () => {
     });
     expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Zurück zur Aufgabe" }));
-    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
   });
 
   it("restores a suspended task-detail queue when browser Back leaves intake", async () => {
@@ -2085,10 +2084,10 @@ describe("IntakeReviewPage", () => {
     );
     expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
-    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
   });
 
-  it("restores the task-detail queue when browser Back leaves a failed refinement", async () => {
+  it("does not resurrect task detail when browser Back leaves a failed refinement", async () => {
     mockedApi.getIntake.mockResolvedValue({ ...record("analysis_failed", { code: "ai_error", message: "failed", retryable: true }), draft: null } as never);
     renderWithProviders(
       <>
@@ -2106,7 +2105,7 @@ describe("IntakeReviewPage", () => {
     );
     expect(await screen.findByRole("heading", { name: /Die Analyse ist fehlgeschlagen/ })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
-    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
   });
 
   it("discards a smaller-steps proposal through the handoff return path", async () => {
@@ -2126,7 +2125,7 @@ describe("IntakeReviewPage", () => {
       } },
     }, true);
     await userEvent.click(await screen.findByRole("button", { name: "Verwerfen" }));
-    expect(await screen.findByText("Origin restored: 27, true, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
     expect(mockedApi.deleteIntake).toHaveBeenCalledWith("i1");
   });
 

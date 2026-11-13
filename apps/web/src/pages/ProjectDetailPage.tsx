@@ -93,13 +93,16 @@ export function ProjectDetailPage() {
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const planningTaskRef = useRef<number | null>(null);
+  const planningOpeningIdRef = useRef<number | null>(null);
   const storyFocusDispatchedRef = useRef<string | null>(null);
   const storyFocusSheetOpenedRef = useRef(false);
-  const planningOwnsSheetRef = useRef(false);
-  const planningSheetOpenedRef = useRef(false);
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
   const { openTaskId } = useTaskDetail();
+  const taskWorkflowCloseRef = useRef(taskWorkflow.close);
+  const taskWorkflowOpeningIdRef = useRef(taskWorkflow.currentOpeningId);
+  taskWorkflowCloseRef.current = taskWorkflow.close;
+  taskWorkflowOpeningIdRef.current = taskWorkflow.currentOpeningId;
   const projectWorkflow = useProjectWorkflow();
   const projectWorkflowOpen = projectWorkflow.current?.projectId === projectId;
   const closeProjectWorkflowRef = useRef(projectWorkflow.close);
@@ -107,13 +110,9 @@ export function ProjectDetailPage() {
   // `?focus=planning` is a deep link into the canonical `task.plan` workflow
   // for the project's first unplanned task; this page only decides *which*
   // task and cleans up after itself, it never implements planning.
-  const planningWorkflow = taskWorkflow.detailInspections[0]?.planningWorkflow ?? taskWorkflow.current;
+  const planningWorkflow = taskWorkflow.current;
   const planningWorkflowTaskId =
     planningWorkflow?.kind === "plan" ? planningWorkflow.taskId : null;
-  const openTaskIdRef = useRef(planningWorkflowTaskId);
-  const closeTaskDetailRef = useRef(taskWorkflow.close);
-  openTaskIdRef.current = planningWorkflowTaskId;
-  closeTaskDetailRef.current = taskWorkflow.close;
   const {
     data: loadedProject,
     loading: projectLoading,
@@ -258,24 +257,16 @@ export function ProjectDetailPage() {
 
   const planningFocusActive = focus === "planning";
 
-  useEffect(() => {
-    if (!planningFocusActive) return;
-    return () => {
-      const ownedTaskId = planningTaskRef.current;
-      const ownsPendingOpen =
-        planningOwnsSheetRef.current &&
-        !planningSheetOpenedRef.current &&
-        openTaskIdRef.current === null;
-      const ownsOpenSheet =
-        planningOwnsSheetRef.current && openTaskIdRef.current === ownedTaskId;
-
-      planningTaskRef.current = null;
-      planningOwnsSheetRef.current = false;
-      planningSheetOpenedRef.current = false;
-
-      if (ownsPendingOpen || ownsOpenSheet) closeTaskDetailRef.current();
-    };
-  }, [planningFocusActive, projectId]);
+  useEffect(() => () => {
+    if (
+      planningOpeningIdRef.current !== null &&
+      taskWorkflowOpeningIdRef.current === planningOpeningIdRef.current
+    ) {
+      taskWorkflowCloseRef.current();
+    }
+    planningTaskRef.current = null;
+    planningOpeningIdRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (
@@ -299,8 +290,6 @@ export function ProjectDetailPage() {
     );
     if (!taskToPlan) return;
     planningTaskRef.current = taskToPlan.id;
-    planningOwnsSheetRef.current = true;
-    planningSheetOpenedRef.current = false;
     dispatch({ type: "task.plan", taskId: taskToPlan.id, target: "scheduled" });
   }, [
     planningFocusActive,
@@ -312,21 +301,40 @@ export function ProjectDetailPage() {
   ]);
 
   useEffect(() => {
-    const ownedTaskId = planningTaskRef.current;
     if (
-      !planningFocusActive ||
-      !planningOwnsSheetRef.current ||
-      ownedTaskId === null
-    )
+      planningFocusActive ||
+      planningOpeningIdRef.current === null
+    ) {
       return;
+    }
+    if (taskWorkflow.currentOpeningId === planningOpeningIdRef.current) {
+      taskWorkflow.close();
+    }
+    planningTaskRef.current = null;
+    planningOpeningIdRef.current = null;
+  }, [planningFocusActive, taskWorkflow]);
 
-    if (planningWorkflowTaskId === ownedTaskId) {
-      planningSheetOpenedRef.current = true;
-    } else if (planningSheetOpenedRef.current || planningWorkflowTaskId !== null) {
-      planningOwnsSheetRef.current = false;
+  useEffect(() => {
+    if (!planningFocusActive || planningTaskRef.current === null) return;
+    if (
+      taskWorkflow.current?.kind === "plan" &&
+      taskWorkflow.current.taskId === planningTaskRef.current &&
+      taskWorkflow.currentOpeningId !== null
+    ) {
+      planningOpeningIdRef.current = taskWorkflow.currentOpeningId;
+    } else if (
+      planningOpeningIdRef.current !== null &&
+      taskWorkflow.currentOpeningId !== planningOpeningIdRef.current
+    ) {
       clearRouteFocus();
     }
-  }, [planningFocusActive, planningWorkflowTaskId, clearRouteFocus]);
+  }, [
+    clearRouteFocus,
+    planningFocusActive,
+    planningWorkflowTaskId,
+    taskWorkflow.current,
+    taskWorkflow.currentOpeningId,
+  ]);
 
   // Review repair links for the story itself are the same three intents the
   // rail and keyboard dispatch; the route only picks one and then cleans up

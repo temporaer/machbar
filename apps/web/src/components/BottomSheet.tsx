@@ -26,6 +26,9 @@ const sheetStack: SheetEntry[] = [];
 const hiddenElements = new Map<HTMLElement, HiddenState>();
 let nextSheetOrder = 0;
 let bodyOverflow: string | null = null;
+let suspendedOpener: HTMLElement | null = null;
+let lastFocusedElement: HTMLElement | null = null;
+let lastInteractionElement: HTMLElement | null = null;
 
 const focusableSelector = [
   "a[href]",
@@ -159,6 +162,29 @@ function onDocumentKeyDown(event: KeyboardEvent) {
 }
 
 function registerSheet(entry: SheetEntry) {
+  const activeElement =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  let shouldRestoreOpener = false;
+  if (
+    suspendedOpener?.isConnected &&
+    (activeElement === document.body || activeElement === null)
+  ) {
+    entry.opener = suspendedOpener;
+    shouldRestoreOpener = true;
+  }
+  if (
+    (activeElement === document.body || activeElement === null) &&
+    lastFocusedElement?.isConnected
+  ) {
+    entry.opener = lastFocusedElement;
+  }
+  if (
+    (activeElement === document.body || activeElement === null) &&
+    lastInteractionElement?.isConnected
+  ) {
+    entry.opener = lastInteractionElement;
+  }
+  suspendedOpener = null;
   if (sheetStack.length === 0) {
     bodyOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -169,15 +195,31 @@ function registerSheet(entry: SheetEntry) {
   sheetStack.sort((left, right) => left.priority - right.priority || left.order - right.order);
   updateSheetStacking();
   updatePageIsolation();
-  if (topSheet() === entry) focusSheet(entry, entry.initialFocus);
+  if (topSheet() === entry) {
+    if (shouldRestoreOpener && entry.opener?.isConnected) entry.opener.focus();
+    else focusSheet(entry, entry.initialFocus);
+  }
 }
 
-function unregisterSheet(id: symbol) {
+function unregisterSheet(id: symbol, restoreFocus = true) {
   const index = sheetStack.findIndex((entry) => entry.id === id);
   if (index < 0) return;
 
   const wasTop = index === sheetStack.length - 1;
   const entry = sheetStack[index]!;
+  if (!restoreFocus && wasTop) {
+    const active = document.activeElement;
+    const candidate =
+      active instanceof HTMLElement && entry.dialog.contains(active)
+        ? active
+        : lastInteractionElement && entry.dialog.contains(lastInteractionElement)
+          ? lastInteractionElement
+          : lastFocusedElement && entry.dialog.contains(lastFocusedElement)
+            ? lastFocusedElement
+            : null;
+    suspendedOpener =
+      candidate;
+  }
   for (const nestedEntry of sheetStack.slice(index + 1)) {
     if (nestedEntry.opener && entry.dialog.contains(nestedEntry.opener)) {
       nestedEntry.opener = entry.opener;
@@ -193,7 +235,12 @@ function unregisterSheet(id: symbol) {
     bodyOverflow = null;
   }
 
-  if (wasTop && entry.opener?.isConnected) {
+  if (
+    restoreFocus &&
+    wasTop &&
+    entry.opener?.isConnected &&
+    entry.opener !== document.body
+  ) {
     const opener = entry.opener;
     const nextTopId = topSheet()?.id;
     opener.focus();
@@ -238,8 +285,27 @@ export function BottomSheet({
   const dialogRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const resumeAtTopRef = useRef(false);
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  useLayoutEffect(() => {
+    const rememberFocus = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement) lastFocusedElement = event.target;
+    };
+    const rememberInteraction = (event: Event) => {
+      if (event.target instanceof HTMLElement) lastInteractionElement = event.target;
+    };
+    document.addEventListener("focusin", rememberFocus);
+    document.addEventListener("pointerdown", rememberInteraction, true);
+    document.addEventListener("keydown", rememberInteraction, true);
+    return () => {
+      document.removeEventListener("focusin", rememberFocus);
+      document.removeEventListener("pointerdown", rememberInteraction, true);
+      document.removeEventListener("keydown", rememberInteraction, true);
+    };
+  }, []);
 
   // Keep the scroll container inside the visible viewport, including browsers
   // whose soft keyboard resizes only the visual (not layout) viewport.
@@ -276,6 +342,9 @@ export function BottomSheet({
     if (!dialog || !backdrop) return;
 
     // A retained sheet resumes above any detail restored during its handoff.
+    if (resumeAtTopRef.current && lastFocusedElement?.isConnected) {
+      openerRef.current = lastFocusedElement;
+    }
     const registrationOrder = resumeAtTopRef.current ? nextSheetOrder++ : order;
     resumeAtTopRef.current = false;
     orderRef.current = registrationOrder;
@@ -289,7 +358,7 @@ export function BottomSheet({
       close: () => onCloseRef.current(),
       initialFocus,
     });
-    return () => unregisterSheet(idRef.current);
+    return () => unregisterSheet(idRef.current, !suspendedRef.current);
   }, [suspended]);
 
   return createPortal(

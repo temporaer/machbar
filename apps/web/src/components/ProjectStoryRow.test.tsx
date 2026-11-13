@@ -130,16 +130,16 @@ function renderWithProjectRoute(ui: ReactElement) {
             <TaskActionsProvider>
               <ProjectActionsProvider>
                 <InteractionScopeProvider>
-                  <TaskDetailProvider>
-                    <TaskWorkflowProvider>
+                  <TaskWorkflowProvider>
+                    <TaskDetailProvider>
                       <ProjectWorkflowProvider>
                         <Routes>
                           <Route path="/" element={ui} />
                           <Route path="/projects/:id" element={<ProjectRouteMarker />} />
                         </Routes>
                       </ProjectWorkflowProvider>
-                    </TaskWorkflowProvider>
-                  </TaskDetailProvider>
+                    </TaskDetailProvider>
+                  </TaskWorkflowProvider>
                 </InteractionScopeProvider>
               </ProjectActionsProvider>
             </TaskActionsProvider>

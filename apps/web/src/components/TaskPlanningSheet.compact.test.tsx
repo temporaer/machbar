@@ -10,7 +10,8 @@ import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import type { TaskPlanningTarget } from "../lib/commands";
-import { useNavigate } from "react-router-dom";
+import { de as strings } from "../i18n/de";
+import { useLocation, useNavigate } from "react-router-dom";
 
 vi.mock("../lib/api", () => ({ api: {
   previewTaskUpdate: vi.fn(),
@@ -27,7 +28,8 @@ function openSection(element: HTMLElement) {
 function Harness({ fromDetail = false }: { fromDetail?: boolean }) {
   const dispatch = useWorkItemCommands();
   const navigate = useNavigate();
-  return <><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><button onClick={() => dispatch({ type: "workItem.open", workItem: { id: 3, role: "task" } })}>Generic linked task</button><button onClick={() => navigate(-1)}>Browser Back</button><button onClick={() => navigate(1)}>Browser Forward</button><TaskDetailSheet /><TaskWorkflowHost /></>;
+  const location = useLocation();
+  return <><span data-testid="location">{location.pathname}</span><button onClick={() => fromDetail ? dispatch({ type: "task.open", taskId: 1 }) : dispatch({ type: "task.plan", taskId: 1, target: "dependencies" })}>Open planning</button><button onClick={() => dispatch({ type: "workItem.open", workItem: { id: 3, role: "task" } })}>Generic linked task</button><button onClick={() => navigate(-1)}>Browser Back</button><button onClick={() => navigate(1)}>Browser Forward</button><button onClick={() => navigate("/projects/42")}>Navigate away</button><TaskDetailSheet /><TaskWorkflowHost /></>;
 }
 
 beforeEach(() => {
@@ -37,6 +39,7 @@ beforeEach(() => {
   mocked.getTags.mockResolvedValue([]);
   mocked.getActivity.mockResolvedValue([] as never);
   mocked.getTaskRecurrenceHistory.mockResolvedValue({ summary: { hitCount: 0, missCount: 0, totalCount: 0, hitRate: null }, occurrences: [] });
+  mocked.getTask.mockResolvedValue(makeTask({ id: 1 }) as never);
 });
 
 describe("compact planning", () => {
@@ -113,6 +116,7 @@ describe("compact planning", () => {
     fireEvent.blur(screen.getByLabelText("Geplant für"));
     await user.click(screen.getByRole("button", { name: "Speichern" }));
     await user.click(await screen.findByRole("button", { name: "Meine Änderung beibehalten" }));
+    openSection(section("planning-prerequisites"));
     await user.click(screen.getByRole("button", { name: "#2" }));
     await screen.findByRole("heading", { name: "Example prerequisite", level: 1 });
     await user.click(screen.getByRole("button", { name: "Schließen" }));
@@ -123,5 +127,58 @@ describe("compact planning", () => {
     expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
     expect(mocked.updateTask).toHaveBeenCalledTimes(1);
   }, 15000);
+
+  it("preserves an unsaved planner draft across read-only prerequisite inspection", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 1, title: "Example planning", externalWait: { waitingFor: "Example reply", revisitDate: null }, dependencies: [
+      { id: 1, taskId: 1, dependsOnTaskId: 2, title: "Example prerequisite", resolved: false },
+    ] });
+    mocked.getTask.mockImplementation(async (id) => ({ ...(id === 1 ? task : makeTask({ id, title: id === 2 ? "Example prerequisite" : "Example resolved" })), ancestors: [], childStories: [], externalRefs: [], hierarchyRevisions: [] }) as never);
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-scheduled"));
+    fireEvent.change(screen.getByLabelText("Geplant für"), { target: { value: "20.10.2026" } });
+    fireEvent.blur(screen.getByLabelText("Geplant für"));
+    await user.selectOptions(screen.getByLabelText("Zeitfenster"), "outside");
+    openSection(section("planning-waiting"));
+    await user.type(screen.getByLabelText("Was ist passiert?"), "Draft outcome");
+    openSection(section("planning-prerequisites"));
+    await user.click(screen.getByRole("button", { name: "Example prerequisite" }));
+    await screen.findByRole("heading", { name: "Example prerequisite", level: 1 });
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Planen" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Schließen" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    expect(screen.getByLabelText("Geplant für")).toHaveValue("20.10.2026");
+    expect(screen.getByLabelText("Zeitfenster")).toHaveValue("outside");
+    expect(screen.getByLabelText("Was ist passiert?")).toHaveValue("Draft outcome");
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+    expect(mocked.addDependency).not.toHaveBeenCalled();
+    expect(mocked.removeDependency).not.toHaveBeenCalled();
+  }, 15000);
+
+  it("blocks in-app navigation for a dirty draft until stay or discard is explicit", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-scheduled"));
+    fireEvent.change(screen.getByLabelText("Geplant für"), { target: { value: "20.10.2026" } });
+    fireEvent.blur(screen.getByLabelText("Geplant für"));
+
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    const discardDialog = screen.getByRole("heading", { name: "Verwerfen" }).closest('[role="dialog"]') as HTMLElement;
+    expect(discardDialog).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/");
+    await user.click(within(discardDialog).getByRole("button", { name: "Abbrechen" }));
+    expect(screen.getByRole("dialog", { name: "Planung" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Geplant für")).toHaveValue("20.10.2026");
+
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    await user.click(screen.getByRole("button", { name: "Verwerfen" }));
+    await screen.findByText("/projects/42");
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+  });
 
 });

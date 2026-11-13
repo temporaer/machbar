@@ -478,13 +478,13 @@ describe("TaskSplitSheet", () => {
                   <SwipeCoachProvider>
                     <TaskActionsProvider>
                       <ProjectActionsProvider>
-                        <TaskDetailProvider>
-                          <TaskWorkflowProvider>
+                        <TaskWorkflowProvider>
+                          <TaskDetailProvider>
                             <ProjectWorkflowProvider>
                               <TaskSplitSheet parentId={7} parentRevision={1} existingChildren={[first, second]} onClose={vi.fn()} />
                             </ProjectWorkflowProvider>
-                          </TaskWorkflowProvider>
-                        </TaskDetailProvider>
+                          </TaskDetailProvider>
+                        </TaskWorkflowProvider>
                       </ProjectActionsProvider>
                     </TaskActionsProvider>
                   </SwipeCoachProvider>

@@ -120,8 +120,8 @@ function RefinementHandoffHarness({ taskId }: { taskId: number }) {
       <Route path="/intake/:id" element={<>
         <p>Intake foreground {JSON.stringify(location.state)}</p>
         <button onClick={() => {
-          const origin = (location.state as { refinementOrigin?: { originPath: string; taskDetail?: import("../lib/taskDetailContext").TaskDetailHandoff } } | null)?.refinementOrigin;
-          if (origin?.taskDetail) detail.resumeAfterHandoff(origin.taskDetail);
+          const origin = (location.state as { refinementOrigin?: { originPath: string } } | null)?.refinementOrigin;
+        detail.close();
           navigate(origin?.originPath ?? "/");
         }}>Return from intake</button>
       </>} />
@@ -344,15 +344,11 @@ describe("TaskDetailSheet", () => {
     expect(intake).toHaveTextContent('"targetType":"task"');
     expect(intake).toHaveTextContent('"targetId":73');
     expect(intake).toHaveTextContent('"entry":"task_detail"');
-    expect(intake).toHaveTextContent('"taskId":73');
-    expect(intake).toHaveTextContent('"queueTaskIds":[74]');
-    expect(intake).toHaveTextContent('"queueActive":true');
     expect(screen.queryByRole("dialog", { name: "Details" })).not.toBeInTheDocument();
     expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("task", 73, { expectedRevision: 6, intent: "improve" });
 
     await userEvent.click(screen.getByRole("button", { name: "Return from intake" }));
-    expect(await screen.findByRole("dialog", { name: "Details" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Notizen" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Details" })).not.toBeInTheDocument();
   });
 
   it("shows Calendar export beside Share only for a dated Task", async () => {

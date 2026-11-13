@@ -1702,53 +1702,24 @@ describe("ProjectDetailPage task explanations", () => {
     }
   });
 
-  it("does not close a workflow that replaced the route-owned planning workflow", async () => {
-    renderProjectRoute("/projects/42?focus=planning");
-
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
-
-    // Once the user steers the single workflow slot elsewhere, the route no
-    // longer owns it and must not close it when it drops its focus query.
-    await userEvent.click(screen.getByRole("button", { name: "Plan another task" }));
-
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.planning,
-      }),
-    ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus="),
-    );
-    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|8");
-  });
-
-  it("preserves a user-opened task sheet across planning navigation and Back", async () => {
+  it("ends a user-opened task sheet on planning navigation and does not resurrect it on Back", async () => {
     renderProjectRoute("/projects", ["/projects"]);
 
     await userEvent.click(screen.getByRole("button", { name: "Open another task" }));
-    const userDialog = await screen.findByRole("dialog", { name: strings.taskDetails });
+    await screen.findByRole("dialog", { name: strings.taskDetails });
     expect(
-      await within(userDialog).findByText("Catering bestätigen", {
+      await screen.findByText("Catering bestätigen", {
         selector: "h1",
       }),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Navigate to planning" }));
     expect(await screen.findByText("Sommerfest planen")).toBeInTheDocument();
-    expect(
-      within(userDialog).getByText("Catering bestätigen", {
-        selector: "h1",
-      }),
-    ).toBeInTheDocument();
-    expect(mockedApi.getTask).not.toHaveBeenCalledWith(7);
+    expect(screen.queryByRole("dialog", { name: strings.taskDetails })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText("Projects destination")).toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: strings.taskDetails })).toBeInTheDocument();
-    expect(screen.getByLabelText("task-route-state")).toHaveTextContent("8|none");
+    expect(screen.queryByRole("dialog", { name: strings.taskDetails })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("none|none");
   });
 });
