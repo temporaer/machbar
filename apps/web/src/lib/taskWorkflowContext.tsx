@@ -93,6 +93,15 @@ const inspectionMachine = createMachine({
       actions: assign({
         inspections: ({ context, event }) => {
           if (event.type !== "INSPECT") return context.inspections;
+          const current = context.inspections.at(-1);
+          const sameOperation =
+            current &&
+            current.originPath === event.originPath &&
+            current.originKey === event.originKey &&
+            current.planningWorkflow.kind === event.planningWorkflow.kind &&
+            current.planningWorkflow.taskId === event.planningWorkflow.taskId &&
+            current.planningWorkflow.planningTarget === event.planningWorkflow.planningTarget;
+          if (sameOperation) return context.inspections;
           return [
             ...context.inspections,
             {

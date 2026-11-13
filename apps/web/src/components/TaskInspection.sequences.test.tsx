@@ -194,6 +194,7 @@ function ControllerHarness() {
       <button data-testid="intake-return" onClick={returnToOrigin}>Return to origin</button>
       <button data-testid="close-inspection" onClick={() => detail.close()}>Close inspection</button>
       <button data-testid="close-workflow" onClick={() => taskWorkflow.close()}>Close workflow</button>
+      <output data-testid="inspection-count">{taskWorkflow.detailInspections.length}</output>
       <TaskDetailSheet />
       <TaskWorkflowHost />
     </>
@@ -448,5 +449,15 @@ describe("task inspection sequence contract", () => {
     await click("open-project");
     await click("back");
     await waitFor(() => expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible());
+  });
+
+  it("reuses a retained frame for repeated inspection of the same entry", async () => {
+    renderController();
+    await click("list-open-a");
+    await click("close-inspection");
+    await click("open-a-planner");
+    await click("inspect-b");
+    await click("inspect-b");
+    expect(screen.getByTestId("inspection-count")).toHaveTextContent("1");
   });
 });
