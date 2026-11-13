@@ -1,6 +1,6 @@
 {
   "name": "@machbar/web",
-  "version": "0.37.6",
+  "version": "0.37.7",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,7 +19,6 @@
     "@lezer/markdown": "^1.8.0",
     "@machbar/shared": "*",
     "@tanstack/react-query": "^5.107.1",
-    "@xstate/react": "^6.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-image-crop": "^11.1.2",
@@ -31,8 +30,7 @@
     "remark-rehype": "^11.1.2",
     "sugar-date": "2.0.6",
     "timepicker-ui-react": "^1.4.0",
-    "unified": "^11.0.5",
-    "xstate": "^5.33.4"
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

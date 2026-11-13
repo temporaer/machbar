@@ -1630,9 +1630,10 @@ never clears a value.
 
 Prerequisite titles dispatch `task.open`; removal remains a separate explicit
 dependency commit, as does recording a wait follow-up. Unresolved prerequisites
-appear first; resolved links are behind an explicit disclosure. The task inspection controller retains each nested planning workflow during
-detail inspection. Both `task.open` and task-role `workItem.open` dispatch the
-controller's inspection event and suspend the foreground planner.
+appear first; resolved links are behind an explicit disclosure. The reducer-backed
+interaction owner retains each nested planning workflow during detail inspection.
+Both `task.open` and task-role `workItem.open` dispatch the owner's inspection
+event and suspend the foreground planner.
 The host keeps each component mounted in its original slot and suspends
 its `BottomSheet` registration, allowing the normal task detail and any focused
 operation launched there to occupy the foreground. Closing detail restores the
@@ -1641,8 +1642,9 @@ most recent planning workflow and, where applicable, the prior detail/queue snap
 or committed for navigation, and no separate prerequisite viewer is introduced.
 Navigating from an inspected task to a project suspends that detail through the
 existing handoff instead of closing it: closing means returning to the planner.
-The controller records its originating path and `location.key`; path equality is
-not history identity. The router-bound adapter dispatches explicit history
+The owner assigns logical opening IDs and records its originating path and
+`location.key`; path equality is not history identity. The router-bound adapter
+dispatches explicit history
 leave/return events, so Back restores only the recorded origin entry and Forward
 hides the inspection even when both entries are `/projects/:id`. Project
 navigation, refinement return, and close are separate events; explicit refinement

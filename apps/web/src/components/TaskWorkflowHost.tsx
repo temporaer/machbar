@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
@@ -42,88 +42,37 @@ export function TaskWorkflowHost() {
   const navigationType = useNavigationType();
   const previousLocationKey = useRef(location.key);
   const { currentMemberId } = useIdentity();
-  const mounted = useRef(false);
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-  const current = useRef({ opening: workflow.current, currentMemberId });
-  current.current = { opening: workflow.current, currentMemberId };
-  const openings = useRef(new WeakMap<TaskWorkflowState, number>());
-  const sequence = useRef(0);
-  const previousDetailVisible = useRef(workflow.detailVisible);
   const previousOpenTaskId = useRef(taskDetail.openTaskId);
   useEffect(() => {
-    if (previousLocationKey.current === location.key) return;
-    previousLocationKey.current = location.key;
-    if (workflow.detailClosing) return;
-    const refinementReturn =
-      workflow.navigationIntent === "refinement" && navigationType === "REPLACE";
-    const inspection = workflow.detailInspection;
-    workflow.historyChanged(location.key, navigationType);
-    if (refinementReturn) {
-      taskDetail.resumeAfterHandoff();
-      return;
+    const locationChanged = previousLocationKey.current !== location.key;
+    if (locationChanged) {
+      previousLocationKey.current = location.key;
+      if (!workflow.detailClosing) {
+        const refinementReturn =
+          workflow.navigationIntent === "refinement" && navigationType === "REPLACE";
+        const inspection = workflow.detailInspection;
+        workflow.historyChanged(location.key, navigationType);
+        if (refinementReturn) {
+          taskDetail.resumeAfterHandoff();
+        } else if (inspection) {
+          if (navigationType === "POP" && location.key === inspection.originKey) {
+            taskDetail.resumeAfterHandoff();
+          } else if (taskDetail.openTaskId !== null) {
+            taskDetail.suspendForHandoff();
+          }
+        }
+      }
     }
-    if (!inspection) return;
-    if (navigationType === "POP" && location.key === inspection.originKey) {
-      taskDetail.resumeAfterHandoff();
-    } else if (taskDetail.openTaskId !== null) {
-      taskDetail.suspendForHandoff();
-    }
-  }, [location.key, navigationType, taskDetail, workflow]);
-  useEffect(() => {
-    if (
-      workflow.navigationIntent === "refinement" &&
-      workflow.detailVisible &&
-      taskDetail.suspended
-    ) {
-      taskDetail.resumeAfterHandoff();
-      return;
-    }
-    if (previousDetailVisible.current === workflow.detailVisible) return;
-    previousDetailVisible.current = workflow.detailVisible;
-    if (!workflow.detailInspection) return;
-    if (
-      taskDetail.suspended &&
-      (workflow.detailVisible || location.key === workflow.detailInspection.originKey)
-    ) {
-      taskDetail.resumeAfterHandoff();
-      if (workflow.navigationIntent === "refinement") return;
-    } else if (
-      location.key === workflow.detailInspection.originKey &&
-      taskDetail.openTaskId !== null &&
-      !taskDetail.suspended
-    ) {
-      return;
-    } else if (taskDetail.openTaskId !== null) {
-      taskDetail.suspendForHandoff();
-    }
-  }, [location.key, workflow.detailInspection, workflow.detailVisible, taskDetail.openTaskId, taskDetail.suspended, workflow]);
-  useEffect(() => {
     if (workflow.current === null && workflow.detailReturn) {
       taskDetail.resumeAfterHandoff(workflow.detailReturn);
       workflow.consumeDetailReturn();
-      return;
-    }
-    if (
+    } else if (
       workflow.current !== null &&
-      workflow.detailInspection === null &&
       taskDetail.openTaskId === null &&
-      taskDetail.suspended
+      taskDetail.suspended &&
+      (workflow.detailInspection === null || workflow.detailVisible)
     ) {
       taskDetail.resumeAfterHandoff();
-      return;
-    }
-    if (
-      workflow.current !== null &&
-      workflow.detailVisible &&
-      workflow.detailInspection !== null &&
-      taskDetail.openTaskId === null &&
-      taskDetail.suspended
-    ) {
-      taskDetail.resumeAfterHandoff();
-      return;
     }
     const previousTaskId = previousOpenTaskId.current;
     previousOpenTaskId.current = taskDetail.openTaskId;
@@ -136,49 +85,66 @@ export function TaskWorkflowHost() {
     ) {
       workflow.closeDetail();
     }
-  }, [taskDetail.openTaskId, taskDetail.suspended, workflow]);
+  }, [
+    location.key,
+    navigationType,
+    taskDetail.openTaskId,
+    taskDetail.suspended,
+    workflow,
+  ]);
   // Each planning slot keeps its React position when another prerequisite is
   // inspected. Only the foreground operation registers a visible modal.
   const retained = workflow.detailInspections;
-  const foreground = workflow.current === workflow.detailInspection?.planningWorkflow
-    ? null : workflow.current;
-  const states = [...retained.map((inspection) => inspection.planningWorkflow), foreground]
-    .filter((state, index, all): state is TaskWorkflowState =>
-      state !== null && all.indexOf(state) === index);
-  const retainedStates = new Set(retained.map((inspection) => inspection.planningWorkflow));
+  const retainedIds = new Set(retained.map((inspection) => inspection.openingId));
+  const currentIsRetained =
+    workflow.current !== null &&
+    workflow.current === workflow.detailInspection?.planningWorkflow;
+  const entries = [
+    ...retained.map((inspection) => ({
+      openingId: inspection.openingId,
+      state: inspection.planningWorkflow,
+      retained: true,
+    })),
+    ...(workflow.current && workflow.currentOpeningId !== null &&
+    !currentIsRetained &&
+    !retainedIds.has(workflow.currentOpeningId)
+      ? [{
+          openingId: workflow.currentOpeningId,
+          state: workflow.current,
+          retained: false,
+        }]
+      : []),
+  ];
   return <>
-    {states.map((state, index) => {
-      if (!state) return null;
-      if (!openings.current.has(state)) openings.current.set(state, ++sequence.current);
+    {entries.map(({ openingId, state, retained: isRetained }) => {
       const resumedRetained =
-        index === states.length - 1 &&
-        retainedStates.has(state) &&
-        state === workflow.current &&
+        isRetained &&
+        openingId === workflow.currentOpeningId &&
         workflow.detailInspection !== null &&
         workflow.detailVisible &&
         workflow.detailClosing &&
         taskDetail.openTaskId === null &&
         !taskDetail.suspended;
-      const suspended = (retainedStates.has(state) && !resumedRetained) || (
+      const suspended = (isRetained && !resumedRetained) || (
         workflow.detailInspection !== null &&
         (workflow.navigationIntent === "refinement" ||
           (location.key !== workflow.detailInspection.originKey && !workflow.detailVisible) ||
-          (retainedStates.has(state) && taskDetail.suspended))
+          (isRetained && taskDetail.suspended))
       );
       return <TaskWorkflowContent
-        key={`${currentMemberId}:${openings.current.get(state)}`}
+        key={`${currentMemberId}:${openingId}`}
         state={state}
         suspended={suspended}
-        isCurrent={() => mounted.current && current.current.opening === state && current.current.currentMemberId === currentMemberId}
+        openingId={openingId}
       />;
     })}
   </>;
 }
 
-function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
+function TaskWorkflowContent({ state, suspended = false, openingId }: {
   state: TaskWorkflowState;
   suspended?: boolean;
-  isCurrent: () => boolean;
+  openingId: number;
 }) {
   const workflow = useTaskWorkflow();
   const strings = useStrings();
@@ -191,6 +157,16 @@ function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
   const [endedError, setEndedError] = useState<string | null>(null);
   const [requirementsEpoch, setRequirementsEpoch] = useState(0);
   const ended = useRef(false);
+  const mounted = useRef(false);
+  const currentOpeningId = useRef(workflow.currentOpeningId);
+  currentOpeningId.current = workflow.currentOpeningId;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isOpeningCurrent = () =>
+    currentOpeningId.current === openingId;
+  const isCurrent = () => mounted.current && isOpeningCurrent();
   const endOnDenied = (cause: unknown) => {
     if (isCurrent() && isReadAccessError(cause)) {
       if (state.kind === "split") discardTaskSplitDraft(taskId, currentMemberId);
