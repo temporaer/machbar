@@ -146,6 +146,7 @@ test("Today keeps a future recurring plan out despite its reached revisit", asyn
 
 test("detail status control is visible on touch and desktop", async ({ page }) => {
   const item = await task(page);
+  await page.goto("/#/today");
   await page.goto(`/#/tasks/${item.id}`);
   const control = page.locator(".detail-meta-status-button");
   await expect(control).toBeVisible();
@@ -1124,6 +1125,57 @@ test("waiting is directly reachable and revisit precedes the single follow-up co
   expect(calendarDateForInstant(stored.revisitAt, timezone)).toBe("2099-05-10");
   expect(stored.externalWait.waitingFor).toBe("Supplier response");
   expect(stored.notes).toContain("Supplier confirmed the new delivery window.");
+});
+
+test("dirty planning navigation keeps the portaled choice explicit after a failed save", async ({ page }) => {
+  const item = await task(page);
+  await page.goto(`/#/tasks/${item.id}`);
+  const waiting = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
+    data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
+  });
+  expect(waiting.ok()).toBeTruthy();
+  await page.reload();
+  await page.getByRole("button", { name: /Wartet auf.*Supplier response/ }).click();
+  const planning = page.locator('[role="dialog"]').filter({
+    has: page.locator('h2:text-is("Planung")'),
+  });
+  const activePlanning = page.locator('[role="dialog"]:not([aria-hidden="true"])').filter({
+    has: page.locator('h2:text-is("Planung")'),
+  });
+  const itemPlanning = activePlanning.filter({
+    has: page.locator(`#planning-availability-date-${item.id}`),
+  });
+  await itemPlanning.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  await itemPlanning.locator(`#planning-availability-date-${item.id}`).fill("10.05.2099");
+  await itemPlanning.locator(`#planning-availability-date-${item.id}`).press("Tab");
+
+  await page.route(`**/api/tasks/${item.id}`, async route => {
+    if (route.request().method() === "PATCH") {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "stale_write_conflict", message: "Stale draft." } }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await page.locator('a[href="#/today"]').first().evaluate((element) => (element as HTMLElement).click());
+  const prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Abbrechen", exact: true })).toBeFocused();
+  await prompt.getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(prompt).toBeVisible();
+  await expect(planning.last().locator(`#planning-availability-date-${item.id}`)).toHaveValue("10.05.2099");
+
+  await page.keyboard.press("Escape");
+  await expect(prompt).toHaveCount(0);
+  await expect(activePlanning).toBeVisible();
+  await page.locator('a[href="#/today"]').first().evaluate((element) => (element as HTMLElement).click());
+  await page.getByRole("dialog", { name: "Verwerfen", exact: true })
+    .getByRole("button", { name: "Verwerfen", exact: true }).click();
+  await expect(planning).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/today$/);
 });
 
 test("Review keeps one routine inspection, explicit Keep and a separate repair", async ({ page }) => {

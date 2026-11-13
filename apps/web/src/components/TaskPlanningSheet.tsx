@@ -51,7 +51,7 @@ import {
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
-import { useBeforeUnload, useBlocker } from "react-router-dom";
+import { useBeforeUnload, useBlocker, useLocation } from "react-router-dom";
 
 type DateField = "scheduled" | "availability" | "deadline";
 type DateValidity = Record<DateField, boolean>;
@@ -418,12 +418,19 @@ export function TaskPlanningSheet({
   const rawDraftChanged =
     scheduledDate !== (baselineTask.scheduledDate ?? "") ||
     dueDate !== (baselineTask.dueDate ?? "") ||
-    notBeforeDate !== (baselineTask.notBeforeDate ?? "") ||
+    notBeforeDate !== initialAvailabilityDate ||
     waitingFor !== (baselineTask.externalWait?.waitingFor ?? "") ||
     cleanedTitle !== baselineTask.title ||
-    Boolean(reminderDraftPending);
+    Boolean(reminderDraftPending) ||
+    followUpOutcome.length > 0 ||
+    followUpChoice !== "continue" ||
+    !validity.scheduled ||
+    !validity.availability ||
+    !validity.deadline;
   const hasUnsavedDraft = dirty || rawDraftChanged;
   const navigationBlocker = useBlocker(hasUnsavedDraft);
+  const location = useLocation();
+  const initialLocationKey = useRef(location.key);
   useBeforeUnload((event) => {
     if (hasUnsavedDraft) event.preventDefault();
   });
@@ -431,9 +438,28 @@ export function TaskPlanningSheet({
     if (hasUnsavedDraft) setClosePromptOpen(true);
     else onClose();
   };
+  const stayOnClosePrompt = () => {
+    setClosePromptOpen(false);
+    if (navigationBlocker.state === "blocked") navigationBlocker.reset();
+  };
+  const completeRequestedClose = () => {
+    if (navigationBlocker.state === "blocked") {
+      navigationBlocker.proceed();
+    }
+    onClose();
+  };
   useEffect(() => {
     if (navigationBlocker.state === "blocked") setClosePromptOpen(true);
   }, [navigationBlocker.state]);
+  useEffect(() => {
+    if (
+      location.key === initialLocationKey.current ||
+      navigationBlocker.state === "blocked" ||
+      hasUnsavedDraft
+    ) return;
+    initialLocationKey.current = location.key;
+    onClose();
+  }, [hasUnsavedDraft, location.key, navigationBlocker.state, onClose]);
   const allValid =
     validity.scheduled && validity.availability && validity.deadline && !recurrenceInvalid;
   useEffect(() => {
@@ -766,7 +792,16 @@ export function TaskPlanningSheet({
         { throwOnError: true },
       );
       if (updated) {
-        const otherDraftChanges = windowChanged || scheduledChanged || deadlineChanged || recurrenceChanged || remindersChanged || reminderDraftPending || titleChanged;
+        const savedFollowUpChoice = followUpChoice;
+        const otherDraftChanges =
+          windowChanged ||
+          (revisitChanged && followUpChoice !== "continue") ||
+          scheduledChanged ||
+          deadlineChanged ||
+          recurrenceChanged ||
+          remindersChanged ||
+          reminderDraftPending ||
+          titleChanged;
         setBaselineTask(updated);
         setExpectedTaskRevision(updated.revision);
         setFollowUpOutcome("");
@@ -774,11 +809,14 @@ export function TaskPlanningSheet({
         setWaitingFor(updated.externalWait?.waitingFor ?? "");
         setWaitingOpen(updated.externalWait !== null);
         setWaitingEnded(false);
-        setAvailabilityEdited(false);
-        setNotBeforeDate(updated.revisitAt ? calendarDateForInstant(updated.revisitAt, householdTimezone) ?? "" : "");
-        setNotBeforeTime(taskAvailabilityClock(updated.revisitAt, householdTimezone) ?? "06:00");
+        if (savedFollowUpChoice === "continue" || !revisitChanged) {
+          setAvailabilityEdited(false);
+          setNotBeforeDate(updated.revisitAt ? calendarDateForInstant(updated.revisitAt, householdTimezone) ?? "" : "");
+          setNotBeforeTime(taskAvailabilityClock(updated.revisitAt, householdTimezone) ?? "06:00");
+        }
         if (otherDraftChanges) {
           setWaitingError(strings.planningFollowUpSavedDraftRemaining);
+          return false;
         } else {
           if (afterSuccess) afterSuccess();
           else onClose();
@@ -1698,30 +1736,32 @@ export function TaskPlanningSheet({
       </form>
     </BottomSheet>
     {closePromptOpen ? (
-      <div className="dialog-backdrop" role="presentation">
-        <div className="dialog stack" role="dialog" aria-modal="true" aria-labelledby="planning-close-title">
-          <h2 id="planning-close-title">{strings.discard}</h2>
-          <p>{strings.guidedCaptureDiscardDrafts}</p>
-          <div className="row">
-            <button type="button" className="btn" onClick={() => {
-              setClosePromptOpen(false);
-              if (navigationBlocker.state === "blocked") navigationBlocker.reset();
-            }}>{strings.cancel}</button>
-            <button type="button" className="btn" onClick={() => {
-              setClosePromptOpen(false);
-              if (navigationBlocker.state === "blocked") navigationBlocker.proceed();
-              else onClose();
-            }}>{strings.discard}</button>
-            <button type="button" className="btn btn-primary" onClick={() => {
-              void commit(() => {
-                if (navigationBlocker.state === "blocked") navigationBlocker.proceed();
-              }).then((saved) => {
-                if (saved) setClosePromptOpen(false);
-              });
-            }}>{strings.save}</button>
-          </div>
+      <BottomSheet
+        title={strings.discard}
+        initialFocus="first-control"
+        stackPriority={2}
+        onClose={stayOnClosePrompt}
+      >
+        <p>{strings.guidedCaptureDiscardDrafts}</p>
+        <div className="row">
+          <button type="button" className="btn" onClick={stayOnClosePrompt}>
+            {strings.cancel}
+          </button>
+          <button type="button" className="btn" onClick={() => {
+            setClosePromptOpen(false);
+            completeRequestedClose();
+          }}>
+            {strings.discard}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => {
+            void commit(completeRequestedClose).then((saved) => {
+              if (saved) setClosePromptOpen(false);
+            });
+          }}>
+            {strings.save}
+          </button>
         </div>
-      </div>
+      </BottomSheet>
     ) : null}
     </>
   );

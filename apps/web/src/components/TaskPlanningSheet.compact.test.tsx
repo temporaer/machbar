@@ -181,4 +181,41 @@ describe("compact planning", () => {
     expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
   });
 
+  it("uses the portaled prompt to save a dirty draft and complete blocked navigation", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-scheduled"));
+    fireEvent.change(screen.getByLabelText("Geplant für"), { target: { value: "20.10.2026" } });
+    fireEvent.blur(screen.getByLabelText("Geplant für"));
+
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    const prompt = screen.getByRole("heading", { name: "Verwerfen" }).closest('[role="dialog"]') as HTMLElement;
+    expect(prompt).toBeInTheDocument();
+    expect(prompt).toHaveAttribute("aria-modal", "true");
+    await user.click(within(prompt).getByRole("button", { name: "Speichern" }));
+    await screen.findByText("/projects/42");
+    expect(mocked.updateTask).toHaveBeenCalledWith(1, {
+      expectedRevision: 1,
+      scheduledDate: "2026-10-20",
+    });
+  });
+
+  it("blocks navigation for an initially empty but invalid scheduled-date draft", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-scheduled"));
+    const scheduled = screen.getByLabelText("Geplant für");
+    fireEvent.change(scheduled, { target: { value: "kein Datum" } });
+    fireEvent.blur(scheduled);
+
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    expect(screen.getByRole("heading", { name: "Verwerfen" })).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/");
+    expect(scheduled).toHaveValue("kein Datum");
+  });
+
 });

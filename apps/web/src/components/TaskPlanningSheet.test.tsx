@@ -1236,7 +1236,13 @@ describe("TaskPlanningSheet", () => {
       } : {}),
       expectedRevision: 4,
     }));
-    expect(onClose).toHaveBeenCalled();
+    if (action === "continue") {
+      expect(onClose).toHaveBeenCalled();
+    } else {
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText("Rückmeldung gespeichert. Speichere die übrigen Planungsänderungen, um sie zu übernehmen.")).toBeInTheDocument();
+      expect(within(revisitEditor).getByRole("textbox")).toHaveValue("22.10.2026");
+    }
   });
 
   it("keeps the existing-wait follow-up controls bounded for long mobile content", () => {
