@@ -115,7 +115,11 @@ const inspectionMachine = createMachine({
       target: ".active",
       actions: assign({
         inspections: ({ context, event }) => {
-          if (event.type !== "HISTORY_CHANGED" || context.navigationIntent !== "refinement" || event.navigationType !== "REPLACE") {
+          if (
+            event.type !== "HISTORY_CHANGED" ||
+            context.navigationIntent !== "refinement" ||
+            event.navigationType !== "REPLACE"
+          ) {
             return context.inspections;
           }
           return context.inspections.map((inspection, index, inspections) =>
@@ -131,8 +135,7 @@ const inspectionMachine = createMachine({
           if (!current) return true;
           return event.navigationType === "POP" && event.key === current.originKey;
         },
-        navigationIntent: ({ context }) =>
-          context.navigationIntent === "refinement" ? "refinement" : "inspection",
+        navigationIntent: "inspection",
       }),
     },
     REFINEMENT_RETURN: {

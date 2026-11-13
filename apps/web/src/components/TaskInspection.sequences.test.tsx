@@ -421,9 +421,14 @@ describe("task inspection sequence contract", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await click("intake-return");
     await waitFor(() => expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible());
+    await click("open-project");
     await click("back");
     await waitFor(() => expect(routePath()).toBe("/all"));
     expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible();
+    await click("open-b-planner");
+    await waitFor(() => expect(visibleDialog()).toBeInTheDocument());
+    await click("close-workflow");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible());
     expect(vi.mocked(api.updateTask)).not.toHaveBeenCalled();
   });
 });

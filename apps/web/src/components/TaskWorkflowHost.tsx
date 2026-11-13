@@ -62,7 +62,7 @@ export function TaskWorkflowHost() {
     const inspection = workflow.detailInspection;
     workflow.historyChanged(location.key, navigationType);
     if (refinementReturn) {
-      taskDetail.resumeAfterHandoff(inspection?.previousDetail ?? undefined);
+      taskDetail.resumeAfterHandoff();
       return;
     }
     if (!inspection) return;
@@ -76,9 +76,9 @@ export function TaskWorkflowHost() {
     if (
       workflow.navigationIntent === "refinement" &&
       workflow.detailVisible &&
-      (taskDetail.suspended || workflow.detailInspection?.previousDetail)
+      taskDetail.suspended
     ) {
-      taskDetail.resumeAfterHandoff(workflow.detailInspection?.previousDetail ?? undefined);
+      taskDetail.resumeAfterHandoff();
       return;
     }
     if (previousDetailVisible.current === workflow.detailVisible) return;
