@@ -137,6 +137,11 @@ function RouteControls() {
   return (
     <>
       <button type="button" onClick={() => navigate(-1)}>Back</button>
+      <button type="button" onClick={() => navigate(1)}>Forward</button>
+      <button type="button" onClick={() => navigate("/projects")}>Leave project</button>
+      <button type="button" onClick={() => navigate("/projects/43")}>
+        Navigate to another project
+      </button>
       <button type="button" onClick={() => navigate("/projects/42?focus=planning")}>
         Navigate to planning
       </button>
@@ -1721,5 +1726,56 @@ describe("ProjectDetailPage task explanations", () => {
     expect(await screen.findByText("Projects destination")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: strings.taskDetails })).not.toBeInTheDocument();
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("none|none");
+  });
+
+  it("does not resurrect a route-owned planner after leaving and using Back or Forward", async () => {
+    renderProjectRoute("/projects", ["/projects"]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Navigate to planning" }));
+    await screen.findByRole("dialog", { name: strings.planning });
+    await userEvent.click(screen.getByRole("button", { name: "Leave project" }));
+    expect(await screen.findByText("Projects destination")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42"),
+    );
+    expect(screen.queryByRole("dialog", { name: strings.planning })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("none|none");
+
+    await userEvent.click(screen.getByRole("button", { name: "Forward" }));
+    expect(await screen.findByText("Projects destination")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: strings.planning })).not.toBeInTheDocument();
+  });
+
+  it("does not open a pending planning intent after the project identity is replaced", async () => {
+    let resolveProject42!: (project: Awaited<ReturnType<typeof api.getProject>>) => void;
+    mockedApi.getProject.mockImplementation(async (id) => {
+      if (id === 42) {
+        return new Promise(resolve => {
+          resolveProject42 = resolve;
+        });
+      }
+      return {
+        ...makeProject({ id, title: `Projekt ${id}`, ownerMemberId: 1 }),
+        tasks: [makeTask({ id: 43, projectId: id })],
+      };
+    });
+    renderProjectRoute("/projects/42?focus=planning");
+
+    await userEvent.click(screen.getByRole("button", { name: "Navigate to another project" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/43"),
+    );
+    resolveProject42({
+      ...makeProject({ id: 42, title: "Projekt 42", ownerMemberId: 1 }),
+      tasks: [makeTask({ id: 7, projectId: 42 })],
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("none|none");
+    expect(screen.queryByRole("dialog", { name: strings.planning })).not.toBeInTheDocument();
   });
 });

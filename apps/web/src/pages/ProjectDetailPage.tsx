@@ -92,18 +92,16 @@ export function ProjectDetailPage() {
   const notesRef = useRef<MarkdownEditorHandle>(null);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const planningTaskRef = useRef<number | null>(null);
-  const planningOpeningIdRef = useRef<number | null>(null);
-  const [pendingPlanningTaskId, setPendingPlanningTaskId] = useState<number | null>(null);
+  const [pendingPlanning, setPendingPlanning] = useState<{
+    projectId: number;
+    taskId: number;
+    pathname: string;
+  } | null>(null);
   const storyFocusDispatchedRef = useRef<string | null>(null);
   const storyFocusSheetOpenedRef = useRef(false);
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
   const { openTaskId } = useTaskDetail();
-  const taskWorkflowCloseRef = useRef(taskWorkflow.close);
-  const taskWorkflowOpeningIdRef = useRef(taskWorkflow.currentOpeningId);
-  taskWorkflowCloseRef.current = taskWorkflow.close;
-  taskWorkflowOpeningIdRef.current = taskWorkflow.currentOpeningId;
   const projectWorkflow = useProjectWorkflow();
   const projectWorkflowOpen = projectWorkflow.current?.projectId === projectId;
   const closeProjectWorkflowRef = useRef(projectWorkflow.close);
@@ -258,23 +256,12 @@ export function ProjectDetailPage() {
 
   const planningFocusActive = focus === "planning";
 
-  useEffect(() => () => {
-    if (
-      planningOpeningIdRef.current !== null &&
-      taskWorkflowOpeningIdRef.current === planningOpeningIdRef.current
-    ) {
-      taskWorkflowCloseRef.current();
-    }
-    planningTaskRef.current = null;
-    planningOpeningIdRef.current = null;
-  }, []);
-
   useEffect(() => {
     if (
       !planningFocusActive ||
       !project ||
       project.id !== projectId ||
-      planningTaskRef.current !== null ||
+      pendingPlanning !== null ||
       planningWorkflowTaskId !== null ||
       // A deep link must never displace a focused surface the user opened.
       openTaskId !== null
@@ -290,54 +277,49 @@ export function ProjectDetailPage() {
         !task.scheduledDate,
     );
     if (!taskToPlan) return;
-    planningTaskRef.current = taskToPlan.id;
-    setPendingPlanningTaskId(taskToPlan.id);
+    setPendingPlanning({
+      projectId,
+      taskId: taskToPlan.id,
+      pathname: location.pathname,
+    });
     clearRouteFocus();
   }, [
     clearRouteFocus,
+    location.pathname,
     planningFocusActive,
+    pendingPlanning,
     project,
     projectId,
     planningWorkflowTaskId,
     openTaskId,
-    dispatch,
   ]);
 
   useEffect(() => {
     if (
-      pendingPlanningTaskId === null ||
+      pendingPlanning === null ||
+      pendingPlanning.projectId !== projectId ||
+      pendingPlanning.pathname !== location.pathname ||
       planningFocusActive ||
       planningWorkflowTaskId !== null
     ) {
+      if (pendingPlanning !== null && pendingPlanning.projectId !== projectId) {
+        setPendingPlanning(null);
+      }
       return;
     }
-    const taskId = pendingPlanningTaskId;
+    const { taskId } = pendingPlanning;
     const timer = window.setTimeout(() => {
       dispatch({ type: "task.plan", taskId, target: "scheduled" });
-      setPendingPlanningTaskId(null);
+      setPendingPlanning(null);
     });
     return () => window.clearTimeout(timer);
   }, [
     dispatch,
-    pendingPlanningTaskId,
+    location.pathname,
+    pendingPlanning,
     planningFocusActive,
+    projectId,
     planningWorkflowTaskId,
-  ]);
-
-  useEffect(() => {
-    if (!planningFocusActive || planningTaskRef.current === null) return;
-    if (
-      taskWorkflow.current?.kind === "plan" &&
-      taskWorkflow.current.taskId === planningTaskRef.current &&
-      taskWorkflow.currentOpeningId !== null
-    ) {
-      planningOpeningIdRef.current = taskWorkflow.currentOpeningId;
-    }
-  }, [
-    planningFocusActive,
-    planningWorkflowTaskId,
-    taskWorkflow.current,
-    taskWorkflow.currentOpeningId,
   ]);
 
   // Review repair links for the story itself are the same three intents the

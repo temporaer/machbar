@@ -44,7 +44,30 @@ beforeEach(() => {
 });
 
 describe("compact planning", () => {
-  it("does not leave through Save when whitespace follow-up and invalid raw fields remain", async () => {
+  it("does not leave through Save for whitespace-only follow-up input", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({
+      externalWait: { waitingFor: "Example reply", revisitDate: null },
+      scheduledDate: "2026-10-20",
+    });
+    mocked.getTask.mockResolvedValue(task as never);
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-waiting"));
+    await user.type(screen.getByLabelText("Was ist passiert?"), "   ");
+
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    const prompt = screen.getByRole("heading", { name: "Verwerfen" }).closest('[role="dialog"]') as HTMLElement;
+    await user.click(within(prompt).getByRole("button", { name: "Speichern" }));
+
+    expect(screen.getByTestId("location")).toHaveTextContent("/");
+    expect(screen.getByRole("heading", { name: "Verwerfen" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(strings.planningFollowUpOutcomeRequired);
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("does not leave through Save for valid follow-up plus invalid raw date input", async () => {
     const user = userEvent.setup();
     const task = makeTask({
       externalWait: { waitingFor: "Example reply", revisitDate: null },
@@ -54,7 +77,7 @@ describe("compact planning", () => {
     await user.click(screen.getByRole("button", { name: "Open planning" }));
     await screen.findByRole("dialog", { name: "Planung" });
     openSection(section("planning-waiting"));
-    await user.type(screen.getByLabelText("Was ist passiert?"), "   ");
+    await user.type(screen.getByLabelText("Was ist passiert?"), "Example outcome");
     openSection(section("planning-scheduled"));
     const scheduled = screen.getByLabelText("Geplant für");
     fireEvent.change(scheduled, { target: { value: "kein Datum" } });
