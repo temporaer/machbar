@@ -56,8 +56,15 @@ export function TaskWorkflowHost() {
   useEffect(() => {
     if (previousLocationKey.current === location.key) return;
     previousLocationKey.current = location.key;
-    workflow.historyChanged(location.key, navigationType);
+    if (workflow.detailClosing) return;
+    const refinementReturn =
+      workflow.navigationIntent === "refinement" && navigationType === "REPLACE";
     const inspection = workflow.detailInspection;
+    workflow.historyChanged(location.key, navigationType);
+    if (refinementReturn) {
+      taskDetail.resumeAfterHandoff(inspection?.previousDetail ?? undefined);
+      return;
+    }
     if (!inspection) return;
     if (navigationType === "POP" && location.key === inspection.originKey) {
       taskDetail.resumeAfterHandoff();
@@ -149,6 +156,7 @@ export function TaskWorkflowHost() {
         state === workflow.current &&
         workflow.detailInspection !== null &&
         workflow.detailVisible &&
+        workflow.detailClosing &&
         taskDetail.openTaskId === null &&
         !taskDetail.suspended;
       const suspended = (retainedStates.has(state) && !resumedRetained) || (

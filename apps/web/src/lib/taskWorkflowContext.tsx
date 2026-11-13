@@ -114,6 +114,16 @@ const inspectionMachine = createMachine({
     HISTORY_CHANGED: {
       target: ".active",
       actions: assign({
+        inspections: ({ context, event }) => {
+          if (event.type !== "HISTORY_CHANGED" || context.navigationIntent !== "refinement" || event.navigationType !== "REPLACE") {
+            return context.inspections;
+          }
+          return context.inspections.map((inspection, index, inspections) =>
+            index === inspections.length - 1
+              ? { ...inspection, originKey: event.key }
+              : inspection,
+          );
+        },
         detailVisible: ({ context, event }) => {
           if (event.type !== "HISTORY_CHANGED") return context.detailVisible;
           if (context.navigationIntent === "refinement") return true;
@@ -153,6 +163,7 @@ interface TaskWorkflowContextValue {
   detailInspection: PlanningDetailInspection | null;
   detailInspections: PlanningDetailInspection[];
   detailVisible: boolean;
+  detailClosing: boolean;
   navigationIntent: InspectionContext["navigationIntent"];
   suspendForDetail: (previousDetail: TaskDetailHandoff | null, originPath: string, originKey: string) => void;
   navigateProject: () => void;
@@ -166,6 +177,7 @@ const TaskWorkflowContext = createContext<TaskWorkflowContextValue | null>(null)
 export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<TaskWorkflowState | null>(null);
   const [detailReturn, setDetailReturn] = useState<TaskDetailHandoff | null>(null);
+  const [detailClosing, setDetailClosing] = useState(false);
   const detailCloseRequested = useRef(false);
   const pendingDetailWorkflow = useRef<TaskWorkflowState | null>(null);
   const pendingDetailReturn = useRef<TaskDetailHandoff | null>(null);
@@ -179,16 +191,19 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       detailInspections,
       detailVisible,
       navigationIntent,
+      detailClosing,
       suspendForDetail: (previousDetail, originPath, originKey) => {
         const planningWorkflow = current ?? detailInspection?.planningWorkflow ?? null;
         if (planningWorkflow) {
           detailCloseRequested.current = false;
+          setDetailClosing(false);
           send({ type: "INSPECT", previousDetail, planningWorkflow, originPath, originKey });
         }
       },
       navigateProject: () => send({ type: "PROJECT_NAVIGATE" }),
       historyChanged: (key, navigationType) => send({ type: "HISTORY_CHANGED", key, navigationType }),
       refinementReturn: () => {
+        setDetailClosing(false);
         setCurrent(null);
         send({ type: "REFINEMENT_RETURN" });
       },
@@ -207,6 +222,7 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       close: () => {
         if (current && pendingDetailWorkflow.current === current) {
           detailCloseRequested.current = false;
+          setDetailClosing(false);
           setDetailReturn(pendingDetailReturn.current ?? detailInspection?.previousDetail ?? current.originDetail ?? null);
           pendingDetailWorkflow.current = null;
           pendingDetailReturn.current = null;
@@ -221,15 +237,20 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
             if (detailInspection.previousDetail) {
               setDetailReturn(detailInspection.previousDetail);
             }
+            setDetailClosing(false);
             send({ type: "CLOSE" });
             setCurrent(null);
           }
-        } else setCurrent(null);
+        } else {
+          setDetailClosing(false);
+          setCurrent(null);
+        }
       },
       closeDetail: () => {
         if (detailCloseRequested.current) return;
         if (detailInspection) {
           detailCloseRequested.current = true;
+          setDetailClosing(true);
           pendingDetailWorkflow.current = detailInspection.planningWorkflow;
           pendingDetailReturn.current = detailInspection.previousDetail;
           setCurrent(detailInspection.planningWorkflow);
@@ -238,7 +259,7 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       detailReturn,
       consumeDetailReturn: () => setDetailReturn(null),
     }),
-    [current, detailInspection, detailInspections, detailVisible, navigationIntent, detailReturn, send],
+    [current, detailInspection, detailInspections, detailVisible, navigationIntent, detailReturn, detailClosing, send],
   );
   return <TaskWorkflowContext.Provider value={value}>{children}</TaskWorkflowContext.Provider>;
 }
