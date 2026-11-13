@@ -122,8 +122,10 @@ const inspectionMachine = createMachine({
           ) {
             return context.inspections;
           }
-          return context.inspections.map((inspection, index, inspections) =>
-            index === inspections.length - 1
+          const returningOriginKey = context.inspections.at(-1)?.originKey;
+          if (!returningOriginKey) return context.inspections;
+          return context.inspections.map((inspection) =>
+            inspection.originKey === returningOriginKey
               ? { ...inspection, originKey: event.key }
               : inspection,
           );

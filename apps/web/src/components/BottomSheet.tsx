@@ -106,6 +106,12 @@ function updatePageIsolation() {
   setHiddenElements(elements);
 }
 
+function updateSheetStacking() {
+  for (const [index, entry] of sheetStack.entries()) {
+    entry.backdrop.style.zIndex = String(40 + index);
+  }
+}
+
 function focusSheet(entry: SheetEntry, initialFocus: BottomSheetInitialFocus) {
   if (entry.dialog.contains(document.activeElement)) return;
   if (initialFocus === "dialog") {
@@ -161,6 +167,7 @@ function registerSheet(entry: SheetEntry) {
 
   sheetStack.push(entry);
   sheetStack.sort((left, right) => left.priority - right.priority || left.order - right.order);
+  updateSheetStacking();
   updatePageIsolation();
   if (topSheet() === entry) focusSheet(entry, entry.initialFocus);
 }
@@ -177,6 +184,7 @@ function unregisterSheet(id: symbol) {
     }
   }
   sheetStack.splice(index, 1);
+  updateSheetStacking();
   updatePageIsolation();
 
   if (sheetStack.length === 0) {

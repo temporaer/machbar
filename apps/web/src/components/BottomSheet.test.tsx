@@ -345,6 +345,7 @@ describe("BottomSheet", () => {
     expect(dialogs[0]).toHaveAttribute("aria-hidden", "true");
     expect(backdrops[0]).toHaveAttribute("inert");
     expect(dialogs[1]).not.toHaveAttribute("inert");
+    expect(Number(backdrops[1]?.style.zIndex)).toBeGreaterThan(Number(backdrops[0]?.style.zIndex));
     expect(document.body.style.overflow).toBe("hidden");
 
     fireEvent.keyDown(document, { key: "Escape" });

@@ -393,6 +393,8 @@ test(`project navigation leaves an inspected planner suspended until returning (
   if (!fromDetail) {
     await expect(planner).toBeVisible();
     await expect(date).toHaveValue("11.05.2099");
+    await date.fill("12.05.2099");
+    await expect(date).toHaveValue("12.05.2099");
     await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
   }
   await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();

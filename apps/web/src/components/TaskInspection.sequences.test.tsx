@@ -431,4 +431,22 @@ describe("task inspection sequence contract", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible());
     expect(vi.mocked(api.updateTask)).not.toHaveBeenCalled();
   });
+
+  it("updates every retained inspection sharing the refinement origin key", async () => {
+    renderController();
+    await click("list-open-a");
+    await click("close-inspection");
+    await click("open-a-planner");
+    await click("inspect-b");
+    await click("open-b-planner");
+    await click("inspect-b");
+    await click("return-refinement");
+    await click("intake-return");
+    await click("close-inspection");
+    await click("close-workflow");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible());
+    await click("open-project");
+    await click("back");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "B", level: 1 })).toBeVisible());
+  });
 });
