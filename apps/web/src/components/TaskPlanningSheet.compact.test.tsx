@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../styles/index.css";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../lib/api";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -108,6 +108,21 @@ describe("compact planning", () => {
     await pending.resolve(makeTask({ id: 1 }) as Task);
     expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
     expect(screen.queryByText("Laden …")).not.toBeInTheDocument();
+  });
+
+  it("retires a loaded planner on clean history navigation without restoring it", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />, { initialEntries: ["/today", "/projects/42"] });
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+
+    await user.click(screen.getByRole("button", { name: "Browser Back" }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/today"));
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Browser Forward" }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/projects/42"));
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
   });
 
   it.each(["de", "en"] as const)("starts compact in %s and adds a feature without writing", async (locale) => {
@@ -271,6 +286,34 @@ describe("compact planning", () => {
       expectedRevision: 1,
       scheduledDate: "2026-10-20",
     });
+  });
+
+  it("keeps a dirty draft and blocked route after Save fails", async () => {
+    const user = userEvent.setup();
+    mocked.updateTask.mockRejectedValue(new Error("network unavailable"));
+    renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open planning" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    openSection(section("planning-scheduled"));
+    const scheduled = screen.getByLabelText("Geplant für");
+    fireEvent.change(scheduled, { target: { value: "20.10.2026" } });
+    fireEvent.blur(scheduled);
+
+    await user.click(screen.getByRole("button", { name: "Navigate away" }));
+    const prompt = screen.getByRole("heading", { name: "Verwerfen" }).closest('[role="dialog"]') as HTMLElement;
+    await user.click(within(prompt).getByRole("button", { name: "Speichern" }));
+
+    expect(mocked.updateTask).toHaveBeenCalledWith(1, {
+      expectedRevision: 1,
+      scheduledDate: "2026-10-20",
+    });
+    expect(screen.getByTestId("location")).toHaveTextContent("/");
+    const planningSheet = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
+      .find((dialog) => dialog.querySelector("h2")?.textContent === "Planung");
+    expect(planningSheet).toBeInTheDocument();
+    expect(document.querySelector<HTMLInputElement>("#planning-scheduled-1")?.value).toBe("20.10.2026");
+    expect(screen.getByRole("heading", { name: "Verwerfen" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 
   it("blocks navigation for an initially empty but invalid scheduled-date draft", async () => {
