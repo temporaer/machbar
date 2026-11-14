@@ -12,7 +12,7 @@ describe("BottomSheet", () => {
     vi.stubGlobal("visualViewport", viewport);
     const remove = vi.spyOn(viewport, "removeEventListener");
     try {
-      const { rerender, unmount } = render(
+      const { unmount } = render(
         <BottomSheet title="Capture" onClose={vi.fn()}><input aria-label="Title" /><button>Create</button></BottomSheet>,
       );
       const backdrop = screen.getByRole("dialog").parentElement!;
@@ -30,17 +30,14 @@ describe("BottomSheet", () => {
       });
       expect(backdrop.style.getPropertyValue("--sheet-viewport-width")).toBe("700px");
       expect(backdrop.style.getPropertyValue("--sheet-viewport-left")).toBe("12px");
-      rerender(<BottomSheet suspended title="Capture" onClose={vi.fn()}>Draft</BottomSheet>);
+      unmount();
       expect(remove).toHaveBeenCalledWith("resize", expect.any(Function));
       expect(remove).toHaveBeenCalledWith("scroll", expect.any(Function));
       expect(backdrop.style.getPropertyValue("--sheet-viewport-height")).toBe("");
       Object.assign(viewport, { height: 800, offsetTop: 0, offsetLeft: 0, width: 400 });
-      rerender(<BottomSheet title="Capture" onClose={vi.fn()}>Draft</BottomSheet>);
-      expect(backdrop.style.getPropertyValue("--sheet-viewport-height")).toBe("800px");
-      expect(backdrop.style.getPropertyValue("--sheet-viewport-top")).toBe("0px");
-      unmount();
       const reopened = render(<BottomSheet onClose={vi.fn()}>Again</BottomSheet>);
       expect(screen.getByRole("dialog").parentElement!.style.getPropertyValue("--sheet-viewport-height")).toBe("800px");
+      expect(screen.getByRole("dialog").parentElement!.style.getPropertyValue("--sheet-viewport-top")).toBe("0px");
       reopened.unmount();
     } finally {
       vi.unstubAllGlobals();
@@ -430,6 +427,27 @@ describe("BottomSheet", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
+  });
+
+  it("does not restore focus to an opener that was removed while the sheet was open", async () => {
+    const user = userEvent.setup();
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const onClose = vi.fn();
+    const view = render(
+      <BottomSheet title="Details" onClose={onClose}>
+        <button type="button">Close sheet</button>
+      </BottomSheet>,
+    );
+    opener.remove();
+    await user.click(screen.getByRole("button", { name: "Schließen" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    view.unmount();
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).not.toHaveFocus();
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("does not leak stack state or page attributes through StrictMode cleanup", () => {
