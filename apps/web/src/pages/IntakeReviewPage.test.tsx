@@ -136,7 +136,7 @@ function HandoffBootstrap() {
 
 function OriginRestored() {
   const detail = useTaskDetail();
-  return <p>Origin restored: {detail.openTaskId ?? "none"}, {String(detail.queueActive)}, {String(detail.suspended)}</p>;
+  return <p>Origin restored: {detail.openTaskId ?? "none"}, {String(detail.queueActive)}</p>;
 }
 
 async function openEditor(title: string) {
@@ -2063,10 +2063,10 @@ describe("IntakeReviewPage", () => {
     });
     expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Zurück zur Aufgabe" }));
-    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false")).toBeInTheDocument();
   });
 
-  it("restores a suspended task-detail queue when browser Back leaves intake", async () => {
+  it("does not resurrect task detail when browser Back leaves intake", async () => {
     mockedApi.getIntake.mockResolvedValue({ ...record("queued"), draft: null } as never);
     renderWithProviders(
       <>
@@ -2084,7 +2084,7 @@ describe("IntakeReviewPage", () => {
     );
     expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
-    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false")).toBeInTheDocument();
   });
 
   it("does not resurrect task detail when browser Back leaves a failed refinement", async () => {
@@ -2105,7 +2105,7 @@ describe("IntakeReviewPage", () => {
     );
     expect(await screen.findByRole("heading", { name: /Die Analyse ist fehlgeschlagen/ })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Browser back" }));
-    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false")).toBeInTheDocument();
   });
 
   it("discards a smaller-steps proposal through the handoff return path", async () => {
@@ -2125,7 +2125,7 @@ describe("IntakeReviewPage", () => {
       } },
     }, true);
     await userEvent.click(await screen.findByRole("button", { name: "Verwerfen" }));
-    expect(await screen.findByText("Origin restored: none, false, false")).toBeInTheDocument();
+    expect(await screen.findByText("Origin restored: none, false")).toBeInTheDocument();
     expect(mockedApi.deleteIntake).toHaveBeenCalledWith("i1");
   });
 

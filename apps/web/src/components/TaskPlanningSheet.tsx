@@ -90,13 +90,11 @@ export function TaskPlanningSheet({
   onClose,
   onFailure,
   initialTarget,
-  suspended = false,
 }: {
   task: Task;
   onClose: () => void;
   onFailure?: (cause: unknown) => void;
   initialTarget?: TaskPlanningTarget;
-  suspended?: boolean;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
@@ -196,22 +194,20 @@ export function TaskPlanningSheet({
   >({});
   const [dependencyQuery, setDependencyQuery] = useState("");
   const [dependencyMutationError, setDependencyError] = useState<string | null>(null);
-  const suspendedRef = useRef(suspended);
-  suspendedRef.current = suspended;
   const dependencySearch = useAsync(
     async (signal) => {
-      if (!dependencyQuery.trim() || suspended) return [];
+      if (!dependencyQuery.trim()) return [];
       const requestQuery = dependencyQuery;
       try {
         return await api.searchTasks({ text: dependencyQuery, kinds: ["action"] });
       } catch (cause) {
-        if (!signal.aborted && !suspendedRef.current && dependencyQuery === requestQuery) {
+        if (!signal.aborted && dependencyQuery === requestQuery) {
           onFailure?.(cause);
         }
         throw cause;
       }
     },
-    [dependencyQuery, baselineTask.id, suspended],
+    [dependencyQuery, baselineTask.id],
   );
   const dependencyResults = useMemo(() =>
     sortDependencyCandidates(dependencySearch.data ?? [], baselineTask, dependencyQuery, locale, {
@@ -249,7 +245,7 @@ export function TaskPlanningSheet({
     const pendingTarget = initialTargetChangeRef.current
       ? initialTarget ?? "top"
       : pendingScrollTarget;
-    if (pendingTarget === null || suspended) return;
+    if (pendingTarget === null) return;
     if (pendingTarget !== "top" && !expanded[pendingTarget === "recurrence" ? "scheduled" : pendingTarget]) return;
     if (pendingTarget === "deadline" && !deadlineOpen) return;
     if (pendingTarget === "waiting" && canAddWaiting && !waitingOpen) return;
@@ -294,7 +290,6 @@ export function TaskPlanningSheet({
   }, [
     activeTarget,
     expanded,
-    suspended,
     canAddWaiting,
     deadlineOpen,
     hasExistingWait,
@@ -1059,7 +1054,6 @@ export function TaskPlanningSheet({
   return (
     <>
     <BottomSheet
-      suspended={suspended}
       stackPriority={1}
       title={strings.planning}
       initialFocus="dialog"

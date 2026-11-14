@@ -215,6 +215,10 @@ describe("compact planning", () => {
     await screen.findByRole("heading", { name: "Example prerequisite", level: 1 });
     expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Planen" })).toBeDisabled();
+    const inspectionDialog = screen.getByRole("heading", { name: "Example prerequisite", level: 1 }).closest('[role="dialog"]') as HTMLElement;
+    const inspectionContent = inspectionDialog.querySelector("fieldset") as HTMLFieldSetElement;
+    expect(inspectionContent).toBeDisabled();
+    expect(within(inspectionContent).getAllByRole("button").every((button) => button.matches(":disabled"))).toBe(true);
     await user.click(screen.getByRole("button", { name: "Schließen" }));
     await screen.findByRole("dialog", { name: "Planung" });
     expect(screen.getByLabelText("Geplant für")).toHaveValue("20.10.2026");

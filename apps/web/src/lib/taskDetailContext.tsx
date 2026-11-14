@@ -51,7 +51,6 @@ interface TaskDetailContextValue {
   /** True while stepping through a "Klären" queue (Inbox clarify-all flow). */
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
-  suspended: boolean;
   open: (taskId: number, focusField?: TaskDetailFocusField) => void;
   inspect: (taskId: number, focusField?: TaskDetailFocusField) => void;
   /** Opens the first id and remembers the rest so `advanceQueue` can step through them. */
@@ -113,7 +112,6 @@ function TaskDetailFacade({ children }: { children: ReactNode }) {
       openTaskId: detail?.taskId ?? null,
       queueActive: detail?.queueActive ?? false,
       focusField: detail?.focusField ?? null,
-      suspended: workflow.detailSuspended,
       open,
       inspect,
       openQueue,

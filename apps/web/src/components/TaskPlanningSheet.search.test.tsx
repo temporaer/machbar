@@ -1,5 +1,4 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "@machbar/shared";
@@ -24,21 +23,6 @@ function Controls() {
   return <>
     <button onClick={() => workflow.open("plan", task.id, "waiting")}>Open planning</button>
     <TaskWorkflowHost />
-  </>;
-}
-
-function SuspendedPlanningHarness({ onFailure }: { onFailure: (cause: unknown) => void }) {
-  const [suspended, setSuspended] = useState(false);
-  return <>
-    <button onClick={() => setSuspended(true)}>Suspend planning</button>
-    <button onClick={() => setSuspended(false)}>Resume planning</button>
-    <TaskPlanningSheet
-      task={task}
-      initialTarget="dependencies"
-      suspended={suspended}
-      onClose={() => undefined}
-      onFailure={onFailure}
-    />
   </>;
 }
 
@@ -168,21 +152,6 @@ describe("TaskPlanningSheet dependency search ownership", () => {
     await act(async () => old.reject(new ApiError(404, "Closed search denial")));
     expect(replacement.draft).toHaveValue("Authored waiting draft");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("retires the hidden planning search during detail inspection and searches afresh on resume", async () => {
-    const old = deferred<Task[]>();
-    vi.mocked(api.searchTasks).mockReturnValueOnce(old.promise);
-    const onFailure = vi.fn();
-    renderWithProviders(<SuspendedPlanningHarness onFailure={onFailure} />);
-    fireEvent.change(screen.getByLabelText(searchLabel), { target: { value: "current" } });
-    await userEvent.click(screen.getByRole("button", { name: "Suspend planning" }));
-    await act(async () => old.reject(new ApiError(403, "Suspended search denial")));
-    expect(onFailure).not.toHaveBeenCalled();
-    expect(api.searchTasks).toHaveBeenCalledOnce();
-    await userEvent.click(screen.getByRole("button", { name: "Resume planning" }));
-    expect(await screen.findByRole("button", { name: addCandidate })).toBeVisible();
-    expect(api.searchTasks).toHaveBeenCalledTimes(2);
   });
 
   it("preserves candidate filters and submits one explicit revision-bound selection without replay", async () => {

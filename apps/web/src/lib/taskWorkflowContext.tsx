@@ -138,7 +138,6 @@ interface TaskWorkflowContextValue {
   clearDetailFocus: () => void;
   getDetailHandoff: () => TaskDetailHandoff | null;
   detailVisible: boolean;
-  detailSuspended: boolean;
   navigateProject: () => void;
   historyChanged: () => void;
 }
@@ -156,7 +155,6 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       detailOpeningId: state.detailOpeningId,
       detailMode: state.detailMode,
       detailVisible,
-      detailSuspended: false,
       open: (kind, taskId, planningTarget, originDetail) => dispatch({
         type: "OPEN",
         workflow: {

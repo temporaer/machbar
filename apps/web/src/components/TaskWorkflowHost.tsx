@@ -53,14 +53,12 @@ export function TaskWorkflowHost() {
   return <TaskWorkflowContent
     key={`${currentMemberId}:${workflow.currentOpeningId}`}
     state={workflow.current}
-    suspended={false}
     openingId={workflow.currentOpeningId}
   />;
 }
 
-function TaskWorkflowContent({ state, suspended = false, openingId }: {
+function TaskWorkflowContent({ state, openingId }: {
   state: TaskWorkflowState;
-  suspended?: boolean;
   openingId: number;
 }) {
   const workflow = useTaskWorkflow();
@@ -117,9 +115,8 @@ function TaskWorkflowContent({ state, suspended = false, openingId }: {
   );
   const dismiss = () => { if (isCurrent()) workflow.close(); };
   const close = () => { if (!ended.current) dismiss(); };
-  if (!endedError && !task && loading) return suspended ? null : <p role="status">{strings.loading}</p>;
+  if (!endedError && !task && loading) return <p role="status">{strings.loading}</p>;
   if (endedError || !task) {
-    if (suspended) return null;
     return <BottomSheet title={strings.error} onClose={dismiss}>
       <div className="stack">
         {endedError || error ? <p role="alert">{endedError ?? error}</p> : requirementsEpoch > 0 ? <p role="alert">{strings.activationRequirementsChanged}</p> : null}
@@ -136,7 +133,6 @@ function TaskWorkflowContent({ state, suspended = false, openingId }: {
         <TaskPlanningSheet
           key={task.id}
           task={task}
-          suspended={suspended}
           onClose={close}
           onFailure={endOnDenied}
           {...(state.planningTarget
@@ -145,13 +141,13 @@ function TaskWorkflowContent({ state, suspended = false, openingId }: {
         />
       );
     case "availability":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} onFailure={endOnDenied} initialTarget="availability" />;
+      return <TaskPlanningSheet key={task.id} task={task} onClose={close} onFailure={endOnDenied} initialTarget="availability" />;
     case "deferClarification":
       return <TaskClarificationSheet task={task} onClose={close} onFailure={endOnDenied} />;
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
     case "waitingLifecycle":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} onFailure={endOnDenied} initialTarget="waiting" />;
+      return <TaskPlanningSheet key={task.id} task={task} onClose={close} onFailure={endOnDenied} initialTarget="waiting" />;
     case "split":
       return (
         <TaskSplitSheet

@@ -95,12 +95,11 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
-  const { openTaskId, queueActive, focusField, clearFocusField, open, inspect, advanceQueue, close, suspended: detailSuspended } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, clearFocusField, open, inspect, advanceQueue, close } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
-  const suspended = detailSuspended;
   const workflowKind = taskWorkflow.current?.kind ?? null;
   const readOnlyInspection = taskWorkflow.detailMode === "prerequisite";
   const dispatchCommand = (...args: Parameters<typeof dispatch>) => {
@@ -128,7 +127,6 @@ export function TaskDetailSheet() {
   const splitShortcutRef = useRef<HTMLButtonElement>(null);
   const splitShortcutTaskIdRef = useRef<number | null>(null);
   const workflowOpenerRef = useRef<HTMLElement | null>(null);
-  const wasSuspendedRef = useRef(suspended);
   const previousWorkflowOpeningIdRef = useRef(taskWorkflow.currentOpeningId);
   const notesRef = useRef<MarkdownEditorHandle>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
@@ -303,17 +301,6 @@ export function TaskDetailSheet() {
     titleEditing,
     dispatch,
   ]);
-
-  useEffect(() => {
-    if (
-      wasSuspendedRef.current &&
-      !suspended &&
-      workflowOpenerRef.current?.isConnected
-    ) {
-      workflowOpenerRef.current.focus();
-    }
-    wasSuspendedRef.current = suspended;
-  }, [suspended]);
 
   useEffect(() => {
     if (
@@ -507,7 +494,6 @@ export function TaskDetailSheet() {
     <>
     <BottomSheet
       title={strings.taskDetails}
-      suspended={suspended}
       stackPriority={readOnlyInspection ? 2 : 0}
       onClose={() => {
         if (
@@ -577,7 +563,7 @@ export function TaskDetailSheet() {
       {task ? (
         <fieldset
           className="stack task-detail-content"
-          disabled={taskMutationPending}
+          disabled={taskMutationPending || readOnlyInspection}
           aria-busy={taskMutationPending}
           style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
         >
