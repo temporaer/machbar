@@ -119,6 +119,27 @@ describe("canceled read callback authority", () => {
     });
   });
 
+  it("ignores access denial from a canceled project read after reopening the same workflow", async () => {
+    const oldProject = deferred<Awaited<ReturnType<typeof api.getProject>>>();
+    const getProject = vi.mocked(api.getProject)
+      .mockResolvedValueOnce(project)
+      .mockReturnValueOnce(oldProject.promise)
+      .mockResolvedValue(project);
+    renderWithProviders(<HostControls target="project" />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Open refinement" }));
+    await user.click(screen.getByRole("button", { name: "Start background read" }));
+    await waitFor(() => expect(getProject).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole("button", { name: "Open refinement" }));
+    const instruction = await screen.findByLabelText(strings.workRefinementInstructionLabel);
+    await user.type(instruction, "Current replacement focus");
+    await act(async () => oldProject.reject(new ApiError(403, "Retired denied read")));
+
+    expect(instruction).toHaveValue("Current replacement focus");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it.each(["task-tags", "project-tags", "task-contexts", "project-contexts", "project-conversion"] as const)(
     "retires canceled %s error forwarding while preserving live error forwarding",
     async kind => {
