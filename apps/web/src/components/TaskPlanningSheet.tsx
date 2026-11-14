@@ -51,7 +51,7 @@ import {
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
-import { useBeforeUnload, useBlocker, useLocation } from "react-router-dom";
+import { useBeforeUnload, useBlocker } from "react-router-dom";
 
 type DateField = "scheduled" | "availability" | "deadline";
 type DateValidity = Record<DateField, boolean>;
@@ -152,7 +152,6 @@ export function TaskPlanningSheet({
   const [allowedDeviationDays, setAllowedDeviationDays] = useState<number | null>(baselineTask.allowedDeviationDays);
   const [reminders, setReminders] = useState<TaskReminderInput[]>(() => baselineTask.reminders);
   const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
-  const [expectedTaskRevision, setExpectedTaskRevision] = useState(baselineTask.revision);
   const hasExistingWait = baselineTask.externalWait !== null;
   const canAddWaiting =
     baselineTask.kind === "action" &&
@@ -238,8 +237,6 @@ export function TaskPlanningSheet({
     }
     setPendingScrollTarget(initialTarget ?? "top");
   }, [initialTarget]);
-
-  useEffect(() => setExpectedTaskRevision(baselineTask.revision), [baselineTask.revision]);
 
   useLayoutEffect(() => {
     const pendingTarget = initialTargetChangeRef.current
@@ -424,8 +421,6 @@ export function TaskPlanningSheet({
     !validity.deadline;
   const hasUnsavedDraft = dirty || rawDraftChanged;
   const navigationBlocker = useBlocker(hasUnsavedDraft);
-  const location = useLocation();
-  const initialLocationKey = useRef(location.key);
   useBeforeUnload((event) => {
     if (hasUnsavedDraft) event.preventDefault();
   });
@@ -447,15 +442,6 @@ export function TaskPlanningSheet({
   useEffect(() => {
     if (navigationBlocker.state === "blocked") setClosePromptOpen(true);
   }, [navigationBlocker.state]);
-  useEffect(() => {
-    if (
-      location.key === initialLocationKey.current ||
-      navigationBlocker.state === "blocked" ||
-      hasUnsavedDraft
-    ) return;
-    initialLocationKey.current = location.key;
-    onClose();
-  }, [hasUnsavedDraft, location.key, navigationBlocker.state, onClose]);
   const allValid =
     validity.scheduled && validity.availability && validity.deadline && !recurrenceInvalid;
   useEffect(() => {
@@ -704,7 +690,6 @@ export function TaskPlanningSheet({
 
     if (!localWindow) setAvailabilityRule(latest.availabilityRule);
     setBaselineTask(latest);
-    setExpectedTaskRevision(latest.revision);
     if (!localScheduled) setScheduledDate(latest.scheduledDate ?? "");
     if (!localDeadline) setDueDate(latest.dueDate ?? "");
     if (!localRecurrence) {
@@ -740,10 +725,9 @@ export function TaskPlanningSheet({
     setDependencyError(null);
     try {
       const updated = remove
-        ? await api.removeDependency(baselineTask.id, dependsOnTaskId, expectedTaskRevision)
-        : await api.addDependency(baselineTask.id, dependsOnTaskId, expectedTaskRevision);
+        ? await api.removeDependency(baselineTask.id, dependsOnTaskId, baselineTask.revision)
+        : await api.addDependency(baselineTask.id, dependsOnTaskId, baselineTask.revision);
       setBaselineTask(updated);
-      setExpectedTaskRevision(updated.revision);
       setDependencyQuery("");
     } catch (cause) {
       onFailure?.(cause);
@@ -788,7 +772,7 @@ export function TaskPlanningSheet({
     setWaitingError(null);
     try {
       const updated = await taskActions.followUpExternalWait(
-        { ...baselineTask, revision: expectedTaskRevision },
+        baselineTask,
         followUpChoice === "continue"
           ? { action: "continue", content: followUpOutcome.trim(), waitingFor, revisitAt: revisitAtForCommit }
           : { action: "resolve", content: followUpOutcome.trim() },
@@ -810,7 +794,6 @@ export function TaskPlanningSheet({
           reminderDraftPending ||
           titleChanged;
         setBaselineTask(updated);
-        setExpectedTaskRevision(updated.revision);
         setFollowUpOutcome("");
         setFollowUpChoice("continue");
         setWaitingFor(updated.externalWait?.waitingFor ?? "");
@@ -917,7 +900,7 @@ export function TaskPlanningSheet({
         return false;
       }
       if (!activationPrompt && baselineTask.projectId !== null) {
-        const preview = await api.previewTaskUpdate(baselineTask.id, { ...patch, expectedRevision: expectedTaskRevision });
+        const preview = await api.previewTaskUpdate(baselineTask.id, { ...patch, expectedRevision: baselineTask.revision });
         if (preview.activatingProjects.length) {
           setActivationState({ fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision) });
           return false;
@@ -925,7 +908,7 @@ export function TaskPlanningSheet({
       }
       const apiPatch = activationPrompt?.projects.length && activationResolution ? { ...patch, activationResolution } : patch;
       await taskActions.update(
-        { ...baselineTask, revision: expectedTaskRevision },
+        baselineTask,
         apiPatch,
         true,
       );
@@ -944,7 +927,7 @@ export function TaskPlanningSheet({
           try {
             const preview = await api.previewTaskUpdate(baselineTask.id, {
               ...attemptedPatch,
-              expectedRevision: latestTask?.revision ?? expectedTaskRevision,
+              expectedRevision: latestTask?.revision ?? baselineTask.revision,
             });
             if (preview.activatingProjects.length) setActivationState({
               fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision),

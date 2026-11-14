@@ -1406,7 +1406,9 @@ describe("TaskPlanningSheet", () => {
       externalWait: { waitingFor: "Versicherung", revisitDate: null },
       revisitAt: "2026-10-20T06:00:00.000Z",
     });
-    mockedApi.followUpExternalWait.mockResolvedValue({ ...task, revision: 5, externalWait: null, revisitAt: null } as never);
+    const updated = { ...task, revision: 5, externalWait: null, revisitAt: null };
+    mockedApi.followUpExternalWait.mockResolvedValue(updated as never);
+    mockedApi.updateTask.mockResolvedValue({ ...updated, revision: 6, dueDate: "2026-12-20" } as never);
     const onClose = vi.fn();
     renderWithProviders(<TaskPlanningSheet task={task} initialTarget="waiting" onClose={onClose} />);
 
@@ -1427,6 +1429,41 @@ describe("TaskPlanningSheet", () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText("Rückmeldung gespeichert. Speichere die übrigen Planungsänderungen, um sie zu übernehmen.")).toBeInTheDocument();
     expect(deadline).toHaveValue("20.12.2026");
+
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      dueDate: "2026-12-20",
+      expectedRevision: updated.revision,
+    }));
+  });
+
+  it("uses the refreshed baseline revision after committing a prerequisite change", async () => {
+    const task = makeTask({ id: 81, revision: 6, status: "actionable" });
+    const prerequisite = makeTask({ id: 82, title: "Freigabe", status: "actionable" });
+    const updated = {
+      ...task,
+      revision: 7,
+      dependencies: [{ id: 1, taskId: task.id, dependsOnTaskId: prerequisite.id, title: prerequisite.title, resolved: false }],
+    };
+    mockedApi.searchTasks.mockResolvedValue([prerequisite]);
+    mockedApi.addDependency.mockResolvedValue(updated as never);
+    mockedApi.updateTask.mockResolvedValue({ ...updated, revision: 8 } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} initialTarget="dependencies" onClose={vi.fn()} />);
+
+    await userEvent.type(screen.getByLabelText("Aufgabe suchen, die zuerst erledigt werden muss"), "Freigabe");
+    await userEvent.click(await screen.findByRole("button", { name: "Abhängigkeit hinzufügen: Freigabe" }));
+    await waitFor(() => expect(mockedApi.addDependency).toHaveBeenCalledWith(task.id, prerequisite.id, task.revision));
+
+    card("Geplant für");
+    const scheduled = screen.getByLabelText("Geplant für");
+    fireEvent.change(scheduled, { target: { value: "20.10.2026" } });
+    fireEvent.blur(scheduled);
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(task.id, {
+      scheduledDate: "2026-10-20",
+      expectedRevision: updated.revision,
+    }));
   });
 
   it("opens prerequisite editing directly and submits a revision-bound canonical dependency", async () => {
