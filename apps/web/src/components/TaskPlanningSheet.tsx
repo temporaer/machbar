@@ -440,6 +440,7 @@ export function TaskPlanningSheet({
   const completeRequestedClose = () => {
     if (navigationBlocker.state === "blocked") {
       navigationBlocker.proceed();
+      return;
     }
     onClose();
   };

@@ -13,6 +13,7 @@ export function TaskDeepLinkPage() {
   const { openTaskId, open } = useTaskDetail();
   const workflow = useTaskWorkflow();
   const openedOpeningId = useRef<number | null>(null);
+  const openedTaskId = useRef<number | null>(null);
 
   useEffect(() => {
     if (!Number.isInteger(taskId) || taskId <= 0) {
@@ -27,8 +28,10 @@ export function TaskDeepLinkPage() {
   useEffect(() => {
     if (openTaskId === taskId) {
       openedOpeningId.current = workflow.detailOpeningId;
+      openedTaskId.current = taskId;
     } else if (
       openedOpeningId.current !== null &&
+      openedTaskId.current === taskId &&
       openTaskId === null &&
       workflow.detailOpeningId !== openedOpeningId.current
     ) {

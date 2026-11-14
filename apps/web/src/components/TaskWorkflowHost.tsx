@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
@@ -41,12 +41,16 @@ export function TaskWorkflowHost() {
   const location = useLocation();
   const previousLocationKey = useRef(location.key);
   const { currentMemberId } = useIdentity();
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (previousLocationKey.current === location.key) return;
     previousLocationKey.current = location.key;
-    if (/^\/tasks\/\d+$/.test(location.pathname)) return;
+    if (/^\/tasks\/\d+$/.test(location.pathname)) {
+      if (workflow.current !== null) workflow.close();
+      return;
+    }
     workflow.historyChanged();
   }, [
+    workflow.current,
     location.key,
     location.pathname,
     workflow,
@@ -71,6 +75,7 @@ function TaskWorkflowContent({ state, openingId }: {
   const location = useLocation();
   const navigate = useNavigate();
   const taskId = state.taskId;
+  const initialLocationKey = useRef(location.key);
   const [endedError, setEndedError] = useState<string | null>(null);
   const [requirementsEpoch, setRequirementsEpoch] = useState(0);
   const ended = useRef(false);
@@ -116,7 +121,9 @@ function TaskWorkflowContent({ state, openingId }: {
     [taskId, requirementsEpoch],
   );
   const dismiss = () => { if (isCurrent()) workflow.close(); };
-  const close = () => { if (!ended.current) dismiss(); };
+  const close = () => {
+    if (!ended.current && location.key === initialLocationKey.current) dismiss();
+  };
   if (!endedError && !task && loading) return <p role="status">{strings.loading}</p>;
   if (endedError || !task) {
     return <BottomSheet title={strings.error} onClose={dismiss}>
