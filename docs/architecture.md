@@ -983,6 +983,25 @@ usable content and drafts. Stale compound decisions require a fresh read and
 explicit reconfirmation, never an automatic second mutation. Delayed responses
 cannot affect a replacement opening or identity.
 
+`ProjectWorkflowProvider` owns the active `{kind, projectId}` and assigns a
+monotonic opening ID for every `open`, including repeated identical opens.
+`ProjectWorkflowHost` keys sheet content by member and opening ID; mounted and
+current-opening checks retire delayed callbacks. This replaces its former
+render-time object-reference comparison and local sequence counter. Project
+sheets keep authored drafts locally and project writes continue through
+`useProjectActions`.
+
+| Lifecycle concern | Project workflow | Task workflow |
+|---|---|---|
+| Opening identity | `projectWorkflowContext.tsx` assigns a fresh ID on every open; `ProjectWorkflowHost` keys by member and ID. | `taskWorkflowContext.tsx` assigns `currentOpeningId`; `TaskWorkflowHost` keys by member and ID. |
+| Callback retirement | The mounted project sheet checks its opening ID; read cancellation and access-denial handling remain local to the host/sheet boundary. | The mounted task sheet checks its opening ID; task-specific split-draft retirement remains local to the task host. |
+| Navigation and handoff | The project host has no router-history observer; refinement explicitly closes before navigating to intake. | The task host separately observes router history and coordinates its task-detail handoff protocol. |
+| Drafts and writes | Focused sheets own local drafts; canonical mutations go through `useProjectActions`. | Focused sheets own local drafts; canonical mutations go through `useTaskActions`. |
+
+These are separate workflow owners, not a shared orchestrator or a global
+task/project mutex. The project identity change does not alter route, focus,
+dismissal, conflict, or mutation semantics.
+
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
 
