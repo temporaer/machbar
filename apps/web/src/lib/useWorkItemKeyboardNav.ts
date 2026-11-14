@@ -85,8 +85,7 @@ export function useWorkItemKeyboardNav() {
             .filter((element) => element.dataset.workitemId === String(activeId) && !element.closest("details:not([open])"));
         const row = matchingRows.length === 1 ? matchingRows[0] : null;
         if (!row) return;
-        event.preventDefault();
-        scope.moveBy(activeId, direction, row);
+        if (scope.moveBy(activeId, direction, row)) event.preventDefault();
         return;
       }
 

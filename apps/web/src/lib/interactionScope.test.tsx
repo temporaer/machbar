@@ -181,10 +181,12 @@ describe("useInteractionScope", () => {
       </>,
     );
     await userEvent.keyboard("j");
+    expect(fireEvent.keyDown(screen.getAllByRole("button", { name: "Alpha" })[0]!, { key: "ArrowLeft", altKey: true })).toBe(true);
     await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
     expect(mockedApi.moveTask).not.toHaveBeenCalled();
     mockedApi.moveTask.mockResolvedValue(first);
     act(() => screen.getAllByRole("button", { name: "Alpha" })[1]!.focus());
+    expect(fireEvent.keyDown(screen.getAllByRole("button", { name: "Alpha" })[1]!, { key: "ArrowLeft", altKey: true })).toBe(false);
     await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
     await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(1, expect.objectContaining({ position: 1 })));
   });

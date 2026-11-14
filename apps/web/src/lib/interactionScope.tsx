@@ -46,7 +46,7 @@ export interface InteractionScopeValue {
    * Dispatches to the mounted outline that owns the item, or is null when
    * no organizable outline is registered.
    */
-  moveBy: ((workItemId: number, direction: StructuralMoveDirection, row: Element) => void) | null;
+  moveBy: ((workItemId: number, direction: StructuralMoveDirection, row: Element) => boolean) | null;
   registerStructuralCapability: (capability: StructuralCapability) => () => void;
   captureTarget: CaptureTarget;
   captureOpen: (() => void) | null;
@@ -123,7 +123,10 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
   }, []);
   const moveBy = useMemo(() => capabilities.length === 0 ? null :
     (id: number, direction: StructuralMoveDirection, row: Element) => {
-      capabilities.find((capability) => capability.owns(id, row))?.moveBy(id, direction);
+      const owner = capabilities.find((capability) => capability.owns(id, row));
+      if (!owner) return false;
+      owner.moveBy(id, direction);
+      return true;
     }, [capabilities]);
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<number>>(() => new Set());
   const [captureOpen, setCaptureOpen] = useState<(() => void) | null>(null);
