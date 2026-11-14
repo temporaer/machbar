@@ -439,11 +439,22 @@ test("dirty planner navigation requires Stay, Save, or Discard before opening a 
     await page.keyboard.press("s");
     await expect(page.getByRole("dialog", { name: "Planung", exact: true })).toBeVisible();
   };
-  await page.goto("/#/more/all");
+  await page.goto("/#/today");
+  await page.getByRole("link", { name: "Suchen", exact: true }).click();
+  await expect(page).toHaveURL(/#\/more\/all$/);
   await openSourcePlanner();
   const savedDate = "21.12.2026";
   await setDraftDate(savedDate);
-  let prompt = await navigateToDestination();
+  const pendingBack = page.goBack();
+  let prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  await pendingBack;
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await prompt.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(page.locator(`#planning-scheduled-${source.id}`)).toHaveValue(savedDate);
+  expect(taskPatches).toHaveLength(0);
+
+  prompt = await navigateToDestination();
   await prompt.getByRole("button", { name: "Abbrechen", exact: true }).click();
   await expect(page).toHaveURL(/#\/more\/all$/);
   await expect(page.locator(`#planning-scheduled-${source.id}`)).toHaveValue(savedDate);
