@@ -49,11 +49,12 @@ describe("contextual task interventions", () => {
 describe("contextual project interventions", () => {
   it("plans backlog activation with a revisit rather than a deadline or lifecycle transition", () => {
     const actions = projectRailActions(makeProject({ status: "backlog" }), now);
-    expect(intents(actions)).toEqual(["planActivation", "outcome", "structure"]);
+    expect(intents(actions)).toEqual(["planActivation", "outcome"]);
     expect(actions[0]).toMatchObject({ command: { type: "story.defer" }, prominent: true });
+    expect(actions.map((action) => action.command.type)).toEqual(["story.defer", "story.editOutcome"]);
   });
-  it.each(["no_next_action", "waiting_without_followup", "blocked_without_clear_path"] as const)("offers a next step for %s, with stable outcome/structure order", (stuckReason) => {
-    expect(intents(projectRailActions(makeProject({ stuckReason }), now))).toEqual(["nextStep", "outcome", "structure"]);
+  it.each(["no_next_action", "waiting_without_followup", "blocked_without_clear_path"] as const)("offers a next step for %s, followed by outcome editing", (stuckReason) => {
+    expect(intents(projectRailActions(makeProject({ stuckReason }), now))).toEqual(["nextStep", "outcome"]);
   });
   it("reviews the outcome without offering completion or another next step", () => {
     const actions = projectRailActions(makeProject({ stuckReason: "completion_review" }), now);

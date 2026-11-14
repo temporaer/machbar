@@ -1210,8 +1210,8 @@ plan from memory.
   - an existing `useWorkItemCommands()` workflow where Machbar has no specific
     change to offer: `task.convertToProject` (choose_shape → project; its sheet
     is already the confirmation), `task.plan`/`story.defer` (rhythm/revisit,
-    no date prefilled), `task.structure`/`story.structure` (“Öffnen und
-    strukturieren”), and “Öffnen und als Information prüfen” for reference
+    no date prefilled), `task.structure` (“Öffnen und strukturieren”) and
+    `story.planWork` (opens the project’s next-action focus), and “Öffnen und als Information prüfen” for reference
     suggestions. There is no canonical action → reference conversion
     (`makeTaskAction` only promotes references), so Machbar does not add a
     parallel one.

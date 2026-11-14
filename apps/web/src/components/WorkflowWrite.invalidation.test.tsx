@@ -43,6 +43,7 @@ describe("retired workflow success invalidation", () => {
       mockedApi.convertStoryToTask.mockImplementation(async () => { await pending; return task; });
       mockedApi.moveProject.mockImplementation(async () => { await pending; return source; });
       const onClose = vi.fn();
+      const onConverted = vi.fn();
       function Parent() {
         const [open, setOpen] = useState(true);
         const current = useRef(true);
@@ -53,7 +54,7 @@ describe("retired workflow success invalidation", () => {
           {open ? operation === "task conversion"
             ? <TaskConvertToProjectSheet task={task} onClose={onClose} isCurrent={() => current.current} />
             : operation === "project conversion"
-              ? <ProjectConvertToTaskSheet story={source} onClose={onClose} isCurrent={() => current.current} />
+              ? <ProjectConvertToTaskSheet story={source} onClose={onClose} onConverted={onConverted} isCurrent={() => current.current} />
               : <MoveProjectSheet story={source} onClose={onClose} isCurrent={() => current.current} />
             : null}
         </>;
@@ -80,6 +81,7 @@ describe("retired workflow success invalidation", () => {
       await waitFor(() => expect(screen.getByTestId("projects-read")).toHaveTextContent(projection(next)));
       expect(mockedApi.getProjects).toHaveBeenCalledTimes(reads + 1);
       expect(onClose).not.toHaveBeenCalled();
+      if (operation === "project conversion") expect(onConverted).not.toHaveBeenCalled();
     },
   );
 });

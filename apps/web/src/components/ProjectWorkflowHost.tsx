@@ -6,7 +6,6 @@ import { useProjectWorkflow, type ProjectWorkflowState } from "../lib/projectWor
 import { useIdentity } from "../lib/identity";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { ProjectDeferSheet } from "./ProjectDeferSheet";
-import { ProjectStructureSheet } from "./ProjectStructureSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
@@ -167,8 +166,6 @@ function ProjectWorkflowContent({
           }}
         />
       );
-    case "structure":
-      return <ProjectStructureSheet story={story} onClose={close} />;
     case "refinement":
       return <WorkClarificationSheet targetType="project" targetId={story.id} revision={story.revision} title={story.title} onClose={close} onFailure={endOnDenied} onStarted={(intakeId) => {
         if (!isCurrent() || ended.current) return;
@@ -197,7 +194,19 @@ function ProjectWorkflowContent({
     case "move":
       return <MoveProjectSheet story={story} onClose={close} onFailure={endOnDenied} isCurrent={() => isCurrent() && !ended.current} />;
     case "convertToTask":
-      return <ProjectConvertToTaskSheet story={story} onClose={close} onFailure={endOnDenied} isCurrent={() => isCurrent() && !ended.current} />;
+      return <ProjectConvertToTaskSheet
+        story={story}
+        onClose={close}
+        onFailure={endOnDenied}
+        isCurrent={() => isCurrent() && !ended.current}
+        onConverted={(taskId) => {
+          if (!isCurrent() || ended.current) return;
+          dismiss();
+          if (location.pathname === `/projects/${projectId}`) {
+            navigate(`/tasks/${taskId}`, { replace: true });
+          }
+        }}
+      />;
     case "completeWithDecisions":
       return (
         <CompleteWithOpenTasksSheet

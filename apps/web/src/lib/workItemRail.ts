@@ -11,7 +11,7 @@ type RailCommand = Extract<WorkItemCommand, { type:
   | "task.plan" | "task.split" | "task.waitingLifecycle" | "task.setClarification"
   | "task.deferClarification" | "task.structure" | "task.open"
   | "task.startToday" | "task.availability" | "story.defer"
-  | "story.editOutcome" | "story.structure" | "story.planWork"
+  | "story.editOutcome" | "story.planWork"
 }>;
 
 export interface RailAction {
@@ -55,15 +55,14 @@ export function taskRailActions(task: Task, revisit = false): readonly RailActio
 
 export function projectRailActions(story: ProjectWithActions, now: Date): readonly RailAction[] {
   const outcome: RailAction = { intent: "outcome", command: { type: "story.editOutcome", story } };
-  const structure: RailAction = { intent: "structure", command: { type: "story.structure", story } };
   switch (classifyProjectListItem(story, now)) {
     case "backlog": return [
       { intent: "planActivation", command: { type: "story.defer", story }, prominent: true },
-      outcome, structure,
+      outcome,
     ];
     case "active-stuck": return [
       { intent: "nextStep", command: { type: "story.planWork", story }, prominent: true },
-      outcome, structure,
+      outcome,
     ];
     // Reviewing the outcome edits criteria, never completes the project.
     case "active-review": return [{ ...outcome, prominent: true }];

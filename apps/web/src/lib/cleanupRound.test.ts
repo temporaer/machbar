@@ -132,7 +132,7 @@ describe("cleanup round surfaces", () => {
     expect(at("clarify_admin_target", "Empfänger: Vermieter")).toMatchObject({
       label: "admin", flow: { kind: "clarifyAdmin", title: "Haustür", notes: "Empfänger: Vermieter" },
     });
-    expect(at("split_clarify_execute")).toEqual({ kind: "story", command: "story.structure", projectId: 3, label: "structure" });
+    expect(at("split_clarify_execute")).toEqual({ kind: "story", command: "story.planWork", projectId: 3, label: "planTask" });
     // Wiedervorlage is backlog-only; active projects only open their page.
     expect(at("define_rhythm_or_revisit")).toMatchObject({ label: null, command: { type: "workItem.open" } });
     expect(at("define_rhythm_or_revisit", "", { ...project, itemStatus: "backlog" }))
