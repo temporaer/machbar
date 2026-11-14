@@ -32,6 +32,28 @@ function DeepLinkStateHarness() {
   );
 }
 
+function PlannerDeepLinkHarness() {
+  const workflow = useTaskWorkflow();
+  const detail = useTaskDetail();
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <button type="button" onClick={() => workflow.open("plan", 41)}>
+        Open planner
+      </button>
+      <button type="button" onClick={() => navigate("/tasks/42")}>
+        Open deep link
+      </button>
+      <button type="button" onClick={() => navigate(-1)}>Browser Back</button>
+      <button type="button" onClick={() => navigate(1)}>Browser Forward</button>
+      <p>planner {workflow.current?.taskId ?? "none"}</p>
+      <p>open task {detail.openTaskId ?? "none"}</p>
+      <p>path {location.pathname}</p>
+    </>
+  );
+}
+
 describe("TaskDeepLinkPage", () => {
   beforeEach(() => {
     vi.spyOn(api, "getTask").mockImplementation(async (id) => makeTask({ id }));
@@ -119,32 +141,12 @@ describe("TaskDeepLinkPage", () => {
   });
 
   it("retires a clean planner before a route-owned task deep link opens", async () => {
-    function PlannerHarness() {
-      const workflow = useTaskWorkflow();
-      const detail = useTaskDetail();
-      const location = useLocation();
-      const navigate = useNavigate();
-      return (
-        <>
-          <button type="button" onClick={() => workflow.open("plan", 41)}>
-            Open planner
-          </button>
-          <button type="button" onClick={() => navigate("/tasks/42")}>
-            Open deep link
-          </button>
-          <p>planner {workflow.current?.taskId ?? "none"}</p>
-          <p>open task {detail.openTaskId ?? "none"}</p>
-          <p>path {location.pathname}</p>
-        </>
-      );
-    }
-
     renderWithProviders(
       <>
         <Routes>
           <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
         </Routes>
-        <PlannerHarness />
+        <PlannerDeepLinkHarness />
         <TaskDetailSheet />
         <TaskWorkflowHost />
       </>,
@@ -160,35 +162,27 @@ describe("TaskDeepLinkPage", () => {
     expect(screen.getByText("planner none")).toBeInTheDocument();
     expect(await screen.findByText("open task 42")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Browser Back" }));
+    expect(await screen.findByText("path /tasks/41")).toBeInTheDocument();
+    expect(await screen.findByText("open task 41")).toBeInTheDocument();
+    expect(screen.getByText("planner none")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Browser Forward" }));
+    expect(await screen.findByText("path /tasks/42")).toBeInTheDocument();
+    expect(await screen.findByText("open task 42")).toBeInTheDocument();
+    expect(screen.getByText("planner none")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
   });
 
   it("blocks a dirty planner before a task deep link and completes after discard", async () => {
-    function PlannerHarness() {
-      const workflow = useTaskWorkflow();
-      const detail = useTaskDetail();
-      const navigate = useNavigate();
-      const location = useLocation();
-      return (
-        <>
-          <button type="button" onClick={() => workflow.open("plan", 41)}>
-            Open planner
-          </button>
-          <button type="button" onClick={() => navigate("/tasks/42")}>
-            Open deep link
-          </button>
-          <p>planner {workflow.current?.taskId ?? "none"}</p>
-          <p>open task {detail.openTaskId ?? "none"}</p>
-          <p>path {location.pathname}</p>
-        </>
-      );
-    }
-
     renderWithProviders(
       <>
         <Routes>
           <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
         </Routes>
-        <PlannerHarness />
+        <PlannerDeepLinkHarness />
         <TaskDetailSheet />
         <TaskWorkflowHost />
       </>,
@@ -214,6 +208,68 @@ describe("TaskDeepLinkPage", () => {
     await userEvent.click(within(await screen.findByRole("dialog", { name: "Verwerfen" })).getByRole("button", { name: "Verwerfen" }));
     expect(await screen.findByText("path /tasks/42")).toBeInTheDocument();
     expect(screen.getByText("open task 42")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Browser Back" }));
+    expect(await screen.findByText("path /tasks/41")).toBeInTheDocument();
+    expect(await screen.findByText("open task 41")).toBeInTheDocument();
+    expect(screen.getByText("planner none")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Browser Forward" }));
+    expect(await screen.findByText("path /tasks/42")).toBeInTheDocument();
+    expect(await screen.findByText("open task 42")).toBeInTheDocument();
+    expect(screen.getByText("planner none")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+  });
+
+  it("saves a dirty planner and completes task deep-link navigation without restoring it", async () => {
+    vi.spyOn(api, "updateTask").mockResolvedValue(
+      makeTask({ id: 41, scheduledDate: "2026-10-21" }) as never,
+    );
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
+        </Routes>
+        <PlannerDeepLinkHarness />
+        <TaskDetailSheet />
+        <TaskWorkflowHost />
+      </>,
+      { initialEntries: ["/tasks/41"] },
+    );
+
+    await screen.findByText("open task 41");
+    await userEvent.click(screen.getByRole("button", { name: "Open planner" }));
+    await screen.findByRole("dialog", { name: "Planung" });
+    const scheduled = document.querySelector<HTMLElement>('section:has([id^="planning-scheduled"])')!;
+    await userEvent.click(scheduled.querySelector("button")!);
+    await userEvent.clear(screen.getByLabelText("Geplant für"));
+    await userEvent.type(screen.getByLabelText("Geplant für"), "21.10.2026");
+    await userEvent.tab();
+    await userEvent.click(screen.getByRole("button", { name: "Open deep link" }));
+
+    const prompt = await screen.findByRole("dialog", { name: "Verwerfen" });
+    await userEvent.click(within(prompt).getByRole("button", { name: "Speichern" }));
+    expect(await screen.findByText("path /tasks/42")).toBeInTheDocument();
+    expect(await screen.findByText("open task 42")).toBeInTheDocument();
+    expect(screen.getByText("planner none")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+    expect(api.updateTask).toHaveBeenCalledWith(41, {
+      expectedRevision: 1,
+      scheduledDate: "2026-10-21",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Browser Back" }));
+    expect(await screen.findByText("path /tasks/41")).toBeInTheDocument();
+    expect(await screen.findByText("open task 41")).toBeInTheDocument();
+    expect(screen.getByText("planner none")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Browser Forward" }));
+    expect(await screen.findByText("path /tasks/42")).toBeInTheDocument();
+    expect(await screen.findByText("open task 42")).toBeInTheDocument();
+    expect(screen.getByText("planner none")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Planung" })).not.toBeInTheDocument();
   });
 });
