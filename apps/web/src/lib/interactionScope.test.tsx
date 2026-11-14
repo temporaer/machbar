@@ -152,6 +152,43 @@ describe("useInteractionScope", () => {
     await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledTimes(2));
   });
 
+  it("does not move the active row when another outline's focused handle handles the shortcut", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1, projectId: 5 });
+    const third = makeTask({ id: 3, title: "Gamma", position: 0, projectId: 6 });
+    const fourth = makeTask({ id: 4, title: "Delta", position: 1, projectId: 6 });
+    mockedApi.moveTask.mockResolvedValue(third);
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable />
+        <TaskOutline tasks={[third, fourth]} emptyMessage="Empty" organizable />
+      </>,
+    );
+    await userEvent.keyboard("j");
+    act(() => screen.getByRole("button", { name: "Verschieben: Gamma" }).focus());
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledTimes(1));
+    expect(mockedApi.moveTask).toHaveBeenCalledWith(3, expect.objectContaining({ position: 1 }));
+  });
+
+  it("does not move a compiled row that also appears in an editable outline", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1, projectId: 5 });
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[first]} emptyMessage="Empty" />
+        <TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable />
+      </>,
+    );
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
+    mockedApi.moveTask.mockResolvedValue(first);
+    act(() => screen.getAllByRole("button", { name: "Alpha" })[1]!.focus());
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(1, expect.objectContaining({ position: 1 })));
+  });
+
   it("keeps swipe and lifecycle rails mutually exclusive across rows", async () => {
     renderWithProviders(<ScopeProbe />);
     fireEvent.click(screen.getByText("Rail 1"));
@@ -190,7 +227,7 @@ describe("useInteractionScope", () => {
   it("retires a previously read mover and resets state when the page scope is replaced", async () => {
     const first = makeTask({ id: 1, title: "Alpha", position: 0 });
     const second = makeTask({ id: 2, title: "Beta", position: 1 });
-    let oldMove: ((id: number, direction: StructuralMoveDirection) => void) | null = null;
+    let oldMove: ((id: number, direction: StructuralMoveDirection, row: Element) => void) | null = null;
     function ReadMover() {
       const { moveBy } = useInteractionScope();
       if (moveBy && !oldMove) oldMove = moveBy;
@@ -208,10 +245,11 @@ describe("useInteractionScope", () => {
     await userEvent.keyboard("j");
     expect(screen.getByTestId("active-id")).toHaveTextContent("1");
     expect(oldMove).not.toBeNull();
+    const oldRow = screen.getByRole("button", { name: "Alpha" }).closest("[data-workitem-id]")!;
     rerender(page("new", false));
     expect(screen.getByTestId("active-id")).toHaveTextContent("null");
     expect(screen.getByTestId("capability")).toHaveTextContent("false|false|false");
-    act(() => oldMove?.(1, "down"));
+    act(() => oldMove?.(1, "down", oldRow));
     expect(mockedApi.moveTask).not.toHaveBeenCalled();
   });
 });

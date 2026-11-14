@@ -1850,7 +1850,7 @@ outline section); and per-WorkItem-id collapse state, since folding is
 now a structural interaction capability rather than private `TaskRow`
 state. Each eligible outline registers its own mover and item-ownership check;
 unmount or capability changes retire only that registration. Keyboard moves
-select the registered outline containing the active item, and a retired mover
+select the registered outline containing the active rendered row, and a retired mover
 cannot dispatch. Drag sessions and pending-move UI remain local to the outline.
 
 **Keyboard navigation.** `apps/web/src/lib/useWorkItemKeyboardNav.ts`

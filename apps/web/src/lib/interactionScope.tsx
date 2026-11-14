@@ -15,7 +15,7 @@ export type WorkItemInteractionRole = "task" | "story";
 export type StructuralMoveDirection = "up" | "down" | "indent" | "outdent";
 
 type StructuralCapability = {
-  owns: (workItemId: number) => boolean;
+  owns: (workItemId: number, row: Element) => boolean;
   moveBy: (workItemId: number, direction: StructuralMoveDirection) => void;
 };
 
@@ -46,7 +46,7 @@ export interface InteractionScopeValue {
    * Dispatches to the mounted outline that owns the item, or is null when
    * no organizable outline is registered.
    */
-  moveBy: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
+  moveBy: ((workItemId: number, direction: StructuralMoveDirection, row: Element) => void) | null;
   registerStructuralCapability: (capability: StructuralCapability) => () => void;
   captureTarget: CaptureTarget;
   captureOpen: (() => void) | null;
@@ -112,7 +112,7 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
   const registerStructuralCapability = useCallback((capability: StructuralCapability) => {
     let active = true;
     const registration: StructuralCapability = {
-      owns: (id) => active && capability.owns(id),
+      owns: (id, row) => active && capability.owns(id, row),
       moveBy: (id, direction) => { if (active) capability.moveBy(id, direction); },
     };
     setCapabilities((previous) => [...previous, registration]);
@@ -122,8 +122,8 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
     };
   }, []);
   const moveBy = useMemo(() => capabilities.length === 0 ? null :
-    (id: number, direction: StructuralMoveDirection) => {
-      capabilities.find((capability) => capability.owns(id))?.moveBy(id, direction);
+    (id: number, direction: StructuralMoveDirection, row: Element) => {
+      capabilities.find((capability) => capability.owns(id, row))?.moveBy(id, direction);
     }, [capabilities]);
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<number>>(() => new Set());
   const [captureOpen, setCaptureOpen] = useState<(() => void) | null>(null);

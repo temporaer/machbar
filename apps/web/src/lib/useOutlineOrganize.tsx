@@ -437,9 +437,10 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   useEffect(() => {
     if (!organizable) return undefined;
     return registerStructuralCapability({
-      owns: (taskId) => {
+      owns: (taskId, row) => {
         const { effectiveTasks: current, rootGroup: group } = latest.current;
-        return group !== null && locateTask(current, taskId, group.parentId) !== null;
+        return Boolean(containerRef.current?.contains(row)) &&
+          group !== null && locateTask(current, taskId, group.parentId) !== null;
       },
       moveBy,
     });
