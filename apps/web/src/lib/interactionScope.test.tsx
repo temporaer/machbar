@@ -189,6 +189,49 @@ describe("useInteractionScope", () => {
     await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(1, expect.objectContaining({ position: 1 })));
   });
 
+  it("does not move a different active row when another row has focus", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1 });
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount /><TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable /></>,
+    );
+    await userEvent.keyboard("j");
+    act(() => screen.getByRole("button", { name: "Beta" }).focus());
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
+  });
+
+  it("does not guess between duplicate rows after focus leaves the active row", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1 });
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable />
+        <TaskOutline tasks={[first]} emptyMessage="Empty" />
+        <ActiveIdProbe /><button>Other</button>
+      </>,
+    );
+    await userEvent.keyboard("j");
+    act(() => screen.getAllByRole("button", { name: "Alpha" })[1]!.focus());
+    await userEvent.click(screen.getByText("Other"));
+    expect(screen.getByTestId("active-id")).toHaveTextContent("1");
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
+  });
+
+  it("can move a uniquely rendered active row after focus leaves it", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1 });
+    mockedApi.moveTask.mockResolvedValue(first);
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount /><TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable /><button>Other</button></>,
+    );
+    await userEvent.keyboard("j");
+    await userEvent.click(screen.getByText("Other"));
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(1, expect.objectContaining({ position: 1 })));
+  });
+
   it("keeps swipe and lifecycle rails mutually exclusive across rows", async () => {
     renderWithProviders(<ScopeProbe />);
     fireEvent.click(screen.getByText("Rail 1"));

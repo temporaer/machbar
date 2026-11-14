@@ -1875,6 +1875,8 @@ while editing text, or while a `BottomSheet`/modal is open.
 Rows inside closed native disclosures are excluded from both traversal and
 active-row commands, including structural moves and focused task shortcuts.
 Selection can resume when the disclosure reopens, but cannot mutate hidden work.
+Structural shortcuts do not guess between duplicate visible representations
+when focus is outside the active row, or move a different row than the focused one.
 
 **Command rails.** Left swipe means “What should happen next with this item?”
 `workItemRail.ts` owns pure, deterministic task/project selection and typed
