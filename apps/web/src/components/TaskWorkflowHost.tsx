@@ -44,9 +44,11 @@ export function TaskWorkflowHost() {
   useEffect(() => {
     if (previousLocationKey.current === location.key) return;
     previousLocationKey.current = location.key;
+    if (/^\/tasks\/\d+$/.test(location.pathname)) return;
     workflow.historyChanged();
   }, [
     location.key,
+    location.pathname,
     workflow,
   ]);
   if (!workflow.current || workflow.currentOpeningId === null) return null;

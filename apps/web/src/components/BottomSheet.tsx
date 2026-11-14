@@ -115,6 +115,19 @@ function updateSheetStacking() {
   }
 }
 
+function updateSheetPriority(id: symbol, priority: number) {
+  const entry = sheetStack.find((candidate) => candidate.id === id);
+  if (!entry || entry.priority === priority) return;
+
+  entry.priority = priority;
+  sheetStack.sort((left, right) => left.priority - right.priority || left.order - right.order);
+  updateSheetStacking();
+  updatePageIsolation();
+
+  const top = topSheet();
+  if (top) focusSheet(top, top.initialFocus);
+}
+
 function focusSheet(entry: SheetEntry, initialFocus: BottomSheetInitialFocus) {
   if (entry.dialog.contains(document.activeElement)) return;
   if (initialFocus === "dialog") {
@@ -360,6 +373,10 @@ export function BottomSheet({
     });
     return () => unregisterSheet(idRef.current, !suspendedRef.current);
   }, [suspended]);
+
+  useLayoutEffect(() => {
+    if (!suspended) updateSheetPriority(idRef.current, stackPriority);
+  }, [stackPriority, suspended]);
 
   return createPortal(
     <div

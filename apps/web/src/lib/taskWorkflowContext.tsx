@@ -69,7 +69,7 @@ function workflowReducer(state: WorkflowState, event: WorkflowEvent): WorkflowSt
       const openingId = state.nextOpeningId;
       return {
         ...state,
-        detail: event.handoff,
+        detail: { ...event.handoff, openingId },
         detailOpeningId: openingId,
         detailMode: event.mode,
         nextOpeningId: openingId + 1,
