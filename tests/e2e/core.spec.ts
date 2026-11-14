@@ -1178,6 +1178,69 @@ test("dirty planning navigation keeps the portaled choice explicit after a faile
   await expect(page).toHaveURL(/#\/today$/);
 });
 
+test("dirty planning navigation saves and closes before reaching the intended destination", async ({ page }) => {
+  const item = await task(page);
+  const waiting = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
+    data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
+  });
+  expect(waiting.ok()).toBeTruthy();
+  await page.goto(`/#/tasks/${item.id}`);
+  await page.getByRole("button", { name: /Wartet auf.*Supplier response/ }).click();
+  const planning = page.getByRole("dialog", { name: "Planung", exact: true });
+  await planning.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  await planning.locator(`#planning-availability-date-${item.id}`).fill("10.05.2099");
+  await planning.locator(`#planning-availability-date-${item.id}`).press("Tab");
+
+  await page.locator('a[href="#/today"]').first().evaluate(element => (element as HTMLElement).click());
+  const prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  const saved = page.waitForResponse(response =>
+    response.url().endsWith(`/api/tasks/${item.id}`) && response.request().method() === "PATCH",
+  );
+  await prompt.getByRole("button", { name: "Speichern", exact: true }).click();
+  expect((await saved).ok()).toBeTruthy();
+  await expect(prompt).toHaveCount(0);
+  await expect(planning).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/today$/);
+});
+
+test("dirty browser Back saves to the destination and Forward does not reopen planning", async ({ page }) => {
+  const item = await task(page);
+  const waiting = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
+    data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
+  });
+  expect(waiting.ok()).toBeTruthy();
+  await page.goto("/#/more/activity");
+  const taskLink = page.getByRole("link", { name: item.title, exact: true }).first();
+  await expect(taskLink).toBeVisible();
+  await taskLink.click();
+  await expect(page).toHaveURL(new RegExp(`#/tasks/${item.id}$`));
+  await page.reload();
+  await page.getByRole("button", { name: /Wartet auf.*Supplier response/ }).click();
+  const planning = page.getByRole("dialog", { name: "Planung", exact: true });
+  await planning.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  await planning.locator(`#planning-availability-date-${item.id}`).fill("10.05.2099");
+  await planning.locator(`#planning-availability-date-${item.id}`).press("Tab");
+  await expect(planning.locator(`#planning-availability-date-${item.id}`)).toHaveValue("10.05.2099");
+  await page.waitForTimeout(100);
+
+  await page.goBack();
+  const prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  const saved = page.waitForResponse(response =>
+    response.url().endsWith(`/api/tasks/${item.id}`) && response.request().method() === "PATCH",
+  );
+  await prompt.getByRole("button", { name: "Speichern", exact: true }).click();
+  expect((await saved).ok()).toBeTruthy();
+  await expect(prompt).toHaveCount(0);
+  await expect(planning).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/more\/activity$/);
+
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`#/tasks/${item.id}$`));
+  await expect(page.getByRole("dialog", { name: "Planung", exact: true })).toHaveCount(0);
+});
+
 test("Review keeps one routine inspection, explicit Keep and a separate repair", async ({ page }) => {
   const title = `Routine project ${randomUUID()}`;
   const response = await page.request.post("/api/projects", { data: { title } });
