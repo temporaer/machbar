@@ -21,6 +21,67 @@ async function task(page: Page, extra: object = {}) {
   return result.json();
 }
 
+async function prerequisiteDestination(page: Page) {
+  const projectResponse = await page.request.post("/api/projects", {
+    data: { title: `Shortcut project ${randomUUID()}` },
+  });
+  expect(projectResponse.status()).toBe(201);
+  const project = await projectResponse.json();
+  const prerequisite = await task(page, {
+    title: `Destination task ${randomUUID()}`,
+    projectId: project.id,
+  });
+  const source = await task(page, { title: `Planning source ${randomUUID()}` });
+  const dependency = await page.request.post(`/api/tasks/${source.id}/dependencies`, {
+    data: { dependsOnTaskId: prerequisite.id, expectedRevision: source.revision },
+  });
+  expect(dependency.ok()).toBe(true);
+  const currentSource = await (await page.request.get(`/api/tasks/${source.id}`)).json();
+  return { project, prerequisite, source: currentSource };
+}
+
+async function focusTaskByKeyboard(page: Page, taskId: number) {
+  const targetRow = page.locator(`[data-workitem-id="${taskId}"] .task-row-main`);
+  await expect(targetRow).toBeVisible();
+  const index = await page.locator("[data-workitem-id]").evaluateAll((rows, targetId) => {
+    const visible = rows.filter((row) => !row.closest("details:not([open])"));
+    return visible.findIndex((row) => (row as HTMLElement).dataset.workitemId === String(targetId));
+  }, taskId);
+  expect(index).toBeGreaterThanOrEqual(0);
+  for (let step = 0; step <= index; step += 1) await page.keyboard.press("j");
+  await expect(targetRow).toBeFocused();
+}
+
+async function openPrerequisiteInPlanner(
+  page: Page,
+  prerequisiteTitle: string,
+) {
+  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
+  await expect(planner).toBeVisible();
+  await planner.locator(".task-planning-prerequisite-summary")
+    .getByRole("button", { name: prerequisiteTitle, exact: true }).click();
+  await expect(page.getByRole("heading", { name: prerequisiteTitle, exact: true })).toBeVisible();
+}
+
+async function navigatePrerequisiteToProject(
+  page: Page,
+  projectId: number,
+  projectTitle: string,
+) {
+  await page.getByRole("navigation", { name: "Breadcrumb" })
+    .getByRole("link", { name: projectTitle, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`#\\/projects\\/${projectId}$`));
+  await expect(page.getByRole("heading", { name: projectTitle, exact: true })).toBeVisible();
+}
+
+async function openProjectTaskWorkflow(page: Page, taskId: number, shortcut: "s" | "w") {
+  await focusTaskByKeyboard(page, taskId);
+  await page.keyboard.press(shortcut);
+  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
+  await expect(planner).toBeVisible();
+  return planner;
+}
+
 test("ordinary intake reviews and changes an existing project destination in the real app", async ({ page }, testInfo) => {
   await page.goto("/#/today");
   const memberId = await page.evaluate(() => localStorage.getItem("machbar:identity-member-id")!);
@@ -303,6 +364,147 @@ test("collapsed project tasks cannot be moved or planned by shortcuts", async ({
   await page.keyboard.press("Alt+ArrowDown");
   await expect.poll(storedOrder).toEqual([second.id, first.id]);
   expect(moves).toBe(1);
+});
+
+test("destination planning and waiting shortcuts open fresh visible workflows after prerequisite navigation", async ({ page }) => {
+  const { project, prerequisite, source } = await prerequisiteDestination(page);
+  let taskWrites = 0;
+  page.on("request", request => {
+    if (request.method() === "PATCH" &&
+      new URL(request.url()).pathname.startsWith("/api/tasks/")) taskWrites += 1;
+  });
+
+  await page.goto("/#/more/all");
+  await focusTaskByKeyboard(page, source.id);
+  await page.keyboard.press("s");
+  await openPrerequisiteInPlanner(page, prerequisite.title);
+  await navigatePrerequisiteToProject(page, project.id, project.title);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  const planning = await openProjectTaskWorkflow(page, prerequisite.id, "s");
+  await planning.locator(`[aria-controls="planning-editor-scheduled-${prerequisite.id}"]`).click();
+  await expect(page.locator(`#planning-scheduled-${prerequisite.id}`)).toBeFocused();
+  await expect(page.locator(`#planning-scheduled-${source.id}`)).toHaveCount(0);
+  expect(taskWrites).toBe(0);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Planung", exact: true })).toHaveCount(0);
+  const waiting = await openProjectTaskWorkflow(page, prerequisite.id, "w");
+  await expect(waiting.locator(`#planning-editor-waiting-${prerequisite.id}`)).toBeVisible();
+  await expect(page.locator(`#planning-waiting-${prerequisite.id}`)).toBeFocused();
+  await expect(page.locator(`#planning-waiting-${source.id}`)).toHaveCount(0);
+  expect(taskWrites).toBe(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`#\\/projects\\/${project.id}$`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(taskWrites).toBe(0);
+});
+
+test("dirty planner navigation requires Stay, Save, or Discard before opening a destination workflow", async ({ page }) => {
+  const { project, prerequisite, source } = await prerequisiteDestination(page);
+  const taskPatches: Array<{ taskId: number; body: Record<string, unknown> }> = [];
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "PATCH" && path.startsWith("/api/tasks/")) {
+      taskPatches.push({
+        taskId: Number(path.split("/").at(-1)),
+        body: request.postDataJSON() as Record<string, unknown>,
+      });
+    }
+  });
+
+  const setDraftDate = async (date: string) => {
+    await page.locator(`[aria-controls="planning-editor-scheduled-${source.id}"]`).click();
+    const input = page.locator(`#planning-scheduled-${source.id}`);
+    await expect(input).toBeVisible();
+    await input.fill(date);
+    await input.press("Tab");
+    await expect(input).toHaveValue(date);
+  };
+  const clickProjectBreadcrumb = async () => {
+    await page.getByRole("navigation", { name: "Breadcrumb" })
+      .getByRole("link", { name: project.title, exact: true }).click();
+    return page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  };
+  const navigateToDestination = async () => {
+    await openPrerequisiteInPlanner(page, prerequisite.title);
+    return clickProjectBreadcrumb();
+  };
+  const openSourcePlanner = async () => {
+    await focusTaskByKeyboard(page, source.id);
+    await page.keyboard.press("s");
+    await expect(page.getByRole("dialog", { name: "Planung", exact: true })).toBeVisible();
+  };
+  await page.goto("/#/today");
+  await page.getByRole("link", { name: "Suchen", exact: true }).click();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await openSourcePlanner();
+  const savedDate = "21.12.2026";
+  await setDraftDate(savedDate);
+  const pendingBack = page.goBack();
+  let prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  await pendingBack;
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await prompt.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(page.locator(`#planning-scheduled-${source.id}`)).toHaveValue(savedDate);
+  expect(taskPatches).toHaveLength(0);
+
+  prompt = await navigateToDestination();
+  await prompt.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await expect(page.locator(`#planning-scheduled-${source.id}`)).toHaveValue(savedDate);
+  expect(taskPatches).toHaveLength(0);
+
+  prompt = await clickProjectBreadcrumb();
+  await prompt.getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`#\\/projects\\/${project.id}$`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(taskPatches).toHaveLength(1);
+  expect(taskPatches[0]).toMatchObject({
+    taskId: source.id,
+    body: { scheduledDate: "2026-12-21" },
+  });
+  expect((await (await page.request.get(`/api/tasks/${source.id}`)).json()).scheduledDate).toBe("2026-12-21");
+
+  const destinationPlanning = await openProjectTaskWorkflow(page, prerequisite.id, "s");
+  await destinationPlanning.locator(`[aria-controls="planning-editor-scheduled-${prerequisite.id}"]`).click();
+  await expect(page.locator(`#planning-scheduled-${prerequisite.id}`)).toBeFocused();
+  await expect(page.locator(`#planning-scheduled-${source.id}`)).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`#\\/projects\\/${project.id}$`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await openSourcePlanner();
+
+  const discardedDate = "24.12.2026";
+  await setDraftDate(discardedDate);
+  prompt = await navigateToDestination();
+  await prompt.getByRole("button", { name: "Verwerfen", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`#\\/projects\\/${project.id}$`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(taskPatches).toHaveLength(1);
+  expect((await (await page.request.get(`/api/tasks/${source.id}`)).json()).scheduledDate).toBe("2026-12-21");
+
+  const destinationWaiting = await openProjectTaskWorkflow(page, prerequisite.id, "w");
+  await expect(destinationWaiting.locator(`#planning-editor-waiting-${prerequisite.id}`)).toBeVisible();
+  await expect(page.locator(`#planning-waiting-${prerequisite.id}`)).toBeFocused();
+  await expect(page.locator(`#planning-waiting-${source.id}`)).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/more\/all$/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`#\\/projects\\/${project.id}$`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(taskPatches).toHaveLength(1);
 });
 
 test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {
