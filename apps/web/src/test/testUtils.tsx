@@ -1,5 +1,12 @@
-import type { ComponentProps, ReactElement, ReactNode } from "react";
-import { MemoryRouter } from "react-router-dom";
+import {
+  createContext,
+  useContext,
+  useState,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import { MemoryRouter, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { render } from "@testing-library/react";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
@@ -27,29 +34,52 @@ function AllProviders({
     <ThemeProvider>
       <LocaleProvider initialLocale={locale}>
         <DeveloperModeProvider>
-          <MemoryRouter {...(initialEntries ? { initialEntries } : {})}>
+          <TestRouter initialEntries={initialEntries}>
             <IdentityProvider>
               <RefreshProvider>
                   <SwipeCoachProvider>
                     <TaskActionsProvider>
                       <ProjectActionsProvider>
                         <InteractionScopeProvider>
-                          <TaskDetailProvider>
-                            <TaskWorkflowProvider>
-                              <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
+                          <TaskWorkflowProvider>
+                            <TaskDetailProvider>
+                                <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
+                              </TaskDetailProvider>
                             </TaskWorkflowProvider>
-                          </TaskDetailProvider>
                         </InteractionScopeProvider>
                       </ProjectActionsProvider>
                     </TaskActionsProvider>
                   </SwipeCoachProvider>
               </RefreshProvider>
             </IdentityProvider>
-          </MemoryRouter>
+          </TestRouter>
         </DeveloperModeProvider>
       </LocaleProvider>
     </ThemeProvider>
   );
+}
+
+function TestRouter({
+  children,
+  initialEntries,
+}: {
+  children: ReactNode;
+  initialEntries?: ComponentProps<typeof import("react-router-dom").MemoryRouter>["initialEntries"];
+}) {
+  const [router] = useState(() =>
+    createMemoryRouter([{ path: "*", element: <TestRoute /> }], initialEntries ? { initialEntries } : undefined),
+  );
+  return (
+    <TestRouteContent.Provider value={children}>
+      <RouterProvider router={router} />
+    </TestRouteContent.Provider>
+  );
+}
+
+const TestRouteContent = createContext<ReactNode>(null);
+
+function TestRoute() {
+  return useContext(TestRouteContent);
 }
 
 export function renderWithProviders(

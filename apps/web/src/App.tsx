@@ -1,5 +1,5 @@
-import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import type { ReactNode } from "react";
+import { Navigate, Route, Routes, RouterProvider, createHashRouter, useLocation } from "react-router-dom";
+import { useState, type ReactNode } from "react";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
 import { TaskDetailProvider } from "./lib/taskDetailContext";
@@ -145,17 +145,9 @@ export function App() {
             <IdentityAwareRefreshProvider>
               <SwipeCoachProvider>
                 <TaskActionsProvider>
-                  <ProjectActionsProvider>
-                    <TaskDetailProvider>
-                      <TaskWorkflowProvider>
-                        <ProjectWorkflowProvider>
-                          <HashRouter>
-                            <Shell />
-                          </HashRouter>
-                        </ProjectWorkflowProvider>
-                      </TaskWorkflowProvider>
-                    </TaskDetailProvider>
-                  </ProjectActionsProvider>
+                <ProjectActionsProvider>
+                  <AppRouter />
+                </ProjectActionsProvider>
                 </TaskActionsProvider>
               </SwipeCoachProvider>
             </IdentityAwareRefreshProvider>
@@ -164,4 +156,20 @@ export function App() {
       </LocaleProvider>
     </ThemeProvider>
   );
+}
+
+function AppRouter() {
+  const [router] = useState(() => createHashRouter([{
+    path: "*",
+    element: (
+      <TaskWorkflowProvider>
+        <TaskDetailProvider>
+          <ProjectWorkflowProvider>
+            <Shell />
+          </ProjectWorkflowProvider>
+        </TaskDetailProvider>
+      </TaskWorkflowProvider>
+    ),
+  }]));
+  return <RouterProvider router={router} />;
 }

@@ -92,11 +92,13 @@ export function ProjectDetailPage() {
   const notesRef = useRef<MarkdownEditorHandle>(null);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const planningTaskRef = useRef<number | null>(null);
+  const [pendingPlanning, setPendingPlanning] = useState<{
+    projectId: number;
+    taskId: number;
+    pathname: string;
+  } | null>(null);
   const storyFocusDispatchedRef = useRef<string | null>(null);
   const storyFocusSheetOpenedRef = useRef(false);
-  const planningOwnsSheetRef = useRef(false);
-  const planningSheetOpenedRef = useRef(false);
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
   const { openTaskId } = useTaskDetail();
@@ -107,13 +109,9 @@ export function ProjectDetailPage() {
   // `?focus=planning` is a deep link into the canonical `task.plan` workflow
   // for the project's first unplanned task; this page only decides *which*
   // task and cleans up after itself, it never implements planning.
-  const planningWorkflow = taskWorkflow.detailInspections[0]?.planningWorkflow ?? taskWorkflow.current;
+  const planningWorkflow = taskWorkflow.current;
   const planningWorkflowTaskId =
     planningWorkflow?.kind === "plan" ? planningWorkflow.taskId : null;
-  const openTaskIdRef = useRef(planningWorkflowTaskId);
-  const closeTaskDetailRef = useRef(taskWorkflow.close);
-  openTaskIdRef.current = planningWorkflowTaskId;
-  closeTaskDetailRef.current = taskWorkflow.close;
   const {
     data: loadedProject,
     loading: projectLoading,
@@ -259,30 +257,11 @@ export function ProjectDetailPage() {
   const planningFocusActive = focus === "planning";
 
   useEffect(() => {
-    if (!planningFocusActive) return;
-    return () => {
-      const ownedTaskId = planningTaskRef.current;
-      const ownsPendingOpen =
-        planningOwnsSheetRef.current &&
-        !planningSheetOpenedRef.current &&
-        openTaskIdRef.current === null;
-      const ownsOpenSheet =
-        planningOwnsSheetRef.current && openTaskIdRef.current === ownedTaskId;
-
-      planningTaskRef.current = null;
-      planningOwnsSheetRef.current = false;
-      planningSheetOpenedRef.current = false;
-
-      if (ownsPendingOpen || ownsOpenSheet) closeTaskDetailRef.current();
-    };
-  }, [planningFocusActive, projectId]);
-
-  useEffect(() => {
     if (
       !planningFocusActive ||
       !project ||
       project.id !== projectId ||
-      planningTaskRef.current !== null ||
+      pendingPlanning !== null ||
       planningWorkflowTaskId !== null ||
       // A deep link must never displace a focused surface the user opened.
       openTaskId !== null
@@ -298,35 +277,50 @@ export function ProjectDetailPage() {
         !task.scheduledDate,
     );
     if (!taskToPlan) return;
-    planningTaskRef.current = taskToPlan.id;
-    planningOwnsSheetRef.current = true;
-    planningSheetOpenedRef.current = false;
-    dispatch({ type: "task.plan", taskId: taskToPlan.id, target: "scheduled" });
+    setPendingPlanning({
+      projectId,
+      taskId: taskToPlan.id,
+      pathname: location.pathname,
+    });
+    clearRouteFocus();
   }, [
+    clearRouteFocus,
+    location.pathname,
     planningFocusActive,
+    pendingPlanning,
     project,
     projectId,
     planningWorkflowTaskId,
     openTaskId,
-    dispatch,
   ]);
 
   useEffect(() => {
-    const ownedTaskId = planningTaskRef.current;
     if (
-      !planningFocusActive ||
-      !planningOwnsSheetRef.current ||
-      ownedTaskId === null
-    )
+      pendingPlanning === null ||
+      pendingPlanning.projectId !== projectId ||
+      pendingPlanning.pathname !== location.pathname ||
+      planningFocusActive ||
+      planningWorkflowTaskId !== null
+    ) {
+      if (pendingPlanning !== null && pendingPlanning.projectId !== projectId) {
+        setPendingPlanning(null);
+      }
       return;
-
-    if (planningWorkflowTaskId === ownedTaskId) {
-      planningSheetOpenedRef.current = true;
-    } else if (planningSheetOpenedRef.current || planningWorkflowTaskId !== null) {
-      planningOwnsSheetRef.current = false;
-      clearRouteFocus();
     }
-  }, [planningFocusActive, planningWorkflowTaskId, clearRouteFocus]);
+    const { taskId } = pendingPlanning;
+    const timer = window.setTimeout(() => {
+      dispatch({ type: "task.plan", taskId, target: "scheduled" });
+      setPendingPlanning(null);
+    });
+    return () => window.clearTimeout(timer);
+  }, [
+    dispatch,
+    location.pathname,
+    pendingPlanning,
+    planningFocusActive,
+    projectId,
+    planningWorkflowTaskId,
+  ]);
 
   // Review repair links for the story itself are the same three intents the
   // rail and keyboard dispatch; the route only picks one and then cleans up

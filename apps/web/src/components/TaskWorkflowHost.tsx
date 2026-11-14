@@ -17,7 +17,7 @@ import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { TaskClarificationSheet } from "./TaskClarificationSheet";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
-import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTaskDetail, type WorkRefinementOrigin } from "../lib/taskDetailContext";
 import { BottomSheet } from "./BottomSheet";
 import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
@@ -39,58 +39,33 @@ export function TaskWorkflowHost() {
   const workflow = useTaskWorkflow();
   const taskDetail = useTaskDetail();
   const location = useLocation();
-  const navigationType = useNavigationType();
   const previousLocationKey = useRef(location.key);
   const { currentMemberId } = useIdentity();
-  const mounted = useRef(false);
   useLayoutEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-  const current = useRef({ opening: workflow.current, currentMemberId });
-  current.current = { opening: workflow.current, currentMemberId };
-  const openings = useRef(new WeakMap<TaskWorkflowState, number>());
-  const sequence = useRef(0);
-  useEffect(() => {
-    if (workflow.detailInspection && taskDetail.openTaskId === null) {
-      const previous = workflow.detailInspection.previousDetail;
-      if (previous) taskDetail.resumeAfterHandoff(previous);
-      workflow.resumeFromDetail();
-    }
-  }, [workflow.detailInspection, taskDetail.openTaskId]);
-  useEffect(() => {
     if (previousLocationKey.current === location.key) return;
     previousLocationKey.current = location.key;
-    if (navigationType !== "POP" || !workflow.detailInspection || taskDetail.openTaskId === null) return;
-    if (`${location.pathname}${location.search}` === workflow.detailInspection.originPath) {
-      taskDetail.resumeAfterHandoff();
-    } else {
-      taskDetail.suspendForHandoff();
+    if (/^\/tasks\/\d+$/.test(location.pathname)) {
+      if (workflow.current !== null) workflow.close();
+      return;
     }
-  }, [location.key, location.pathname, location.search, navigationType, workflow.detailInspection, taskDetail]);
-  // Each planning slot keeps its React position when another prerequisite is
-  // inspected. Only the foreground operation registers a visible modal.
-  const retained = workflow.detailInspections;
-  const foreground = workflow.current === workflow.detailInspection?.planningWorkflow
-    ? null : workflow.current;
-  return <>
-    {[...retained.map((inspection) => inspection.planningWorkflow), foreground].map((state, index) => {
-      if (!state) return null;
-      if (!openings.current.has(state)) openings.current.set(state, ++sequence.current);
-      return <TaskWorkflowContent
-        key={`${currentMemberId}:${openings.current.get(state)}`}
-        state={state}
-        suspended={index < retained.length || (workflow.detailInspection !== null && taskDetail.suspended)}
-        isCurrent={() => mounted.current && current.current.opening === state && current.current.currentMemberId === currentMemberId}
-      />;
-    })}
-  </>;
+    workflow.historyChanged();
+  }, [
+    workflow.current,
+    location.key,
+    location.pathname,
+    workflow,
+  ]);
+  if (!workflow.current || workflow.currentOpeningId === null) return null;
+  return <TaskWorkflowContent
+    key={`${currentMemberId}:${workflow.currentOpeningId}`}
+    state={workflow.current}
+    openingId={workflow.currentOpeningId}
+  />;
 }
 
-function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
+function TaskWorkflowContent({ state, openingId }: {
   state: TaskWorkflowState;
-  suspended?: boolean;
-  isCurrent: () => boolean;
+  openingId: number;
 }) {
   const workflow = useTaskWorkflow();
   const strings = useStrings();
@@ -100,9 +75,20 @@ function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
   const location = useLocation();
   const navigate = useNavigate();
   const taskId = state.taskId;
+  const initialLocationKey = useRef(location.key);
   const [endedError, setEndedError] = useState<string | null>(null);
   const [requirementsEpoch, setRequirementsEpoch] = useState(0);
   const ended = useRef(false);
+  const mounted = useRef(false);
+  const currentOpeningId = useRef(workflow.currentOpeningId);
+  currentOpeningId.current = workflow.currentOpeningId;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isOpeningCurrent = () =>
+    currentOpeningId.current === openingId;
+  const isCurrent = () => mounted.current && isOpeningCurrent();
   const endOnDenied = (cause: unknown) => {
     if (isCurrent() && isReadAccessError(cause)) {
       if (state.kind === "split") discardTaskSplitDraft(taskId, currentMemberId);
@@ -135,10 +121,11 @@ function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
     [taskId, requirementsEpoch],
   );
   const dismiss = () => { if (isCurrent()) workflow.close(); };
-  const close = () => { if (!ended.current) dismiss(); };
-  if (!endedError && !task && loading) return suspended ? null : <p role="status">{strings.loading}</p>;
+  const close = () => {
+    if (!ended.current && location.key === initialLocationKey.current) dismiss();
+  };
+  if (!endedError && !task && loading) return <p role="status">{strings.loading}</p>;
   if (endedError || !task) {
-    if (suspended) return null;
     return <BottomSheet title={strings.error} onClose={dismiss}>
       <div className="stack">
         {endedError || error ? <p role="alert">{endedError ?? error}</p> : requirementsEpoch > 0 ? <p role="alert">{strings.activationRequirementsChanged}</p> : null}
@@ -155,7 +142,6 @@ function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
         <TaskPlanningSheet
           key={task.id}
           task={task}
-          suspended={suspended}
           onClose={close}
           onFailure={endOnDenied}
           {...(state.planningTarget
@@ -164,13 +150,13 @@ function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
         />
       );
     case "availability":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} onFailure={endOnDenied} initialTarget="availability" />;
+      return <TaskPlanningSheet key={task.id} task={task} onClose={close} onFailure={endOnDenied} initialTarget="availability" />;
     case "deferClarification":
       return <TaskClarificationSheet task={task} onClose={close} onFailure={endOnDenied} />;
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
     case "waitingLifecycle":
-      return <TaskPlanningSheet key={task.id} task={task} suspended={suspended} onClose={close} onFailure={endOnDenied} initialTarget="waiting" />;
+      return <TaskPlanningSheet key={task.id} task={task} onClose={close} onFailure={endOnDenied} initialTarget="waiting" />;
     case "split":
       return (
         <TaskSplitSheet
@@ -189,8 +175,8 @@ function TaskWorkflowContent({ state, suspended = false, isCurrent }: {
     case "refinement":
       return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onFailure={endOnDenied} onStarted={(intakeId) => {
         if (!isCurrent() || ended.current) return;
-        const detail = taskDetail.openTaskId === task.id ? taskDetail.suspendForHandoff() : null;
-        const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page", taskDetail: detail };
+        const detail = taskDetail.openTaskId === task.id ? taskDetail.getHandoff() : null;
+        const refinementOrigin: WorkRefinementOrigin = { targetType: "task", targetId: task.id, originPath: `${location.pathname}${location.search}`, entry: detail ? "task_detail" : "page" };
         close();
         navigate(`/intake/${intakeId}`, { state: { refinementOrigin } });
       }} />;

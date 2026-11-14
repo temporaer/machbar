@@ -345,6 +345,7 @@ describe("BottomSheet", () => {
     expect(dialogs[0]).toHaveAttribute("aria-hidden", "true");
     expect(backdrops[0]).toHaveAttribute("inert");
     expect(dialogs[1]).not.toHaveAttribute("inert");
+    expect(Number(backdrops[1]?.style.zIndex)).toBeGreaterThan(Number(backdrops[0]?.style.zIndex));
     expect(document.body.style.overflow).toBe("hidden");
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -356,6 +357,36 @@ describe("BottomSheet", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(bottomClose).toHaveBeenCalledOnce();
+  });
+
+  it("updates stacking, focus and Escape ownership when priority changes while mounted", () => {
+    const detailClose = vi.fn();
+    const plannerClose = vi.fn();
+    const renderStack = (detailPriority: number) => (
+      <>
+        <BottomSheet title="Detail" stackPriority={detailPriority} onClose={detailClose}>
+          <button type="button">Detail action</button>
+        </BottomSheet>
+        <BottomSheet title="Planner" stackPriority={10} onClose={plannerClose}>
+          <button type="button">Planner action</button>
+        </BottomSheet>
+      </>
+    );
+
+    const { rerender } = render(renderStack(0));
+    const initialBackdrops = document.querySelectorAll<HTMLElement>(".sheet-backdrop");
+    expect(initialBackdrops[0]).toHaveAttribute("inert");
+    expect(initialBackdrops[1]).not.toHaveAttribute("inert");
+    expect(screen.getByRole("button", { name: "Planner action" })).toHaveFocus();
+
+    rerender(renderStack(20));
+    const promotedBackdrops = document.querySelectorAll<HTMLElement>(".sheet-backdrop");
+    expect(promotedBackdrops[0]).not.toHaveAttribute("inert");
+    expect(promotedBackdrops[1]).toHaveAttribute("inert");
+    expect(screen.getByRole("button", { name: "Detail action" })).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(detailClose).toHaveBeenCalledOnce();
+    expect(plannerClose).not.toHaveBeenCalled();
   });
 
   it("restores the original opener when nested sheets unmount together", async () => {

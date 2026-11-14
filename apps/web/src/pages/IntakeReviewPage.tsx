@@ -166,7 +166,7 @@ export function IntakeReviewPage() {
       taskDetail.close();
       navigate(`/projects/${refinementOrigin.targetId}`, { replace: true });
     } else if (taskDetailReturn) {
-      taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail ?? undefined);
+      taskDetail.close();
       bump();
       navigate(refinementOrigin.originPath, { replace: true });
     } else if (afterApply) {
@@ -176,20 +176,17 @@ export function IntakeReviewPage() {
       bump();
       navigate(route, { replace: true });
     } else {
-      if (refinementOrigin.taskDetail) taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail);
+      taskDetail.close();
       navigate(refinementOrigin.originPath, { replace: true });
     }
   }, [bump, navigate, refinementOrigin, taskDetail]);
   const refinementHandoffCleanupRef = useRef<() => void>(() => undefined);
   refinementHandoffCleanupRef.current = () => {
-    if (refinementHandoffHandledRef.current || !refinementOrigin?.taskDetail) return;
+    if (refinementHandoffHandledRef.current || !refinementOrigin) return;
     const current = recordRef.current;
     const resultingRole = current?.applyResults?.work.find((item) => item.workItemId === refinementOrigin.targetId)?.role;
-    if (current?.status === "applied" && resultingRole === "story") {
-      taskDetail.close();
-      return;
-    }
-    taskDetail.resumeAfterHandoff(refinementOrigin.taskDetail);
+    if (current?.status === "applied" && resultingRole !== "story") return;
+    taskDetail.close();
   };
   useEffect(() => () => refinementHandoffCleanupRef.current(), []);
   const returnAction = refinementOrigin ? <button className="btn btn-ghost" onClick={() => returnFromRefinement()}>{refinementOrigin.targetType === "task" ? strings.backToTask : strings.backToProject}</button> : null;

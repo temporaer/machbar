@@ -146,6 +146,7 @@ test("Today keeps a future recurring plan out despite its reached revisit", asyn
 
 test("detail status control is visible on touch and desktop", async ({ page }) => {
   const item = await task(page);
+  await page.goto("/#/today");
   await page.goto(`/#/tasks/${item.id}`);
   const control = page.locator(".detail-meta-status-button");
   await expect(control).toBeVisible();
@@ -302,121 +303,6 @@ test("collapsed project tasks cannot be moved or planned by shortcuts", async ({
   await page.keyboard.press("Alt+ArrowDown");
   await expect.poll(storedOrder).toEqual([second.id, first.id]);
   expect(moves).toBe(1);
-});
-
-for (const fromDetail of [false, true]) {
-test(`project navigation leaves an inspected planner suspended until returning (detail origin: ${fromDetail})`, async ({ page }) => {
-  const project = await (await page.request.post("/api/projects", {
-    data: { title: `Inspection project ${randomUUID()}` },
-  })).json();
-  const prerequisite = await task(page, { projectId: project.id });
-  const item = await task(page);
-  const dependency = await page.request.post(`/api/tasks/${item.id}/dependencies`, {
-    data: { dependsOnTaskId: prerequisite.id, expectedRevision: item.revision },
-  });
-  expect(dependency.ok()).toBe(true);
-  await page.goto(fromDetail ? `/#/tasks/${item.id}` : "/#/more/all");
-  if (fromDetail) {
-    await page.getByRole("button", { name: "+ Planen", exact: true }).click();
-  } else {
-    await page.getByRole("textbox", { name: "Suchen", exact: true }).fill(item.title);
-    const row = page.locator(`[data-workitem-id="${item.id}"] .task-row-main`);
-    await expect(row).toBeVisible();
-    await expect(page.locator("[data-workitem-id]")).toHaveCount(1);
-    await row.focus();
-    await page.keyboard.press("j");
-    await expect(row).toBeFocused();
-    await page.keyboard.press("s");
-  }
-  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
-  if (!fromDetail) {
-    await planner.locator('section:has([id^="planning-scheduled"]) .task-planning-summary button').click();
-  }
-  const date = planner.getByLabel("Geplant für", { exact: true });
-  await date.fill("10.05.2099");
-  await date.press("Tab");
-  await planner.getByRole("button", { name: prerequisite.title, exact: true }).click();
-  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true }).click();
-  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
-
-  await page.goBack();
-  const returnTitle = fromDetail ? item.title : prerequisite.title;
-  await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
-  if (!fromDetail) {
-    await page.getByRole("button", { name: "+ Planen", exact: true }).click();
-    await date.fill("11.05.2099");
-    await date.press("Tab");
-  }
-  await page.goForward();
-  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.goBack();
-  if (!fromDetail) {
-    await expect(planner).toBeVisible();
-    await expect(date).toHaveValue("11.05.2099");
-    await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
-  }
-  await expect(page.getByRole("heading", { name: returnTitle, exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(planner).toBeVisible();
-  await expect(date).toHaveValue("10.05.2099");
-  await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
-  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
-  expect((await (await page.request.get(`/api/tasks/${prerequisite.id}`)).json()).scheduledDate).toBeNull();
-});
-}
-
-test("refinement returns to an inspected list task without hiding its retained planner", async ({ page }) => {
-  const project = await (await page.request.post("/api/projects", {
-    data: { title: `Refinement return ${randomUUID()}` },
-  })).json();
-  const prerequisite = await task(page, { projectId: project.id });
-  const item = await task(page);
-  expect((await page.request.post(`/api/tasks/${item.id}/dependencies`, {
-    data: { dependsOnTaskId: prerequisite.id, expectedRevision: item.revision },
-  })).ok()).toBe(true);
-  const code = await (await page.request.post("/api/integrations/home-assistant/pairing-code")).json();
-  const paired = await (await page.request.post("/api/integrations/home-assistant/pair", {
-    data: { pairingCode: code.code, protocolVersion: 3 },
-  })).json();
-  expect((await page.request.post("/api/integrations/home-assistant/context", {
-    headers: { authorization: `Bearer ${paired.token}` },
-    data: { protocolVersion: 3, observedAt: new Date().toISOString(), contexts: [], people: [],
-      intake: { aiTask: { entityId: "ai_task.browser", state: "ok", supportsAttachments: true },
-        calendar: { entityId: "calendar.browser", state: "ok" } } },
-  })).ok()).toBe(true);
-  await page.goto("/#/more/all");
-  await page.getByRole("textbox", { name: "Suchen", exact: true }).fill(item.title);
-  const row = page.locator(`[data-workitem-id="${item.id}"] .task-row-main`);
-  await expect(page.locator("[data-workitem-id]")).toHaveCount(1);
-  await row.focus();
-  await page.keyboard.press("j");
-  await page.keyboard.press("s");
-  const planner = page.getByRole("dialog", { name: "Planung", exact: true });
-  await planner.locator('section:has([id^="planning-scheduled"]) .task-planning-summary button').click();
-  const date = planner.getByLabel("Geplant für", { exact: true });
-  await date.fill("10.05.2099");
-  await date.press("Tab");
-  await planner.getByRole("button", { name: prerequisite.title, exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Mit KI klären…", exact: true }).click();
-  await page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true }).click();
-  await expect(page).toHaveURL(/#\/intake\//);
-  await page.getByRole("button", { name: "Zurück zur Aufgabe", exact: true }).click();
-  await expect(page).toHaveURL(/#\/more\/all$/);
-  await expect(page.getByRole("heading", { name: prerequisite.title, exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: project.title, exact: true }).click();
-  await expect(page.getByRole("heading", { name: project.title, exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.goBack();
-  await expect(page.getByRole("heading", { name: prerequisite.title, exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(planner).toBeVisible();
-  await expect(date).toHaveValue("10.05.2099");
-  await planner.getByRole("button", { name: "Abbrechen", exact: true }).click();
-  expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).scheduledDate).toBeNull();
-  expect((await (await page.request.get(`/api/tasks/${prerequisite.id}`)).json()).revision).toBe(prerequisite.revision);
 });
 
 test("pending detail writes retain enabled disclosure navigation and modal boundaries", async ({ page }) => {
@@ -1209,7 +1095,6 @@ test("waiting is directly reachable and revisit precedes the single follow-up co
   await start.click();
   let dialog = page.getByRole("dialog", { name: "Planung", exact: true });
   await expect(dialog.getByLabel("Wartet auf", { exact: true })).toBeVisible();
-  await dialog.getByLabel("Wartet auf", { exact: true }).fill("Unsaved wait");
   await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
   await expect(start).toBeFocused();
   expect((await (await page.request.get(`/api/tasks/${item.id}`)).json()).externalWait).toBeNull();
@@ -1240,6 +1125,120 @@ test("waiting is directly reachable and revisit precedes the single follow-up co
   expect(calendarDateForInstant(stored.revisitAt, timezone)).toBe("2099-05-10");
   expect(stored.externalWait.waitingFor).toBe("Supplier response");
   expect(stored.notes).toContain("Supplier confirmed the new delivery window.");
+});
+
+test("dirty planning navigation keeps the portaled choice explicit after a failed save", async ({ page }) => {
+  const item = await task(page);
+  await page.goto(`/#/tasks/${item.id}`);
+  const waiting = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
+    data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
+  });
+  expect(waiting.ok()).toBeTruthy();
+  await page.reload();
+  await page.getByRole("button", { name: /Wartet auf.*Supplier response/ }).click();
+  const planning = page.locator('[role="dialog"]').filter({
+    has: page.locator('h2:text-is("Planung")'),
+  });
+  const activePlanning = page.locator('[role="dialog"]:not([aria-hidden="true"])').filter({
+    has: page.locator('h2:text-is("Planung")'),
+  });
+  const itemPlanning = activePlanning.filter({
+    has: page.locator(`#planning-availability-date-${item.id}`),
+  });
+  await itemPlanning.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  await itemPlanning.locator(`#planning-availability-date-${item.id}`).fill("10.05.2099");
+  await itemPlanning.locator(`#planning-availability-date-${item.id}`).press("Tab");
+
+  await page.route(`**/api/tasks/${item.id}`, async route => {
+    if (route.request().method() === "PATCH") {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "stale_write_conflict", message: "Stale draft." } }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await page.locator('a[href="#/today"]').first().evaluate((element) => (element as HTMLElement).click());
+  const prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Abbrechen", exact: true })).toBeFocused();
+  await prompt.getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(prompt).toBeVisible();
+  await expect(planning.last().locator(`#planning-availability-date-${item.id}`)).toHaveValue("10.05.2099");
+
+  await page.keyboard.press("Escape");
+  await expect(prompt).toHaveCount(0);
+  await expect(activePlanning).toBeVisible();
+  await page.locator('a[href="#/today"]').first().evaluate((element) => (element as HTMLElement).click());
+  await page.getByRole("dialog", { name: "Verwerfen", exact: true })
+    .getByRole("button", { name: "Verwerfen", exact: true }).click();
+  await expect(planning).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/today$/);
+});
+
+test("dirty planning dismissal saves and closes without navigation", async ({ page }) => {
+  const item = await task(page);
+  const waiting = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
+    data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
+  });
+  expect(waiting.ok()).toBeTruthy();
+  await page.goto(`/#/tasks/${item.id}`);
+  await page.getByRole("button", { name: /Wartet auf.*Supplier response/ }).click();
+  const planning = page.getByRole("dialog", { name: "Planung", exact: true });
+  await planning.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  await planning.locator(`#planning-availability-date-${item.id}`).fill("10.05.2099");
+  await planning.locator(`#planning-availability-date-${item.id}`).press("Tab");
+
+  await page.keyboard.press("Escape");
+  const prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  const saved = page.waitForResponse(response =>
+    response.url().endsWith(`/api/tasks/${item.id}`) && response.request().method() === "PATCH",
+  );
+  await prompt.getByRole("button", { name: "Speichern", exact: true }).click();
+  expect((await saved).ok()).toBeTruthy();
+  await expect(prompt).toHaveCount(0);
+  await expect(planning).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`#/tasks/${item.id}$`));
+});
+
+test("dirty browser Back saves to the destination and Forward does not reopen planning", async ({ page }) => {
+  const item = await task(page);
+  const waiting = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
+    data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
+  });
+  expect(waiting.ok()).toBeTruthy();
+  await page.goto("/#/more/activity");
+  const taskLink = page.getByRole("link", { name: item.title, exact: true }).first();
+  await expect(taskLink).toBeVisible();
+  await taskLink.click();
+  await expect(page).toHaveURL(new RegExp(`#/tasks/${item.id}$`));
+  await page.reload();
+  await page.getByRole("button", { name: /Wartet auf.*Supplier response/ }).click();
+  const planning = page.getByRole("dialog", { name: "Planung", exact: true });
+  await planning.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  await planning.locator(`#planning-availability-date-${item.id}`).fill("10.05.2099");
+  await planning.locator(`#planning-availability-date-${item.id}`).press("Tab");
+  await expect(planning.locator(`#planning-availability-date-${item.id}`)).toHaveValue("10.05.2099");
+  await page.waitForTimeout(100);
+
+  await page.goBack();
+  const prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
+  await expect(prompt).toBeVisible();
+  const saved = page.waitForResponse(response =>
+    response.url().endsWith(`/api/tasks/${item.id}`) && response.request().method() === "PATCH",
+  );
+  await prompt.getByRole("button", { name: "Speichern", exact: true }).click();
+  expect((await saved).ok()).toBeTruthy();
+  await expect(prompt).toHaveCount(0);
+  await expect(planning).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/more\/activity$/);
+
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`#/tasks/${item.id}$`));
+  await expect(page.getByRole("dialog", { name: "Planung", exact: true })).toHaveCount(0);
 });
 
 test("Review keeps one routine inspection, explicit Keep and a separate repair", async ({ page }) => {

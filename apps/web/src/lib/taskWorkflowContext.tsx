@@ -1,26 +1,8 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TaskDetailHandoff } from "./taskDetailContext";
 import type { TaskPlanningTarget } from "./commands";
 
-/**
- * Every focused task workflow reachable through a canonical `task.*`
- * command (see `commands.ts`) except `task.open`/`task.lifecycle`/
- * `task.toggleDone`/`task.primaryAction`, which usually mutate directly or
- * open the task-criteria completion continuation when required — see
- * `useWorkItemCommands.ts`.
- *
- * This is the single place any of these commands may open a sheet: no rail,
- * keyboard shortcut, detail-value click, or Review repair may reinterpret
- * `task.plan`/`task.waitingLifecycle`/`task.split`/etc. locally. See
- * `TaskWorkflowHost.tsx`, which is the only component that imports every
- * one of the focused sheets below and switches on `kind`.
- *
- * `availability` and `plan` both open the canonical unified planning sheet,
- * with different initial focus. `structure` opens `TaskStructureSheet` (AI
- * clarification, Aufteilen, Verschieben …/Zum Projekt machen), which itself
- * dispatches semantic commands rather than rendering another sheet.
- */
 export type TaskWorkflowKind =
   | "plan"
   | "availability"
@@ -41,55 +23,159 @@ export interface TaskWorkflowState {
   kind: TaskWorkflowKind;
   taskId: number;
   planningTarget?: TaskPlanningTarget;
+  originDetail?: TaskDetailHandoff | null;
 }
-interface PlanningDetailInspection {
-  previousDetail: TaskDetailHandoff | null;
-  planningWorkflow: TaskWorkflowState;
-  originPath: string;
+
+type WorkflowState = {
+  current: TaskWorkflowState | null;
+  currentOpeningId: number | null;
+  detail: TaskDetailHandoff | null;
+  detailOpeningId: number | null;
+  detailMode: "normal" | "prerequisite" | null;
+  nextOpeningId: number;
+};
+
+type WorkflowEvent =
+  | { type: "OPEN"; workflow: TaskWorkflowState }
+  | { type: "DETAIL_OPEN"; handoff: TaskDetailHandoff; mode: "normal" | "prerequisite" }
+  | { type: "DETAIL_ADVANCE_QUEUE" }
+  | { type: "DETAIL_CLEAR_FOCUS" }
+  | { type: "DETAIL_CLOSE" }
+  | { type: "PROJECT_NAVIGATE" }
+  | { type: "CLOSE" }
+  | { type: "CLOSE_DETAIL" };
+
+const initialState: WorkflowState = {
+  current: null,
+  currentOpeningId: null,
+  detail: null,
+  detailOpeningId: null,
+  detailMode: null,
+  nextOpeningId: 1,
+};
+
+function workflowReducer(state: WorkflowState, event: WorkflowEvent): WorkflowState {
+  switch (event.type) {
+    case "OPEN": {
+      const openingId = state.nextOpeningId;
+      return {
+        ...state,
+        current: event.workflow,
+        currentOpeningId: openingId,
+        nextOpeningId: openingId + 1,
+      };
+    }
+    case "DETAIL_OPEN": {
+      const openingId = state.nextOpeningId;
+      return {
+        ...state,
+        detail: { ...event.handoff, openingId },
+        detailOpeningId: openingId,
+        detailMode: event.mode,
+        nextOpeningId: openingId + 1,
+      };
+    }
+    case "DETAIL_ADVANCE_QUEUE": {
+      if (!state.detail) return state;
+      const [next, ...rest] = state.detail.queueTaskIds;
+      return {
+        ...state,
+        detail: next === undefined
+          ? null
+          : { ...state.detail, taskId: next, queueTaskIds: rest, focusField: null },
+        detailOpeningId: next === undefined ? null : state.detailOpeningId,
+        detailMode: next === undefined ? null : state.detailMode,
+      };
+    }
+    case "DETAIL_CLEAR_FOCUS":
+      return state.detail
+        ? { ...state, detail: { ...state.detail, focusField: null } }
+        : state;
+    case "DETAIL_CLOSE":
+    case "CLOSE_DETAIL":
+      return { ...state, detail: null, detailOpeningId: null, detailMode: null };
+    case "PROJECT_NAVIGATE":
+      return {
+        ...state,
+        current: null,
+        currentOpeningId: null,
+        detail: null,
+        detailOpeningId: null,
+        detailMode: null,
+      };
+    case "CLOSE": {
+      const restored = state.current?.originDetail ?? null;
+      return {
+        ...state,
+        current: null,
+        currentOpeningId: null,
+        detail: restored,
+        detailOpeningId: restored?.openingId ?? null,
+        detailMode: restored ? "normal" : null,
+      };
+    }
+  }
 }
 
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
-  open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;
+  currentOpeningId: number | null;
+  open: (
+    kind: TaskWorkflowKind,
+    taskId: number,
+    planningTarget?: TaskPlanningTarget,
+    originDetail?: TaskDetailHandoff | null,
+  ) => void;
   close: () => void;
-  detailInspection: PlanningDetailInspection | null;
-  detailInspections: PlanningDetailInspection[];
-  suspendForDetail: (previousDetail: TaskDetailHandoff | null, originPath: string) => void;
-  resumeFromDetail: () => void;
+  closeDetail: () => void;
+  detail: TaskDetailHandoff | null;
+  detailOpeningId: number | null;
+  detailMode: "normal" | "prerequisite" | null;
+  openDetail: (handoff: TaskDetailHandoff) => void;
+  inspectDetail: (handoff: TaskDetailHandoff) => void;
+  advanceDetailQueue: () => void;
+  closeDetailDirectly: () => void;
+  clearDetailFocus: () => void;
+  getDetailHandoff: () => TaskDetailHandoff | null;
+  detailVisible: boolean;
+  navigateProject: () => void;
+  historyChanged: () => void;
 }
 
 const TaskWorkflowContext = createContext<TaskWorkflowContextValue | null>(null);
 
 export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
-  const [current, setCurrent] = useState<TaskWorkflowState | null>(null);
-  const [detailInspections, setDetailInspections] = useState<PlanningDetailInspection[]>([]);
-  const detailInspection = detailInspections.at(-1) ?? null;
+  const [state, dispatch] = useReducer(workflowReducer, initialState);
+  const detailVisible = state.detail !== null;
   const value = useMemo<TaskWorkflowContextValue>(
     () => ({
-      current,
-      detailInspection,
-      detailInspections,
-      suspendForDetail: (previousDetail, originPath) => {
-        if (current && current !== detailInspection?.planningWorkflow) {
-          setDetailInspections((previous) => [...previous, { previousDetail, planningWorkflow: current, originPath }]);
-        }
-      },
-      resumeFromDetail: () => {
-        if (detailInspection) setCurrent(detailInspection.planningWorkflow);
-        setDetailInspections((previous) => previous.slice(0, -1));
-      },
-      open: (kind, taskId, planningTarget) =>
-        setCurrent({
+      current: state.current,
+      currentOpeningId: state.currentOpeningId,
+      detail: state.detail,
+      detailOpeningId: state.detailOpeningId,
+      detailMode: state.detailMode,
+      detailVisible,
+      open: (kind, taskId, planningTarget, originDetail) => dispatch({
+        type: "OPEN",
+        workflow: {
           kind,
           taskId,
           ...(planningTarget ? { planningTarget } : {}),
-        }),
-      close: () => {
-        if (detailInspection) setCurrent(detailInspection.planningWorkflow);
-        else setCurrent(null);
-      },
+          ...(originDetail !== undefined ? { originDetail } : {}),
+        },
+      }),
+      close: () => dispatch({ type: "CLOSE" }),
+      closeDetail: () => dispatch({ type: "CLOSE_DETAIL" }),
+      openDetail: (handoff) => dispatch({ type: "DETAIL_OPEN", handoff, mode: "normal" }),
+      inspectDetail: (handoff) => dispatch({ type: "DETAIL_OPEN", handoff, mode: "prerequisite" }),
+      advanceDetailQueue: () => dispatch({ type: "DETAIL_ADVANCE_QUEUE" }),
+      closeDetailDirectly: () => dispatch({ type: "DETAIL_CLOSE" }),
+      clearDetailFocus: () => dispatch({ type: "DETAIL_CLEAR_FOCUS" }),
+      getDetailHandoff: () => state.detail,
+      navigateProject: () => dispatch({ type: "PROJECT_NAVIGATE" }),
+      historyChanged: () => dispatch({ type: "PROJECT_NAVIGATE" }),
     }),
-    [current, detailInspection, detailInspections],
+    [detailVisible, state],
   );
   return <TaskWorkflowContext.Provider value={value}>{children}</TaskWorkflowContext.Provider>;
 }
@@ -98,4 +184,8 @@ export function useTaskWorkflow(): TaskWorkflowContextValue {
   const ctx = useContext(TaskWorkflowContext);
   if (!ctx) throw new Error("useTaskWorkflow must be used within a TaskWorkflowProvider");
   return ctx;
+}
+
+export function useOptionalTaskWorkflow(): TaskWorkflowContextValue | null {
+  return useContext(TaskWorkflowContext);
 }

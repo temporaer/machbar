@@ -154,22 +154,6 @@ describe("TaskPlanningSheet dependency search ownership", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("retires the hidden planning search during detail inspection and searches afresh on resume", async () => {
-    const old = deferred<Task[]>();
-    vi.mocked(api.searchTasks).mockReturnValueOnce(old.promise);
-    const onFailure = vi.fn();
-    const onClose = vi.fn();
-    const { rerender } = renderWithProviders(<TaskPlanningSheet task={task} initialTarget="dependencies" onClose={onClose} onFailure={onFailure} />);
-    fireEvent.change(screen.getByLabelText(searchLabel), { target: { value: "current" } });
-    rerender(<TaskPlanningSheet task={task} initialTarget="dependencies" suspended onClose={onClose} onFailure={onFailure} />);
-    await act(async () => old.reject(new ApiError(403, "Suspended search denial")));
-    expect(onFailure).not.toHaveBeenCalled();
-    expect(api.searchTasks).toHaveBeenCalledOnce();
-    rerender(<TaskPlanningSheet task={task} initialTarget="dependencies" onClose={onClose} onFailure={onFailure} />);
-    expect(await screen.findByRole("button", { name: addCandidate })).toBeVisible();
-    expect(api.searchTasks).toHaveBeenCalledTimes(2);
-  });
-
   it("preserves candidate filters and submits one explicit revision-bound selection without replay", async () => {
     vi.mocked(api.searchTasks).mockResolvedValue([
       task, makeTask({ id: 734, status: "done" }), makeTask({ id: 735, status: "cancelled" }), candidate,

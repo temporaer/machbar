@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../styles/index.css";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
-import type { AvailabilityRule } from "@machbar/shared";
+import type { AvailabilityRule, Task } from "@machbar/shared";
 import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { makeTask } from "../test/fixtures";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { resolveAbsolutePreset } from "../lib/reminderPresets";
+import type { TaskPlanningTarget } from "../lib/commands";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -37,10 +39,31 @@ function card(name: string, open = true) {
   if (open && editor.hidden && !["Deadline", "Wartet auf"].includes(name)) {
     fireEvent.click(section.querySelector(".task-planning-summary button")!);
   }
+
   if (open && editor.hidden && name === "Wartet auf" && section.querySelector<HTMLInputElement>('input[id^="planning-waiting"]')?.value) {
     fireEvent.click(section.querySelector(".task-planning-summary button")!);
   }
   return section;
+}
+
+function PropDrivenPlanningHarness({ task, initialTarget }: {
+  task: Task;
+  initialTarget?: TaskPlanningTarget;
+}) {
+  const [target, setTarget] = useState(initialTarget);
+  const [, rerender] = useState(0);
+  return <>
+    <button onClick={() => setTarget(undefined)}>Set neutral planning</button>
+    <button onClick={() => setTarget("scheduled")}>Set scheduled planning</button>
+    <button onClick={() => setTarget("deadline")}>Set deadline planning</button>
+    <button onClick={() => setTarget("availability")}>Set availability planning</button>
+    <button onClick={() => rerender((value) => value + 1)}>Rerender planning</button>
+    <TaskPlanningSheet
+      task={task}
+      {...(target === undefined ? {} : { initialTarget: target })}
+      onClose={vi.fn()}
+    />
+  </>;
 }
 
 function stubScrollIntoView(
@@ -79,6 +102,7 @@ describe("TaskPlanningSheet", () => {
     renderWithProviders(<TaskPlanningSheet task={makeTask()} onClose={onClose} />);
     await user.selectOptions(screen.getByLabelText("Zeitfenster"), "outside");
     await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await user.click(screen.getByRole("button", { name: "Verwerfen" }));
     expect(onClose).toHaveBeenCalled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
@@ -298,42 +322,33 @@ describe("TaskPlanningSheet", () => {
     ).toBeInTheDocument();
   });
 
-  it("resets the actual sheet scroll position only when entering neutral planning", () => {
+  it("resets the actual sheet scroll position only when entering neutral planning", async () => {
     const scrollIntoView = stubScrollIntoView(function () {});
     const task = makeTask();
-    const { rerender } = renderWithProviders(
-      <TaskPlanningSheet
-        task={task}
-        onClose={vi.fn()}
-      />,
-    );
+    renderWithProviders(<PropDrivenPlanningHarness task={task} />);
 
-    expect(card("Geplant für", false)).not.toHaveClass("task-planning-card-active");
+    await waitFor(() =>
+      expect(card("Geplant für", false)).not.toHaveClass("task-planning-card-active"),
+    );
     expect(scrollIntoView).not.toHaveBeenCalled();
     const sheet = screen.getByRole("dialog");
     sheet.scrollTop = 120;
-    rerender(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Rerender planning" }));
     expect(sheet.scrollTop).toBe(120);
 
-    rerender(
-      <TaskPlanningSheet
-        task={task}
-        initialTarget="scheduled"
-        onClose={vi.fn()}
-      />,
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Set scheduled planning" }));
     expect(card("Geplant für")).toHaveClass("task-planning-card-active");
     scrollIntoView.mockClear();
 
-    rerender(
-      <TaskPlanningSheet task={task} onClose={vi.fn()} />,
+    await userEvent.click(screen.getByRole("button", { name: "Set neutral planning" }));
+    await waitFor(() =>
+      expect(card("Geplant für", false)).not.toHaveClass("task-planning-card-active"),
     );
-    expect(card("Geplant für", false)).not.toHaveClass("task-planning-card-active");
     expect(sheet.scrollTop).toBe(0);
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
-  it("scrolls to an opened deadline only after the target card is expanded", () => {
+  it("scrolls to an opened deadline only after the target card is expanded", async () => {
     const observed: Array<{
       element: HTMLElement;
       options: ScrollIntoViewOptions;
@@ -347,25 +362,15 @@ describe("TaskPlanningSheet", () => {
       });
     });
     const task = makeTask();
-    const { rerender } = renderWithProviders(
-      <TaskPlanningSheet
-        task={task}
-        initialTarget="scheduled"
-        onClose={vi.fn()}
-      />,
+    renderWithProviders(
+      <PropDrivenPlanningHarness task={task} initialTarget="scheduled" />,
     );
 
     scrollIntoView.mockClear();
     observed.length = 0;
-    rerender(
-      <TaskPlanningSheet
-        task={task}
-        initialTarget="deadline"
-        onClose={vi.fn()}
-      />,
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Set deadline planning" }));
 
-    expect(observed).toHaveLength(1);
+    await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]?.element).toBe(card("Deadline"));
     expect(observed[0]?.options).toEqual({
       block: "nearest",
@@ -374,40 +379,24 @@ describe("TaskPlanningSheet", () => {
     expect(observed[0]?.hasTextbox).toBe(true);
   });
 
-  it("scrolls only the selected card once and preserves manual selection on rerender", () => {
+  it("scrolls only the selected card once and preserves manual selection on rerender", async () => {
     const observed: HTMLElement[] = [];
     const scrollIntoView = stubScrollIntoView(function () {
       observed.push(this);
     });
     const task = makeTask();
-    const { rerender } = renderWithProviders(
-      <TaskPlanningSheet
-        task={task}
-        initialTarget="scheduled"
-        onClose={vi.fn()}
-      />,
+    renderWithProviders(
+      <PropDrivenPlanningHarness task={task} initialTarget="scheduled" />,
     );
 
     scrollIntoView.mockClear();
     observed.length = 0;
-    rerender(
-      <TaskPlanningSheet
-        task={task}
-        initialTarget="availability"
-        onClose={vi.fn()}
-      />,
-    );
-    expect(observed).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Set availability planning" }));
+    await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toBe(card("Erst wieder anzeigen ab"));
 
     fireEvent.pointerDown(card("Deadline", false));
-    rerender(
-      <TaskPlanningSheet
-        task={task}
-        initialTarget="availability"
-        onClose={vi.fn()}
-      />,
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Rerender planning" }));
     expect(observed).toHaveLength(1);
     expect(card("Deadline", false)).toHaveClass("task-planning-card-active");
   });
@@ -844,6 +833,7 @@ describe("TaskPlanningSheet", () => {
     expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
     expect(within(card("Geplant für")).getByRole("alert")).toHaveTextContent("Lege zuerst einen geplanten Termin fest.");
     await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await user.click(screen.getByRole("button", { name: "Verwerfen" }));
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
@@ -1246,7 +1236,13 @@ describe("TaskPlanningSheet", () => {
       } : {}),
       expectedRevision: 4,
     }));
-    expect(onClose).toHaveBeenCalled();
+    if (action === "continue") {
+      expect(onClose).toHaveBeenCalled();
+    } else {
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText("Rückmeldung gespeichert. Speichere die übrigen Planungsänderungen, um sie zu übernehmen.")).toBeInTheDocument();
+      expect(within(revisitEditor).getByRole("textbox")).toHaveValue("22.10.2026");
+    }
   });
 
   it("keeps the existing-wait follow-up controls bounded for long mobile content", () => {

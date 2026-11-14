@@ -244,6 +244,11 @@ export function useWorkItemCommands() {
     (command: WorkItemCommand) => {
       const workItemId = commandWorkItemId(command);
       if (workItemId !== null) scope?.setActive(workItemId, commandWorkItemRole(command));
+      if (
+        taskWorkflow.detailMode === "prerequisite" &&
+        command.type !== "task.open" &&
+        command.type !== "workItem.open"
+      ) return;
       switch (command.type) {
         case "task.open":
         case "workItem.open":
@@ -251,37 +256,41 @@ export function useWorkItemCommands() {
             // Close with the router transition so a task deep-link's close
             // effect cannot redirect to Today before navigation commits.
             startTransition(() => {
-              // Navigation leaves an inspection suspended, rather than
-              // signaling the host to restore its planner and prior detail.
-              if (taskWorkflow.detailInspection) taskDetail.suspendForHandoff();
-              else taskDetail.close();
+              // Navigation retires an inspection rather than signaling the
+              // host to restore its planner and prior detail.
               navigate(`/projects/${command.workItem.id}`);
             });
             return;
           }
-          if (taskWorkflow.current && taskWorkflow.current !== taskWorkflow.detailInspection?.planningWorkflow && ["plan", "availability", "waitingLifecycle"].includes(taskWorkflow.current.kind)) {
-            taskWorkflow.suspendForDetail(taskDetail.suspendForHandoff(), `${location.pathname}${location.search}`);
+          if (taskWorkflow.current?.kind === "plan") {
+            taskDetail.inspect(
+              command.type === "task.open" ? command.taskId : command.workItem.id,
+              command.type === "task.open" ? command.focusField : undefined,
+            );
+            return;
           }
           if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
           else taskDetail.open(command.workItem.id);
           return;
         case "task.plan":
-          taskWorkflow.open("plan", command.taskId, command.target);
+          if (taskWorkflow.detailMode === "prerequisite") return;
+          taskWorkflow.open("plan", command.taskId, command.target, taskDetail.getHandoff());
           return;
         case "task.availability":
-          taskWorkflow.open("availability", command.taskId, "availability");
+          if (taskWorkflow.detailMode === "prerequisite") return;
+          taskWorkflow.open("availability", command.taskId, "availability", taskDetail.getHandoff());
           return;
         case "task.deferClarification":
-          taskWorkflow.open("deferClarification", command.taskId);
+          taskWorkflow.open("deferClarification", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.structure":
-          taskWorkflow.open("structure", command.taskId);
+          taskWorkflow.open("structure", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.reminders":
-          taskWorkflow.open("plan", command.taskId, "reminders");
+          taskWorkflow.open("plan", command.taskId, "reminders", taskDetail.getHandoff());
           return;
         case "task.waitingLifecycle":
-          taskWorkflow.open("waitingLifecycle", command.taskId, "waiting");
+          taskWorkflow.open("waitingLifecycle", command.taskId, "waiting", taskDetail.getHandoff());
           return;
         case "task.startToday": {
           if (!timezoneLoaded) return;
@@ -300,31 +309,31 @@ export function useWorkItemCommands() {
           void taskActions.resolveExternalWait(command.task);
           return;
         case "task.refine":
-          taskWorkflow.open("refinement", command.taskId);
+          taskWorkflow.open("refinement", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.split":
-          taskWorkflow.open("split", command.taskId);
+          taskWorkflow.open("split", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.assignOwner":
-          taskWorkflow.open("assignOwner", command.taskId);
+          taskWorkflow.open("assignOwner", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.changeProject":
-          taskWorkflow.open("changeProject", command.taskId);
+          taskWorkflow.open("changeProject", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.recurrence":
-          taskWorkflow.open("plan", command.taskId, "recurrence");
+          taskWorkflow.open("plan", command.taskId, "recurrence", taskDetail.getHandoff());
           return;
         case "task.priority":
-          taskWorkflow.open("priority", command.taskId);
+          taskWorkflow.open("priority", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.tags":
-          taskWorkflow.open("tags", command.taskId);
+          taskWorkflow.open("tags", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.contexts":
-          taskWorkflow.open("contexts", command.taskId);
+          taskWorkflow.open("contexts", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.convertToProject":
-          taskWorkflow.open("convertToProject", command.taskId);
+          taskWorkflow.open("convertToProject", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.lifecycle":
           scope?.setOpenLifecycle(command.taskId);
