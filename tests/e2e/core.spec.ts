@@ -61,6 +61,10 @@ async function openPrerequisiteInPlanner(
   await planner.locator(".task-planning-prerequisite-summary")
     .getByRole("button", { name: prerequisiteTitle, exact: true }).click();
   await expect(page.getByRole("heading", { name: prerequisiteTitle, exact: true })).toBeVisible();
+  const dialogs = page.locator(".sheet");
+  await expect(dialogs).toHaveCount(2);
+  await expect(dialogs.nth(0)).toHaveAttribute("inert");
+  await expect(dialogs.nth(1)).not.toHaveAttribute("inert");
 }
 
 async function navigatePrerequisiteToProject(

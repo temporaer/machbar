@@ -167,6 +167,10 @@ test("task descendant confirmation hands saving feedback back to details", async
     .click();
   const dialog = page.getByRole("dialog", { name: "Diese Aufgabe hat offene Teilaufgaben.", exact: true });
   await expect(dialog).toBeVisible();
+  const dialogs = page.locator(".sheet");
+  await expect(dialogs).toHaveCount(2);
+  await expect(dialogs.nth(0)).toHaveAttribute("inert");
+  await expect(dialogs.nth(1)).not.toHaveAttribute("inert");
   await dialog.getByRole("button", { name: /Nur diese Aufgabe/ }).click();
   await expect.poll(() => writing).toBe(true);
   await expect(page.locator(".detail-meta-status-button")).toContainText("Wird gespeichert");
