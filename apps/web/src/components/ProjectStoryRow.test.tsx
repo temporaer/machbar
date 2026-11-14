@@ -981,12 +981,8 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Popup-Geschichte");
 
     let chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Struktur bearbeiten" }));
-    const structureSheet = await screen.findByRole("dialog", {
-      name: "Struktur: Popup-Geschichte",
-    });
     await userEvent.click(
-      within(structureSheet).getByRole("button", { name: "Ergebnis bearbeiten" }),
+      within(chips).getByRole("button", { name: "Ergebnis und Kriterien prüfen" }),
     );
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
     expect(await screen.findByDisplayValue("Angebot eingeholt")).toBeInTheDocument();
@@ -1072,20 +1068,17 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
   // toggle state left to clear, so there is nothing left to assert here that
   // isn't already covered by the "only one rail open" test above.
 
-  it("navigates to the project detail page through the structure sheet's 'Aufgaben hinzufügen' action", async () => {
+  it("opens project task entry directly from the next-step rail action", async () => {
     const story = makeProject({ id: 47, title: "Voll bearbeiten", status: "active", ownerMemberId: 1, stuckReason: "no_next_action" });
     renderWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Voll bearbeiten");
 
     const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Struktur bearbeiten" }));
-    const structureSheet = await screen.findByRole("dialog", {
-      name: "Struktur: Voll bearbeiten",
-    });
     await userEvent.click(
-      within(structureSheet).getByRole("button", { name: "Aufgaben hinzufügen" }),
+      within(chips).getByRole("button", { name: "Nächsten Schritt festlegen" }),
     );
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 47");
+    expect(await screen.findByRole("dialog", { name: "Schnell hinzufügen" })).toBeVisible();
   });
 
   it("does not add a generic project detail action to the rail", async () => {
@@ -1656,12 +1649,12 @@ describe("ProjectStoryRow – fixed action rail", () => {
     await screen.findByText("Kompakte Chips");
 
     const chips = openChips();
-    for (const name of ["Nächsten Schritt festlegen", "Ergebnis und Kriterien prüfen", "Struktur bearbeiten"]) {
+    for (const name of ["Nächsten Schritt festlegen", "Ergebnis und Kriterien prüfen"]) {
       const button = within(chips).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).not.toBe("");
     }
-    expect(chips.querySelector(".rail-main-grid")?.querySelectorAll("button")).toHaveLength(3);
+    expect(chips.querySelector(".rail-main-grid")?.querySelectorAll("button")).toHaveLength(2);
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 });
