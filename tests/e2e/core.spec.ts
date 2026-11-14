@@ -1178,7 +1178,7 @@ test("dirty planning navigation keeps the portaled choice explicit after a faile
   await expect(page).toHaveURL(/#\/today$/);
 });
 
-test("dirty planning navigation saves and closes before reaching the intended destination", async ({ page }) => {
+test("dirty planning dismissal saves and closes without navigation", async ({ page }) => {
   const item = await task(page);
   const waiting = await page.request.put(`/api/tasks/${item.id}/external-wait`, {
     data: { expectedRevision: item.revision, waitingFor: "Supplier response", revisitDate: "2099-05-01" },
@@ -1191,7 +1191,7 @@ test("dirty planning navigation saves and closes before reaching the intended de
   await planning.locator(`#planning-availability-date-${item.id}`).fill("10.05.2099");
   await planning.locator(`#planning-availability-date-${item.id}`).press("Tab");
 
-  await page.locator('a[href="#/today"]').first().evaluate(element => (element as HTMLElement).click());
+  await page.keyboard.press("Escape");
   const prompt = page.getByRole("dialog", { name: "Verwerfen", exact: true });
   await expect(prompt).toBeVisible();
   const saved = page.waitForResponse(response =>
@@ -1201,7 +1201,7 @@ test("dirty planning navigation saves and closes before reaching the intended de
   expect((await saved).ok()).toBeTruthy();
   await expect(prompt).toHaveCount(0);
   await expect(planning).toHaveCount(0);
-  await expect(page).toHaveURL(/#\/today$/);
+  await expect(page).toHaveURL(new RegExp(`#/tasks/${item.id}$`));
 });
 
 test("dirty browser Back saves to the destination and Forward does not reopen planning", async ({ page }) => {
