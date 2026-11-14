@@ -1848,7 +1848,10 @@ compiled views (Today, Inbox, Waiting, All) never do, because their
 visible sibling set is not the complete stored sibling group (see §8's
 outline section); and per-WorkItem-id collapse state, since folding is
 now a structural interaction capability rather than private `TaskRow`
-state.
+state. Each eligible outline registers its own mover and item-ownership check;
+unmount or capability changes retire only that registration. Keyboard moves
+select the registered outline containing the active rendered row, and a retired mover
+cannot dispatch. Drag sessions and pending-move UI remain local to the outline.
 
 **Keyboard navigation.** `apps/web/src/lib/useWorkItemKeyboardNav.ts`
 (mounted per page as `<WorkItemKeyboardNavMount />`, inside that page's
@@ -1872,6 +1875,8 @@ while editing text, or while a `BottomSheet`/modal is open.
 Rows inside closed native disclosures are excluded from both traversal and
 active-row commands, including structural moves and focused task shortcuts.
 Selection can resume when the disclosure reopens, but cannot mutate hidden work.
+Structural shortcuts do not guess between duplicate visible representations
+when focus is outside the active row, or move a different row than the focused one.
 
 **Command rails.** Left swipe means “What should happen next with this item?”
 `workItemRail.ts` owns pure, deterministic task/project selection and typed

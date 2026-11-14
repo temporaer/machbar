@@ -1,10 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "../components/TaskOutline";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
-import { useInteractionScope } from "./interactionScope";
+import { InteractionScopeProvider, useInteractionScope, type StructuralMoveDirection } from "./interactionScope";
 import { api } from "./api";
 import { makeMember, makeTask } from "../test/fixtures";
 
@@ -30,6 +31,19 @@ beforeEach(() => {
 function ActiveIdProbe() {
   const scope = useInteractionScope();
   return <output data-testid="active-id">{String(scope.activeId)}</output>;
+}
+
+function ScopeProbe() {
+  const scope = useInteractionScope();
+  return (
+    <>
+      <output data-testid="capability">{String(scope.canReorder)}|{String(scope.canReparent)}|{String(Boolean(scope.moveBy))}</output>
+      <output data-testid="rails">{scope.openRailId ?? "none"}|{scope.openLifecycleId ?? "none"}</output>
+      <button onClick={() => scope.setOpenRail(1)}>Rail 1</button>
+      <button onClick={() => scope.setOpenRail(2)}>Rail 2</button>
+      <button onClick={() => scope.setOpenLifecycle(3)}>Lifecycle 3</button>
+    </>
+  );
 }
 
 describe("useInteractionScope", () => {
@@ -95,5 +109,192 @@ describe("useInteractionScope", () => {
       </>,
     );
     expect(await screen.findByText("true")).toBeInTheDocument();
+  });
+
+  it("retires structural capability when the project outline unmounts or becomes compiled", () => {
+    const task = makeTask({ id: 1 });
+    const { rerender } = renderWithProviders(
+      <><TaskOutline tasks={[task]} emptyMessage="Empty" organizable /><ScopeProbe /></>,
+    );
+    expect(screen.getByTestId("capability")).toHaveTextContent("true|true|true");
+    rerender(<ScopeProbe />);
+    expect(screen.getByTestId("capability")).toHaveTextContent("false|false|false");
+    rerender(<><TaskOutline tasks={[task]} emptyMessage="Empty" organizable /><ScopeProbe /></>);
+    rerender(<><TaskOutline tasks={[task]} emptyMessage="Empty" /><ScopeProbe /></>);
+    expect(screen.getByTestId("capability")).toHaveTextContent("false|false|false");
+  });
+
+  it.each([false, true])("routes keyboard movement to the active outline with compiled sibling first=%s", async (compiledFirst) => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1, projectId: 5 });
+    const third = makeTask({ id: 3, title: "Gamma", position: 0, projectId: 6 });
+    const fourth = makeTask({ id: 4, title: "Delta", position: 1, projectId: 6 });
+    mockedApi.moveTask.mockResolvedValue(first);
+    const compiled = <TaskOutline key="compiled" tasks={[makeTask({ id: 9, title: "Compiled" })]} emptyMessage="Empty" />;
+    const outlines = [
+      <TaskOutline key="a" tasks={[first, second]} emptyMessage="Empty" organizable />,
+      <TaskOutline key="b" tasks={[third, fourth]} emptyMessage="Empty" organizable />,
+    ];
+    const { rerender } = renderWithProviders(
+      <><WorkItemKeyboardNavMount />{compiledFirst && compiled}{outlines}{!compiledFirst && compiled}<ScopeProbe /></>,
+    );
+    await userEvent.keyboard("j");
+    if (compiledFirst) await userEvent.keyboard("j");
+    expect(screen.getByRole("button", { name: "Alpha" })).toHaveFocus();
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(1, expect.objectContaining({ position: 1 })));
+
+    rerender(<><WorkItemKeyboardNavMount />{outlines[0]}{compiled}<ScopeProbe /></>);
+    expect(screen.getByTestId("capability")).toHaveTextContent("true|true|true");
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("k");
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not move the active row when another outline's focused handle handles the shortcut", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1, projectId: 5 });
+    const third = makeTask({ id: 3, title: "Gamma", position: 0, projectId: 6 });
+    const fourth = makeTask({ id: 4, title: "Delta", position: 1, projectId: 6 });
+    mockedApi.moveTask.mockResolvedValue(third);
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable />
+        <TaskOutline tasks={[third, fourth]} emptyMessage="Empty" organizable />
+      </>,
+    );
+    await userEvent.keyboard("j");
+    act(() => screen.getByRole("button", { name: "Verschieben: Gamma" }).focus());
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledTimes(1));
+    expect(mockedApi.moveTask).toHaveBeenCalledWith(3, expect.objectContaining({ position: 1 }));
+  });
+
+  it("does not move a compiled row that also appears in an editable outline", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1, projectId: 5 });
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[first]} emptyMessage="Empty" />
+        <TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable />
+      </>,
+    );
+    await userEvent.keyboard("j");
+    expect(fireEvent.keyDown(screen.getAllByRole("button", { name: "Alpha" })[0]!, { key: "ArrowLeft", altKey: true })).toBe(true);
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
+    mockedApi.moveTask.mockResolvedValue(first);
+    act(() => screen.getAllByRole("button", { name: "Alpha" })[1]!.focus());
+    expect(fireEvent.keyDown(screen.getAllByRole("button", { name: "Alpha" })[1]!, { key: "ArrowLeft", altKey: true })).toBe(false);
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(1, expect.objectContaining({ position: 1 })));
+  });
+
+  it("does not move a different active row when another row has focus", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1 });
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount /><TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable /></>,
+    );
+    await userEvent.keyboard("j");
+    act(() => screen.getByRole("button", { name: "Beta" }).focus());
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
+  });
+
+  it("does not guess between duplicate rows after focus leaves the active row", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1 });
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable />
+        <TaskOutline tasks={[first]} emptyMessage="Empty" />
+        <ActiveIdProbe /><button>Other</button>
+      </>,
+    );
+    await userEvent.keyboard("j");
+    act(() => screen.getAllByRole("button", { name: "Alpha" })[1]!.focus());
+    await userEvent.click(screen.getByText("Other"));
+    expect(screen.getByTestId("active-id")).toHaveTextContent("1");
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
+  });
+
+  it("can move a uniquely rendered active row after focus leaves it", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1 });
+    mockedApi.moveTask.mockResolvedValue(first);
+    renderWithProviders(
+      <><WorkItemKeyboardNavMount /><TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable /><button>Other</button></>,
+    );
+    await userEvent.keyboard("j");
+    await userEvent.click(screen.getByText("Other"));
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(1, expect.objectContaining({ position: 1 })));
+  });
+
+  it("keeps swipe and lifecycle rails mutually exclusive across rows", async () => {
+    renderWithProviders(<ScopeProbe />);
+    fireEvent.click(screen.getByText("Rail 1"));
+    expect(screen.getByTestId("rails")).toHaveTextContent("1|none");
+    fireEvent.click(screen.getByText("Rail 2"));
+    expect(screen.getByTestId("rails")).toHaveTextContent("2|none");
+    fireEvent.click(screen.getByText("Lifecycle 3"));
+    expect(screen.getByTestId("rails")).toHaveTextContent("none|3");
+    fireEvent.click(screen.getByText("Rail 1"));
+    expect(screen.getByTestId("rails")).toHaveTextContent("1|none");
+  });
+
+  it("does not restore an unmounted outline when its pending move completes after replacement", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1, projectId: 5 });
+    const replacement = makeTask({ id: 3, title: "Gamma", position: 0, projectId: 6 });
+    const sibling = makeTask({ id: 4, title: "Delta", position: 1, projectId: 6 });
+    let finish!: (task: typeof first) => void;
+    mockedApi.moveTask.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const { rerender } = renderWithProviders(
+      <StrictMode><WorkItemKeyboardNavMount /><TaskOutline key="old" tasks={[first, second]} emptyMessage="Empty" organizable /><ScopeProbe /></StrictMode>,
+    );
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledTimes(1));
+    rerender(<StrictMode><WorkItemKeyboardNavMount /><TaskOutline key="new" tasks={[replacement, sibling]} emptyMessage="Empty" organizable /><ScopeProbe /></StrictMode>);
+    expect(screen.getByTestId("capability")).toHaveTextContent("true|true|true");
+    await act(async () => finish(first));
+    expect(screen.getByTestId("capability")).toHaveTextContent("true|true|true");
+    mockedApi.moveTask.mockResolvedValueOnce(replacement);
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(3, expect.objectContaining({ position: 1 })));
+  });
+
+  it("retires a previously read mover and resets state when the page scope is replaced", async () => {
+    const first = makeTask({ id: 1, title: "Alpha", position: 0 });
+    const second = makeTask({ id: 2, title: "Beta", position: 1 });
+    let oldMove: ((id: number, direction: StructuralMoveDirection, row: Element) => void) | null = null;
+    function ReadMover() {
+      const { moveBy } = useInteractionScope();
+      if (moveBy && !oldMove) oldMove = moveBy;
+      return <ActiveIdProbe />;
+    }
+    const page = (key: string, outline: boolean) => (
+      <InteractionScopeProvider key={key}>
+        <WorkItemKeyboardNavMount />
+        {outline && <TaskOutline tasks={[first, second]} emptyMessage="Empty" organizable />}
+        <ReadMover />
+        <ScopeProbe />
+      </InteractionScopeProvider>
+    );
+    const { rerender } = renderWithProviders(page("old", true));
+    await userEvent.keyboard("j");
+    expect(screen.getByTestId("active-id")).toHaveTextContent("1");
+    expect(oldMove).not.toBeNull();
+    const oldRow = screen.getByRole("button", { name: "Alpha" }).closest("[data-workitem-id]")!;
+    rerender(page("new", false));
+    expect(screen.getByTestId("active-id")).toHaveTextContent("null");
+    expect(screen.getByTestId("capability")).toHaveTextContent("false|false|false");
+    act(() => oldMove?.(1, "down", oldRow));
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
   });
 });

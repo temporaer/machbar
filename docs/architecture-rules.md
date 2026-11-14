@@ -327,7 +327,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Household/work agenda-scope filtering shared by Today/Week/Waiting | `apps/api/src/domain/agendaSelection.ts` (`matchesScope`) |
 | Work-item exclusion from points/gamification | `apps/api/src/repo/contributionRepo.ts` (`entityScope` gate in `recordContribution`) |
 | Contextual successor creation ("+" in organizable outlines only) | `apps/web/src/components/InlineSuccessorComposer.tsx` reuses `StepComposer` and calls the canonical successor mutation; the composer is also shared by `TaskSplitSheet` and project task entry |
-| Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
+| Logical active WorkItem, owner-scoped outline capability registrations, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | WorkItem detail disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx`; optional heading icon actions sit outside the native summary and remain available when collapsed. Activity/recurrence history are quiet collapsed disclosures. |

@@ -69,6 +69,7 @@ export function useWorkItemKeyboardNav() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
       if (event.metaKey || event.ctrlKey) return;
       if (shouldSuppressGlobalShortcuts(event.target)) return;
 
@@ -77,8 +78,14 @@ export function useWorkItemKeyboardNav() {
       if (event.altKey) {
         const direction = ALT_DIRECTIONS[event.key];
         if (!direction || activeId === null || !scope.moveBy) return;
-        event.preventDefault();
-        scope.moveBy(activeId, direction);
+        const focusedRow = document.activeElement?.closest<HTMLElement>("[data-workitem-id]");
+        if (focusedRow && (focusedRow.dataset.workitemId !== String(activeId) || focusedRow.closest("details:not([open])"))) return;
+        const matchingRows = focusedRow ? [focusedRow] :
+          Array.from(document.querySelectorAll<HTMLElement>("[data-workitem-id]"))
+            .filter((element) => element.dataset.workitemId === String(activeId) && !element.closest("details:not([open])"));
+        const row = matchingRows.length === 1 ? matchingRows[0] : null;
+        if (!row) return;
+        if (scope.moveBy(activeId, direction, row)) event.preventDefault();
         return;
       }
 

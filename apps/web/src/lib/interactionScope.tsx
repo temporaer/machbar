@@ -14,6 +14,11 @@ export type WorkItemInteractionRole = "task" | "story";
  * from there to avoid a circular import (that module imports this one). */
 export type StructuralMoveDirection = "up" | "down" | "indent" | "outdent";
 
+type StructuralCapability = {
+  owns: (workItemId: number, row: Element) => boolean;
+  moveBy: (workItemId: number, direction: StructuralMoveDirection) => void;
+};
+
 export interface InteractionScopeValue {
   /**
    * The one logical WorkItem the user is conceptually "on" in this scope,
@@ -32,30 +37,17 @@ export interface InteractionScopeValue {
   openLifecycleId: number | null;
   setOpenLifecycle: (id: number | null) => void;
   /**
-   * True only where every `TaskOutline` mounted in this scope right now
-   * renders a complete stored sibling group (a project/story's own task
-   * tree), never a compiled subset (Today/Inbox/Waiting/Search/All). This
-   * is *declared by the mounted outline itself* via
-   * `setStructuralCapability`, not by the page up front, so there is only
-   * one source of truth and no separate flag that could drift out of
-   * sync with the outline's own `organizable` prop.
+   * True while an outline that renders a complete stored sibling group
+   * has registered its structural capability in this scope.
    */
   canReorder: boolean;
   canReparent: boolean;
   /**
-   * The specific mounted `useOutlineOrganize()` instance's own `moveBy`,
-   * registered by that instance alongside its capability flags -- never a
-   * second, independently-implemented mover. `null` whenever no
-   * `organizable` outline is currently mounted in this scope (compiled
-   * views, or an outline before it declares itself). Used by
-   * `Alt+↑/↓/←/→` structural keyboard commands.
+   * Dispatches to the mounted outline that owns the item, or is null when
+   * no organizable outline is registered.
    */
-  moveBy: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
-  setStructuralCapability: (capability: {
-    canReorder: boolean;
-    canReparent: boolean;
-    moveBy?: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
-  }) => void;
+  moveBy: ((workItemId: number, direction: StructuralMoveDirection, row: Element) => boolean) | null;
+  registerStructuralCapability: (capability: StructuralCapability) => () => void;
   captureTarget: CaptureTarget;
   captureOpen: (() => void) | null;
   setCaptureOpen: (handler: (() => void) | null) => void;
@@ -116,26 +108,26 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
     setActive(id);
     setActiveRole(id === null ? null : role);
   }, []);
-  const [capability, setCapability] = useState<{
-    canReorder: boolean;
-    canReparent: boolean;
-    moveBy: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
-  }>({ canReorder: false, canReparent: false, moveBy: null });
-  const setStructuralCapability = useCallback(
-    (next: {
-      canReorder: boolean;
-      canReparent: boolean;
-      moveBy?: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
-    }) => {
-      const nextMoveBy = next.moveBy ?? null;
-      setCapability((prev) =>
-        prev.canReorder === next.canReorder && prev.canReparent === next.canReparent && prev.moveBy === nextMoveBy
-          ? prev
-          : { canReorder: next.canReorder, canReparent: next.canReparent, moveBy: nextMoveBy },
-      );
-    },
-    [],
-  );
+  const [capabilities, setCapabilities] = useState<StructuralCapability[]>([]);
+  const registerStructuralCapability = useCallback((capability: StructuralCapability) => {
+    let active = true;
+    const registration: StructuralCapability = {
+      owns: (id, row) => active && capability.owns(id, row),
+      moveBy: (id, direction) => { if (active) capability.moveBy(id, direction); },
+    };
+    setCapabilities((previous) => [...previous, registration]);
+    return () => {
+      active = false;
+      setCapabilities((previous) => previous.filter((entry) => entry !== registration));
+    };
+  }, []);
+  const moveBy = useMemo(() => capabilities.length === 0 ? null :
+    (id: number, direction: StructuralMoveDirection, row: Element) => {
+      const owner = capabilities.find((capability) => capability.owns(id, row));
+      if (!owner) return false;
+      owner.moveBy(id, direction);
+      return true;
+    }, [capabilities]);
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<number>>(() => new Set());
   const [captureOpen, setCaptureOpen] = useState<(() => void) | null>(null);
   const [helpOpen, setHelpOpen] = useState<(() => void) | null>(null);
@@ -159,10 +151,10 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
       setOpenRail,
       openLifecycleId,
       setOpenLifecycle,
-      canReorder: capability.canReorder,
-      canReparent: capability.canReparent,
-      moveBy: capability.moveBy,
-      setStructuralCapability,
+      canReorder: capabilities.length > 0,
+      canReparent: capabilities.length > 0,
+      moveBy,
+      registerStructuralCapability,
       captureTarget,
       captureOpen,
       setCaptureOpen,
@@ -178,8 +170,9 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
       openRailId,
       openLifecycleId,
       setOpenRail,
-      capability,
-      setStructuralCapability,
+      capabilities,
+      moveBy,
+      registerStructuralCapability,
       captureTarget,
       captureOpen,
       helpOpen,
