@@ -37,34 +37,20 @@ function flattenTaskRevisions(tasks: ProjectDetail["tasks"]): Array<{ taskId: nu
 export function ProjectWorkflowHost() {
   const workflow = useProjectWorkflow();
   const { currentMemberId } = useIdentity();
-  const mounted = useRef(false);
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-  const current = useRef({ opening: workflow.current, currentMemberId });
-  current.current = { opening: workflow.current, currentMemberId };
-  const lastOpening = useRef(workflow.current);
-  const sequence = useRef(0);
-  if (lastOpening.current !== workflow.current) {
-    lastOpening.current = workflow.current;
-    sequence.current += 1;
-  }
-  if (!workflow.current) return null;
-  const opening = workflow.current;
+  if (!workflow.current || workflow.currentOpeningId === null) return null;
   return <ProjectWorkflowContent
-    key={`${currentMemberId}:${sequence.current}`}
-    opening={opening}
-    isCurrent={() => mounted.current && current.current.opening === opening && current.current.currentMemberId === currentMemberId}
+    key={`${currentMemberId}:${workflow.currentOpeningId}`}
+    opening={workflow.current}
+    openingId={workflow.currentOpeningId}
   />;
 }
 
 function ProjectWorkflowContent({
   opening,
-  isCurrent,
+  openingId,
 }: {
   opening: ProjectWorkflowState;
-  isCurrent: () => boolean;
+  openingId: number;
 }) {
   const workflow = useProjectWorkflow();
   const strings = useStrings();
@@ -72,6 +58,14 @@ function ProjectWorkflowContent({
   const projectActions = useProjectActions();
   const location = useLocation();
   const navigate = useNavigate();
+  const mounted = useRef(false);
+  const currentOpeningId = useRef(workflow.currentOpeningId);
+  currentOpeningId.current = workflow.currentOpeningId;
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isCurrent = () => mounted.current && currentOpeningId.current === openingId;
   const [endedError, setEndedError] = useState<string | null>(null);
   const [requirementsEpoch, setRequirementsEpoch] = useState(0);
   const ended = useRef(false);

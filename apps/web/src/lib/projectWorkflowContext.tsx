@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 
 /**
@@ -52,23 +52,53 @@ export interface ProjectWorkflowState {
 
 interface ProjectWorkflowContextValue {
   current: ProjectWorkflowState | null;
+  currentOpeningId: number | null;
   open: (kind: ProjectWorkflowKind, projectId: number) => void;
   close: () => void;
   closeCurrent: () => void;
 }
 
+interface WorkflowState {
+  current: ProjectWorkflowState | null;
+  currentOpeningId: number | null;
+  nextOpeningId: number;
+}
+
+type WorkflowEvent =
+  | { type: "OPEN"; workflow: ProjectWorkflowState }
+  | { type: "CLOSE" };
+
+const initialState: WorkflowState = {
+  current: null,
+  currentOpeningId: null,
+  nextOpeningId: 1,
+};
+
+function workflowReducer(state: WorkflowState, event: WorkflowEvent): WorkflowState {
+  if (event.type === "OPEN") {
+    const openingId = state.nextOpeningId;
+    return {
+      current: event.workflow,
+      currentOpeningId: openingId,
+      nextOpeningId: openingId + 1,
+    };
+  }
+  return { ...state, current: null, currentOpeningId: null };
+}
+
 const ProjectWorkflowContext = createContext<ProjectWorkflowContextValue | null>(null);
 
 export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
-  const [current, setCurrent] = useState<ProjectWorkflowState | null>(null);
+  const [state, dispatch] = useReducer(workflowReducer, initialState);
   const value = useMemo<ProjectWorkflowContextValue>(
     () => ({
-      current,
-      open: (kind, projectId) => setCurrent({ kind, projectId }),
-      closeCurrent: () => setCurrent(null),
-      close: () => setCurrent(null),
+      current: state.current,
+      currentOpeningId: state.currentOpeningId,
+      open: (kind, projectId) => dispatch({ type: "OPEN", workflow: { kind, projectId } }),
+      closeCurrent: () => dispatch({ type: "CLOSE" }),
+      close: () => dispatch({ type: "CLOSE" }),
     }),
-    [current],
+    [state],
   );
   return <ProjectWorkflowContext.Provider value={value}>{children}</ProjectWorkflowContext.Provider>;
 }
