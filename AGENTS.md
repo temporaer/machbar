@@ -280,6 +280,10 @@ Agent merge, or a GitHub App such as CodeRabbit or Qodo Merge).
 For the Codex PR reviewer:
 
 - Enforce [`docs/architecture-rules.md`](docs/architecture-rules.md).
+- For each new state variable, mutable ref, or synchronization effect, ask which
+  owner requires it, why it cannot be derived from existing authority, and what
+  event ends its lifetime. Check replacement, navigation, cancellation,
+  access/identity retirement, and stale callbacks where applicable.
 - Flag parallel or duplicate mutation paths for the same domain operation.
 - Flag speculative abstractions with only a single real consumer.
 - Prefer behavioral and invariant tests over tests that freeze an internal
