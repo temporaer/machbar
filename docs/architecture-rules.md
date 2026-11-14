@@ -38,6 +38,30 @@ The command itself commits. Complete, cancel, reopen, activate, archive,
 external-wait resolution, and hierarchy movement use this contract. A guard may
 collect additional information only when required by domain semantics.
 
+## State ownership and lifecycle
+
+Every stateful interaction has one authoritative owner for its transitions and
+lifetime. Identify that owner before adding shared state, contexts, reducers,
+machines, or synchronization effects. Other components may observe or derive
+state, but must not keep separately synchronized copies of the same authority;
+derive values rather than storing them when possible.
+
+Define how an interaction is created, replaced, cancelled, affected by route
+navigation, retired when access or identity changes, and disposed. Delayed
+callbacks must not change a retired interaction or its replacement. When
+multiple owners need to coordinate, use semantic intents and explicit boundary
+contracts rather than reciprocal effects that infer meaning from incidental
+location keys, mount timing, or state snapshots.
+
+Keep local ephemeral state local. Add a coordinator or state machine only for a
+concrete protocol spanning owners, not as a default controller for ordinary UI
+state. For example, the Router owns location and history, a workflow host owns
+the active workflow, task detail owns which task is open, a planning interaction
+owns its unsaved draft, and the server owns persisted task values. These
+authorities may coordinate through explicit navigation, open-task, and planning
+intents; a draft's save, discard, or stay outcome is explicit, and committed
+values continue through the canonical mutation and read-invalidation paths.
+
 ## Version bumps
 
 Every change intended to ship must bump the version of the root Machbar
