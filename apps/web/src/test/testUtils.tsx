@@ -1,4 +1,11 @@
-import { useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { MemoryRouter, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { render } from "@testing-library/react";
 import { IdentityProvider } from "../lib/identity";
@@ -59,10 +66,20 @@ function TestRouter({
   children: ReactNode;
   initialEntries?: ComponentProps<typeof import("react-router-dom").MemoryRouter>["initialEntries"];
 }) {
-  const [router] = useState(() => createMemoryRouter([
-    { path: "*", element: <>{children}</> },
-  ], initialEntries ? { initialEntries } : undefined));
-  return <RouterProvider router={router} />;
+  const [router] = useState(() =>
+    createMemoryRouter([{ path: "*", element: <TestRoute /> }], initialEntries ? { initialEntries } : undefined),
+  );
+  return (
+    <TestRouteContent.Provider value={children}>
+      <RouterProvider router={router} />
+    </TestRouteContent.Provider>
+  );
+}
+
+const TestRouteContent = createContext<ReactNode>(null);
+
+function TestRoute() {
+  return useContext(TestRouteContent);
 }
 
 export function renderWithProviders(
