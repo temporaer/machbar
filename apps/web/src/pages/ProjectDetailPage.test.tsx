@@ -974,6 +974,34 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.getByLabelText("project-route")).toHaveTextContent("/tasks/42|");
   });
 
+  it("does not navigate to the converted task if the user leaves the project while conversion is pending", async () => {
+    const converted = makeTask({ id: 42, projectId: null, title: "Sommerfest planen" });
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [],
+    });
+    let complete!: (task: Task) => void;
+    mockedApi.convertStoryToTask.mockImplementation(
+      () => new Promise((resolve) => { complete = resolve; }),
+    );
+    renderProjectRoute("/projects/42");
+
+    await screen.findByRole("heading", { name: "Sommerfest planen" });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.convertProjectToTask }));
+    const dialog = await screen.findByRole("dialog", { name: strings.convertProjectToTaskTitle });
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.convertProjectToTask }));
+    await waitFor(() => expect(mockedApi.convertStoryToTask).toHaveBeenCalledOnce());
+
+    await userEvent.click(screen.getByRole("button", { name: "Leave project" }));
+    expect(await screen.findByText("Projects destination")).toBeVisible();
+    await act(async () => complete(converted));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: strings.convertProjectToTaskTitle })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects|");
+    expect(mockedApi.getTask).not.toHaveBeenCalledWith(converted.id);
+  });
+
   it("keeps a failed project-to-task conversion on the project with actionable feedback", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),

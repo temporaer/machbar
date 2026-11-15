@@ -318,7 +318,6 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
   await checkHeadingLayout("project");
   for (const [label, dialogName] of [
     ["Ergebnis bearbeiten", `Erledigt, wenn …: ${project.title}`],
-    ["Struktur bearbeiten", `Struktur: ${project.title}`],
   ] as const) {
     const action = page.getByRole("button", { name: label, exact: true });
     const details = action.locator("..").locator("..").locator("details");
@@ -982,10 +981,7 @@ for (const targetType of ["task", "project"] as const) {
     try {
       await page.goto(`/#/${targetType}s/${item.id}`);
       await expect(page.getByRole("heading", { name: item.title, exact: true })).toBeVisible();
-      if (targetType === "project") {
-        await page.getByRole("button", { name: "Struktur bearbeiten", exact: true }).click();
-      }
-      await page.getByRole("dialog").getByRole("button", { name: "Mit KI klären…", exact: true }).click();
+      await page.getByRole("button", { name: "Mit KI klären…", exact: true }).click();
       await page.getByRole("button", { name: "Vorschlag vorbereiten", exact: true }).click();
       await expect.poll(() => started).toBe(true);
       const newScopeRead = page.waitForResponse(response =>

@@ -58,7 +58,12 @@ function ProjectWorkflowContent({
   const location = useLocation();
   const navigate = useNavigate();
   const mounted = useRef(false);
+  const originPathname = useRef(location.pathname);
+  const currentPathname = useRef(location.pathname);
   const currentOpeningId = useRef(workflow.currentOpeningId);
+  useLayoutEffect(() => {
+    currentPathname.current = location.pathname;
+  }, [location.pathname]);
   currentOpeningId.current = workflow.currentOpeningId;
   useLayoutEffect(() => {
     mounted.current = true;
@@ -202,7 +207,7 @@ function ProjectWorkflowContent({
         onConverted={(taskId) => {
           if (!isCurrent() || ended.current) return;
           dismiss();
-          if (location.pathname === `/projects/${projectId}`) {
+          if (currentPathname.current === originPathname.current) {
             navigate(`/tasks/${taskId}`, { replace: true });
           }
         }}
