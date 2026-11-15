@@ -16,11 +16,13 @@ import { ErrorState, LoadingState } from "./AsyncStates";
 export function ProjectConvertToTaskSheet({
   story,
   onClose,
+  onConverted,
   onFailure,
   isCurrent = () => true,
 }: {
   story: ProjectWithActions;
   onClose: () => void;
+  onConverted?: (taskId: number) => void;
   onFailure?: (cause: unknown) => void;
   isCurrent?: () => boolean;
 }) {
@@ -76,7 +78,7 @@ export function ProjectConvertToTaskSheet({
     setBusy(true);
     setError(null);
     try {
-      await api.convertStoryToTask(story.id, {
+      const task = await api.convertStoryToTask(story.id, {
         ...(titleEdited ? { title } : {}),
         ...(notesEdited ? { notes } : {}),
         expectedRevision: currentProject.revision,
@@ -85,7 +87,8 @@ export function ProjectConvertToTaskSheet({
       });
       bump();
       if (!isCurrent()) return;
-      onClose();
+      if (onConverted) onConverted(task.id);
+      else onClose();
     } catch (cause) {
       if (!isCurrent()) return;
       onFailure?.(cause);

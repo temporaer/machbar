@@ -64,7 +64,6 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.reopen":
     case "story.archive":
     case "story.defer":
-    case "story.structure":
     case "story.refine":
     case "story.assignDriver":
     case "story.planWork":
@@ -124,7 +123,6 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.reopen":
     case "story.archive":
     case "story.defer":
-    case "story.structure":
     case "story.refine":
     case "story.assignDriver":
     case "story.planWork":
@@ -479,9 +477,6 @@ export function useWorkItemCommands() {
           return;
         case "story.defer":
           projectWorkflow.open("defer", command.story.id);
-          return;
-        case "story.structure":
-          projectWorkflow.open("structure", command.story.id);
           return;
         case "story.refine":
           projectWorkflow.open("refinement", command.story.id);

@@ -457,6 +457,10 @@ export function ProjectDetailPage() {
                       { key: "discussion", icon: "followUp", label: project.discussionRequested ? strings.removeDiscussion : strings.addDiscussion,
                         onClick: () => { void dispatch({ type: "story.setDiscussion", story: project, requested: !project.discussionRequested })?.catch(() => {}); } },
                       { key: "attachment", icon: "attachment", label: strings.attach, onClick: () => { setAttachmentError(null); setAttachmentOpen(true); } },
+                      { key: "move", icon: "openProject", label: strings.structureMove,
+                        onClick: () => dispatch({ type: "story.move", story: project }) },
+                      { key: "convert-to-task", icon: "actionable", label: strings.convertProjectToTask,
+                        onClick: () => dispatch({ type: "story.convertToTask", story: project }) },
                       { key: "delete", icon: "discard", label: strings.deleteProject, danger: true,
                         onClick: () => setConfirmingDelete(true) },
                     ]}>
@@ -719,10 +723,7 @@ export function ProjectDetailPage() {
               />
             </WorkItemDetailDisclosure>
             <WorkItemDetailDisclosure title={strings.taskSummary} headingLevel={2}
-              defaultOpen resetKey={project.id} className="project-content-tasks"
-              actions={<IconActionButton kind="edit" label={strings.detailEditStructure}
-                disabled={projectMutationPending}
-                onClick={() => dispatch({ type: "story.structure", story: project })} />}>
+              defaultOpen resetKey={project.id} className="project-content-tasks">
               {!project.tasks.length && !project.childStories?.length ? <p className="text-muted">{strings.projectEmptyStepsHint}</p> : null}
               {project.childStories?.length ? (
                 <ul className="project-story-list">

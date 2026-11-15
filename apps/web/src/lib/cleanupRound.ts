@@ -6,7 +6,7 @@ import type {
 import type { WorkItemCommand } from "./commands";
 
 /** Story workflows need the full project; the page fetches it before dispatch. */
-export type CleanupStoryCommand = "story.structure" | "story.defer";
+export type CleanupStoryCommand = "story.planWork" | "story.defer";
 
 /**
  * One explicit, confirmable improvement. Each kind maps to exactly one
@@ -157,7 +157,7 @@ export function cleanupSurfaceAction(
     });
     switch (surface) {
       case "split_clarify_execute":
-        return story("story.structure", "structure");
+        return story("story.planWork", "planTask");
       case "define_rhythm_or_revisit":
         // Project Wiedervorlage exists only for backlog projects.
         return item.itemStatus === "backlog" ? story("story.defer", "deferProject") : command(open, null);

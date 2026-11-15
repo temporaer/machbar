@@ -79,7 +79,6 @@ export type WorkItemCommand =
   | { type: "story.reopen"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.archive"; story: ProjectWithActions }
   | { type: "story.defer"; story: ProjectWithActions }
-  | { type: "story.structure"; story: ProjectWithActions }
   | { type: "story.refine"; story: ProjectWithActions }
   | { type: "story.assignDriver"; story: ProjectWithActions }
   | { type: "story.planWork"; story: ProjectWithActions }

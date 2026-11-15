@@ -23,16 +23,11 @@ import type { ReactNode } from "react";
  * both kinds of choice locally and submits them with the same canonical
  * completion transition.
  *
- * `structure` backs the fixed row rail's `Struktur` button: it opens
- * `ProjectStructureSheet`, which only ever dispatches `story.planWork`/
- * `story.editOutcome`/`story.convertToTask` rather than rendering a sheet of
- * its own. `convertToTask` is the focused Project → Task role-conversion
- * workflow; it preflights project-only structure before calling the canonical
- * API endpoint.
+ * `convertToTask` is the focused Project → Task role-conversion workflow; it
+ * preflights project-only structure before calling the canonical API endpoint.
  */
 export type ProjectWorkflowKind =
   | "defer"
-  | "structure"
   | "refinement"
   | "assignDriver"
   | "editOutcome"

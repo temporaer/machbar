@@ -25,6 +25,7 @@ import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskDetailSheet } from "../components/TaskDetailSheet";
 import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
 import { ProjectWorkflowHost } from "../components/ProjectWorkflowHost";
+import { TaskDeepLinkPage } from "./TaskDeepLinkPage";
 
 vi.mock("../lib/api", () => ({
   paperlessDocumentDownloadUrl: (id: number) =>
@@ -57,6 +58,7 @@ vi.mock("../lib/api", () => ({
     activateProject: vi.fn(),
     acknowledgeProjectReview: vi.fn(),
     startWorkRefinement: vi.fn(),
+    convertStoryToTask: vi.fn(),
     getActivity: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
     searchPaperlessDocuments: vi.fn(),
@@ -180,6 +182,7 @@ function renderProjectRoute(entry: string, initialEntries = [entry]) {
       <Routes>
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/projects" element={<p>Projects destination</p>} />
+        <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
         <Route path="/more/review" element={<p>Review destination</p>} />
       </Routes>
       <TaskDetailHost />
@@ -778,14 +781,12 @@ describe("ProjectDetailPage task explanations", () => {
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
-  it.each(["outcome", "structure"] as const)("keeps the %s heading action operable when collapsed", async (sectionKind) => {
+  it("keeps the outcome heading action operable when collapsed", async () => {
     const project = makeProject({ id: 42, title: "Collapsed project section" });
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
     renderProjectRoute("/projects/42");
     await screen.findByRole("heading", { name: project.title });
-    const action = screen.getByRole("button", {
-      name: sectionKind === "outcome" ? strings.structureEditOutcome : strings.detailEditStructure,
-    });
+    const action = screen.getByRole("button", { name: strings.structureEditOutcome });
     const details = action.closest("section")!.querySelector("details")!;
     await userEvent.click(details.querySelector("summary")!);
     expect(details).not.toHaveAttribute("open");
@@ -793,7 +794,7 @@ describe("ProjectDetailPage task explanations", () => {
     action.focus();
     await userEvent.keyboard("{Enter}");
     const dialog = await screen.findByRole("dialog", {
-      name: `${sectionKind === "outcome" ? strings.criteria : strings.structure}: ${project.title}`,
+      name: `${strings.criteria}: ${project.title}`,
     });
     expect(dialog).toBeVisible();
     expect(details).not.toHaveAttribute("open");
@@ -844,7 +845,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
 
     const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
-    const section = tasks.closest("section")!;
+    const section = tasks.closest("details")!;
     const overview = screen.getByLabelText(strings.projectOverview);
     const opener = within(overview).getByRole("button", { name: strings.projectTasksTitle });
     expect(screen.getAllByRole("button", { name: strings.projectTasksTitle })).toHaveLength(1);
@@ -857,71 +858,40 @@ describe("ProjectDetailPage task explanations", () => {
     }
     if (kind === "context-rich") expect(within(notes).getByText("Keep the room dimensions and constraints in view.")).toBeVisible();
     if (kind === "nested") expect(within(section).getByText("Wände vorbereiten")).toBeVisible();
-    expect(
-      within(section).getByRole("button", { name: strings.detailEditStructure }),
-    ).toBeInTheDocument();
-
-    await userEvent.click(
-      within(section).getByRole("button", { name: strings.detailEditStructure }),
-    );
-    expect(
-      await screen.findByRole("dialog", {
-        name: `${strings.structure}: Sommerfest planen`,
-      }),
-    ).toBeInTheDocument();
+    expect(within(section).queryByRole("button", { name: strings.detailEditStructure }))
+      .not.toBeInTheDocument();
   });
 
-  it("keeps all project structure workflows reachable from the detail page", async () => {
+  it("keeps project actions on their semantically appropriate detail entry points", async () => {
     renderProjectRoute("/projects/42");
 
-    const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
-    const section = tasks.closest("section")!;
-    await userEvent.click(
-      within(section).getByRole("button", { name: strings.detailEditStructure }),
-    );
+    await screen.findByRole("heading", { name: "Sommerfest planen" });
+    const taskSection = screen.getByRole("heading", { name: strings.taskSummary }).closest("details")!;
+    expect(within(taskSection).queryByRole("button", { name: strings.detailEditStructure }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: strings.projectTasksTitle })).toBeVisible();
+    expect(screen.getByRole("button", { name: strings.structureEditOutcome })).toBeVisible();
 
-    const structureSheet = await screen.findByRole("dialog", {
-      name: `${strings.structure}: Sommerfest planen`,
-    });
-    expect(
-      within(structureSheet).getByRole("button", { name: strings.workRefinement }),
-    ).toBeInTheDocument();
-    expect(
-      within(structureSheet).getByRole("button", { name: strings.projectTasksTitle }),
-    ).toBeInTheDocument();
-    expect(
-      within(structureSheet).getByRole("button", {
-        name: strings.structureEditOutcome,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(structureSheet).getByRole("button", {
-        name: strings.convertProjectToTask,
-      }),
-    ).toBeInTheDocument();
-
-    await userEvent.click(
-      within(structureSheet).getByRole("button", {
-        name: strings.workRefinement,
-      }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: strings.workRefinement }));
     expect(
       await screen.findByRole("dialog", {
         name: `${strings.workRefinement}: Sommerfest planen`,
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("combobox")).toHaveValue("improve");
+    await userEvent.click(screen.getByRole("button", { name: strings.cancel }));
 
-    await userEvent.selectOptions(screen.getByRole("combobox"), "next_action");
-    await userEvent.click(
-      screen.getByRole("button", { name: strings.workRefinementGenerate }),
-    );
-    await waitFor(() =>
-      expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("project", 42, {
-        expectedRevision: 1,
-        intent: "next_action",
-      }),
-    );
+    await openDetailActions();
+    const menu = screen.getByRole("dialog", { name: strings.detailActions });
+    expect(within(menu).getByRole("button", { name: strings.structureMove })).toBeVisible();
+    expect(within(menu).getByRole("button", { name: strings.convertProjectToTask })).toBeVisible();
+    await userEvent.click(within(menu).getByRole("button", { name: strings.structureMove }));
+    expect(await screen.findByRole("dialog", { name: strings.moveProjectTitle })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: strings.cancel }));
+
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.convertProjectToTask }));
+    expect(await screen.findByRole("dialog", { name: strings.convertProjectToTaskTitle })).toBeVisible();
   });
 
   it("opens project-scoped batch entry from the summary, retaining drafts and returning focus on close", async () => {
@@ -955,7 +925,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
-  it("keeps successor entry and Structure task entry reachable after a long project outline", async () => {
+  it("keeps successor entry reachable after a long project outline", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({ id: 42, title: "Long project" }),
       tasks: Array.from({ length: 20 }, (_, index) => makeTask({
@@ -964,45 +934,121 @@ describe("ProjectDetailPage task explanations", () => {
     });
     renderProjectRoute("/projects/42");
     const heading = await screen.findByRole("heading", { name: strings.taskSummary });
-    const section = heading.closest("section")!;
+    const section = heading.closest("details")!;
     const successors = within(section).getAllByRole("button", { name: strings.insertSuccessorLabel });
     await userEvent.click(successors.at(-1)!);
     const successor = within(section).getByRole("form", { name: strings.addSuccessor });
     expect(within(successor).getByPlaceholderText(strings.successorPlaceholder)).toBeVisible();
     await userEvent.click(within(successor).getByRole("button", { name: strings.cancel }));
-    await userEvent.click(within(section).getByRole("button", { name: strings.detailEditStructure }));
-    const structure = await screen.findByRole("dialog", { name: `${strings.structure}: Long project` });
-    await userEvent.click(within(structure).getByRole("button", { name: strings.projectTasksTitle }));
-    expect(await screen.findByRole("dialog", { name: strings.projectTasksTitle })).toBeVisible();
-    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42?focus=next-action");
   });
 
-  it("opens the existing project-to-task conversion from Struktur", async () => {
+  it("converts from the project action menu and replaces history with the retained task detail", async () => {
+    const converted = makeTask({ id: 42, projectId: null, title: "Sommerfest planen" });
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
       tasks: [],
     });
+    mockedApi.getTask.mockResolvedValue(converted);
+    mockedApi.convertStoryToTask.mockResolvedValue(converted);
+    renderProjectRoute("/projects/42", ["/projects", "/projects/42"]);
+
+    await screen.findByRole("heading", { name: "Sommerfest planen" });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.convertProjectToTask }));
+    const dialog = await screen.findByRole("dialog", { name: strings.convertProjectToTaskTitle });
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.convertProjectToTask }));
+
+    await waitFor(() => expect(mockedApi.convertStoryToTask).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ expectedRevision: 1 }),
+    ));
+    expect(await screen.findByRole("dialog", { name: strings.taskDetails })).toBeVisible();
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/tasks/42|");
+    expect(screen.queryByText(/Projekt nicht gefunden/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("Projects destination")).toBeVisible();
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects|");
+    await userEvent.click(screen.getByRole("button", { name: "Forward" }));
+    expect(await screen.findByRole("dialog", { name: strings.taskDetails })).toBeVisible();
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/tasks/42|");
+  });
+
+  it("does not navigate to the converted task if the user leaves the project while conversion is pending", async () => {
+    const converted = makeTask({ id: 42, projectId: null, title: "Sommerfest planen" });
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [],
+    });
+    let complete!: (task: Task) => void;
+    mockedApi.convertStoryToTask.mockImplementation(
+      () => new Promise((resolve) => { complete = resolve; }),
+    );
     renderProjectRoute("/projects/42");
 
-    const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
-    const section = tasks.closest("section")!;
-    await userEvent.click(
-      within(section).getByRole("button", { name: strings.detailEditStructure }),
-    );
-    const structureSheet = await screen.findByRole("dialog", {
-      name: `${strings.structure}: Sommerfest planen`,
-    });
-    await userEvent.click(
-      within(structureSheet).getByRole("button", {
-        name: strings.convertProjectToTask,
-      }),
-    );
+    await screen.findByRole("heading", { name: "Sommerfest planen" });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.convertProjectToTask }));
+    const dialog = await screen.findByRole("dialog", { name: strings.convertProjectToTaskTitle });
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.convertProjectToTask }));
+    await waitFor(() => expect(mockedApi.convertStoryToTask).toHaveBeenCalledOnce());
 
-    expect(
-      await screen.findByRole("dialog", {
-        name: strings.convertProjectToTaskTitle,
-      }),
-    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Leave project" }));
+    expect(await screen.findByText("Projects destination")).toBeVisible();
+    await act(async () => complete(converted));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: strings.convertProjectToTaskTitle })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects|");
+    expect(mockedApi.getTask).not.toHaveBeenCalledWith(converted.id);
+  });
+
+  it("keeps a failed project-to-task conversion on the project with actionable feedback", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [],
+    });
+    mockedApi.convertStoryToTask.mockRejectedValue(new Error("Conversion unavailable"));
+    renderProjectRoute("/projects/42");
+
+    await screen.findByRole("heading", { name: "Sommerfest planen" });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.convertProjectToTask }));
+    const dialog = await screen.findByRole("dialog", { name: strings.convertProjectToTaskTitle });
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.convertProjectToTask }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Conversion unavailable");
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42|");
+    expect(mockedApi.getTask).not.toHaveBeenCalledWith(42);
+  });
+
+  it("keeps task-detail loading errors on the task route after conversion succeeds", async () => {
+    const converted = makeTask({ id: 42, projectId: null, title: "Sommerfest planen" });
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [],
+    });
+    mockedApi.convertStoryToTask.mockResolvedValue(converted);
+    mockedApi.getTask.mockRejectedValue(new Error("Task details unavailable"));
+    renderProjectRoute("/projects/42");
+
+    await screen.findByRole("heading", { name: "Sommerfest planen" });
+    await openDetailActions();
+    await userEvent.click(screen.getByRole("button", { name: strings.convertProjectToTask }));
+    const dialog = await screen.findByRole("dialog", { name: strings.convertProjectToTaskTitle });
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.convertProjectToTask }));
+
+    expect(await screen.findByRole("dialog", { name: strings.taskDetails })).toBeVisible();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Task details unavailable");
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/tasks/42|");
+    expect(screen.queryByRole("dialog", { name: strings.convertProjectToTaskTitle })).not.toBeInTheDocument();
+  });
+
+  it("leaves direct stale project URLs on the normal project error state", async () => {
+    mockedApi.getProject.mockRejectedValue(new Error("Projekt nicht gefunden"));
+    renderProjectRoute("/projects/42");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Projekt nicht gefunden");
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42|");
   });
 
   it("keeps detail-page project actions hidden for completed and archived projects", async () => {
@@ -1018,9 +1064,9 @@ describe("ProjectDetailPage task explanations", () => {
       });
       const { unmount } = renderProjectRoute("/projects/42");
       const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
-      const section = tasks.closest("section")!;
+      const section = tasks.closest("details")!;
       expect(screen.queryByRole("button", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
-      expect(within(section).getByRole("button", { name: strings.detailEditStructure })).toBeVisible();
+      expect(within(section).queryByRole("button", { name: strings.detailEditStructure })).not.toBeInTheDocument();
       unmount();
     }
   });
@@ -1159,7 +1205,6 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.getByRole("button", { name: strings.workRefinement })).toBeDisabled();
     const opener = within(screen.getByLabelText(strings.projectOverview)).getByRole("button", { name: strings.projectTasksTitle });
     expect(opener).toBeDisabled();
-    expect(screen.getByRole("button", { name: strings.detailEditStructure })).toBeDisabled();
     await userEvent.click(opener);
     expect(screen.queryByRole("dialog", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
 
@@ -1175,7 +1220,6 @@ describe("ProjectDetailPage task explanations", () => {
       ).toBeEnabled(),
     );
     expect(opener).toBeEnabled();
-    expect(screen.getByRole("button", { name: strings.detailEditStructure })).toBeEnabled();
   });
 
   it("marks the derived canonical Next Action, an eligible additional one, and a merely-marked-but-blocked task distinctly", async () => {

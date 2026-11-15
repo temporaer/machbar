@@ -224,14 +224,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     const mainGrid = chips.querySelector(".rail-main-grid");
-    expect(mainGrid?.querySelectorAll("button")).toHaveLength(3);
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(2);
     expect(mainGrid).toHaveStyle({
-      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     });
     // The rail is fixed and contextual: backlog projects expose
-    // Planung/Struktur/Ziel, never a configurable/overflow set.
+    // revisit planning and outcome editing, never a configurable/overflow set.
     expect(within(chips).getByRole("button", { name: "Aktivierung per Wiedervorlage planen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Struktur bearbeiten" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Ergebnis und Kriterien prüfen" })).toBeInTheDocument();
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
 
@@ -326,11 +325,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Speicherplatz aufräumen");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Struktur bearbeiten" }));
-    const structureSheet = await screen.findByRole("dialog", {
-      name: "Struktur: Speicherplatz aufräumen",
-    });
-    await userEvent.click(within(structureSheet).getByRole("button", { name: "Ergebnis bearbeiten" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ergebnis und Kriterien prüfen" }));
 
     // Stays on the backlog list — a focused sheet, not the project page.
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
@@ -346,19 +341,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 
-  it("still navigates to the project detail page through the structure sheet's 'Aufgaben hinzufügen' action", async () => {
+  it("opens the project detail page through the row's direct item action", async () => {
     const story = makeProject({ id: 19, title: "Dachboden entrümpeln", status: "backlog" });
     const { container } = renderAtRootWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Dachboden entrümpeln");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Struktur bearbeiten" }));
-    const structureSheet = await screen.findByRole("dialog", {
-      name: "Struktur: Dachboden entrümpeln",
-    });
-    await userEvent.click(
-      within(structureSheet).getByRole("button", { name: "Aufgaben hinzufügen" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /Dachboden entrümpeln/ }));
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 19");
   });
 
