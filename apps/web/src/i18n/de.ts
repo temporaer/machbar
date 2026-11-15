@@ -635,6 +635,7 @@ const extra = {
   projectAiPromptMaterial: "Material auswählen",
   projectAiPromptNoMaterial: "In diesem Projekt gibt es noch kein Material.",
   projectAiPromptShare: "Teilen …",
+  projectAiPromptDiscardTitle: "Ungespeicherte Änderungen",
   projectAiPromptDiscardWarning: "Deine Anweisung und Auswahl gehen beim Schließen verloren.",
   projectAiPromptKeepEditing: "Weiter bearbeiten",
   addMaterial: "Material hinzufügen",

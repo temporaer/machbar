@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
@@ -113,17 +113,27 @@ describe("ProjectAiPromptSheet", () => {
   it("asks before discarding an authored prompt", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
+    const material = makeTask({ id: 3, title: "Quelle C", kind: "reference" });
     renderWithProviders(
-      <ProjectAiPromptSheet projectTitle="Recherche" materials={[]} onClose={onClose} />,
+      <ProjectAiPromptSheet
+        projectTitle="Recherche"
+        materials={[{ task: material, parentTitles: [] }]}
+        onClose={onClose}
+      />,
     );
 
     await user.type(screen.getByRole("textbox", { name: strings.projectAiPromptInstruction }), "Ideen sammeln.");
+    await user.click(screen.getByRole("checkbox", { name: material.title }));
     await user.keyboard("{Escape}");
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(strings.projectAiPromptDiscardWarning);
+    const confirmation = screen.getByRole("dialog", { name: strings.projectAiPromptDiscardTitle });
+    expect(confirmation).toHaveTextContent(strings.projectAiPromptDiscardWarning);
+    expect(screen.getByRole("button", { name: strings.projectAiPromptKeepEditing })).toHaveFocus();
 
-    await user.click(screen.getByRole("button", { name: strings.projectAiPromptKeepEditing }));
+    await user.click(within(confirmation).getByRole("button", { name: strings.projectAiPromptKeepEditing }));
     expect(screen.getByRole("textbox", { name: strings.projectAiPromptInstruction })).toHaveValue("Ideen sammeln.");
+    expect(screen.getByRole("checkbox", { name: material.title })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: material.title })).toHaveFocus();
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: strings.discard }));
     expect(onClose).toHaveBeenCalledOnce();

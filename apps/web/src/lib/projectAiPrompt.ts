@@ -1,4 +1,12 @@
-import type { Definition, ImageReference, LinkReference, Parent } from "mdast";
+import type {
+  Definition,
+  FootnoteDefinition,
+  FootnoteReference,
+  ImageReference,
+  LinkReference,
+  Parent,
+} from "mdast";
+import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import type { ProjectMaterialItem } from "./projectMaterials";
@@ -6,7 +14,7 @@ import type { ProjectMaterialItem } from "./projectMaterials";
 type Reference = LinkReference | ImageReference;
 type TextEdit = { start: number; end: number; text: string };
 
-const markdownParser = unified().use(remarkParse);
+const markdownParser = unified().use(remarkParse).use(remarkGfm);
 
 function applyTextEdits(markdown: string, edits: TextEdit[]): string {
   return edits
@@ -17,16 +25,23 @@ function applyTextEdits(markdown: string, edits: TextEdit[]): string {
     );
 }
 
-function resolveMarkdownReferences(markdown: string): string {
+function resolveMarkdownReferences(markdown: string, sectionId: string): string {
   const tree = markdownParser.parse(markdown);
   const definitions = new Map<string, Definition>();
   const definitionNodes: Definition[] = [];
+  const footnoteDefinitions: FootnoteDefinition[] = [];
+  const footnoteReferences: FootnoteReference[] = [];
 
   const visit = (parent: Parent) => {
     for (const child of parent.children) {
       if (child.type === "definition") {
         definitionNodes.push(child);
         if (!definitions.has(child.identifier)) definitions.set(child.identifier, child);
+      } else if (child.type === "footnoteDefinition") {
+        footnoteDefinitions.push(child);
+        visit(child);
+      } else if (child.type === "footnoteReference") {
+        footnoteReferences.push(child);
       } else if ("children" in child) {
         visit(child);
       }
@@ -74,9 +89,7 @@ function resolveMarkdownReferences(markdown: string): string {
             .replace(/"/g, '\\"')}"`
     })`;
     if (reference.type === "imageReference") {
-      return `![${(reference.alt ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/[\\\[\]]/g, "\\$&")}]${destination}`;
+      return `![${(reference.alt ?? "").replace(/[\\`*_{}\[\]()#+.!|><~&-]/g, "\\$&")}]${destination}`;
     }
 
     const labelStart = reference.children[0]?.position?.start.offset ?? start + 1;
@@ -94,12 +107,37 @@ function resolveMarkdownReferences(markdown: string): string {
   };
 
   const edits = collectReferenceEdits(tree.children);
+  const scopedFootnoteIdentifier = (identifier: string) =>
+    `machbar-${sectionId}-${Array.from(identifier, (character) =>
+      character.codePointAt(0)!.toString(16),
+    ).join("-")}`;
+  for (const reference of footnoteReferences) {
+    const start = reference.position?.start.offset;
+    const end = reference.position?.end.offset;
+    if (start !== undefined && end !== undefined) {
+      edits.push({
+        start,
+        end,
+        text: `[^${scopedFootnoteIdentifier(reference.identifier)}]`,
+      });
+    }
+  }
+  for (const definition of footnoteDefinitions) {
+    const start = definition.position?.start.offset;
+    if (start === undefined) continue;
+    const label = markdown.slice(start).match(/^\[\^[^\]]+\]/)?.[0];
+    if (label) {
+      edits.push({
+        start,
+        end: start + label.length,
+        text: `[^${scopedFootnoteIdentifier(definition.identifier)}]`,
+      });
+    }
+  }
   for (const definition of definitionNodes) {
     const start = definition.position?.start.offset;
-    let end = definition.position?.end.offset;
+    const end = definition.position?.end.offset;
     if (start === undefined || end === undefined) continue;
-    if (markdown[end] === "\r") end += 1;
-    if (markdown[end] === "\n") end += 1;
     edits.push({ start, end, text: "" });
   }
 
@@ -112,11 +150,13 @@ export function buildProjectAiPromptText(
   prompt: string,
   materials: readonly ProjectMaterialItem[],
 ): string {
-  const sections = prompt.trim() ? [resolveMarkdownReferences(prompt.trim())] : [];
-  for (const { task, parentTitles } of materials) {
+  const sections = prompt.trim() ? [resolveMarkdownReferences(prompt.trim(), "prompt")] : [];
+  for (const [index, { task, parentTitles }] of materials.entries()) {
     const material = [`## ${task.title}`];
     if (parentTitles.length) material.push(parentTitles.join(" › "));
-    if (task.notes) material.push(resolveMarkdownReferences(task.notes));
+    if (task.notes) {
+      material.push(resolveMarkdownReferences(task.notes, `material-${index}`));
+    }
     sections.push(material.join("\n\n"));
   }
   return sections.join("\n\n---\n\n");

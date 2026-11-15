@@ -510,7 +510,7 @@ test("project AI prompt shares and copies only selected material", async ({ page
   expect(expected).not.toContain("Do not include this annotation.");
 });
 
-test("project AI prompt keeps drafts on Back until discard is confirmed", async ({ page }) => {
+test("project AI prompt keeps drafts on same-project Back until discard is confirmed", async ({ page }) => {
   const project = await (await page.request.post("/api/projects", {
     data: { title: `Draft project ${randomUUID()}` },
   })).json();
@@ -527,6 +527,12 @@ test("project AI prompt keeps drafts on Back until discard is confirmed", async 
   await page.locator('[data-project-section="backlog"] > summary').click();
   await page.locator(`[data-workitem-id="${project.id}"] .story-row-main`).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await page.getByRole("button", { name: "Aufgaben hinzufügen", exact: true }).click();
+  const taskEntry = page.getByRole("dialog", { name: "Aufgaben hinzufügen", exact: true });
+  await expect(taskEntry).toBeVisible();
+  await taskEntry.getByRole("button", { name: "Schließen", exact: true }).last().click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+
   await page.getByRole("button", { name: "KI-Prompt erstellen", exact: true }).click();
   const composer = page.getByRole("dialog", { name: "KI-Prompt erstellen" });
   const prompt = composer.getByRole("textbox", { name: "Deine Anweisung" });
@@ -541,16 +547,63 @@ test("project AI prompt keeps drafts on Back until discard is confirmed", async 
   })).toBe(true);
 
   await page.goBack();
-  await expect(composer.getByRole("alert")).toBeVisible();
-  await composer.getByRole("button", { name: "Weiter bearbeiten" }).click();
+  const confirmation = page.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole("button", { name: "Weiter bearbeiten" })).toBeFocused();
+  await confirmation.getByRole("button", { name: "Weiter bearbeiten" }).click();
   await expect(prompt).toHaveValue("Vergleiche das Material.");
   await expect(selection).toBeChecked();
+  await expect(selection).toBeFocused();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
 
   await page.goBack();
-  await expect(composer.getByRole("alert")).toBeVisible();
-  await composer.getByRole("button", { name: "Verwerfen" }).click();
-  await expect(page).toHaveURL(/#\/projects$/);
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Verwerfen" }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await expect(composer).toHaveCount(0);
+});
+
+test("project AI prompt discard confirmation stays visible with overflowing material", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Long prompt project ${randomUUID()}` },
+  })).json();
+  const materialTitles: string[] = [];
+  for (let index = 0; index < 32; index += 1) {
+    const title = `Long-list material ${index} ${randomUUID()}`;
+    const response = await page.request.post("/api/tasks", {
+      data: { title, kind: "reference", projectId: project.id },
+    });
+    expect(response.status()).toBe(201);
+    materialTitles.push(title);
+  }
+
+  await page.setViewportSize({ width: 390, height: 460 });
+  await page.goto(`/#/projects/${project.id}`);
+  await page.getByRole("button", { name: "KI-Prompt erstellen", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "KI-Prompt erstellen" });
+  const prompt = composer.getByRole("textbox", { name: "Deine Anweisung" });
+  const firstMaterialTitle = materialTitles[0]!;
+  const lastMaterialTitle = materialTitles.at(-1)!;
+  const selection = composer.getByRole("checkbox", { name: firstMaterialTitle });
+  await prompt.fill("Vergleiche das Material.");
+  await selection.check();
+  await expect(composer.getByRole("checkbox", {
+    name: lastMaterialTitle,
+  })).not.toBeInViewport();
+
+  await page.keyboard.press("Escape");
+  const confirmation = page.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
+  const keepEditing = confirmation.getByRole("button", { name: "Weiter bearbeiten" });
+  await expect(confirmation).toBeVisible();
+  await expect(keepEditing).toBeInViewport();
+  await expect(keepEditing).toBeFocused();
+  await keepEditing.click();
+  await expect(prompt).toHaveValue("Vergleiche das Material.");
+  await expect(selection).toBeChecked();
+  await expect(selection).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await confirmation.getByRole("button", { name: "Verwerfen" }).click();
   await expect(composer).toHaveCount(0);
 });
 

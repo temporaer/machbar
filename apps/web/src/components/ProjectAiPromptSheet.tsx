@@ -37,7 +37,7 @@ export function ProjectAiPromptSheet({
   const discard = () => {
     setConfirmDiscard(false);
     if (navigationBlocker.state === "blocked") navigationBlocker.proceed();
-    else onClose();
+    onClose();
   };
   const requestClose = () => {
     if (confirmDiscard) keepEditing();
@@ -105,8 +105,15 @@ export function ProjectAiPromptSheet({
           />
         </div>
         {status ? <p className="text-muted" role="status">{status}</p> : null}
-        {confirmDiscard ? (
-          <div className="stack" role="alert">
+      </div>
+      {confirmDiscard ? (
+        <BottomSheet
+          title={strings.projectAiPromptDiscardTitle}
+          initialFocus="first-control"
+          stackPriority={2}
+          onClose={keepEditing}
+        >
+          <div className="stack">
             <p>{strings.projectAiPromptDiscardWarning}</p>
             <div className="row">
               <button type="button" className="btn" onClick={keepEditing}>
@@ -117,8 +124,8 @@ export function ProjectAiPromptSheet({
               </button>
             </div>
           </div>
-        ) : null}
-      </div>
+        </BottomSheet>
+      ) : null}
     </BottomSheet>
   );
 }

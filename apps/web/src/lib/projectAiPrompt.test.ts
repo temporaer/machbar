@@ -1,22 +1,37 @@
 import { describe, expect, it } from "vitest";
 import type { Root, RootContent } from "hast";
+import remarkGfm from "remark-gfm";
 import remarkRehype from "remark-rehype";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { makeTask } from "../test/fixtures";
 import { buildProjectAiPromptText } from "./projectAiPrompt";
 
-const markdownRenderer = unified().use(remarkParse).use(remarkRehype);
+const markdownRenderer = unified().use(remarkParse).use(remarkGfm).use(remarkRehype);
 
 function renderedElements(markdown: string) {
   const tree = markdownRenderer.runSync(markdownRenderer.parse(markdown)) as Root;
   const links: string[] = [];
   const images: { src: string; alt: string; title: string | undefined }[] = [];
   const texts: string[] = [];
+  const footnoteReferenceHrefs: string[] = [];
+  const footnoteDefinitionIds: string[] = [];
+  const footnoteBodies: string[] = [];
+  const blockquotes: string[] = [];
+  const listItems: string[] = [];
+  const textContent = (node: RootContent | Root): string =>
+    node.type === "text"
+      ? node.value
+      : node.type === "root" || node.type === "element"
+        ? node.children.map(textContent).join("")
+        : "";
   const visit = (node: RootContent | Root) => {
     if (node.type === "text") texts.push(node.value);
     if (node.type === "element" && node.tagName === "a") {
       links.push(String(node.properties.href));
+      if (node.properties.dataFootnoteRef != null) {
+        footnoteReferenceHrefs.push(String(node.properties.href));
+      }
     }
     if (node.type === "element" && node.tagName === "img") {
       images.push({
@@ -27,12 +42,33 @@ function renderedElements(markdown: string) {
           : String(node.properties.title),
       });
     }
+    if (node.type === "element" && node.tagName === "li") {
+      const id = node.properties.id;
+      if (typeof id === "string" && id.startsWith("user-content-fn-")) {
+        footnoteDefinitionIds.push(id);
+        footnoteBodies.push(textContent(node).replace(/\s+/g, " ").trim());
+      } else {
+        listItems.push(textContent(node).replace(/\s+/g, " ").trim());
+      }
+    }
+    if (node.type === "element" && node.tagName === "blockquote") {
+      blockquotes.push(textContent(node).replace(/\s+/g, " ").trim());
+    }
     if (node.type === "root" || node.type === "element") {
       node.children.forEach(visit);
     }
   };
   visit(tree);
-  return { links, images, texts };
+  return {
+    links,
+    images,
+    texts,
+    footnoteReferenceHrefs,
+    footnoteDefinitionIds,
+    footnoteBodies,
+    blockquotes,
+    listItems,
+  };
 }
 
 describe("buildProjectAiPromptText", () => {
@@ -125,6 +161,56 @@ describe("buildProjectAiPromptText", () => {
     }]);
   });
 
+  it("preserves Markdown punctuation in rendered image alt text", () => {
+    const task = makeTask({
+      id: 14,
+      title: "Diagramm",
+      kind: "reference",
+      notes: [
+        "![\\*Important\\* \\`inline\\`][image]",
+        "",
+        "[image]: https://example.test/diagram.png",
+      ].join("\n"),
+    });
+
+    const markdown = buildProjectAiPromptText("", [
+      { task, parentTitles: [] },
+    ]);
+
+    expect(renderedElements(markdown).images).toEqual([{
+      src: "https://example.test/diagram.png",
+      alt: "*Important* `inline`",
+      title: undefined,
+    }]);
+  });
+
+  it("keeps GFM footnotes section-local when combining materials", () => {
+    const first = makeTask({
+      id: 15,
+      title: "Quelle A",
+      kind: "reference",
+      notes: "Claim[^1].\n\n[^1]: Important A",
+    });
+    const second = makeTask({
+      id: 16,
+      title: "Quelle B",
+      kind: "reference",
+      notes: "Claim[^1].\n\n[^1]: Important B",
+    });
+
+    const markdown = buildProjectAiPromptText("", [
+      { task: first, parentTitles: [] },
+      { task: second, parentTitles: [] },
+    ]);
+    const rendered = renderedElements(markdown);
+
+    expect(rendered.footnoteBodies).toEqual(["Important A ↩", "Important B ↩"]);
+    expect(rendered.footnoteReferenceHrefs).toHaveLength(2);
+    expect(new Set(rendered.footnoteReferenceHrefs).size).toBe(2);
+    expect(rendered.footnoteDefinitionIds).toHaveLength(2);
+    expect(new Set(rendered.footnoteDefinitionIds).size).toBe(2);
+  });
+
   it("removes duplicate reference definitions before combining notes", () => {
     const first = makeTask({
       id: 12,
@@ -152,5 +238,36 @@ describe("buildProjectAiPromptText", () => {
 
     expect(links).toEqual(["https://example.test/first"]);
     expect(texts).toContain("Refer to [source] for context.");
+  });
+
+  it("preserves blockquote and list boundaries when removing reference definitions", () => {
+    const task = makeTask({
+      id: 17,
+      title: "Quelle",
+      kind: "reference",
+      notes: [
+        "[Quoted][quote]",
+        "",
+        "> [quote]: https://example.test/quote",
+        "> Important annotation",
+        "",
+        "[Listed][list]",
+        "",
+        "- [list]: https://example.test/list",
+        "- List annotation",
+      ].join("\n"),
+    });
+
+    const markdown = buildProjectAiPromptText("", [
+      { task, parentTitles: [] },
+    ]);
+    const rendered = renderedElements(markdown);
+
+    expect(rendered.links).toEqual([
+      "https://example.test/quote",
+      "https://example.test/list",
+    ]);
+    expect(rendered.blockquotes).toEqual(["Important annotation"]);
+    expect(rendered.listItems).toEqual(["", "List annotation"]);
   });
 });

@@ -704,6 +704,7 @@ const en = {
   projectAiPromptMaterial: "Select material",
   projectAiPromptNoMaterial: "There is no material in this project yet.",
   projectAiPromptShare: "Share …",
+  projectAiPromptDiscardTitle: "Unsaved changes",
   projectAiPromptDiscardWarning: "Your prompt and selection will be lost if you close.",
   projectAiPromptKeepEditing: "Keep editing",
   makeAction: "Treat as a task",
