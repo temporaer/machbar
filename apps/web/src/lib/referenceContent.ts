@@ -8,13 +8,13 @@
  * projection.
  */
 import type { Nodes, Parent } from "mdast";
-import { fromMarkdown } from "mdast-util-from-markdown";
 import {
   extractPaperlessReferences,
   markdownWithoutPaperlessReferences,
   paperlessDocumentId,
   type PaperlessMarkdownReference,
 } from "./paperlessAttachments";
+import { fromMarkdownWithReferences } from "./markdownReferences";
 
 export interface PrimaryWebLink {
   url: string;
@@ -57,30 +57,19 @@ function isWebUrl(url: string | undefined): url is string {
  * `[label](url)`); a bare URL falls back to its hostname as the label. */
 function locatePrimaryWebLink(markdown: string): LocatedWebLink | null {
   let found: LocatedWebLink | null = null;
-  const tree = fromMarkdown(markdown);
-  const definitions = new Map<string, string>();
-  for (const child of tree.children) {
-    if (child.type === "definition") {
-      definitions.set(child.identifier, child.url);
-    }
-  }
   const visit = (node: Nodes) => {
     if (found) return;
-    if (node.type === "link" || node.type === "linkReference") {
-      const url =
-        node.type === "link" ? node.url : definitions.get(node.identifier);
-      if (isWebUrl(url)) {
-        const start = node.position?.start.offset;
-        const end = node.position?.end.offset;
-        if (start !== undefined && end !== undefined) {
-          const rawLabel = nodeText(node).trim();
-          found = {
-            url,
-            label: rawLabel && rawLabel !== url ? rawLabel : hostnameLabel(url),
-            start,
-            end,
-          };
-        }
+    if (node.type === "link" && isWebUrl(node.url)) {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start !== undefined && end !== undefined) {
+        const rawLabel = nodeText(node).trim();
+        found = {
+          url: node.url,
+          label: rawLabel && rawLabel !== node.url ? rawLabel : hostnameLabel(node.url),
+          start,
+          end,
+        };
       }
       return;
     }
@@ -107,7 +96,7 @@ function locatePrimaryWebLink(markdown: string): LocatedWebLink | null {
       }
     }
   };
-  visit(tree);
+  visit(fromMarkdownWithReferences(markdown));
   return found;
 }
 
