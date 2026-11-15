@@ -66,6 +66,31 @@ describe("share target helpers", () => {
     );
   });
 
+  it("keeps a bare URL supplied only as text as a clickable source", () => {
+    const url = "https://example.test/article";
+    const target = { title: "", text: url, url: "", files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToTextBlock(target)).toBe(url);
+  });
+
+  it("keeps URL-only payloads as a source", () => {
+    const url = "https://example.test/article";
+    const target = { title: "", text: "", url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToTextBlock(target)).toBe(url);
+  });
+
+  it("deduplicates matching text and URL parameters without losing surrounding text", () => {
+    const url = "https://example.test/article";
+    const text = `„Bitte lesen“ ${url} – sehr hilfreich`;
+    const target = { title: "Artikel", text, url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(text);
+    expect(shareTargetToTextBlock(target)).toBe(`Artikel\n\n${text}`);
+  });
+
   it("uses exactly one blank line when appending non-empty text", () => {
     expect(appendTextBlock("Bestehende Notiz\n\n", "\nGeteilter Inhalt\n")).toBe(
       "Bestehende Notiz\n\nGeteilter Inhalt",

@@ -50,10 +50,23 @@ export function shareTargetToCaptureDraft(
     getCatalog(locale).sharedContent;
 
   const noteParts: string[] = [];
-  if (target.text && (target.title || !shortText)) noteParts.push(target.text);
-  if (target.url) noteParts.push(target.url);
+  if (
+    target.text &&
+    (target.title || !shortText || isWebUrl(target.text))
+  ) {
+    noteParts.push(target.text);
+  }
+  if (target.url && !target.text.includes(target.url)) noteParts.push(target.url);
 
   return { title, notes: noteParts.join("\n\n") };
+}
+
+/** Returns the shared text and URL as a Markdown-ready source block. */
+export function shareTargetToSource(target: WebShareTarget): string {
+  const text = normalizeBlock(target.text);
+  const url = normalizeInline(target.url);
+  if (!text) return url;
+  return url && !text.includes(url) ? appendTextBlock(text, url) : text;
 }
 
 /**
@@ -63,8 +76,16 @@ export function shareTargetToCaptureDraft(
 export function shareTargetToTextBlock(target: WebShareTarget): string {
   const parts: string[] = [];
   if (target.title) parts.push(target.title);
-  if (target.text && normalizeInline(target.text) !== target.title) parts.push(target.text);
-  if (target.url) parts.push(target.url);
+  if (target.text && normalizeInline(target.text) !== target.title) {
+    parts.push(target.text);
+  }
+  if (
+    target.url &&
+    !target.text.includes(target.url) &&
+    !target.title.includes(target.url)
+  ) {
+    parts.push(target.url);
+  }
   return parts.join("\n\n");
 }
 
@@ -80,6 +101,10 @@ export function appendTextBlock(existing: string, block: string): string {
 
 function isShortPlainText(text: string): boolean {
   return text.length <= SHORT_TEXT_LENGTH && !/[\r\n]/.test(text);
+}
+
+function isWebUrl(text: string): boolean {
+  return /^https?:\/\/\S+$/i.test(text);
 }
 
 function deriveTitle(text: string): string {
