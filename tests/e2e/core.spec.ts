@@ -137,6 +137,8 @@ test("material previews keep links accessible and long labels within both views"
     await page.keyboard.press("Tab");
     await expect(source).not.toBeFocused();
   }
+  const deletion = await page.request.delete(`/api/projects/${project.id}?deleteTasks=true`);
+  expect(deletion.ok()).toBe(true);
 });
 
 async function prerequisiteDestination(page: Page) {
