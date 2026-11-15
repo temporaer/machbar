@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { TaskKind } from "@machbar/shared";
 import type { CreateTaskInput, CreationIntent } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
@@ -51,6 +52,7 @@ export type CaptureFormProps = {
   onCropPendingFile?: ((file: File, index: number) => void) | undefined;
   onCaptured: (result: CaptureResult) => void;
   secondaryAction?: { label: string; onClick: () => void };
+  materialActionLabel?: string;
   captureActions?: {
     photoLabel: string;
     fileLabel: string;
@@ -87,6 +89,7 @@ export function CaptureForm({
   onCancel,
   onCaptured,
   secondaryAction,
+  materialActionLabel,
   captureActions,
   defaultScope,
   thoughtDraft,
@@ -95,6 +98,7 @@ export function CaptureForm({
   const isThought = mode === "thought";
   const { locale } = useLocale();
   const creationIntents = useRef(new Map<number | undefined, CreationIntent>());
+  const materialCreationIntent = useRef<CreationIntent | null>(null);
   const [localTitle, setTitle] = useState(initialTitle);
   const title = thoughtDraft?.title ?? localTitle;
   const activeDraftKey = useRef(thoughtDraft?.key);
@@ -141,6 +145,14 @@ export function CaptureForm({
     [resolvedTokens],
   );
   const capturedTitle = isThought ? title.trim() : stripResolvedTokens(title, resolvedTokens);
+  const referenceHasUnsupportedModifiers =
+    syntaxMetadata.ownerMemberId !== undefined ||
+    syntaxMetadata.tagIds.length > 0 ||
+    syntaxMetadata.contextIds.length > 0 ||
+    syntaxMetadata.size !== undefined ||
+    syntaxMetadata.dueDate !== undefined ||
+    syntaxMetadata.scheduledDate !== undefined ||
+    dueDate !== null;
   const effectiveProjectId =
     syntaxMetadata.projectId ??
     (projectDestinationOverride !== undefined
@@ -163,6 +175,7 @@ export function CaptureForm({
     [isThought, homeAssistant?.contexts, locale, members, projects, tags, title, titleCursor],
   );
   const taskInput = (
+    kind: TaskKind,
     needsClarification: boolean,
     preparedNotes: string,
     activationResolution?: ProjectActivationResolution,
@@ -171,6 +184,14 @@ export function CaptureForm({
     createdByMemberId: currentMemberId,
     status: "captured",
     ...ownerAssignmentPatch(null),
+  }) : kind === "reference" ? ({
+    kind,
+    title: capturedTitle,
+    ...(preparedNotes ? { notes: preparedNotes } : {}),
+    projectId: effectiveProjectId,
+    parentTaskId: parentTaskId ?? null,
+    createdByMemberId: currentMemberId,
+    ...(defaultScope ? { scope: defaultScope } : {}),
   }) : ({
     title: capturedTitle,
     ...(preparedNotes ? { notes: preparedNotes } : {}),
@@ -196,7 +217,9 @@ export function CaptureForm({
 
   const needsClarification =
     isThought || (effectiveProjectId === null && (parentTaskId ?? null) === null);
-  const requestFingerprint = JSON.stringify(taskInput(needsClarification, notes));
+  const requestFingerprint = JSON.stringify(
+    taskInput("action", needsClarification, notes),
+  );
   const currentActivationPrompt =
     activationPrompt?.requestFingerprint === requestFingerprint ? activationPrompt : null;
 
@@ -206,24 +229,40 @@ export function CaptureForm({
     }
   }, [activationPrompt, requestFingerprint]);
 
-  const createTask = async () => {
+  const createTask = async (kind: TaskKind = "action") => {
     if (!capturedTitle || saving) return;
+    if (kind === "reference" && referenceHasUnsupportedModifiers) {
+      setError({
+        message: strings.captureReferenceModifiersUnsupported,
+        draftKey: thoughtDraft?.key,
+      });
+      return;
+    }
     const intentKey = thoughtDraft?.key;
-    const intent = creationIntents.current.get(intentKey) ?? {};
-    creationIntents.current.set(intentKey, intent);
+    const intent =
+      kind === "reference"
+        ? (materialCreationIntent.current ??= {})
+        : (creationIntents.current.get(intentKey) ?? {});
+    if (kind !== "reference") creationIntents.current.set(intentKey, intent);
     setSaving(true);
     onSavingChange?.(true);
     setError(null);
+    if (kind === "reference") setActivationPrompt(null);
     try {
       const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
       const input = taskInput(
+          kind,
           needsClarification,
           preparedNotes,
-          currentActivationPrompt?.projects.length
+          kind === "action" && currentActivationPrompt?.projects.length
             ? projectActivationResolutionFromPrompt(currentActivationPrompt) ?? undefined
             : undefined,
         );
-      if (!currentActivationPrompt && (effectiveProjectId !== null || parentTaskId != null)) {
+      if (
+        kind === "action" &&
+        !currentActivationPrompt &&
+        (effectiveProjectId !== null || parentTaskId != null)
+      ) {
         const preview = await api.previewTaskCreation(input);
         if (preview.activatingProjects.length) {
           setActivationPrompt({ ...projectActivationPromptFromSnapshot(preview.decision), requestFingerprint });
@@ -231,7 +270,8 @@ export function CaptureForm({
         }
       }
       const task = await api.createTask(input, intent);
-      creationIntents.current.delete(intentKey);
+      if (kind === "reference") materialCreationIntent.current = null;
+      else creationIntents.current.delete(intentKey);
       onCaptured({ kind: "task", task, needsClarification });
       if (isThought && activeDraftKey.current === thoughtDraft?.key) {
         focusAfterSave.current = thoughtDraft?.key;
@@ -556,6 +596,16 @@ export function CaptureForm({
       {error && error.draftKey === thoughtDraft?.key ? <p className="capture-error" role="alert">{error.message}</p> : null}
       <div className={`capture-actions${primaryActionFirst ? " capture-actions-quick-add" : ""}`}>
         {primaryActionFirst ? createAction : null}
+        {materialActionLabel ? (
+          <button
+            type="button"
+            className="btn capture-material-action"
+            disabled={saving || !capturedTitle}
+            onClick={() => void createTask("reference")}
+          >
+            {materialActionLabel}
+          </button>
+        ) : null}
         {!isThought ? <button type="button" className="btn" onClick={onCancel} disabled={saving}>
           {strings.cancel}
         </button> : null}

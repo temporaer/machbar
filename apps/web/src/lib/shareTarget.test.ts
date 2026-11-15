@@ -3,6 +3,7 @@ import {
   appendTextBlock,
   parseWebShareTarget,
   shareTargetToCaptureDraft,
+  shareTargetToSource,
   shareTargetToTextBlock,
 } from "./shareTarget";
 
@@ -66,6 +67,43 @@ describe("share target helpers", () => {
     );
   });
 
+  it("keeps a bare URL supplied only as text as a clickable source", () => {
+    const url = "https://example.test/article";
+    const target = { title: "", text: url, url: "", files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToSource(target)).toBe(url);
+    expect(shareTargetToTextBlock(target)).toBe(url);
+  });
+
+  it("keeps URL-only payloads as a source", () => {
+    const url = "https://example.test/article";
+    const target = { title: "", text: "", url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToSource(target)).toBe(url);
+    expect(shareTargetToTextBlock(target)).toBe(url);
+  });
+
+  it("deduplicates matching text and URL parameters without losing surrounding text", () => {
+    const url = "https://example.test/article";
+    const text = `„Bitte lesen“ ${url} – sehr hilfreich`;
+    const target = { title: "Artikel", text, url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(text);
+    expect(shareTargetToSource(target)).toBe(text);
+    expect(shareTargetToTextBlock(target)).toBe(`Artikel\n\n${text}`);
+  });
+
+  it("deduplicates identical URLs when the URL ends in valid punctuation", () => {
+    const url = "https://example.test/search?q=why?";
+    const target = { title: "Search", text: url, url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToSource(target)).toBe(url);
+    expect(shareTargetToTextBlock(target)).toBe(`Search\n\n${url}`);
+  });
+
   it("uses exactly one blank line when appending non-empty text", () => {
     expect(appendTextBlock("Bestehende Notiz\n\n", "\nGeteilter Inhalt\n")).toBe(
       "Bestehende Notiz\n\nGeteilter Inhalt",
@@ -90,6 +128,30 @@ describe("share target helpers", () => {
     expect(shareTargetToTextBlock(target)).toBe(
       "Elternabend\n\n15. Sept. • 19:00–21:00 • Details ansehen\nhttps://calendar.app.google/abc123",
     );
+  });
+
+  it("deduplicates complete URL tokens without suppressing a longer path", () => {
+    const url = "https://example.test/article";
+    const text = "Read https://example.test/article/2 for the update.";
+    const target = { title: "Article", text, url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(`${text}\n\n${url}`);
+    expect(shareTargetToSource(target)).toBe(`${text}\n\n${url}`);
+    expect(shareTargetToTextBlock(target)).toBe(`Article\n\n${text}\n\n${url}`);
+  });
+
+  it("recognizes complete URL tokens inside prose and Markdown links", () => {
+    const url = "https://example.test/article";
+    const target = {
+      title: "Article",
+      text: `Read this [article](${url}) before replying.`,
+      url,
+      files: [],
+    };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(target.text);
+    expect(shareTargetToSource(target)).toBe(target.text);
+    expect(shareTargetToTextBlock(target)).toBe(`Article\n\n${target.text}`);
   });
 
   it("uses the first filename as the draft title for a file-only share", () => {

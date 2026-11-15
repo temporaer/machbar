@@ -10,6 +10,7 @@ import {
   appendTextBlock,
   parseWebShareTarget,
   shareTargetToCaptureDraft,
+  shareTargetToSource,
   shareTargetToTextBlock,
   type WebShareTarget,
 } from "../lib/shareTarget";
@@ -57,6 +58,7 @@ interface CompletedShare {
   kind: "task" | "project";
   id: number;
   title: string;
+  material?: boolean;
 }
 
 function optionForTask(task: Task, strings: Strings): ShareOption {
@@ -109,13 +111,31 @@ function uniqueOptions(options: ShareOption[]): ShareOption[] {
   return [...new Map(options.map((option) => [option.key, option])).values()];
 }
 
+function shareDraftBlock(title: string, source: string): string {
+  return appendTextBlock(title, shareSourceWithoutTitle(title, source));
+}
+
+function shareSourceWithoutTitle(title: string, source: string): string {
+  const cleanTitle = title.trim();
+  const cleanSource = source.trim();
+  if (!cleanTitle) return cleanSource;
+  if (cleanSource === cleanTitle) return "";
+  const lineBreak = cleanSource.indexOf("\n");
+  if (lineBreak >= 0 && cleanSource.slice(0, lineBreak).trim() === cleanTitle) {
+    return cleanSource.slice(lineBreak + 1).trim();
+  }
+  return cleanSource;
+}
+
 function TargetRows({
   options,
   busyKey,
+  selectedKey,
   onChoose,
 }: {
   options: ShareOption[];
   busyKey: string | null;
+  selectedKey: string | null;
   onChoose: (option: ShareOption) => void;
 }) {
   const strings = useStrings();
@@ -126,6 +146,7 @@ function TargetRows({
           key={option.key}
           type="button"
           className="destination-row"
+          aria-pressed={selectedKey === option.key}
           disabled={busyKey !== null}
           onClick={() => onChoose(option)}
         >
@@ -234,7 +255,8 @@ function SharePageContent({
     () => shareTargetToCaptureDraft(incoming, locale),
     [incoming, locale],
   );
-  const appendBlock = useMemo(() => shareTargetToTextBlock(incoming), [incoming]);
+  const [titleDraft, setTitleDraft] = useState(captureDraft.title);
+  const [sourceDraft, setSourceDraft] = useState(() => shareTargetToSource(incoming));
   const calendarMetadata = useMemo(
     () => parseGoogleCalendarShare(incoming, { locale }),
     [incoming, locale],
@@ -249,8 +271,8 @@ function SharePageContent({
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<CompletedShare | null>(null);
   const [pendingConflict, setPendingConflict] = useState<ShareOption | null>(null);
-  const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
+  const [selectedTargetKey, setSelectedTargetKey] = useState<string | null>(null);
   const attachmentUploads = useRef(
     new Map<number, Promise<UploadedPaperlessAttachment>>(),
   );
@@ -276,6 +298,19 @@ function SharePageContent({
     () => new Map(allOptions.map((option) => [option.key, option])),
     [allOptions],
   );
+  const selectedTarget = selectedTargetKey
+    ? optionByKey.get(selectedTargetKey) ?? null
+    : null;
+  const materialProjectId =
+    selectedTarget?.kind === "project"
+      ? selectedTarget.id
+      : selectedTarget?.projectId ?? null;
+  const materialProjectTitle =
+    materialProjectId === null
+      ? null
+      : projectsState.data?.find((project) => project.id === materialProjectId)?.title ??
+        (selectedTarget?.kind === "project" ? selectedTarget.title : null) ??
+        null;
   const recentOptions = useMemo(
     () =>
       readRecentShareTargets()
@@ -355,53 +390,88 @@ function SharePageContent({
     return paperlessAttachmentBlock(uploads);
   };
 
-  const resolveAppendBlock = async (base: string) => {
-    const withImportedContent = appendTextBlock(
-      base,
+  const shareContentText = () =>
+    shareDraftBlock(
+      incoming.title || incoming.text || titleDraft.trim() !== captureDraft.title
+        ? titleDraft
+        : "",
+      sourceDraft,
+    );
+
+  const resolveContentBlock = async (includeTitle: boolean) => {
+    const text = includeTitle ? shareContentText() : sourceDraft;
+    const withAttachments = appendTextBlock(
+      text,
       await resolveAttachmentBlock(),
     );
-    return appendTextBlock(withImportedContent, note.trim());
+    return appendTextBlock(withAttachments, note.trim());
   };
 
-  const isReferenceDestination = (option: ShareOption) =>
-    option.kind === "project" ||
-    (option.kind === "task" && option.taskKind === "reference");
-
   const creationIntent = useRef<CreationIntent>({});
+  const saveAsMaterial = async () => {
+    if (busyKey || intakePending) return;
+    setBusyKey("material");
+    setError(null);
+    try {
+      const task = await api.createTask(
+        {
+          kind: "reference",
+          title: titleDraft.trim(),
+          notes: await resolveContentBlock(false),
+          projectId: materialProjectId,
+          parentTaskId:
+            selectedTarget?.kind === "task" &&
+            selectedTarget.taskKind === "reference"
+              ? selectedTarget.id
+              : null,
+        },
+        creationIntent.current,
+      );
+      if (materialProjectId !== null) {
+        rememberShareTarget({ kind: "project", id: materialProjectId });
+      } else {
+        rememberShareTarget({ kind: "task", id: task.id });
+      }
+      bump();
+      setCompleted({
+        kind: "task",
+        id: task.id,
+        title: task.title,
+        material: true,
+      });
+      setPendingConflict(null);
+      clearPendingShare();
+    } catch (cause) {
+      if (isStaleWriteConflict(cause)) bump();
+      setError(localizedErrorMessage(cause, strings));
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const applyTo = async (
     option: ShareOption,
     deadlineAction: "append" | "calendar",
   ) => {
-    if (busyKey) return;
+    if (busyKey || intakePending) return;
     setBusyKey(option.key);
     setError(null);
     try {
-      if (isReferenceDestination(option)) {
-        // Sharing to a project/reference creates a new material node rather
-        // than appending to the destination's own notes — the destination's
-        // deadline is never touched here (Google Calendar dates stay in the
-        // reference's notes as plain text, not as a due date). The new
-        // reference's own `title` field already carries the incoming title,
-        // so the notes body is built from `captureDraft.notes`, which
-        // already excludes it (matching the Capture flow's dedup rules)
-        // instead of the append-block form used for existing entities.
-        const resolvedBlock = await resolveAppendBlock(captureDraft.notes);
-        await api.createTask({
-          kind: "reference",
-          title: captureDraft.title,
-          notes: resolvedBlock,
-          projectId: option.kind === "project" ? option.id : option.projectId,
-          parentTaskId: option.kind === "task" ? option.id : null,
-        }, creationIntent.current);
-      } else if (deadlineAction === "calendar" && calendarDueDate) {
-        const resolvedBlock = await resolveAppendBlock(appendBlock);
+      const resolvedBlock = await resolveContentBlock(true);
+      if (
+        deadlineAction === "calendar" &&
+        calendarDueDate &&
+        option.kind === "task" &&
+        option.taskKind !== "reference"
+      ) {
         await api.updateTask(option.id, {
           notes: appendTextBlock(option.notes, resolvedBlock),
           dueDate: calendarDueDate,
           expectedRevision: option.revision,
         });
+      } else if (option.kind === "project") {
+        await api.appendProjectNotes(option.id, resolvedBlock);
       } else {
-        const resolvedBlock = await resolveAppendBlock(appendBlock);
         await api.appendTaskNotes(option.id, resolvedBlock);
       }
       completeShare(option);
@@ -418,7 +488,8 @@ function SharePageContent({
 
   const appendTo = (option: ShareOption) => {
     if (
-      isReferenceDestination(option) ||
+      option.kind === "project" ||
+      option.taskKind === "reference" ||
       !calendarDueDate ||
       option.dueDate === calendarDueDate
     ) {
@@ -433,6 +504,19 @@ function SharePageContent({
     setPendingConflict(option);
   };
 
+  const processShared = () => {
+    if (busyKey || intakePending) return;
+    const text = appendTextBlock(
+      shareContentText(),
+      note.trim(),
+    );
+    void startIntake({ text, files: incoming.files })
+      .then(() => {
+        clearPendingShare();
+      })
+      .catch(() => undefined);
+  };
+
   const completeCapture = (result: CaptureResult) => {
     bump();
     setCompleted({ kind: "task", id: result.task.id, title: result.task.title });
@@ -440,18 +524,16 @@ function SharePageContent({
     clearPendingShare();
   };
 
-  const processShared = () => {
-    void startIntake({ text: appendTextBlock(appendBlock, note.trim()), files: incoming.files }).then(() => {
-      clearPendingShare();
-    }).catch(() => undefined);
-  };
-
   if (completed) {
     return (
       <div className="share-page stack">
         <h1>{strings.shareWithMachbar}</h1>
         <div className="card stack" role="status">
-          <strong>{strings.sharedWith(completed.title)}</strong>
+          <strong>
+            {completed.material
+              ? strings.materialSaved(completed.title)
+              : strings.sharedWith(completed.title)}
+          </strong>
           <button
             type="button"
             className="btn btn-primary btn-block"
@@ -463,7 +545,7 @@ function SharePageContent({
               )
             }
           >
-            {strings.openSharedTarget}
+            {completed.material ? strings.viewMaterial : strings.openSharedTarget}
           </button>
           <button type="button" className="btn btn-block" onClick={() => navigate("/today")}>
             {strings.done}
@@ -475,51 +557,166 @@ function SharePageContent({
 
   const loading = projectsState.loading || tasksState.loading || agendaState.loading;
   const loadError = projectsState.error || tasksState.error || agendaState.error;
+  const interactionsBusy = busyKey !== null || intakePending;
+  const captureControlsDisabled = interactionsBusy || captureOpen;
+  const materialDestinationMessage = materialProjectTitle
+    ? strings.shareMaterialInProject(materialProjectTitle)
+    : strings.shareMaterialWithoutProject;
 
   return (
     <div className="share-page stack">
       <h1>{strings.shareWithMachbar}</h1>
-      <section className="card share-preview">
-        <strong>{captureDraft.title}</strong>
+      <section className="card stack share-preview">
+        <label className="field">
+          <span>{strings.title}</span>
+          <input
+            type="text"
+            value={titleDraft}
+            disabled={captureControlsDisabled}
+            onChange={(event) => setTitleDraft(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>{strings.shareSourceLabel}</span>
+          <textarea
+            rows={4}
+            value={sourceDraft}
+            placeholder={strings.shareSourcePlaceholder}
+            disabled={captureControlsDisabled}
+            onChange={(event) => setSourceDraft(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>{strings.shareNoteLabel}</span>
+          <textarea
+            rows={3}
+            value={note}
+            placeholder={strings.shareNotePlaceholder}
+            disabled={captureControlsDisabled}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
         {formattedCalendarDueDate ? (
           <p className="share-preview-deadline">
             {strings.calendarDeadlinePreview(formattedCalendarDueDate)}
           </p>
         ) : null}
-        {captureDraft.notes ? <p>{captureDraft.notes}</p> : null}
         {incoming.files.length > 0 ? (
           <p>{strings.sharedAttachments(incoming.files.length)}</p>
         ) : null}
       </section>
-      <button
-        type="button"
-        className="btn btn-primary btn-block"
-        disabled={intakePending}
-        onClick={processShared}
-      >
-        {intakePending ? strings.intakeStarting : strings.intakeProcess}
-      </button>
-      {intakeError ? <p className="capture-error" role="alert">{intakeError}</p> : null}
+      {!pendingConflict ? (
+        <section className="section stack" aria-labelledby="share-destinations-heading">
+          <h2 className="section-title" id="share-destinations-heading">
+            {strings.shareMaterialDestinationHeading}
+          </h2>
+          <button
+            type="button"
+            className="choice-chip"
+            aria-pressed={selectedTargetKey === null}
+            disabled={captureControlsDisabled}
+            onClick={() => setSelectedTargetKey(null)}
+          >
+            {strings.shareWithoutProject}
+          </button>
+          <p className="text-muted">{materialDestinationMessage}</p>
+          {recentOptions.length > 0 ? (
+            <section className="section" aria-labelledby="share-recent-heading">
+              <h3 className="section-title" id="share-recent-heading">
+                {strings.recentDestinations}
+              </h3>
+              <TargetRows
+                options={recentOptions}
+                busyKey={captureControlsDisabled ? "busy" : null}
+                selectedKey={selectedTargetKey}
+                onChoose={(option) => setSelectedTargetKey(option.key)}
+              />
+            </section>
+          ) : null}
+          {todayOptions.length > 0 && !query.trim() ? (
+            <section className="section" aria-labelledby="share-today-heading">
+              <h3 className="section-title" id="share-today-heading">{strings.today}</h3>
+              <TargetRows
+                options={todayOptions}
+                busyKey={captureControlsDisabled ? "busy" : null}
+                selectedKey={selectedTargetKey}
+                onChoose={(option) => setSelectedTargetKey(option.key)}
+              />
+            </section>
+          ) : null}
+          <label className="field">
+            <span>{strings.searchShareTargets}</span>
+            <input
+              type="search"
+              value={query}
+              placeholder={strings.searchDestinationPlaceholder}
+              disabled={captureControlsDisabled}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          {query.trim() && searchOptions.length === 0 ? (
+            <p className="text-muted">{strings.destinationSearchEmpty}</p>
+          ) : null}
+          {searchOptions.length > 0 ? (
+            <TargetRows
+              options={searchOptions}
+              busyKey={captureControlsDisabled ? "busy" : null}
+              selectedKey={selectedTargetKey}
+              onChoose={(option) => setSelectedTargetKey(option.key)}
+            />
+          ) : null}
+        </section>
+      ) : null}
 
-      {noteOpen ? (
-        <label className="field">
-          <span>{strings.shareNoteLabel}</span>
-          <input
-            type="text"
-            value={note}
-            placeholder={strings.shareNotePlaceholder}
-            onChange={(event) => setNote(event.target.value)}
-          />
-        </label>
-      ) : (
-        <button
-          type="button"
-          className="btn btn-ghost share-note-toggle"
-          onClick={() => setNoteOpen(true)}
-        >
-          {strings.addShareNote}
-        </button>
-      )}
+      {!pendingConflict && !captureOpen ? (
+        <section className="card stack">
+          <h2 className="section-title">{strings.shareActionHeading}</h2>
+          <div className="stack">
+            <p>{strings.shareMaterialActionHint} {materialDestinationMessage}</p>
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              disabled={interactionsBusy || !titleDraft.trim()}
+              onClick={() => void saveAsMaterial()}
+            >
+              {busyKey === "material"
+                ? strings.shareSavingMaterial
+                : strings.shareSaveAsMaterial}
+            </button>
+          </div>
+          <div className="stack">
+            <p>
+              {selectedTarget
+                ? strings.shareAppendActionHint
+                : strings.shareAppendTargetHint}
+            </p>
+            <button
+              type="button"
+              className="btn btn-block"
+              disabled={interactionsBusy || selectedTarget === null}
+              onClick={() => {
+                if (selectedTarget) appendTo(selectedTarget);
+              }}
+            >
+              {busyKey === selectedTarget?.key
+                ? strings.sharing
+                : strings.shareAppendNotes}
+            </button>
+          </div>
+          <div className="stack">
+            <p>{strings.shareProcessActionHint}</p>
+            <button
+              type="button"
+              className="btn btn-block"
+              disabled={interactionsBusy}
+              onClick={processShared}
+            >
+              {intakePending ? strings.intakeStarting : strings.intakeProcess}
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {intakeError ? <p className="capture-error" role="alert">{intakeError}</p> : null}
 
       {pendingConflict && formattedCalendarDueDate ? (
         <section className="card stack share-deadline-conflict" role="alert">
@@ -551,30 +748,38 @@ function SharePageContent({
             </button>
           </div>
         </section>
-      ) : captureOpen ? (
+      ) : null}
+
+      {!pendingConflict && captureOpen ? (
         <section className="section share-capture" aria-labelledby="share-new-heading">
-          <h2 className="section-title" id="share-new-heading">{strings.createNew}</h2>
+          <h2 className="section-title" id="share-new-heading">{strings.shareCaptureTask}</h2>
           <CaptureForm
-            initialTitle={captureDraft.title}
-            initialNotes={captureDraft.notes}
+            initialTitle={titleDraft}
+            initialNotes={sourceDraft}
             initialDueDate={calendarDueDate}
             showNotes
             showDueDate={calendarDueDate !== null}
             pendingFiles={incoming.files}
-            prepareNotes={resolveAppendBlock}
+            prepareNotes={async (base) =>
+              appendTextBlock(
+                appendTextBlock(base, await resolveAttachmentBlock()),
+                note.trim(),
+              )
+            }
             onCancel={() => setCaptureOpen(false)}
             onCaptured={completeCapture}
           />
         </section>
-      ) : (
+      ) : !pendingConflict ? (
         <button
           type="button"
-          className="btn btn-primary btn-block share-new-button"
+          className="btn btn-block share-new-button"
+          disabled={interactionsBusy}
           onClick={() => setCaptureOpen(true)}
         >
-          + {strings.newTask}
+          {strings.shareCaptureTask}
         </button>
-      )}
+      ) : null}
 
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
       {!pendingConflict && loading ? <LoadingState /> : null}
@@ -587,41 +792,6 @@ function SharePageContent({
             agendaState.reload();
           }}
         />
-      ) : null}
-      {!pendingConflict && !loading && !loadError ? (
-        <>
-          {recentOptions.length > 0 ? (
-            <section className="section" aria-labelledby="share-recent-heading">
-              <h2 className="section-title" id="share-recent-heading">
-                {strings.recentDestinations}
-              </h2>
-              <TargetRows options={recentOptions} busyKey={busyKey} onChoose={appendTo} />
-            </section>
-          ) : null}
-          {todayOptions.length > 0 && !query.trim() ? (
-            <section className="section" aria-labelledby="share-today-heading">
-              <h2 className="section-title" id="share-today-heading">{strings.today}</h2>
-              <TargetRows options={todayOptions} busyKey={busyKey} onChoose={appendTo} />
-            </section>
-          ) : null}
-          <section className="section">
-            <label className="field">
-              <span>{strings.searchShareTargets}</span>
-              <input
-                type="search"
-                value={query}
-                placeholder={strings.searchDestinationPlaceholder}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            {query.trim() && searchOptions.length === 0 ? (
-              <p className="text-muted">{strings.destinationSearchEmpty}</p>
-            ) : null}
-            {searchOptions.length > 0 ? (
-              <TargetRows options={searchOptions} busyKey={busyKey} onChoose={appendTo} />
-            ) : null}
-          </section>
-        </>
       ) : null}
     </div>
   );

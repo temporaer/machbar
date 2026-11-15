@@ -1,3 +1,4 @@
+import { markdownValue } from "../test/markdownEditor";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -31,6 +32,7 @@ vi.mock("../lib/api", () => ({
     createTask: vi.fn(),
     createProject: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
+    createIntake: vi.fn(),
   },
   paperlessDocumentThumbnailUrl: (id: number) =>
     `/api/integrations/paperless/documents/${id}/thumbnail`,
@@ -47,7 +49,7 @@ vi.mock("../lib/identity", () => ({
 
 const mockedApi = vi.mocked(api, true);
 const mockedDeletePendingShareTarget = vi.mocked(deletePendingShareTarget);
-void readPendingShareTarget;
+const mockedReadPendingShareTarget = vi.mocked(readPendingShareTarget);
 
 const emptyAgenda = {
   projects: [],
@@ -119,6 +121,7 @@ describe("SharePage reference destinations", () => {
     await userEvent.click(
       screen.getAllByRole("button", { name: /Schweiz Urlaub/ }).at(-1)!,
     );
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
@@ -131,6 +134,108 @@ describe("SharePage reference destinations", () => {
     );
     expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["URL-only share", "url=https%3A%2F%2Fexample.test%2Farticle"],
+    ["bare URL text", "text=https%3A%2F%2Fexample.test%2Farticle"],
+  ])("keeps a %s in task-capture notes", async (_label, payload) => {
+    window.history.replaceState(null, "", `/?${payload}#/share`);
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Als Aufgabe erfassen" }));
+
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe(
+      "https://example.test/article",
+    );
+  });
+
+  it("locks share editors and destinations while task capture owns the draft", async () => {
+    const project = makeProject({ id: 4, title: "Urlaub" });
+    mockedApi.getProjects.mockResolvedValue([project]);
+    let finishCreate!: (task: ReturnType<typeof makeTask>) => void;
+    mockedApi.createTask.mockImplementation(
+      () => new Promise((resolve) => {
+        finishCreate = resolve as (task: ReturnType<typeof makeTask>) => void;
+      }),
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/?title=Camping&url=https%3A%2F%2Fexample.test#/share",
+    );
+    renderPage();
+
+    await userEvent.type(await screen.findByLabelText("Aufgaben und Projekte durchsuchen"), "Urlaub");
+    await userEvent.click(screen.getAllByRole("button", { name: /Urlaub/ }).at(-1)!);
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+
+    expect(screen.getByLabelText("Titel")).toBeDisabled();
+    expect(screen.getByLabelText("Quelle")).toBeDisabled();
+    expect(screen.getByLabelText("Notiz")).toBeDisabled();
+    expect(screen.getByLabelText("Aufgaben und Projekte durchsuchen")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ohne Projekt" })).toBeDisabled();
+    expect(
+      screen.getAllByRole("button", { name: /Urlaub/ }).every((button) =>
+        button.hasAttribute("disabled"),
+      ),
+    ).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledOnce());
+    expect(screen.getByLabelText("Titel")).toBeDisabled();
+    expect(screen.getByLabelText("Quelle")).toBeDisabled();
+    expect(screen.getByLabelText("Aufgaben und Projekte durchsuchen")).toBeDisabled();
+
+    finishCreate(makeTask());
+  });
+
+  it.each([
+    ["sentence prefix", "Article discusses household planning.", "Article\n\nArticle discusses household planning."],
+    ["standalone title line", "Article\n\nMore details follow.", "Article\n\nMore details follow."],
+  ])("preserves source prose when the title is a %s", async (_label, text, expected) => {
+    mockedApi.createIntake.mockResolvedValue({ id: "intake-1" });
+    window.history.replaceState(
+      null,
+      "",
+      `/?title=Article&text=${encodeURIComponent(text)}#/share`,
+    );
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createIntake).toHaveBeenCalledWith({
+        text: expected,
+        files: [],
+      }),
+    );
+  });
+
+  it("keeps a title-prefixed sentence intact when appending it to a task", async () => {
+    const task = makeTask({ id: 8, title: "Zu lesen", notes: "" });
+    mockedApi.searchTasks.mockResolvedValue([task]);
+    mockedApi.appendTaskNotes.mockResolvedValue(task);
+    window.history.replaceState(
+      null,
+      "",
+      `/?title=Article&text=${encodeURIComponent("Article discusses household planning.")}#/share`,
+    );
+    renderPage();
+
+    await userEvent.type(
+      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
+      "Zu lesen",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Zu lesen/ }));
+    await userEvent.click(screen.getByRole("button", { name: "An Notiz anhängen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.appendTaskNotes).toHaveBeenCalledWith(
+        8,
+        "Article\n\nArticle discusses household planning.",
+      ),
+    );
   });
 
   it("creates a Reference as a child of an existing Reference destination", async () => {
@@ -161,6 +266,7 @@ describe("SharePage reference destinations", () => {
       name: /Unterkunft/,
     });
     await userEvent.click(matchingDestinations.at(-1)!);
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
@@ -188,7 +294,8 @@ describe("SharePage reference destinations", () => {
       await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
       "Urlaub",
     );
-    await userEvent.click(screen.getByRole("button", { name: /Urlaub planen/ }));
+    await userEvent.click(screen.getAllByRole("button", { name: /Urlaub planen/ }).at(-1)!);
+    await userEvent.click(screen.getByRole("button", { name: "An Notiz anhängen" }));
 
     await waitFor(() =>
       expect(mockedApi.appendTaskNotes).toHaveBeenCalledWith(
@@ -212,7 +319,6 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.click(screen.getByRole("button", { name: "+ Notiz hinzufügen" }));
     await userEvent.type(
       screen.getByLabelText("Notiz"),
       "Direkt am See, scheint gut für die Kinder",
@@ -224,6 +330,7 @@ describe("SharePage reference destinations", () => {
     await userEvent.click(
       screen.getAllByRole("button", { name: /Schweiz Urlaub/ }).at(-1)!,
     );
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
@@ -235,6 +342,59 @@ describe("SharePage reference destinations", () => {
         parentTaskId: null,
       }, expect.any(Object)),
     );
+  });
+
+  it("retains a staged material draft and reuses uploads and creation identity on retry", async () => {
+    const file = new File(["receipt"], "receipt.pdf", {
+      type: "application/pdf",
+    });
+    mockedReadPendingShareTarget.mockResolvedValue({
+      title: "Beleg",
+      text: "Rechnung prüfen",
+      url: "",
+      files: [file],
+    });
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 93,
+      title: "receipt",
+      originalFileName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    mockedApi.createTask
+      .mockRejectedValueOnce(new Error("Temporary create failure"))
+      .mockResolvedValueOnce(
+        makeTask({ id: 93, kind: "reference", title: "Beleg" }),
+      );
+    window.history.replaceState(null, "", "/?shareId=material-retry#/share");
+    renderPage();
+
+    await screen.findByLabelText("Notiz");
+    await userEvent.type(screen.getByLabelText("Notiz"), "Für die Steuer");
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Temporary create failure",
+    );
+    expect(screen.getByLabelText("Titel")).toHaveValue("Beleg");
+    expect(screen.getByLabelText("Notiz")).toHaveValue("Für die Steuer");
+    expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledOnce();
+    expect(mockedDeletePendingShareTarget).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    const expectedInput = {
+      kind: "reference",
+      title: "Beleg",
+      notes: "Rechnung prüfen\n\n[receipt.pdf](paperless:93)\n\nFür die Steuer",
+      projectId: null,
+      parentTaskId: null,
+    };
+    expect(mockedApi.createTask.mock.calls[0]?.[0]).toEqual(expectedInput);
+    expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expectedInput);
+    expect(mockedApi.createTask.mock.calls[0]?.[1]).toBe(
+      mockedApi.createTask.mock.calls[1]?.[1],
+    );
+    expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledOnce();
+    expect(mockedDeletePendingShareTarget).toHaveBeenCalledWith("material-retry");
   });
 
   it("does not apply a Calendar deadline when sharing to a Reference destination", async () => {
@@ -264,6 +424,7 @@ describe("SharePage reference destinations", () => {
       name: /Unterkunft/,
     });
     await userEvent.click(matchingDestinations.at(-1)!);
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(

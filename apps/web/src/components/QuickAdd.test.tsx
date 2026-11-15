@@ -186,6 +186,57 @@ describe("QuickAdd", () => {
     );
   });
 
+  it("saves material as a Reference under the project and offers to view it", async () => {
+    mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Projekt Reise" })]);
+    mockedApi.createTask.mockResolvedValue(
+      makeTask({ id: 77, kind: "reference", title: "Reiseplan", projectId: 7 }),
+    );
+    renderQuickAddInStory(7, <><QuickAdd /><OpenTaskProbe /></>);
+    await openCapture();
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Reiseplan");
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        {
+          kind: "reference",
+          title: "Reiseplan",
+          projectId: 7,
+          parentTaskId: null,
+          createdByMemberId: 1,
+        },
+        expect.any(Object),
+      ),
+    );
+    expect(mockedApi.previewTaskCreation).not.toHaveBeenCalled();
+    expect(await screen.findByText("Material gespeichert: Reiseplan")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Ansehen" }));
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("77");
+  });
+
+  it("keeps a failed material draft and retries with the same creation intent", async () => {
+    mockedApi.createTask
+      .mockRejectedValueOnce(new Error("Temporary create failure"))
+      .mockResolvedValueOnce(
+        makeTask({ id: 78, kind: "reference", title: "Notiz" }),
+      );
+    renderWithProviders(<QuickAdd />);
+    await openCapture();
+    const title = screen.getByPlaceholderText("Was ist zu tun?");
+    await userEvent.type(title, "Notiz");
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Temporary create failure");
+    expect(title).toHaveValue("Notiz");
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTask.mock.calls[0]?.[1]).toBe(
+      mockedApi.createTask.mock.calls[1]?.[1],
+    );
+    expect(await screen.findByText("Material gespeichert: Notiz")).toBeInTheDocument();
+  });
+
   it("allows a contextual capture to change its destination to the inbox", async () => {
     mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Projekt Reise" })]);
     mockedApi.createTask.mockResolvedValue(makeTask({ title: "Rechnung prüfen", projectId: null }));
@@ -700,7 +751,7 @@ describe("QuickAdd", () => {
     const create = screen.getByRole("button", { name: "Erstellen" });
     const footer = create.parentElement!;
     expect(within(footer).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Erstellen", "Abbrechen", "Verarbeiten", "Foto erfassen", "Datei erfassen",
+      "Erstellen", "Als Material speichern", "Abbrechen", "Verarbeiten", "Foto erfassen", "Datei erfassen",
     ]);
     expect(create).toBeDisabled();
     expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveFocus();
@@ -708,7 +759,7 @@ describe("QuickAdd", () => {
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Milch kaufen");
     expect(create).toBeEnabled();
     create.focus();
-    for (const name of ["Abbrechen", "Verarbeiten", "Foto erfassen", "Datei erfassen"]) {
+    for (const name of ["Als Material speichern", "Abbrechen", "Verarbeiten", "Foto erfassen", "Datei erfassen"]) {
       await userEvent.tab();
       expect(screen.getByRole("button", { name })).toHaveFocus();
     }

@@ -167,9 +167,14 @@ controls writes the same metadata. Entity tokens only become metadata after
 choosing a concrete suggestion; unknown tags, members, contexts, or projects
 stay literal title text and are not created by capture syntax.
 
-Installed Android PWAs can receive text and URLs from the operating-system
-share sheet. Incoming material can create new work or be appended to an
-existing task or project.
+Installed Android PWAs can receive text, URLs, and files from the operating
+system share sheet. Review and edit the title, source, and optional annotation
+before choosing what happens: **Als Material speichern** creates a reference
+with or without a selected project, **An Notiz anhängen** updates the selected
+task or project's notes, and **Verarbeiten** sends the content to intake.
+**Als Aufgabe erfassen** keeps the ordinary capture path and any parsed
+Calendar deadline. Successful material capture offers **Ansehen**; failed
+creates keep the draft and staged files available for a safe retry.
 New camera photos can be cropped before capture or attached unchanged. The
 in-app camera requests a bounded stream instead of handing a full-resolution
 photo back from Android's external camera intent. The crop editor opens only on

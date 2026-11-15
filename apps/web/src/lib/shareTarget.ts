@@ -34,37 +34,70 @@ export function parseWebShareTarget(params: URLSearchParams | string): WebShareT
  *
  * A supplied page title wins. Without one, short text becomes the task title;
  * longer text remains intact in notes and contributes a compact first-line
- * title. URLs are always a distinct notes block rather than being run into
- * the prose around them.
+ * title. URLs stay in Markdown notes and are not repeated when already present
+ * in the shared text.
  */
 export function shareTargetToCaptureDraft(
   target: WebShareTarget,
   locale: Locale = "de",
 ): CaptureShareDraft {
-  const shortText = isShortPlainText(target.text);
+  const text = normalizeBlock(target.text);
+  const url = normalizeInline(target.url);
+  const shortText = isShortPlainText(text);
   const title =
     target.title ||
-    (shortText ? normalizeInline(target.text) : deriveTitle(target.text)) ||
-    target.url ||
+    (shortText ? normalizeInline(text) : deriveTitle(text)) ||
+    url ||
     target.files[0]?.name ||
     getCatalog(locale).sharedContent;
 
   const noteParts: string[] = [];
-  if (target.text && (target.title || !shortText)) noteParts.push(target.text);
-  if (target.url) noteParts.push(target.url);
+  if (
+    text &&
+    (target.title || !shortText || isWebUrl(text))
+  ) {
+    noteParts.push(text);
+  }
+  if (url && !containsUrlToken(text, url)) noteParts.push(url);
 
   return { title, notes: noteParts.join("\n\n") };
 }
 
+/** Returns the shared text and URL as a Markdown-ready source block. */
+export function shareTargetToSource(target: WebShareTarget): string {
+  const text = normalizeBlock(target.text);
+  const url = normalizeInline(target.url);
+  if (
+    !target.title &&
+    isShortPlainText(text) &&
+    !/https?:\/\//i.test(text)
+  ) {
+    return url && !containsUrlToken(text, url) ? url : "";
+  }
+  if (!text) return url;
+  return url && !containsUrlToken(text, url) ? appendTextBlock(text, url) : text;
+}
+
 /**
  * Produces a self-contained free-text block for appending to existing notes.
- * Duplicate title/text values are included only once.
+ * Duplicate title, text, and URL content is included only once.
  */
 export function shareTargetToTextBlock(target: WebShareTarget): string {
   const parts: string[] = [];
-  if (target.title) parts.push(target.title);
-  if (target.text && normalizeInline(target.text) !== target.title) parts.push(target.text);
-  if (target.url) parts.push(target.url);
+  const title = normalizeBlock(target.title);
+  const text = normalizeBlock(target.text);
+  const url = normalizeInline(target.url);
+  if (title) parts.push(title);
+  if (text && normalizeInline(text) !== title) {
+    parts.push(text);
+  }
+  if (
+    url &&
+    !containsUrlToken(text, url) &&
+    !containsUrlToken(title, url)
+  ) {
+    parts.push(url);
+  }
   return parts.join("\n\n");
 }
 
@@ -80,6 +113,31 @@ export function appendTextBlock(existing: string, block: string): string {
 
 function isShortPlainText(text: string): boolean {
   return text.length <= SHORT_TEXT_LENGTH && !/[\r\n]/.test(text);
+}
+
+function isWebUrl(text: string): boolean {
+  return /^https?:\/\/\S+$/i.test(text);
+}
+
+function containsUrlToken(text: string, url: string): boolean {
+  for (const match of text.matchAll(/(^|[^\p{L}\p{N}_])(https?:\/\/[^\s<>"`]+)/giu)) {
+    const token = match[2] ?? "";
+    if (token === url || normalizeUrlToken(token) === url) return true;
+  }
+  return false;
+}
+
+function normalizeUrlToken(value: string): string {
+  let token = value.replace(/[.,!?;:]+$/, "");
+  for (const [opening, closing] of [["(", ")"], ["[", "]"], ["{", "}"]] as const) {
+    while (
+      token.endsWith(closing) &&
+      token.split(closing).length > token.split(opening).length
+    ) {
+      token = token.slice(0, -1);
+    }
+  }
+  return token;
 }
 
 function deriveTitle(text: string): string {

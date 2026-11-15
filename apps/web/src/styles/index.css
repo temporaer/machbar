@@ -2734,6 +2734,10 @@ details[open] > .disclosure-summary::after {
   grid-column: 1 / -1;
 }
 
+.capture-actions-quick-add > .capture-material-action {
+  grid-column: 1 / -1;
+}
+
 .capture-modifiers {
   display: flex;
   flex-wrap: wrap;
