@@ -12,7 +12,9 @@ function renderedElements(markdown: string) {
   const tree = markdownRenderer.runSync(markdownRenderer.parse(markdown)) as Root;
   const links: string[] = [];
   const images: { src: string; alt: string; title: string | undefined }[] = [];
+  const texts: string[] = [];
   const visit = (node: RootContent | Root) => {
+    if (node.type === "text") texts.push(node.value);
     if (node.type === "element" && node.tagName === "a") {
       links.push(String(node.properties.href));
     }
@@ -30,7 +32,7 @@ function renderedElements(markdown: string) {
     }
   };
   visit(tree);
-  return { links, images };
+  return { links, images, texts };
 }
 
 describe("buildProjectAiPromptText", () => {
@@ -121,5 +123,34 @@ describe("buildProjectAiPromptText", () => {
       alt: "Diagram &amp;copy;",
       title: "Figure &amp;copy;",
     }]);
+  });
+
+  it("removes duplicate reference definitions before combining notes", () => {
+    const first = makeTask({
+      id: 12,
+      title: "Quelle A",
+      kind: "reference",
+      notes: [
+        "[Link][source]",
+        "",
+        "[source]: https://example.test/first",
+        "[source]: https://example.test/second",
+      ].join("\n"),
+    });
+    const second = makeTask({
+      id: 13,
+      title: "Quelle B",
+      kind: "reference",
+      notes: "Refer to [source] for context.",
+    });
+
+    const markdown = buildProjectAiPromptText("", [
+      { task: first, parentTitles: [] },
+      { task: second, parentTitles: [] },
+    ]);
+    const { links, texts } = renderedElements(markdown);
+
+    expect(links).toEqual(["https://example.test/first"]);
+    expect(texts).toContain("Refer to [source] for context.");
   });
 });

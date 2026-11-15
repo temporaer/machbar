@@ -20,10 +20,12 @@ function applyTextEdits(markdown: string, edits: TextEdit[]): string {
 function resolveMarkdownReferences(markdown: string): string {
   const tree = markdownParser.parse(markdown);
   const definitions = new Map<string, Definition>();
+  const definitionNodes: Definition[] = [];
 
   const visit = (parent: Parent) => {
     for (const child of parent.children) {
       if (child.type === "definition") {
+        definitionNodes.push(child);
         if (!definitions.has(child.identifier)) definitions.set(child.identifier, child);
       } else if ("children" in child) {
         visit(child);
@@ -92,7 +94,7 @@ function resolveMarkdownReferences(markdown: string): string {
   };
 
   const edits = collectReferenceEdits(tree.children);
-  for (const definition of definitions.values()) {
+  for (const definition of definitionNodes) {
     const start = definition.position?.start.offset;
     let end = definition.position?.end.offset;
     if (start === undefined || end === undefined) continue;
