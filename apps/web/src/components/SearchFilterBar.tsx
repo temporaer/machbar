@@ -98,6 +98,7 @@ export function SearchFilterBar({
                   ? filters.kinds.filter((kind) => kind !== "reference")
                   : [...(filters.kinds ?? []), "reference"];
                 const updated = { ...filters };
+                if (kinds.includes("reference")) delete updated.status;
                 if (kinds.length > 0) updated.kinds = kinds;
                 else delete updated.kinds;
                 onChange(updated);
@@ -111,6 +112,7 @@ export function SearchFilterBar({
             <select
               id="filter-status"
               value={filters.status ?? ""}
+              disabled={filters.kinds?.includes("reference") ?? false}
               onChange={(e) => set("status", (e.target.value || undefined) as TaskStatus | undefined)}
             >
               <option value="">{strings.allStatuses}</option>

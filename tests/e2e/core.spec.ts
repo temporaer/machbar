@@ -91,6 +91,54 @@ test("global material results retain keyboard navigation and theme contrast", as
   await expect(page.getByRole("heading", { name: firstTitle, exact: true })).toBeVisible();
 });
 
+test("material previews keep links accessible and long labels within both views", async ({ page }) => {
+  const longTitle = `Parent${"x".repeat(160)}`;
+  const domain = `${"a".repeat(60)}.example.com`;
+  const projectResponse = await page.request.post("/api/projects", {
+    data: { title: longTitle },
+  });
+  expect(projectResponse.status()).toBe(201);
+  const project = await projectResponse.json();
+  const parent = await task(page, { title: longTitle, projectId: project.id });
+  const title = `Material ${randomUUID()}`;
+  const materialResponse = await page.request.post("/api/tasks", {
+    data: {
+      title,
+      kind: "reference",
+      projectId: project.id,
+      parentTaskId: parent.id,
+      notes: `[Quelle](https://${domain}/path)\n\n${"Notes ".repeat(80)} [Hidden link](https://other.example)`,
+    },
+  });
+  expect(materialResponse.status()).toBe(201);
+
+  for (const route of [`/#/projects/${project.id}`, "/#/more/all"]) {
+    await page.goto(route);
+    if (route.includes("/more/all")) {
+      await page.getByRole("button", { name: "Filter", exact: true }).click();
+      await page.getByRole("textbox", { name: "Suchen" }).fill(title);
+      const status = page.getByRole("combobox", { name: "Status" });
+      await status.selectOption("captured");
+      await page.getByRole("button", { name: "Material", exact: true }).click();
+      await expect(status).toBeDisabled();
+      await expect(status).toHaveValue("");
+    }
+    const card = page.locator(".material-card").filter({ hasText: title });
+    await expect(card).toBeVisible();
+    const open = card.getByRole("button", { name: `Material öffnen: ${title}` });
+    const source = card.getByRole("link", { name: `Link öffnen: ${domain}` });
+    await expect(source).toBeVisible();
+    expect(await card.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await expect(card.locator(".material-card-notes a")).toHaveCount(0);
+    await open.focus();
+    await page.keyboard.press("Tab");
+    await expect(source).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(source).not.toBeFocused();
+  }
+});
+
 async function prerequisiteDestination(page: Page) {
   const projectResponse = await page.request.post("/api/projects", {
     data: { title: `Shortcut project ${randomUUID()}` },

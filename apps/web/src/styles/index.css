@@ -4344,6 +4344,7 @@ details[open] > .disclosure-summary::after {
 
 .material-card {
   min-width: 0;
+  overflow-wrap: anywhere;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);

@@ -69,7 +69,7 @@ describe("AllPage", () => {
     title: "Haftpflichtbedingungen",
     projectId: 2,
     projectTitle: "Wohnung streichen",
-    notes: "[Quelle](https://www.source.example/material)\n\n[Dokument](paperless:72)\n\nWichtige Bedingungen.",
+    notes: "[Quelle](https://www.source.example/material)\n\n[Dokument](paperless:72)\n\nWichtige Bedingungen. [Weitere Hinweise](https://other.example) und info@example.org",
   });
   const standaloneMaterial = makeTask({
     id: 32,
@@ -170,6 +170,9 @@ describe("AllPage", () => {
       .toBeVisible();
     expect(screen.getByRole("link", { name: "Link öffnen: source.example" }))
       .toHaveAttribute("href", "https://www.source.example/material");
+    const preview = document.querySelector(".material-card-notes")!;
+    expect(preview).toHaveTextContent("Weitere Hinweise");
+    expect(preview.querySelectorAll("a, button, [tabindex]")).toHaveLength(0);
     expect(document.querySelector('img[src="/api/integrations/paperless/documents/72/thumbnail"]'))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dokument" })).toHaveAttribute(
@@ -182,6 +185,35 @@ describe("AllPage", () => {
     expect(document.querySelector('img[src="/api/integrations/paperless/documents/73/thumbnail"]'))
       .toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Projekte" })).not.toBeInTheDocument();
+  });
+
+  it("clears action status when enabling Material and allows it again after disabling or resetting", async () => {
+    renderWithProviders(<AllPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    const status = screen.getByRole("combobox", { name: "Status" });
+    const material = screen.getByRole("button", { name: "Material" });
+    await userEvent.selectOptions(status, "captured");
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
+      status: "captured",
+      includeTerminal: true,
+    }));
+
+    await userEvent.click(material);
+    expect(status).toHaveValue("");
+    expect(status).toBeDisabled();
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
+      kinds: ["reference"],
+      includeTerminal: true,
+    }));
+    expect(await screen.findByRole("button", { name: "Material öffnen: Kassenbeleg" })).toBeVisible();
+
+    await userEvent.click(material);
+    expect(status).toBeEnabled();
+    await userEvent.selectOptions(status, "actionable");
+    await userEvent.click(material);
+    await userEvent.click(screen.getByRole("button", { name: "Filter zurücksetzen" }));
+    expect(status).toBeEnabled();
+    expect(status).toHaveValue("");
   });
 
   it("uses theme-aware colors for the selected Material filter", async () => {

@@ -61,6 +61,7 @@ export function MaterialCard({
         <MarkdownNotes
           value={content.remainingText}
           className="material-card-notes"
+          interactive={false}
         />
       ) : null}
       {content.paperlessAttachments.length > 0 ? (

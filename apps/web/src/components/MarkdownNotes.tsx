@@ -99,19 +99,30 @@ const markdownComponents: Components = {
   },
 };
 
+const previewComponents: Components = {
+  ...markdownComponents,
+  a({ children }) {
+    return <span>{children}</span>;
+  },
+  img({ alt = "" }) {
+    return <span>{alt}</span>;
+  },
+};
+
 export interface MarkdownNotesProps {
   value: string;
   className?: string;
+  interactive?: boolean;
 }
 
 /**
  * Displays user-authored notes without interpreting raw HTML.
  */
-export function MarkdownNotes({ value, className }: MarkdownNotesProps) {
+export function MarkdownNotes({ value, className, interactive = true }: MarkdownNotesProps) {
   return (
     <div className={["markdown-notes", className].filter(Boolean).join(" ")}>
       <ReactMarkdown
-        components={markdownComponents}
+        components={interactive ? markdownComponents : previewComponents}
         remarkPlugins={noteMarkdownPlugins}
         urlTransform={transformMarkdownUrl}
       >
