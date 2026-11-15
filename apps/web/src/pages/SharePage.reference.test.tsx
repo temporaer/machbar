@@ -197,6 +197,7 @@ describe("SharePage reference destinations", () => {
 
     await userEvent.type(await openMaterialSearch(), "Urlaub");
     await userEvent.click(screen.getAllByRole("button", { name: /Urlaub/ }).at(-1)!);
+    await userEvent.type(await openMaterialSearch(), "Urlaub");
     await openMoreActions();
     await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
 
