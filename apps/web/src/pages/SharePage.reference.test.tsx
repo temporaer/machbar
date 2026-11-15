@@ -74,6 +74,34 @@ function renderPage() {
   );
 }
 
+async function openMoreActions() {
+  const summary = await screen.findByText("Weitere Aktionen");
+  if (!summary.closest("details")?.open) await userEvent.click(summary);
+}
+
+async function openMaterialSearch() {
+  if (!screen.queryByLabelText("Aufgaben und Projekte durchsuchen")) {
+    await userEvent.click(screen.getByRole("button", { name: "Ziel suchen …" }));
+  }
+  return screen.findByLabelText("Aufgaben und Projekte durchsuchen");
+}
+
+async function openNoteSearch() {
+  await openMoreActions();
+  if (!screen.queryByLabelText("Notizziele durchsuchen")) {
+    await userEvent.click(screen.getByRole("button", { name: "Notizziel suchen …" }));
+  }
+  return screen.findByLabelText("Notizziele durchsuchen");
+}
+
+async function setAnnotation(value: string) {
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Anmerkung hinzufügen|Anmerkung bearbeiten/ }),
+  );
+  await userEvent.type(screen.getByLabelText("Notiz"), value);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+}
+
 describe("SharePage reference destinations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -115,7 +143,7 @@ describe("SharePage reference destinations", () => {
     renderPage();
 
     await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
+      await openMaterialSearch(),
       "Schweiz",
     );
     await userEvent.click(
@@ -143,6 +171,7 @@ describe("SharePage reference destinations", () => {
     window.history.replaceState(null, "", `/?${payload}#/share`);
     renderPage();
 
+    await openMoreActions();
     await userEvent.click(await screen.findByRole("button", { name: "Als Aufgabe erfassen" }));
 
     expect(markdownValue(screen.getByLabelText("Notizen"))).toBe(
@@ -166,25 +195,25 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.type(await screen.findByLabelText("Aufgaben und Projekte durchsuchen"), "Urlaub");
+    await userEvent.type(await openMaterialSearch(), "Urlaub");
     await userEvent.click(screen.getAllByRole("button", { name: /Urlaub/ }).at(-1)!);
+    await openMoreActions();
     await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
 
-    expect(screen.getByLabelText("Titel")).toBeDisabled();
-    expect(screen.getByLabelText("Quelle")).toBeDisabled();
-    expect(screen.getByLabelText("Notiz")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Inhalt bearbeiten" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Anmerkung hinzufügen" })).toBeDisabled();
     expect(screen.getByLabelText("Aufgaben und Projekte durchsuchen")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ohne Projekt" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Als Material speichern" })).toBeDisabled();
     expect(
       screen.getAllByRole("button", { name: /Urlaub/ }).every((button) =>
         button.hasAttribute("disabled"),
       ),
     ).toBe(true);
-
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
     await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledOnce());
-    expect(screen.getByLabelText("Titel")).toBeDisabled();
-    expect(screen.getByLabelText("Quelle")).toBeDisabled();
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "Inhalt bearbeiten" })).toBeDisabled();
     expect(screen.getByLabelText("Aufgaben und Projekte durchsuchen")).toBeDisabled();
 
     finishCreate(makeTask());
@@ -202,7 +231,8 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
+    await openMoreActions();
+    await userEvent.click(await screen.findByRole("button", { name: "Mit KI verarbeiten" }));
 
     await waitFor(() =>
       expect(mockedApi.createIntake).toHaveBeenCalledWith({
@@ -223,12 +253,9 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Zu lesen",
-    );
+    await userEvent.type(await openNoteSearch(), "Zu lesen");
     await userEvent.click(screen.getByRole("button", { name: /Zu lesen/ }));
-    await userEvent.click(screen.getByRole("button", { name: "An Notiz anhängen" }));
+    await userEvent.click(screen.getByRole("button", { name: /An Notizen bei/ }));
 
     await waitFor(() =>
       expect(mockedApi.appendTaskNotes).toHaveBeenCalledWith(
@@ -257,11 +284,8 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Unterkunft",
-    );
-    expect(screen.getByText("Material · Schweiz Urlaub")).toBeInTheDocument();
+    await userEvent.type(await openMaterialSearch(), "Unterkunft");
+    expect(screen.getByText("Schweiz Urlaub › Unterkunft")).toBeInTheDocument();
     const matchingDestinations = screen.getAllByRole("button", {
       name: /Unterkunft/,
     });
@@ -290,12 +314,9 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Urlaub",
-    );
+    await userEvent.type(await openNoteSearch(), "Urlaub");
     await userEvent.click(screen.getAllByRole("button", { name: /Urlaub planen/ }).at(-1)!);
-    await userEvent.click(screen.getByRole("button", { name: "An Notiz anhängen" }));
+    await userEvent.click(screen.getByRole("button", { name: /An Notizen bei/ }));
 
     await waitFor(() =>
       expect(mockedApi.appendTaskNotes).toHaveBeenCalledWith(
@@ -319,12 +340,9 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
+    await setAnnotation("Direkt am See, scheint gut für die Kinder");
     await userEvent.type(
-      screen.getByLabelText("Notiz"),
-      "Direkt am See, scheint gut für die Kinder",
-    );
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
+      await openMaterialSearch(),
       "Schweiz",
     );
     await userEvent.click(
@@ -368,14 +386,13 @@ describe("SharePage reference destinations", () => {
     window.history.replaceState(null, "", "/?shareId=material-retry#/share");
     renderPage();
 
-    await screen.findByLabelText("Notiz");
-    await userEvent.type(screen.getByLabelText("Notiz"), "Für die Steuer");
+    await setAnnotation("Für die Steuer");
     await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Temporary create failure",
     );
-    expect(screen.getByLabelText("Titel")).toHaveValue("Beleg");
-    expect(screen.getByLabelText("Notiz")).toHaveValue("Für die Steuer");
+    expect(screen.getByRole("heading", { name: "Beleg" })).toBeInTheDocument();
+    expect(screen.getByText("Für die Steuer")).toBeInTheDocument();
     expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledOnce();
     expect(mockedDeletePendingShareTarget).not.toHaveBeenCalled();
 
@@ -416,10 +433,7 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Unterkunft",
-    );
+    await userEvent.type(await openMaterialSearch(), "Unterkunft");
     const matchingDestinations = screen.getAllByRole("button", {
       name: /Unterkunft/,
     });

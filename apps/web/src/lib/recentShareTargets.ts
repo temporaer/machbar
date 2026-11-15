@@ -9,19 +9,19 @@ export interface RecentShareTarget {
   id: number;
 }
 
-export const MAX_RECENT_SHARE_TARGETS = 5;
+export const MAX_RECENT_MATERIAL_TARGETS = 5;
 export const MAX_RECENT_NOTE_TARGETS = 3;
 
 const STORAGE_KEY = "machbar:recent-share-targets";
 const NOTE_STORAGE_KEY = "machbar:recent-share-note-targets";
 
-export function readRecentShareTargets(): RecentShareTarget[] {
-  return readTargets(STORAGE_KEY, MAX_RECENT_SHARE_TARGETS);
+export function readRecentMaterialTargets(): RecentShareTarget[] {
+  return readTargets(STORAGE_KEY, MAX_RECENT_MATERIAL_TARGETS);
 }
 
 /** Moves the destination to the front while preserving a short typed history. */
-export function rememberShareTarget(target: RecentShareTarget): void {
-  rememberTarget(STORAGE_KEY, target, MAX_RECENT_SHARE_TARGETS);
+export function rememberMaterialTarget(target: RecentShareTarget): void {
+  rememberTarget(STORAGE_KEY, target, MAX_RECENT_MATERIAL_TARGETS);
 }
 
 export function readRecentNoteTargets(): RecentShareTarget[] {
