@@ -89,6 +89,10 @@ export function SearchFilterBar({
               type="button"
               className="tag-choice"
               aria-pressed={filters.kinds?.includes("reference") ?? false}
+              style={{
+                "--tag-color": "var(--color-primary)",
+                "--color-tag-contrast": "var(--color-primary-contrast)",
+              } as CSSProperties}
               onClick={() => {
                 const kinds: NonNullable<SearchFilters["kinds"]> = filters.kinds?.includes("reference")
                   ? filters.kinds.filter((kind) => kind !== "reference")

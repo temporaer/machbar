@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { SearchFilters } from "@machbar/shared";
+import type { SearchFilters, Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
@@ -24,6 +24,34 @@ import { recencyRankLookup } from "../lib/recentlyViewed";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { MaterialCard } from "../components/MaterialCard";
+import { parseReferenceContent } from "../lib/referenceContent";
+
+function MaterialResults({ tasks }: { tasks: Task[] }) {
+  const hasPaperlessAttachments = tasks.some(
+    (task) => parseReferenceContent(task.notes).paperlessAttachments.length > 0,
+  );
+  const { data: paperlessStatus } = useAsync(
+    () =>
+      hasPaperlessAttachments && typeof api.getPaperlessStatus === "function"
+        ? api.getPaperlessStatus()
+        : Promise.resolve(null),
+    [hasPaperlessAttachments],
+  );
+
+  return (
+    <div className="material-card-list">
+      {tasks.map((task) => (
+        <MaterialCard
+          key={task.id}
+          task={task}
+          context={task.projectTitle ?? undefined}
+          paperlessUiBaseUrl={paperlessStatus?.documentUiBaseUrl ?? null}
+          keyboardNavigable
+        />
+      ))}
+    </div>
+  );
+}
 
 export function AllPage() {
   const strings = useStrings();
@@ -135,15 +163,7 @@ export function AllPage() {
                         : strings.allStandaloneTasksHeading}
                   </h2>
                   {materialOnly ? (
-                    <div className="material-card-list">
-                      {visibleTasks.map((task) => (
-                        <MaterialCard
-                          key={task.id}
-                          task={task}
-                          context={task.projectTitle ?? undefined}
-                        />
-                      ))}
-                    </div>
+                    <MaterialResults tasks={visibleTasks} />
                   ) : (
                     <TaskOutline
                       key={filtersKey}

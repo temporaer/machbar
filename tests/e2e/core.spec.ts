@@ -21,6 +21,76 @@ async function task(page: Page, extra: object = {}) {
   return result.json();
 }
 
+test("global material results retain keyboard navigation and theme contrast", async ({ page }) => {
+  const searchTerm = `Material ${randomUUID()}`;
+  let materialNumber = 0;
+  const createMaterial = async () => {
+    const response = await page.request.post("/api/tasks", {
+      data: { title: `${searchTerm} ${++materialNumber}`, kind: "reference" },
+    });
+    expect(response.status()).toBe(201);
+    return response.json();
+  };
+  await createMaterial();
+  await createMaterial();
+  await page.goto("/#/today");
+  await page.goto("/#/more/all");
+
+  for (const [theme, background, color] of [
+    ["light", "rgb(20, 99, 86)", "rgb(255, 255, 255)"],
+    ["dark", "rgb(116, 211, 192)", "rgb(7, 20, 17)"],
+  ] as const) {
+    await page.evaluate(value => localStorage.setItem("machbar:theme", value), theme);
+    await page.reload();
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    const materialFilter = page.getByRole("button", { name: "Material", exact: true });
+    await materialFilter.click();
+    await expect(materialFilter).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => materialFilter.evaluate(
+      button => getComputedStyle(button).backgroundColor,
+    )).toBe(background);
+    expect(await materialFilter.evaluate(button => getComputedStyle(button).color)).toBe(color);
+  }
+
+  await page.getByRole("textbox", { name: "Suchen" }).fill(searchTerm);
+  const results = page.locator(".material-card-list .material-card-open");
+  await expect(results).toHaveCount(2);
+  const firstResult = results.nth(0);
+  const secondResult = results.nth(1);
+  const firstTitle = (await firstResult.textContent())!;
+  const secondTitle = (await secondResult.textContent())!;
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("j");
+  await expect(firstResult).toBeFocused();
+  await page.keyboard.press("m");
+  await expect(page.getByRole("dialog", { name: "Details" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: firstTitle, exact: true })).toBeVisible();
+  await page.getByRole("dialog", { name: "Details" })
+    .getByRole("button", { name: "Schließen", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Details" })).toHaveCount(0);
+
+  await page.goto("/#/today");
+  await page.goto("/#/more/all");
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByRole("button", { name: "Material", exact: true }).click();
+  await page.getByRole("textbox", { name: "Suchen" }).fill(searchTerm);
+  const refreshedResults = page.locator(".material-card-list .material-card-open");
+  await expect(refreshedResults).toHaveCount(2);
+  const refreshedFirst = refreshedResults.nth(0);
+  const refreshedSecond = refreshedResults.nth(1);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("j");
+  await expect(refreshedFirst).toBeFocused();
+  await page.keyboard.press("j");
+  await expect(refreshedSecond).toBeFocused();
+  expect(await refreshedSecond.textContent()).toBe(secondTitle);
+  await page.keyboard.press("k");
+  await expect(refreshedFirst).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Details" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: firstTitle, exact: true })).toBeVisible();
+});
+
 async function prerequisiteDestination(page: Page) {
   const projectResponse = await page.request.post("/api/projects", {
     data: { title: `Shortcut project ${randomUUID()}` },

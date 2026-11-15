@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   paperlessDocumentUiUrl,
   type PaperlessMarkdownReference,
@@ -11,12 +12,36 @@ import {
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 
-export function PaperlessAttachmentStrip({
+function AttachmentThumbnail({
+  attachment,
+}: {
+  attachment: PaperlessMarkdownReference;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (attachment.kind === "document" && failed) {
+    return (
+      <span className="paperless-attachment-document-icon" aria-hidden="true">
+        PDF
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={paperlessDocumentThumbnailUrl(attachment.id)}
+      alt=""
+      loading="lazy"
+      onError={attachment.kind === "document" ? () => setFailed(true) : undefined}
+    />
+  );
+}
+
+function PaperlessAttachmentStripWithStatus({
   attachments,
 }: {
   attachments: readonly PaperlessMarkdownReference[];
 }) {
-  const strings = useStrings();
   const { data: paperlessStatus } = useAsync(
     () =>
       attachments.length > 0 && typeof api.getPaperlessStatus === "function"
@@ -24,7 +49,41 @@ export function PaperlessAttachmentStrip({
         : Promise.resolve(null),
     [attachments.length],
   );
-  const paperlessUiBaseUrl = paperlessStatus?.documentUiBaseUrl ?? null;
+
+  return (
+    <PaperlessAttachmentStripView
+      attachments={attachments}
+      paperlessUiBaseUrl={paperlessStatus?.documentUiBaseUrl ?? null}
+    />
+  );
+}
+
+export function PaperlessAttachmentStrip({
+  attachments,
+  paperlessUiBaseUrl,
+}: {
+  attachments: readonly PaperlessMarkdownReference[];
+  paperlessUiBaseUrl?: string | null | undefined;
+}) {
+  if (paperlessUiBaseUrl === undefined) {
+    return <PaperlessAttachmentStripWithStatus attachments={attachments} />;
+  }
+  return (
+    <PaperlessAttachmentStripView
+      attachments={attachments}
+      paperlessUiBaseUrl={paperlessUiBaseUrl}
+    />
+  );
+}
+
+function PaperlessAttachmentStripView({
+  attachments,
+  paperlessUiBaseUrl,
+}: {
+  attachments: readonly PaperlessMarkdownReference[];
+  paperlessUiBaseUrl: string | null;
+}) {
+  const strings = useStrings();
   if (attachments.length === 0) return null;
 
   return (
@@ -54,20 +113,7 @@ export function PaperlessAttachmentStrip({
                 attachment.kind === "image" ? "noopener noreferrer" : undefined
               }
             >
-              {attachment.kind === "image" ? (
-                <img
-                  src={paperlessDocumentThumbnailUrl(attachment.id)}
-                  alt=""
-                  loading="lazy"
-                />
-              ) : (
-                <span
-                  className="paperless-attachment-document-icon"
-                  aria-hidden="true"
-                >
-                  PDF
-                </span>
-              )}
+              <AttachmentThumbnail attachment={attachment} />
               <span>{attachment.label}</span>
             </a>
             {paperlessUiUrl ? (

@@ -16,21 +16,29 @@ function sourceDomain(url: string): string {
 export function MaterialCard({
   task,
   context,
+  paperlessUiBaseUrl,
+  keyboardNavigable = false,
 }: {
   task: Task;
   context?: string | undefined;
+  paperlessUiBaseUrl?: string | null;
+  keyboardNavigable?: boolean;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
   const content = parseReferenceContent(task.notes);
 
   return (
-    <article className="material-card">
+    <article
+      className="material-card"
+      data-workitem-id={keyboardNavigable ? task.id : undefined}
+      data-workitem-role={keyboardNavigable ? "task" : undefined}
+    >
       <div className="material-card-heading">
         <span className="material-card-icon" aria-hidden="true">🗎</span>
         <button
           type="button"
-          className="material-card-open"
+          className={`material-card-open${keyboardNavigable ? " task-row-main" : ""}`}
           aria-label={`${strings.openMaterial}: ${task.title}`}
           onClick={() => dispatch({ type: "task.open", taskId: task.id })}
         >
@@ -56,7 +64,10 @@ export function MaterialCard({
         />
       ) : null}
       {content.paperlessAttachments.length > 0 ? (
-        <PaperlessAttachmentStrip attachments={content.paperlessAttachments} />
+        <PaperlessAttachmentStrip
+          attachments={content.paperlessAttachments}
+          paperlessUiBaseUrl={paperlessUiBaseUrl}
+        />
       ) : null}
     </article>
   );

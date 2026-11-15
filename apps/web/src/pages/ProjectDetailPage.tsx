@@ -64,6 +64,7 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet";
 import { MaterialCard } from "../components/MaterialCard";
 import { projectMaterialItems } from "../lib/projectMaterials";
+import { parseReferenceContent } from "../lib/referenceContent";
 
 function ProjectMaterialSection({
   materials,
@@ -72,6 +73,16 @@ function ProjectMaterialSection({
 }) {
   const strings = useStrings();
   const { captureOpen } = useInteractionScope();
+  const hasPaperlessAttachments = materials.some(
+    ({ task }) => parseReferenceContent(task.notes).paperlessAttachments.length > 0,
+  );
+  const { data: paperlessStatus } = useAsync(
+    () =>
+      hasPaperlessAttachments && typeof api.getPaperlessStatus === "function"
+        ? api.getPaperlessStatus()
+        : Promise.resolve(null),
+    [hasPaperlessAttachments],
+  );
 
   return (
     <section className="section project-material-section">
@@ -93,6 +104,7 @@ function ProjectMaterialSection({
               key={task.id}
               task={task}
               context={parentTitles.join(" › ") || undefined}
+              paperlessUiBaseUrl={paperlessStatus?.documentUiBaseUrl ?? null}
             />
           ))}
         </div>
