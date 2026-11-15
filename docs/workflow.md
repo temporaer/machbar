@@ -648,8 +648,9 @@ Machbar participates in both directions:
   through Web Share, with a clipboard fallback.
 - From a project, **KI-Prompt erstellen / Create AI prompt** composes a prompt
   from authored instructions and explicitly selected project material. Copy and
-  Web Share use the same Markdown; material notes retain their original
-  Markdown. This packages text only and does not invoke an AI service.
+  Web Share use the same Markdown. Material notes retain their Markdown content;
+  reference-style links are inlined so their targets stay distinct. This
+  packages text only and does not invoke an AI service.
 
 Deep-link recipients still need network and authentication access to the same
 Machbar deployment.
