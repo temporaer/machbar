@@ -145,6 +145,14 @@ export function CaptureForm({
     [resolvedTokens],
   );
   const capturedTitle = isThought ? title.trim() : stripResolvedTokens(title, resolvedTokens);
+  const referenceHasUnsupportedModifiers =
+    syntaxMetadata.ownerMemberId !== undefined ||
+    syntaxMetadata.tagIds.length > 0 ||
+    syntaxMetadata.contextIds.length > 0 ||
+    syntaxMetadata.size !== undefined ||
+    syntaxMetadata.dueDate !== undefined ||
+    syntaxMetadata.scheduledDate !== undefined ||
+    dueDate !== null;
   const effectiveProjectId =
     syntaxMetadata.projectId ??
     (projectDestinationOverride !== undefined
@@ -223,6 +231,13 @@ export function CaptureForm({
 
   const createTask = async (kind: TaskKind = "action") => {
     if (!capturedTitle || saving) return;
+    if (kind === "reference" && referenceHasUnsupportedModifiers) {
+      setError({
+        message: strings.captureReferenceModifiersUnsupported,
+        draftKey: thoughtDraft?.key,
+      });
+      return;
+    }
     const intentKey = thoughtDraft?.key;
     const intent =
       kind === "reference"

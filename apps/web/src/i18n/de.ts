@@ -1369,6 +1369,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   shareSaveAsMaterial: "Als Material speichern",
   shareSavingMaterial: "Material wird gespeichert …",
   shareCaptureTask: "Als Aufgabe erfassen",
+  captureReferenceModifiersUnsupported: "Material unterstützt keine Zuständigkeit, Tags, Kontexte oder Termine. Entferne diese Angaben vor dem Speichern.",
   sharing: "Wird hinzugefügt …",
   sharedWith: (title: string) => `Zu „${title}“ hinzugefügt`,
   shareNoteLabel: "Notiz",

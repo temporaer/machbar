@@ -118,13 +118,11 @@ function shareDraftBlock(title: string, source: string): string {
 function shareSourceWithoutTitle(title: string, source: string): string {
   const cleanTitle = title.trim();
   const cleanSource = source.trim();
-  if (
-    cleanTitle &&
-    cleanSource.startsWith(cleanTitle) &&
-    (cleanSource.length === cleanTitle.length ||
-      /\s/.test(cleanSource[cleanTitle.length] ?? ""))
-  ) {
-    return cleanSource.slice(cleanTitle.length).trim();
+  if (!cleanTitle) return cleanSource;
+  if (cleanSource === cleanTitle) return "";
+  const lineBreak = cleanSource.indexOf("\n");
+  if (lineBreak >= 0 && cleanSource.slice(0, lineBreak).trim() === cleanTitle) {
+    return cleanSource.slice(lineBreak + 1).trim();
   }
   return cleanSource;
 }
@@ -560,6 +558,7 @@ function SharePageContent({
   const loading = projectsState.loading || tasksState.loading || agendaState.loading;
   const loadError = projectsState.error || tasksState.error || agendaState.error;
   const interactionsBusy = busyKey !== null || intakePending;
+  const captureControlsDisabled = interactionsBusy || captureOpen;
   const materialDestinationMessage = materialProjectTitle
     ? strings.shareMaterialInProject(materialProjectTitle)
     : strings.shareMaterialWithoutProject;
@@ -573,7 +572,7 @@ function SharePageContent({
           <input
             type="text"
             value={titleDraft}
-            disabled={interactionsBusy}
+            disabled={captureControlsDisabled}
             onChange={(event) => setTitleDraft(event.target.value)}
           />
         </label>
@@ -583,7 +582,7 @@ function SharePageContent({
             rows={4}
             value={sourceDraft}
             placeholder={strings.shareSourcePlaceholder}
-            disabled={interactionsBusy}
+            disabled={captureControlsDisabled}
             onChange={(event) => setSourceDraft(event.target.value)}
           />
         </label>
@@ -593,7 +592,7 @@ function SharePageContent({
             rows={3}
             value={note}
             placeholder={strings.shareNotePlaceholder}
-            disabled={interactionsBusy}
+            disabled={captureControlsDisabled}
             onChange={(event) => setNote(event.target.value)}
           />
         </label>
@@ -615,7 +614,7 @@ function SharePageContent({
             type="button"
             className="choice-chip"
             aria-pressed={selectedTargetKey === null}
-            disabled={interactionsBusy}
+            disabled={captureControlsDisabled}
             onClick={() => setSelectedTargetKey(null)}
           >
             {strings.shareWithoutProject}
@@ -628,7 +627,7 @@ function SharePageContent({
               </h3>
               <TargetRows
                 options={recentOptions}
-                busyKey={interactionsBusy ? "busy" : null}
+                busyKey={captureControlsDisabled ? "busy" : null}
                 selectedKey={selectedTargetKey}
                 onChoose={(option) => setSelectedTargetKey(option.key)}
               />
@@ -639,7 +638,7 @@ function SharePageContent({
               <h3 className="section-title" id="share-today-heading">{strings.today}</h3>
               <TargetRows
                 options={todayOptions}
-                busyKey={interactionsBusy ? "busy" : null}
+                busyKey={captureControlsDisabled ? "busy" : null}
                 selectedKey={selectedTargetKey}
                 onChoose={(option) => setSelectedTargetKey(option.key)}
               />
@@ -651,7 +650,7 @@ function SharePageContent({
               type="search"
               value={query}
               placeholder={strings.searchDestinationPlaceholder}
-              disabled={interactionsBusy}
+              disabled={captureControlsDisabled}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
@@ -661,7 +660,7 @@ function SharePageContent({
           {searchOptions.length > 0 ? (
             <TargetRows
               options={searchOptions}
-              busyKey={interactionsBusy ? "busy" : null}
+              busyKey={captureControlsDisabled ? "busy" : null}
               selectedKey={selectedTargetKey}
               onChoose={(option) => setSelectedTargetKey(option.key)}
             />
@@ -756,7 +755,7 @@ function SharePageContent({
           <h2 className="section-title" id="share-new-heading">{strings.shareCaptureTask}</h2>
           <CaptureForm
             initialTitle={titleDraft}
-            initialNotes={shareSourceWithoutTitle(titleDraft, sourceDraft)}
+            initialNotes={sourceDraft}
             initialDueDate={calendarDueDate}
             showNotes
             showDueDate={calendarDueDate !== null}

@@ -58,7 +58,7 @@ export function shareTargetToCaptureDraft(
   ) {
     noteParts.push(text);
   }
-  if (url && !text.includes(url)) noteParts.push(url);
+  if (url && !containsUrlToken(text, url)) noteParts.push(url);
 
   return { title, notes: noteParts.join("\n\n") };
 }
@@ -72,10 +72,10 @@ export function shareTargetToSource(target: WebShareTarget): string {
     isShortPlainText(text) &&
     !/https?:\/\//i.test(text)
   ) {
-    return url && !text.includes(url) ? url : "";
+    return url && !containsUrlToken(text, url) ? url : "";
   }
   if (!text) return url;
-  return url && !text.includes(url) ? appendTextBlock(text, url) : text;
+  return url && !containsUrlToken(text, url) ? appendTextBlock(text, url) : text;
 }
 
 /**
@@ -93,8 +93,8 @@ export function shareTargetToTextBlock(target: WebShareTarget): string {
   }
   if (
     url &&
-    !text.includes(url) &&
-    !title.includes(url)
+    !containsUrlToken(text, url) &&
+    !containsUrlToken(title, url)
   ) {
     parts.push(url);
   }
@@ -117,6 +117,26 @@ function isShortPlainText(text: string): boolean {
 
 function isWebUrl(text: string): boolean {
   return /^https?:\/\/\S+$/i.test(text);
+}
+
+function containsUrlToken(text: string, url: string): boolean {
+  for (const match of text.matchAll(/(^|[^\p{L}\p{N}_])(https?:\/\/[^\s<>"`]+)/giu)) {
+    if (normalizeUrlToken(match[2] ?? "") === url) return true;
+  }
+  return false;
+}
+
+function normalizeUrlToken(value: string): string {
+  let token = value.replace(/[.,!?;:]+$/, "");
+  for (const [opening, closing] of [["(", ")"], ["[", "]"], ["{", "}"]] as const) {
+    while (
+      token.endsWith(closing) &&
+      token.split(closing).length > token.split(opening).length
+    ) {
+      token = token.slice(0, -1);
+    }
+  }
+  return token;
 }
 
 function deriveTitle(text: string): string {

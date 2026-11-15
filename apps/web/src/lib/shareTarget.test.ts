@@ -121,6 +121,30 @@ describe("share target helpers", () => {
     );
   });
 
+  it("deduplicates complete URL tokens without suppressing a longer path", () => {
+    const url = "https://example.test/article";
+    const text = "Read https://example.test/article/2 for the update.";
+    const target = { title: "Article", text, url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(`${text}\n\n${url}`);
+    expect(shareTargetToSource(target)).toBe(`${text}\n\n${url}`);
+    expect(shareTargetToTextBlock(target)).toBe(`Article\n\n${text}\n\n${url}`);
+  });
+
+  it("recognizes complete URL tokens inside prose and Markdown links", () => {
+    const url = "https://example.test/article";
+    const target = {
+      title: "Article",
+      text: `Read this [article](${url}) before replying.`,
+      url,
+      files: [],
+    };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(target.text);
+    expect(shareTargetToSource(target)).toBe(target.text);
+    expect(shareTargetToTextBlock(target)).toBe(`Article\n\n${target.text}`);
+  });
+
   it("uses the first filename as the draft title for a file-only share", () => {
     const file = new File(["scan"], "receipt.pdf", {
       type: "application/pdf",

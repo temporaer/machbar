@@ -1425,6 +1425,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   shareSaveAsMaterial: "Save as material",
   shareSavingMaterial: "Saving material …",
   shareCaptureTask: "Capture as task",
+  captureReferenceModifiersUnsupported: "Material does not support owners, tags, contexts, or dates. Remove these details before saving.",
   sharing: "Adding…",
   sharedWith: (title: string) => `Added to “${title}”`,
   shareNoteLabel: "Note",

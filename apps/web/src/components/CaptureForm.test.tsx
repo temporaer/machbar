@@ -99,6 +99,27 @@ describe("CaptureForm", () => {
     );
   });
 
+  it("rejects material capture when a selected task modifier cannot be preserved", async () => {
+    render(
+      <CaptureForm
+        initialTitle="Artikel @Mira"
+        initialDueDate="2026-09-15"
+        showDueDate
+        materialActionLabel="Als Material speichern"
+        onCancel={vi.fn()}
+        onCaptured={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Material unterstützt keine Zuständigkeit, Tags, Kontexte oder Termine.",
+    );
+    expect(mockedApi.createTask).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Artikel @Mira");
+  });
+
   it("keeps a dated project capture draft and completes project decisions in the same form", async () => {
     mockedApi.createTask
       .mockRejectedValueOnce(new ApiError(
