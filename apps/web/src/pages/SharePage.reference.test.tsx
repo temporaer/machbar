@@ -47,7 +47,7 @@ vi.mock("../lib/identity", () => ({
 
 const mockedApi = vi.mocked(api, true);
 const mockedDeletePendingShareTarget = vi.mocked(deletePendingShareTarget);
-void readPendingShareTarget;
+const mockedReadPendingShareTarget = vi.mocked(readPendingShareTarget);
 
 const emptyAgenda = {
   projects: [],
@@ -119,6 +119,7 @@ describe("SharePage reference destinations", () => {
     await userEvent.click(
       screen.getAllByRole("button", { name: /Schweiz Urlaub/ }).at(-1)!,
     );
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
@@ -161,6 +162,7 @@ describe("SharePage reference destinations", () => {
       name: /Unterkunft/,
     });
     await userEvent.click(matchingDestinations.at(-1)!);
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
@@ -189,6 +191,7 @@ describe("SharePage reference destinations", () => {
       "Urlaub",
     );
     await userEvent.click(screen.getByRole("button", { name: /Urlaub planen/ }));
+    await userEvent.click(screen.getByRole("button", { name: "An Notiz anhängen" }));
 
     await waitFor(() =>
       expect(mockedApi.appendTaskNotes).toHaveBeenCalledWith(
@@ -212,7 +215,6 @@ describe("SharePage reference destinations", () => {
     );
     renderPage();
 
-    await userEvent.click(screen.getByRole("button", { name: "+ Notiz hinzufügen" }));
     await userEvent.type(
       screen.getByLabelText("Notiz"),
       "Direkt am See, scheint gut für die Kinder",
@@ -224,6 +226,7 @@ describe("SharePage reference destinations", () => {
     await userEvent.click(
       screen.getAllByRole("button", { name: /Schweiz Urlaub/ }).at(-1)!,
     );
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
@@ -235,6 +238,59 @@ describe("SharePage reference destinations", () => {
         parentTaskId: null,
       }, expect.any(Object)),
     );
+  });
+
+  it("retains a staged material draft and reuses uploads and creation identity on retry", async () => {
+    const file = new File(["receipt"], "receipt.pdf", {
+      type: "application/pdf",
+    });
+    mockedReadPendingShareTarget.mockResolvedValue({
+      title: "Beleg",
+      text: "Rechnung prüfen",
+      url: "",
+      files: [file],
+    });
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 93,
+      title: "receipt",
+      originalFileName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    mockedApi.createTask
+      .mockRejectedValueOnce(new Error("Temporary create failure"))
+      .mockResolvedValueOnce(
+        makeTask({ id: 93, kind: "reference", title: "Beleg" }),
+      );
+    window.history.replaceState(null, "", "/?shareId=material-retry#/share");
+    renderPage();
+
+    await screen.findByLabelText("Notiz");
+    await userEvent.type(screen.getByLabelText("Notiz"), "Für die Steuer");
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Temporary create failure",
+    );
+    expect(screen.getByLabelText("Titel")).toHaveValue("Beleg");
+    expect(screen.getByLabelText("Notiz")).toHaveValue("Für die Steuer");
+    expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledOnce();
+    expect(mockedDeletePendingShareTarget).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    const expectedInput = {
+      kind: "reference",
+      title: "Beleg",
+      notes: "Rechnung prüfen\n\n[receipt.pdf](paperless:93)\n\nFür die Steuer",
+      projectId: null,
+      parentTaskId: null,
+    };
+    expect(mockedApi.createTask.mock.calls[0]?.[0]).toEqual(expectedInput);
+    expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expectedInput);
+    expect(mockedApi.createTask.mock.calls[0]?.[1]).toBe(
+      mockedApi.createTask.mock.calls[1]?.[1],
+    );
+    expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledOnce();
+    expect(mockedDeletePendingShareTarget).toHaveBeenCalledWith("material-retry");
   });
 
   it("does not apply a Calendar deadline when sharing to a Reference destination", async () => {
@@ -264,6 +320,7 @@ describe("SharePage reference destinations", () => {
       name: /Unterkunft/,
     });
     await userEvent.click(matchingDestinations.at(-1)!);
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(

@@ -13,6 +13,7 @@ import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { useOptionalInteractionScope } from "../lib/interactionScope";
 import { IntakeComposer } from "./IntakeComposer";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { rememberShareTarget } from "../lib/recentShareTargets";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -50,6 +51,7 @@ export function QuickAdd({
   const [latestCapture, setLatestCapture] = useState<{
     id: number;
     title: string;
+    material: boolean;
   } | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [cropTarget, setCropTarget] = useState<{
@@ -147,7 +149,11 @@ export function QuickAdd({
           />
           {latestCapture ? (
             <div className="quick-add-captured" role="status" aria-live="polite">
-              <span>{strings.captureSaved(latestCapture.title)}</span>
+              <span>
+                {latestCapture.material
+                  ? strings.materialSaved(latestCapture.title)
+                  : strings.captureSaved(latestCapture.title)}
+              </span>
               <button
                 type="button"
                 className="btn btn-sm"
@@ -157,7 +163,7 @@ export function QuickAdd({
                   dispatch({ type: "task.open", taskId });
                 }}
               >
-                {strings.openCapturedItem}
+                {latestCapture.material ? strings.viewMaterial : strings.openCapturedItem}
               </button>
             </div>
           ) : null}
@@ -183,7 +189,9 @@ export function QuickAdd({
               key={captureFormKey}
               projectId={projectId}
               parentTaskId={null}
+              showNotes
               pendingFiles={captureStep === "form" && pendingFile ? [pendingFile] : []}
+              materialActionLabel={strings.saveAsMaterial}
               onCropPendingFile={(file) => setCropTarget({ file })}
               {...(captureStep === "form" && pendingFile
                 ? { prepareNotes: prepareMaterialNotes }
@@ -214,7 +222,15 @@ export function QuickAdd({
               onCancel={close}
               onCaptured={(result) => {
                 bump();
-                setLatestCapture({ id: result.task.id, title: result.task.title });
+                const material = result.task.kind === "reference";
+                setLatestCapture({
+                  id: result.task.id,
+                  title: result.task.title,
+                  material,
+                });
+                if (material) {
+                  rememberShareTarget({ kind: "task", id: result.task.id });
+                }
                 setPendingFile(null);
                 uploadedAttachmentRef.current = null;
                 setCaptureFormKey((current) => current + 1);

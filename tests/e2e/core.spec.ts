@@ -1136,14 +1136,16 @@ test("Quick Add puts full-width Create before the preserved capture alternatives
   const input = dialog.locator("#capture-title");
   await input.fill(title);
   const create = dialog.getByRole("button", { name: "Erstellen", exact: true });
+  const material = dialog.getByRole("button", { name: "Als Material speichern", exact: true });
   const cancel = dialog.getByRole("button", { name: "Abbrechen", exact: true });
   const process = dialog.getByRole("button", { name: "Verarbeiten", exact: true });
   const photo = dialog.getByRole("button", { name: "Foto erfassen", exact: true });
   const file = dialog.getByRole("button", { name: "Datei erfassen", exact: true });
-  for (const control of [create, cancel, process, photo, file]) await expect(control).toBeVisible();
+  for (const control of [create, material, cancel, process, photo, file]) await expect(control).toBeVisible();
   const createBounds = (await create.boundingBox())!;
   const inputBounds = (await input.boundingBox())!;
   expect(createBounds.width).toBeGreaterThanOrEqual(inputBounds.width - 2);
+  expect(createBounds.y).toBeLessThan((await material.boundingBox())!.y);
   expect(createBounds.y).toBeLessThan((await cancel.boundingBox())!.y);
   expect(createBounds.y).toBeLessThan((await process.boundingBox())!.y);
   expect((await process.boundingBox())!.y).toBeLessThan((await photo.boundingBox())!.y);

@@ -34,29 +34,31 @@ export function parseWebShareTarget(params: URLSearchParams | string): WebShareT
  *
  * A supplied page title wins. Without one, short text becomes the task title;
  * longer text remains intact in notes and contributes a compact first-line
- * title. URLs are always a distinct notes block rather than being run into
- * the prose around them.
+ * title. URLs stay in Markdown notes and are not repeated when already present
+ * in the shared text.
  */
 export function shareTargetToCaptureDraft(
   target: WebShareTarget,
   locale: Locale = "de",
 ): CaptureShareDraft {
-  const shortText = isShortPlainText(target.text);
+  const text = normalizeBlock(target.text);
+  const url = normalizeInline(target.url);
+  const shortText = isShortPlainText(text);
   const title =
     target.title ||
-    (shortText ? normalizeInline(target.text) : deriveTitle(target.text)) ||
-    target.url ||
+    (shortText ? normalizeInline(text) : deriveTitle(text)) ||
+    url ||
     target.files[0]?.name ||
     getCatalog(locale).sharedContent;
 
   const noteParts: string[] = [];
   if (
-    target.text &&
-    (target.title || !shortText || isWebUrl(target.text))
+    text &&
+    (target.title || !shortText || isWebUrl(text))
   ) {
-    noteParts.push(target.text);
+    noteParts.push(text);
   }
-  if (target.url && !target.text.includes(target.url)) noteParts.push(target.url);
+  if (url && !text.includes(url)) noteParts.push(url);
 
   return { title, notes: noteParts.join("\n\n") };
 }
@@ -65,26 +67,36 @@ export function shareTargetToCaptureDraft(
 export function shareTargetToSource(target: WebShareTarget): string {
   const text = normalizeBlock(target.text);
   const url = normalizeInline(target.url);
+  if (
+    !target.title &&
+    isShortPlainText(text) &&
+    !/https?:\/\//i.test(text)
+  ) {
+    return url && !text.includes(url) ? url : "";
+  }
   if (!text) return url;
   return url && !text.includes(url) ? appendTextBlock(text, url) : text;
 }
 
 /**
  * Produces a self-contained free-text block for appending to existing notes.
- * Duplicate title/text values are included only once.
+ * Duplicate title, text, and URL content is included only once.
  */
 export function shareTargetToTextBlock(target: WebShareTarget): string {
   const parts: string[] = [];
-  if (target.title) parts.push(target.title);
-  if (target.text && normalizeInline(target.text) !== target.title) {
-    parts.push(target.text);
+  const title = normalizeBlock(target.title);
+  const text = normalizeBlock(target.text);
+  const url = normalizeInline(target.url);
+  if (title) parts.push(title);
+  if (text && normalizeInline(text) !== title) {
+    parts.push(text);
   }
   if (
-    target.url &&
-    !target.text.includes(target.url) &&
-    !target.title.includes(target.url)
+    url &&
+    !text.includes(url) &&
+    !title.includes(url)
   ) {
-    parts.push(target.url);
+    parts.push(url);
   }
   return parts.join("\n\n");
 }

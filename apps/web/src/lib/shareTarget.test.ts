@@ -3,6 +3,7 @@ import {
   appendTextBlock,
   parseWebShareTarget,
   shareTargetToCaptureDraft,
+  shareTargetToSource,
   shareTargetToTextBlock,
 } from "./shareTarget";
 
@@ -71,6 +72,7 @@ describe("share target helpers", () => {
     const target = { title: "", text: url, url: "", files: [] };
 
     expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToSource(target)).toBe(url);
     expect(shareTargetToTextBlock(target)).toBe(url);
   });
 
@@ -79,6 +81,7 @@ describe("share target helpers", () => {
     const target = { title: "", text: "", url, files: [] };
 
     expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToSource(target)).toBe(url);
     expect(shareTargetToTextBlock(target)).toBe(url);
   });
 
@@ -88,6 +91,7 @@ describe("share target helpers", () => {
     const target = { title: "Artikel", text, url, files: [] };
 
     expect(shareTargetToCaptureDraft(target).notes).toBe(text);
+    expect(shareTargetToSource(target)).toBe(text);
     expect(shareTargetToTextBlock(target)).toBe(`Artikel\n\n${text}`);
   });
 
