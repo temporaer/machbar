@@ -31,6 +31,7 @@ import { useHorizontalSwipe, DEEP_ACTION_THRESHOLD } from "../lib/useHorizontalS
 import { extractPaperlessReferences, markdownWithoutPaperlessReferences } from "../lib/paperlessAttachments";
 import { parseReferenceContent } from "../lib/referenceContent";
 import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
+import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
@@ -434,20 +435,16 @@ export function TaskRow({
                 <div className="task-row-header">
                   <div className="task-row-title">{task.title}</div>
                 </div>
-                {children.length ? (
-                  <div className="task-row-meta">
+                <div className="task-row-meta">
+                  <span className="task-row-meta-item task-row-reference-label">
+                    {strings.materialLabel}
+                  </span>
+                  {children.length ? (
                     <span className="task-row-meta-item">
                       {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
                     </span>
-                  </div>
-                ) : null}
-                {attachments[0] ? (
-                  <TaskRowAttachmentPreview
-                    key={attachments[0].id}
-                    attachment={attachments[0]}
-                    count={attachments.length}
-                  />
-                ) : null}
+                  ) : null}
+                </div>
               </>
             ) : (
               <>
@@ -553,6 +550,11 @@ export function TaskRow({
             >
               {referenceContent.primaryWebLink.label} ↗
             </a>
+          ) : null}
+          {isReference && referenceContent?.paperlessAttachments.length ? (
+            <PaperlessAttachmentStrip
+              attachments={referenceContent.paperlessAttachments}
+            />
           ) : null}
           {isReference
             ? referenceContent?.remainingText

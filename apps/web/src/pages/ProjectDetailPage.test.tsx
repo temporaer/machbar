@@ -893,26 +893,28 @@ describe("ProjectDetailPage task explanations", () => {
     ]);
     renderProjectRoute("/projects/42");
 
-    const materialHeading = await screen.findByRole("heading", { name: strings.materialLabel });
-    const materialSection = materialHeading.closest("section")!;
-    expect(within(materialSection).getByRole("button", {
-      name: `${strings.openMaterial}: Versicherungsbedingungen`,
+    const taskSection = (await screen.findByRole("button", {
+      name: "Versicherungsbedingungen",
+    })).closest("details")!;
+    expect(within(taskSection).getByRole("button", {
+      name: "Versicherungsbedingungen",
     })).toBeVisible();
-    expect(within(materialSection).getByText("Versicherung prüfen")).toBeVisible();
-    expect(within(materialSection).getByRole("link", {
-      name: `${strings.openLink}: insurance.example`,
+    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
+    expect(within(taskSection).getByText("Versicherung prüfen")).toBeVisible();
+    expect(within(taskSection).getByRole("link", {
+      name: `${strings.openLink}: Quelle`,
     })).toHaveAttribute("href", "https://www.insurance.example/policy");
-    expect(within(materialSection).getByRole("link", { name: "Dokument" }))
+    expect(within(taskSection).getByRole("link", { name: "Dokument" }))
       .toHaveAttribute("href", "/api/integrations/paperless/documents/8/download");
     expect(
-      materialSection.querySelector(
+      taskSection.querySelector(
         'img[src="/api/integrations/paperless/documents/8/thumbnail"]',
       ),
     ).toBeInTheDocument();
-    expect(within(materialSection).getByText("Fristen beachten.")).toBeVisible();
+    expect(within(taskSection).getByText("Fristen beachten.")).toBeVisible();
     expect(await screen.findByText("Anbieter anrufen")).toBeVisible();
 
-    const addMaterial = within(materialSection).getByRole("button", {
+    const addMaterial = screen.getByRole("button", {
       name: strings.addMaterial,
     });
     await waitFor(() => expect(addMaterial).toBeEnabled());
@@ -935,11 +937,13 @@ describe("ProjectDetailPage task explanations", () => {
     });
     renderProjectRoute("/projects/42");
 
-    expect(await screen.findByRole("heading", { name: strings.materialLabel }))
-      .toBeVisible();
-    expect(screen.getByRole("button", {
-      name: `${strings.openMaterial}: Lieferantenliste`,
+    const taskSection = (await screen.findByRole("button", {
+      name: "Lieferantenliste",
+    })).closest("details")!;
+    expect(within(taskSection).getByRole("button", {
+      name: "Lieferantenliste",
     })).toBeVisible();
+    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
   });
 
   it("keeps project actions on their semantically appropriate detail entry points", async () => {

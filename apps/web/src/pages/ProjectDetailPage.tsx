@@ -62,56 +62,20 @@ import {
 import { InteractionScopeProvider, useInteractionScope } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet";
-import { MaterialCard } from "../components/MaterialCard";
-import { projectMaterialItems } from "../lib/projectMaterials";
-import { parseReferenceContent } from "../lib/referenceContent";
 
-function ProjectMaterialSection({
-  materials,
-}: {
-  materials: ReturnType<typeof projectMaterialItems>;
-}) {
+function AddMaterialButton() {
   const strings = useStrings();
   const { captureOpen } = useInteractionScope();
-  const hasPaperlessAttachments = materials.some(
-    ({ task }) => parseReferenceContent(task.notes).paperlessAttachments.length > 0,
-  );
-  const { data: paperlessStatus } = useAsync(
-    () =>
-      hasPaperlessAttachments && typeof api.getPaperlessStatus === "function"
-        ? api.getPaperlessStatus()
-        : Promise.resolve(null),
-    [hasPaperlessAttachments],
-  );
 
   return (
-    <section className="section project-material-section">
-      <div className="row-between">
-        <h2 className="section-title">{strings.materialLabel}</h2>
-        <button
-          type="button"
-          className="btn btn-sm"
-          disabled={!captureOpen}
-          onClick={() => captureOpen?.()}
-        >
-          {strings.addMaterial}
-        </button>
-      </div>
-      {materials.length > 0 ? (
-        <div className="material-card-list">
-          {materials.map(({ task, parentTitles }) => (
-            <MaterialCard
-              key={task.id}
-              task={task}
-              context={parentTitles.join(" › ") || undefined}
-              paperlessUiBaseUrl={paperlessStatus?.documentUiBaseUrl ?? null}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="text-muted">{strings.projectMaterialEmpty}</p>
-      )}
-    </section>
+    <button
+      type="button"
+      className="btn btn-sm"
+      disabled={!captureOpen}
+      onClick={() => captureOpen?.()}
+    >
+      {strings.addMaterial}
+    </button>
   );
 }
 
@@ -190,7 +154,6 @@ export function ProjectDetailPage() {
     return () => { contentOpeningRef.current += 1; };
   }, [projectId]);
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
-  const projectMaterials = project ? projectMaterialItems(project.tasks) : [];
 
   const owner = project
     ? members.find((m) => m.id === project.ownerMemberId)
@@ -679,7 +642,6 @@ export function ProjectDetailPage() {
               </div>
             </div>
             <PaperlessAttachmentStrip attachments={attachments} />
-            <ProjectMaterialSection materials={projectMaterials} />
             {attachmentError ? (
               <WorkItemInlineError message={attachmentError} />
             ) : null}
@@ -776,7 +738,10 @@ export function ProjectDetailPage() {
                 criteria={project.acceptanceCriteria}
               />
             </WorkItemDetailDisclosure>
-            <WorkItemDetailDisclosure title={strings.taskSummary} headingLevel={2}
+            <WorkItemDetailDisclosure
+              title={strings.taskSummary}
+              headingLevel={2}
+              actions={<AddMaterialButton />}
               defaultOpen resetKey={project.id} className="project-content-tasks">
               {!project.tasks.length && !project.childStories?.length ? <p className="text-muted">{strings.projectEmptyStepsHint}</p> : null}
               {project.childStories?.length ? (
