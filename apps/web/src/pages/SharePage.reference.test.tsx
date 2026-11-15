@@ -176,7 +176,9 @@ describe("SharePage reference destinations", () => {
     expect(screen.getByLabelText("Aufgaben und Projekte durchsuchen")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ohne Projekt" })).toBeDisabled();
     expect(
-      screen.getAllByRole("button", { name: /Urlaub/ }).every((button) => button.disabled),
+      screen.getAllByRole("button", { name: /Urlaub/ }).every((button) =>
+        button.hasAttribute("disabled"),
+      ),
     ).toBe(true);
 
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
