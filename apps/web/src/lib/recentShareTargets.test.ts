@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_RECENT_SHARE_TARGETS,
   readRecentShareTargets,
+  readRecentNoteTargets,
+  rememberNoteTarget,
   rememberShareTarget,
 } from "./recentShareTargets";
 
@@ -37,6 +39,30 @@ describe("recentShareTargets", () => {
     expect(targets).toHaveLength(MAX_RECENT_SHARE_TARGETS);
     expect(targets[0]).toEqual({ kind: "task", id: 3 });
     expect(targets).not.toContainEqual({ kind: "task", id: 1 });
+  });
+
+  it("keeps note-append history separate from material destinations", () => {
+    rememberShareTarget({ kind: "project", id: 1 });
+    rememberNoteTarget({ kind: "task", id: 2 });
+    rememberNoteTarget({ kind: "project", id: 3 });
+
+    expect(readRecentShareTargets()).toEqual([{ kind: "project", id: 1 }]);
+    expect(readRecentNoteTargets()).toEqual([
+      { kind: "project", id: 3 },
+      { kind: "task", id: 2 },
+    ]);
+  });
+
+  it("keeps only three note-append destinations", () => {
+    for (let id = 1; id <= 4; id += 1) {
+      rememberNoteTarget({ kind: "task", id });
+    }
+
+    expect(readRecentNoteTargets()).toEqual([
+      { kind: "task", id: 4 },
+      { kind: "task", id: 3 },
+      { kind: "task", id: 2 },
+    ]);
   });
 
   it("tolerates corrupt and foreign storage data", () => {
