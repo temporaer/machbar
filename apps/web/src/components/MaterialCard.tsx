@@ -18,11 +18,15 @@ export function MaterialCard({
   context,
   paperlessUiBaseUrl,
   keyboardNavigable = false,
+  registerWorkItem,
+  interactiveNotes = false,
 }: {
   task: Task;
   context?: string | undefined;
   paperlessUiBaseUrl?: string | null;
   keyboardNavigable?: boolean;
+  registerWorkItem?: boolean;
+  interactiveNotes?: boolean;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
@@ -31,8 +35,8 @@ export function MaterialCard({
   return (
     <article
       className="material-card"
-      data-workitem-id={keyboardNavigable ? task.id : undefined}
-      data-workitem-role={keyboardNavigable ? "task" : undefined}
+      data-workitem-id={keyboardNavigable && registerWorkItem !== false ? task.id : undefined}
+      data-workitem-role={keyboardNavigable && registerWorkItem !== false ? "task" : undefined}
     >
       <div className="material-card-heading">
         <span className="material-card-icon" aria-hidden="true">🗎</span>
@@ -62,7 +66,7 @@ export function MaterialCard({
         <MarkdownNotes
           value={content.remainingText}
           className="material-card-notes"
-          interactive={false}
+          interactive={interactiveNotes}
         />
       ) : null}
       {content.paperlessAttachments.length > 0 ? (

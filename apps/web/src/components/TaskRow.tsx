@@ -416,7 +416,12 @@ export function TaskRow({
         )}
         <div className="task-row-main-wrap">
           {isReference ? (
-            <MaterialCard task={task} keyboardNavigable />
+            <MaterialCard
+              task={task}
+              keyboardNavigable
+              registerWorkItem={false}
+              interactiveNotes
+            />
           ) : (
             <button
               type="button"
