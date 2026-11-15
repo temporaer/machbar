@@ -19,14 +19,12 @@ export function MaterialCard({
   paperlessUiBaseUrl,
   keyboardNavigable = false,
   registerWorkItem,
-  interactiveNotes = false,
 }: {
   task: Task;
   context?: string | undefined;
   paperlessUiBaseUrl?: string | null;
   keyboardNavigable?: boolean;
   registerWorkItem?: boolean;
-  interactiveNotes?: boolean;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
@@ -66,7 +64,7 @@ export function MaterialCard({
         <MarkdownNotes
           value={content.remainingText}
           className="material-card-notes"
-          interactive={interactiveNotes}
+          interactive={false}
         />
       ) : null}
       {content.paperlessAttachments.length > 0 ? (

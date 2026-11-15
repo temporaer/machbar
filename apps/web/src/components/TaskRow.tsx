@@ -420,7 +420,6 @@ export function TaskRow({
               task={task}
               keyboardNavigable
               registerWorkItem={false}
-              interactiveNotes
             />
           ) : (
             <button
