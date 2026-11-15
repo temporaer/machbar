@@ -4400,6 +4400,16 @@ details[open] > .disclosure-summary::after {
   -webkit-line-clamp: 2;
 }
 
+.project-material-section .row-between {
+  flex-wrap: wrap;
+}
+
+.project-material-section .btn {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .task-row-children {
   margin-left: 22px;
   padding-left: 10px;
