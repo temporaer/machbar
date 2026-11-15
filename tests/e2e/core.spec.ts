@@ -452,6 +452,64 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
   }
 });
 
+test("project AI prompt shares and copies only selected material", async ({ page }) => {
+  const projectTitle = `AI prompt ${randomUUID()}`;
+  const projectResponse = await page.request.post("/api/projects", {
+    data: { title: projectTitle },
+  });
+  expect(projectResponse.status()).toBe(201);
+  const project = await projectResponse.json();
+  const selectedTitle = `Selected source ${randomUUID()}`;
+  const unselectedTitle = `Unselected source ${randomUUID()}`;
+  const selectedNotes = "[Source](https://example.test/research)\n\n**Keep this annotation.**";
+  for (const [title, notes] of [
+    [selectedTitle, selectedNotes],
+    [unselectedTitle, "Do not include this annotation."],
+  ]) {
+    const response = await page.request.post("/api/tasks", {
+      data: { title, kind: "reference", projectId: project.id, notes },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://127.0.0.1:4173",
+  });
+  await page.addInitScript(() => {
+    const testWindow = window as unknown as {
+      __nativeShareData: { title: string; text: string } | null;
+    };
+    testWindow.__nativeShareData = null;
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: { title: string; text: string }) => {
+        testWindow.__nativeShareData = data;
+      },
+    });
+  });
+  await page.goto(`/#/projects/${project.id}`);
+  await page.getByRole("button", { name: "KI-Prompt erstellen", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "KI-Prompt erstellen" });
+  await composer.getByRole("textbox", { name: "Deine Anweisung" }).fill("Vergleiche die Quelle.");
+  await expect(composer.getByRole("checkbox", { name: selectedTitle })).not.toBeChecked();
+  await composer.getByRole("checkbox", { name: selectedTitle }).check();
+  const expected = `Vergleiche die Quelle.\n\n---\n\n## ${selectedTitle}\n\n${selectedNotes}`;
+
+  await composer.getByRole("button", { name: "Teilen …" }).click();
+  await expect.poll(() => page.evaluate(() => (
+    window as unknown as { __nativeShareData: { title: string; text: string } | null }
+  ).__nativeShareData)).toEqual({
+    title: `KI-Prompt erstellen: ${projectTitle}`,
+    text: expected,
+  });
+
+  await composer.getByRole("button", { name: "Kopieren", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected);
+  expect(expected).toContain("[Source](https://example.test/research)");
+  expect(expected).toContain("**Keep this annotation.**");
+  expect(expected).not.toContain(unselectedTitle);
+  expect(expected).not.toContain("Do not include this annotation.");
+});
+
 test("collapsed project tasks cannot be moved or planned by shortcuts", async ({ page }) => {
   const project = await (await page.request.post("/api/projects", {
     data: { title: `Keyboard project ${randomUUID()}` },
