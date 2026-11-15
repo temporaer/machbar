@@ -125,6 +125,12 @@ test("a recent nested material destination fits the phone viewport and files exa
   await expect(page.getByRole("button", { name: /Unterkunft B/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Restaurant/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Ausflug/ })).toBeVisible();
+  const recentGrid = page.locator(".share-recent-section .share-target-list");
+  await expect(recentGrid).toHaveCSS("display", "grid");
+  expect(
+    (await recentGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns))
+      .split(" "),
+  ).toHaveLength(2);
   const saveButton = page.getByRole("button", { name: "Als Material speichern" });
   await expect(saveButton).toBeVisible();
   const saveBounds = await saveButton.boundingBox();
@@ -201,7 +207,6 @@ test("a deleted recent target never becomes a standalone material save", async (
     headers: actorHeaders,
   });
   expect(deletion.status()).toBe(204);
-  await page.getByRole("button", { name: "Als Material speichern" }).click();
 
   await expect(page.locator(".share-current-destination")).toContainText(
     "Dieses Ziel ist nicht mehr verfügbar",

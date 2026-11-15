@@ -182,6 +182,46 @@ describe("SharePage", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("refreshes untouched capture fields from saved share edits when reopened", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?title=Original&text=Ursprüngliche%20Quelle#/share",
+    );
+    renderPage();
+
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await editShareContent("Aktueller Titel", "Aktuelle Quelle");
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+
+    expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Aktueller Titel");
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("Aktuelle Quelle");
+  });
+
+  it("preserves task-specific capture edits while saved share edits refresh untouched fields", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?title=Original&text=Ursprüngliche%20Quelle#/share",
+    );
+    renderPage();
+
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+    await userEvent.clear(screen.getByLabelText("Nur Titel reicht"));
+    await userEvent.type(screen.getByLabelText("Nur Titel reicht"), "Aufgabentitel");
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await editShareContent("Aktueller Titel", "Aktuelle Quelle");
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+
+    expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Aufgabentitel");
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("Aktuelle Quelle");
+  });
+
   it.each([
     ["  Für später  ", "Geteilte Nachricht\n\nhttps://example.com/story\n\nFür später"],
     ["   ", "Geteilte Nachricht\n\nhttps://example.com/story"],
@@ -242,6 +282,7 @@ describe("SharePage", () => {
 
     await userEvent.type(await openNoteSearch(), "Urlaub");
     await userEvent.click(screen.getByRole("button", { name: /Urlaub planen/ }));
+    expect(screen.queryByLabelText("Notizziele durchsuchen")).not.toBeInTheDocument();
     expect(mockedApi.appendTaskNotes).not.toHaveBeenCalled();
     await appendToSelectedTarget();
 
@@ -359,6 +400,77 @@ describe("SharePage", () => {
       }, expect.any(Object)),
     );
     expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
+  });
+
+  it("fills recent material slots from eligible destinations after stale entries", async () => {
+    const projects = [
+      makeProject({ id: 4, title: "Ziel vier" }),
+      makeProject({ id: 5, title: "Ziel fünf" }),
+    ];
+    mockedApi.getProjects.mockResolvedValue(projects);
+    mockedApi.searchTasks.mockResolvedValue([
+      makeTask({ id: 1, title: "Aktion eins", kind: "action" }),
+      makeTask({ id: 2, title: "Aktion zwei", kind: "action" }),
+      makeTask({ id: 3, title: "Aktion drei", kind: "action" }),
+    ]);
+    window.localStorage.setItem(
+      "machbar:recent-share-targets",
+      JSON.stringify([
+        { kind: "task", id: 1 },
+        { kind: "task", id: 2 },
+        { kind: "task", id: 3 },
+        { kind: "project", id: 4 },
+        { kind: "project", id: 5 },
+      ]),
+    );
+    window.history.replaceState(null, "", "/?title=Material#/share");
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /Ziel vier/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ziel fünf/ })).toBeInTheDocument();
+  });
+
+  it("shows project ancestors reached through a task parent", async () => {
+    const outer = makeProject({ id: 4, title: "Außen" });
+    const subproject = makeProject({ id: 5, title: "Teilprojekt", parentId: 11 });
+    const container = makeTask({
+      id: 11,
+      kind: "reference",
+      title: "Behälter",
+      projectId: 4,
+    });
+    mockedApi.getProjects.mockResolvedValue([outer, subproject]);
+    mockedApi.searchTasks.mockResolvedValue([container]);
+    window.localStorage.setItem(
+      "machbar:recent-share-targets",
+      JSON.stringify([{ kind: "project", id: 5 }]),
+    );
+    window.history.replaceState(null, "", "/?title=Material#/share");
+    renderPage();
+
+    const recent = await screen.findByRole("button", { name: /Teilprojekt/ });
+    expect(recent).toHaveTextContent("Außen › Behälter › Teilprojekt");
+  });
+
+  it("closes material destination search after choosing a result", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 4, title: "Geburtstag" }),
+    ]);
+    window.history.replaceState(null, "", "/?title=Kuchenidee#/share");
+    renderPage();
+
+    await userEvent.type(await openMaterialSearch(), "Geburtstag");
+    await userEvent.click(await screen.findByRole("button", { name: /Geburtstag/ }));
+
+    expect(screen.queryByLabelText("Aufgaben und Projekte durchsuchen")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Als Material speichern" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        (_, element) => element?.classList.contains("share-current-destination") ?? false,
+      ),
+    ).toHaveTextContent("Geburtstag");
   });
 
   it("files into the exact recent nested Reference in two taps", async () => {

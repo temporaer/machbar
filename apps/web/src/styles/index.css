@@ -2840,7 +2840,7 @@ details[open] > .disclosure-summary::after {
   margin-bottom: 4px;
 }
 
-.share-target-list-compact {
+.share-target-list.share-target-list-compact {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;

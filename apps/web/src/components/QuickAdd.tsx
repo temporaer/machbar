@@ -229,7 +229,17 @@ export function QuickAdd({
                   material,
                 });
                 if (material) {
-                  rememberMaterialTarget({ kind: "task", id: result.task.id });
+                  if (result.task.parentTaskId !== null) {
+                    rememberMaterialTarget({
+                      kind: "task",
+                      id: result.task.parentTaskId,
+                    });
+                  } else if (result.task.projectId !== null) {
+                    rememberMaterialTarget({
+                      kind: "project",
+                      id: result.task.projectId,
+                    });
+                  }
                 }
                 setPendingFile(null);
                 uploadedAttachmentRef.current = null;

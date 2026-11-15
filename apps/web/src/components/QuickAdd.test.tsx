@@ -211,7 +211,7 @@ describe("QuickAdd", () => {
     );
     expect(mockedApi.previewTaskCreation).not.toHaveBeenCalled();
     expect(await screen.findByText("Material gespeichert: Reiseplan")).toBeInTheDocument();
-    expect(readRecentMaterialTargets()).toEqual([{ kind: "task", id: 77 }]);
+    expect(readRecentMaterialTargets()).toEqual([{ kind: "project", id: 7 }]);
     await userEvent.click(screen.getByRole("button", { name: "Ansehen" }));
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("77");
   });

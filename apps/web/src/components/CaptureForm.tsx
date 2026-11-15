@@ -101,6 +101,8 @@ export function CaptureForm({
   const materialCreationIntent = useRef<CreationIntent | null>(null);
   const [localTitle, setTitle] = useState(initialTitle);
   const title = thoughtDraft?.title ?? localTitle;
+  const previousInitialTitle = useRef(initialTitle);
+  const previousInitialNotes = useRef(initialNotes);
   const activeDraftKey = useRef(thoughtDraft?.key);
   activeDraftKey.current = thoughtDraft?.key;
   const [titleCursor, setTitleCursor] = useState(initialTitle.length);
@@ -119,6 +121,21 @@ export function CaptureForm({
     "member" | "context" | "schedule" | "project" | null
   >(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const previousTitle = previousInitialTitle.current;
+    if (previousTitle === initialTitle) return;
+    previousInitialTitle.current = initialTitle;
+    if (localTitle === previousTitle && selectedTokens.length === 0) {
+      setTitle(initialTitle);
+      setTitleCursor(initialTitle.length);
+    }
+  }, [initialTitle, localTitle, selectedTokens.length]);
+  useEffect(() => {
+    const previousNotes = previousInitialNotes.current;
+    if (previousNotes === initialNotes) return;
+    previousInitialNotes.current = initialNotes;
+    if (notes === previousNotes) setNotes(initialNotes);
+  }, [initialNotes, notes]);
   useEffect(() => {
     if (saving || focusAfterSave.current === null) return;
     if (focusAfterSave.current === activeDraftKey.current) titleInputRef.current?.focus();

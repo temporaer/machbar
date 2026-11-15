@@ -81,7 +81,7 @@ function optionForTask(
   }
   const project = task.projectId === null ? undefined : projectsById.get(task.projectId);
   const projectTitle = project
-    ? projectPath(project, projectsById)
+    ? projectPath(project, projectsById, tasksById)
     : task.projectTitle ?? null;
   const path = [projectTitle, ...ancestors, task.title]
     .filter((part): part is string => Boolean(part))
@@ -109,8 +109,9 @@ function optionForProject(
   project: Project | ProjectWithActions,
   strings: Strings,
   projectsById: Map<number, Project | ProjectWithActions>,
+  tasksById: Map<number, Task>,
 ): ShareOption {
-  const path = projectPath(project, projectsById);
+  const path = projectPath(project, projectsById, tasksById);
   return {
     key: `project:${project.id}`,
     kind: "project",
@@ -128,16 +129,19 @@ function optionForProject(
 function projectPath(
   project: Project | ProjectWithActions,
   projectsById: Map<number, Project | ProjectWithActions>,
+  tasksById: Map<number, Task>,
 ): string {
   const ancestors: string[] = [];
   const seen = new Set([project.id]);
   let parentId = project.parentId;
   while (parentId !== null && !seen.has(parentId)) {
     seen.add(parentId);
-    const parent = projectsById.get(parentId);
+    const parent = projectsById.get(parentId) ?? tasksById.get(parentId);
     if (!parent) break;
     ancestors.unshift(parent.title);
-    parentId = parent.parentId;
+    parentId = "parentTaskId" in parent
+      ? parent.parentTaskId ?? parent.projectId
+      : parent.parentId;
   }
   return [...ancestors, project.title].join(" › ");
 }
@@ -332,6 +336,8 @@ function SharePageContent({
   const [noteSearchOpen, setNoteSearchOpen] = useState(false);
   const materialSearchInput = useRef<HTMLInputElement>(null);
   const noteSearchInput = useRef<HTMLInputElement>(null);
+  const materialSearchToggle = useRef<HTMLButtonElement>(null);
+  const noteSearchToggle = useRef<HTMLButtonElement>(null);
   const contentEditButton = useRef<HTMLButtonElement>(null);
   const titleEditInput = useRef<HTMLInputElement>(null);
   const annotationEditButton = useRef<HTMLButtonElement>(null);
@@ -386,7 +392,7 @@ function SharePageContent({
     () =>
       uniqueOptions([
         ...(projectsState.data ?? []).map((project) =>
-          optionForProject(project, strings, projectsById),
+          optionForProject(project, strings, projectsById, tasksById),
         ),
         ...(tasksState.data ?? []).map((task) =>
           optionForTask(task, strings, tasksById, projectsById),
@@ -416,9 +422,9 @@ function SharePageContent({
   const recentMaterialOptions = useMemo(
     () =>
       readRecentMaterialTargets()
-        .slice(0, 3)
         .map((target) => materialOptionByKey.get(`${target.kind}:${target.id}`))
-        .filter((option): option is ShareOption => option !== undefined),
+        .filter((option): option is ShareOption => option !== undefined)
+        .slice(0, 3),
     [materialOptionByKey],
   );
   const recentNoteOptions = useMemo(
@@ -629,6 +635,20 @@ function SharePageContent({
     setCompleted({ kind: "task", id: result.task.id, title: result.task.title });
     setCaptureOpen(false);
     clearPendingShare();
+  };
+
+  const chooseMaterialTarget = (option: ShareOption) => {
+    setSelectedMaterialKey(option.key);
+    setMaterialQuery("");
+    setMaterialSearchOpen(false);
+    materialSearchToggle.current?.focus();
+  };
+
+  const chooseNoteTarget = (option: ShareOption) => {
+    setSelectedNoteKey(option.key);
+    setNoteQuery("");
+    setNoteSearchOpen(false);
+    noteSearchToggle.current?.focus();
   };
 
   if (completed) {
@@ -860,6 +880,7 @@ function SharePageContent({
               </section>
             ) : null}
             <button
+              ref={materialSearchToggle}
               type="button"
               className="btn share-search-toggle"
               aria-expanded={materialSearchOpen}
@@ -890,7 +911,7 @@ function SharePageContent({
                     options={materialSearchOptions}
                     busyKey={captureControlsDisabled || editing ? "busy" : null}
                     selectedKey={selectedMaterialKey}
-                    onChoose={(option) => setSelectedMaterialKey(option.key)}
+                    onChoose={chooseMaterialTarget}
                   />
                 ) : null}
               </div>
@@ -943,6 +964,7 @@ function SharePageContent({
                   />
                 ) : null}
                 <button
+                  ref={noteSearchToggle}
                   type="button"
                   className="btn share-search-toggle"
                   aria-expanded={noteSearchOpen}
@@ -974,7 +996,7 @@ function SharePageContent({
                         options={noteSearchOptions}
                         busyKey={captureControlsDisabled || editing ? "busy" : null}
                         selectedKey={selectedNoteKey}
-                        onChoose={(option) => setSelectedNoteKey(option.key)}
+                        onChoose={chooseNoteTarget}
                       />
                     ) : null}
                   </div>
