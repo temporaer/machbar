@@ -8,6 +8,7 @@ import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { readRecentMaterialTargets } from "../lib/recentShareTargets";
 
 function renderQuickAddInStory(storyId: number, ui = <QuickAdd />) {
   return renderWithProviders(
@@ -210,6 +211,7 @@ describe("QuickAdd", () => {
     );
     expect(mockedApi.previewTaskCreation).not.toHaveBeenCalled();
     expect(await screen.findByText("Material gespeichert: Reiseplan")).toBeInTheDocument();
+    expect(readRecentMaterialTargets()).toEqual([{ kind: "project", id: 7 }]);
     await userEvent.click(screen.getByRole("button", { name: "Ansehen" }));
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("77");
   });

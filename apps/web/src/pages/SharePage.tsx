@@ -3,9 +3,7 @@ import type { Project, Task } from "@machbar/shared";
 import { useNavigate } from "react-router-dom";
 import { api, type ProjectWithActions, type CreationIntent } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { flattenTasks } from "../lib/taskHelpers";
 import {
   appendTextBlock,
   parseWebShareTarget,
@@ -15,8 +13,10 @@ import {
   type WebShareTarget,
 } from "../lib/shareTarget";
 import {
-  readRecentShareTargets,
-  rememberShareTarget,
+  readRecentNoteTargets,
+  readRecentMaterialTargets,
+  rememberMaterialTarget,
+  rememberNoteTarget,
   type RecentShareTarget,
 } from "../lib/recentShareTargets";
 import { useStrings } from "../lib/strings";
@@ -49,6 +49,7 @@ interface ShareOption {
   title: string;
   subtitle: string;
   notes: string;
+  path: string;
   dueDate: string | null;
   revision: number;
   projectId: number | null;
@@ -61,8 +62,30 @@ interface CompletedShare {
   material?: boolean;
 }
 
-function optionForTask(task: Task, strings: Strings): ShareOption {
+function optionForTask(
+  task: Task,
+  strings: Strings,
+  tasksById: Map<number, Task>,
+  projectsById: Map<number, Project | ProjectWithActions>,
+): ShareOption {
   const isReference = task.kind === "reference";
+  const ancestors: string[] = [];
+  const seen = new Set([task.id]);
+  let parentId = task.parentTaskId;
+  while (parentId !== null && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = tasksById.get(parentId);
+    if (!parent) break;
+    ancestors.unshift(parent.title);
+    parentId = parent.parentTaskId;
+  }
+  const project = task.projectId === null ? undefined : projectsById.get(task.projectId);
+  const projectTitle = project
+    ? projectPath(project, projectsById, tasksById)
+    : task.projectTitle ?? null;
+  const path = [projectTitle, ...ancestors, task.title]
+    .filter((part): part is string => Boolean(part))
+    .join(" › ");
   return {
     key: `task:${task.id}`,
     kind: "task",
@@ -70,13 +93,12 @@ function optionForTask(task: Task, strings: Strings): ShareOption {
     id: task.id,
     title: task.title,
     subtitle: isReference
-      ? task.projectTitle
-        ? strings.materialDestination(task.projectTitle)
-        : strings.materialLabel
-      : task.projectTitle
-        ? `${strings.task} · ${task.projectTitle}`
+      ? path
+      : projectTitle
+        ? `${strings.task} · ${projectTitle}`
         : strings.task,
     notes: task.notes,
+    path,
     dueDate: task.dueDate,
     revision: task.revision,
     projectId: task.projectId,
@@ -86,18 +108,42 @@ function optionForTask(task: Task, strings: Strings): ShareOption {
 function optionForProject(
   project: Project | ProjectWithActions,
   strings: Strings,
+  projectsById: Map<number, Project | ProjectWithActions>,
+  tasksById: Map<number, Task>,
 ): ShareOption {
+  const path = projectPath(project, projectsById, tasksById);
   return {
     key: `project:${project.id}`,
     kind: "project",
     id: project.id,
     title: project.title,
-    subtitle: strings.project,
+    subtitle: path === project.title ? strings.project : path,
     notes: project.notes,
+    path,
     dueDate: project.dueDate,
     revision: project.revision,
     projectId: project.id,
   };
+}
+
+function projectPath(
+  project: Project | ProjectWithActions,
+  projectsById: Map<number, Project | ProjectWithActions>,
+  tasksById: Map<number, Task>,
+): string {
+  const ancestors: string[] = [];
+  const seen = new Set([project.id]);
+  let parentId = project.parentId;
+  while (parentId !== null && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = projectsById.get(parentId) ?? tasksById.get(parentId);
+    if (!parent) break;
+    ancestors.unshift(parent.title);
+    parentId = "parentTaskId" in parent
+      ? parent.parentTaskId ?? parent.projectId
+      : parent.parentId;
+  }
+  return [...ancestors, project.title].join(" › ");
 }
 
 function fold(value: string, locale: string): string {
@@ -127,20 +173,36 @@ function shareSourceWithoutTitle(title: string, source: string): string {
   return cleanSource;
 }
 
+function shareSourcePreview(source: string, strings: Strings): string {
+  const url = source.match(/https?:\/\/[^\s<>"`]+/i)?.[0];
+  if (url) {
+    try {
+      return new URL(url.replace(/[.,!?;:]+$/, "")).hostname;
+    } catch {
+      // Fall back to the shared text when the URL is incomplete.
+    }
+  }
+  const compact = source.replace(/\s+/g, " ").trim();
+  return compact.length > 120 ? `${compact.slice(0, 119).trimEnd()}…` : compact ||
+    strings.sharedContent;
+}
+
 function TargetRows({
   options,
   busyKey,
   selectedKey,
+  compact = false,
   onChoose,
 }: {
   options: ShareOption[];
   busyKey: string | null;
   selectedKey: string | null;
+  compact?: boolean;
   onChoose: (option: ShareOption) => void;
 }) {
   const strings = useStrings();
   return (
-    <div className="share-target-list">
+    <div className={`share-target-list${compact ? " share-target-list-compact" : ""}`}>
       {options.map((option) => (
         <button
           key={option.key}
@@ -248,7 +310,6 @@ function SharePageContent({
   const strings = useStrings();
   const { locale } = useLocale();
   const navigate = useNavigate();
-  const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
   const { start: startIntake, pending: intakePending, error: intakeError } = useStartIntake();
   const captureDraft = useMemo(
@@ -257,6 +318,8 @@ function SharePageContent({
   );
   const [titleDraft, setTitleDraft] = useState(captureDraft.title);
   const [sourceDraft, setSourceDraft] = useState(() => shareTargetToSource(incoming));
+  const [titleEditDraft, setTitleEditDraft] = useState(captureDraft.title);
+  const [sourceEditDraft, setSourceEditDraft] = useState(() => shareTargetToSource(incoming));
   const calendarMetadata = useMemo(
     () => parseGoogleCalendarShare(incoming, { locale }),
     [incoming, locale],
@@ -266,13 +329,31 @@ function SharePageContent({
     ? formatExactLocalDate(calendarDueDate, locale)
     : null;
   const [captureOpen, setCaptureOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [captureVisited, setCaptureVisited] = useState(false);
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [contentEditing, setContentEditing] = useState(false);
+  const [materialSearchOpen, setMaterialSearchOpen] = useState(false);
+  const [noteSearchOpen, setNoteSearchOpen] = useState(false);
+  const materialSearchInput = useRef<HTMLInputElement>(null);
+  const noteSearchInput = useRef<HTMLInputElement>(null);
+  const materialSearchToggle = useRef<HTMLButtonElement>(null);
+  const noteSearchToggle = useRef<HTMLButtonElement>(null);
+  const contentEditButton = useRef<HTMLButtonElement>(null);
+  const titleEditInput = useRef<HTMLInputElement>(null);
+  const annotationEditButton = useRef<HTMLButtonElement>(null);
+  const annotationEditInput = useRef<HTMLTextAreaElement>(null);
+  const wasContentEditing = useRef(false);
+  const wasNoteEditing = useRef(false);
+  const [materialQuery, setMaterialQuery] = useState("");
+  const [noteQuery, setNoteQuery] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<CompletedShare | null>(null);
   const [pendingConflict, setPendingConflict] = useState<ShareOption | null>(null);
   const [note, setNote] = useState("");
-  const [selectedTargetKey, setSelectedTargetKey] = useState<string | null>(null);
+  const [noteEditDraft, setNoteEditDraft] = useState("");
+  const [selectedMaterialKey, setSelectedMaterialKey] = useState<string | null>(null);
+  const [selectedNoteKey, setSelectedNoteKey] = useState<string | null>(null);
   const attachmentUploads = useRef(
     new Map<number, Promise<UploadedPaperlessAttachment>>(),
   );
@@ -282,81 +363,108 @@ function SharePageContent({
     () => api.searchTasks({ kinds: ["action", "reference"] }),
     [],
   );
-  const agendaState = useAsync(() => api.getAgenda(currentMemberId), [currentMemberId]);
+  useEffect(() => {
+    if (materialSearchOpen) materialSearchInput.current?.focus();
+  }, [materialSearchOpen]);
+  useEffect(() => {
+    if (noteSearchOpen) noteSearchInput.current?.focus();
+  }, [noteSearchOpen]);
+  useEffect(() => {
+    if (contentEditing) titleEditInput.current?.focus();
+    else if (wasContentEditing.current) contentEditButton.current?.focus();
+    wasContentEditing.current = contentEditing;
+  }, [contentEditing]);
+  useEffect(() => {
+    if (noteEditing) annotationEditInput.current?.focus();
+    else if (wasNoteEditing.current) annotationEditButton.current?.focus();
+    wasNoteEditing.current = noteEditing;
+  }, [noteEditing]);
+  const tasksById = useMemo(
+    () => new Map((tasksState.data ?? []).map((task) => [task.id, task])),
+    [tasksState.data],
+  );
+  const projectsById = useMemo(
+    () => new Map((projectsState.data ?? []).map((project) => [project.id, project])),
+    [projectsState.data],
+  );
 
   const allOptions = useMemo(
     () =>
       uniqueOptions([
         ...(projectsState.data ?? []).map((project) =>
-          optionForProject(project, strings),
+          optionForProject(project, strings, projectsById, tasksById),
         ),
-        ...(tasksState.data ?? []).map((task) => optionForTask(task, strings)),
+        ...(tasksState.data ?? []).map((task) =>
+          optionForTask(task, strings, tasksById, projectsById),
+        ),
       ]),
-    [projectsState.data, strings, tasksState.data],
+    [projectsState.data, projectsById, strings, tasksById, tasksState.data],
   );
   const optionByKey = useMemo(
     () => new Map(allOptions.map((option) => [option.key, option])),
     [allOptions],
   );
-  const selectedTarget = selectedTargetKey
-    ? optionByKey.get(selectedTargetKey) ?? null
+  const materialOptions = useMemo(
+    () => allOptions.filter((option) => option.kind === "project" || option.taskKind === "reference"),
+    [allOptions],
+  );
+  const materialOptionByKey = useMemo(
+    () => new Map(materialOptions.map((option) => [option.key, option])),
+    [materialOptions],
+  );
+  const selectedMaterialTarget = selectedMaterialKey
+    ? materialOptionByKey.get(selectedMaterialKey) ?? null
     : null;
   const materialProjectId =
-    selectedTarget?.kind === "project"
-      ? selectedTarget.id
-      : selectedTarget?.projectId ?? null;
-  const materialProjectTitle =
-    materialProjectId === null
-      ? null
-      : projectsState.data?.find((project) => project.id === materialProjectId)?.title ??
-        (selectedTarget?.kind === "project" ? selectedTarget.title : null) ??
-        null;
-  const recentOptions = useMemo(
+    selectedMaterialTarget?.kind === "project"
+      ? selectedMaterialTarget.id
+      : selectedMaterialTarget?.projectId ?? null;
+  const recentMaterialOptions = useMemo(
     () =>
-      readRecentShareTargets()
+      readRecentMaterialTargets()
+        .map((target) => materialOptionByKey.get(`${target.kind}:${target.id}`))
+        .filter((option): option is ShareOption => option !== undefined)
+        .slice(0, 3),
+    [materialOptionByKey],
+  );
+  const recentNoteOptions = useMemo(
+    () =>
+      readRecentNoteTargets()
         .map((target) => optionByKey.get(`${target.kind}:${target.id}`))
         .filter((option): option is ShareOption => option !== undefined),
     [optionByKey],
   );
-  const todayOptions = useMemo(() => {
-    const agenda = agendaState.data;
-    if (!agenda) return [];
-    const tasks = uniqueOptions(
-      [
-        ...agenda.planned,
-        ...agenda.overdue,
-        ...agenda.dueToday,
-        ...agenda.dueSoon,
-        ...(agenda.revisit ?? []),
-        ...agenda.shared,
-        ...agenda.unscheduled,
-      ].flatMap((task) =>
-        flattenTasks([task]).map((entry) => optionForTask(entry, strings)),
-      ),
+  const selectedNoteTarget = selectedNoteKey
+    ? optionByKey.get(selectedNoteKey) ?? null
+    : null;
+  const materialSearchOptions = useMemo(() => {
+    const needle = fold(materialQuery.trim(), locale);
+    if (!needle) return [];
+    return materialOptions.filter((option) =>
+      fold(`${option.title} ${option.path}`, locale).includes(needle),
     );
-    const projects = agenda.projects.map((entry) =>
-      optionForProject(entry.project, strings),
-    );
-    const recentKeys = new Set(recentOptions.map((option) => option.key));
-    return uniqueOptions([...projects, ...tasks]).filter(
-      (option) => !recentKeys.has(option.key),
-    );
-  }, [agendaState.data, recentOptions, strings]);
-  const searchOptions = useMemo(() => {
-    const needle = fold(query.trim(), locale);
+  }, [locale, materialOptions, materialQuery]);
+  const noteSearchOptions = useMemo(() => {
+    const needle = fold(noteQuery.trim(), locale);
     if (!needle) return [];
     return allOptions.filter((option) =>
-      fold(`${option.title} ${option.subtitle}`, locale).includes(needle),
+      fold(`${option.title} ${option.path}`, locale).includes(needle),
     );
-  }, [allOptions, locale, query]);
+  }, [allOptions, locale, noteQuery]);
 
   const completeShare = (option: ShareOption) => {
-    rememberShareTarget({
+    rememberNoteTarget({
       kind: option.kind,
       id: option.id,
     } satisfies RecentShareTarget);
     bump();
-    setCompleted({ kind: option.kind, id: option.id, title: option.title });
+    setCompleted({
+      kind: option.kind,
+      id: option.id,
+      title: option.kind === "task" && option.taskKind === "reference"
+        ? option.path
+        : option.title,
+    });
     setPendingConflict(null);
     clearPendingShare();
   };
@@ -410,6 +518,10 @@ function SharePageContent({
   const creationIntent = useRef<CreationIntent>({});
   const saveAsMaterial = async () => {
     if (busyKey || intakePending) return;
+    if (selectedMaterialKey !== null && !selectedMaterialTarget) {
+      setError(strings.shareDestinationUnavailable);
+      return;
+    }
     setBusyKey("material");
     setError(null);
     try {
@@ -420,17 +532,18 @@ function SharePageContent({
           notes: await resolveContentBlock(false),
           projectId: materialProjectId,
           parentTaskId:
-            selectedTarget?.kind === "task" &&
-            selectedTarget.taskKind === "reference"
-              ? selectedTarget.id
+            selectedMaterialTarget?.kind === "task" &&
+            selectedMaterialTarget.taskKind === "reference"
+              ? selectedMaterialTarget.id
               : null,
         },
         creationIntent.current,
       );
-      if (materialProjectId !== null) {
-        rememberShareTarget({ kind: "project", id: materialProjectId });
-      } else {
-        rememberShareTarget({ kind: "task", id: task.id });
+      if (selectedMaterialTarget) {
+        rememberMaterialTarget({
+          kind: selectedMaterialTarget.kind,
+          id: selectedMaterialTarget.id,
+        });
       }
       bump();
       setCompleted({
@@ -524,6 +637,20 @@ function SharePageContent({
     clearPendingShare();
   };
 
+  const chooseMaterialTarget = (option: ShareOption) => {
+    setSelectedMaterialKey(option.key);
+    setMaterialQuery("");
+    setMaterialSearchOpen(false);
+    materialSearchToggle.current?.focus();
+  };
+
+  const chooseNoteTarget = (option: ShareOption) => {
+    setSelectedNoteKey(option.key);
+    setNoteQuery("");
+    setNoteSearchOpen(false);
+    noteSearchToggle.current?.focus();
+  };
+
   if (completed) {
     return (
       <div className="share-page stack">
@@ -555,166 +682,393 @@ function SharePageContent({
     );
   }
 
-  const loading = projectsState.loading || tasksState.loading || agendaState.loading;
-  const loadError = projectsState.error || tasksState.error || agendaState.error;
+  const loading = projectsState.loading || tasksState.loading;
+  const loadError = projectsState.error || tasksState.error;
   const interactionsBusy = busyKey !== null || intakePending;
   const captureControlsDisabled = interactionsBusy || captureOpen;
-  const materialDestinationMessage = materialProjectTitle
-    ? strings.shareMaterialInProject(materialProjectTitle)
-    : strings.shareMaterialWithoutProject;
+  const editing = contentEditing || noteEditing;
+  const materialTargetUnavailable =
+    selectedMaterialKey !== null && selectedMaterialTarget === null;
+  const noteTargetUnavailable = selectedNoteKey !== null && selectedNoteTarget === null;
+  const sourcePreview = shareSourcePreview(sourceDraft, strings);
 
   return (
     <div className="share-page stack">
       <h1>{strings.shareWithMachbar}</h1>
       <section className="card stack share-preview">
-        <label className="field">
-          <span>{strings.title}</span>
-          <input
-            type="text"
-            value={titleDraft}
-            disabled={captureControlsDisabled}
-            onChange={(event) => setTitleDraft(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>{strings.shareSourceLabel}</span>
-          <textarea
-            rows={4}
-            value={sourceDraft}
-            placeholder={strings.shareSourcePlaceholder}
-            disabled={captureControlsDisabled}
-            onChange={(event) => setSourceDraft(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>{strings.shareNoteLabel}</span>
-          <textarea
-            rows={3}
-            value={note}
-            placeholder={strings.shareNotePlaceholder}
-            disabled={captureControlsDisabled}
-            onChange={(event) => setNote(event.target.value)}
-          />
-        </label>
+        <div className="share-preview-content">
+          <h2 className="share-preview-title">{titleDraft || strings.sharedContent}</h2>
+          <p className="share-source-preview">{sourcePreview}</p>
+        </div>
+        {incoming.files.length > 0 ? (
+          <p className="share-preview-attachments">
+            {strings.sharedAttachments(incoming.files.length)}
+          </p>
+        ) : null}
         {formattedCalendarDueDate ? (
           <p className="share-preview-deadline">
             {strings.calendarDeadlinePreview(formattedCalendarDueDate)}
           </p>
         ) : null}
-        {incoming.files.length > 0 ? (
-          <p>{strings.sharedAttachments(incoming.files.length)}</p>
+        <button
+          ref={contentEditButton}
+          type="button"
+          className="btn share-preview-toggle"
+          aria-expanded={contentEditing}
+          aria-controls="share-content-editor"
+          disabled={captureControlsDisabled}
+          onClick={() => {
+            if (contentEditing) {
+              titleEditInput.current?.focus();
+            } else {
+              setTitleEditDraft(titleDraft);
+              setSourceEditDraft(sourceDraft);
+              setContentEditing(true);
+            }
+          }}
+        >
+          {strings.shareEditContent}
+        </button>
+        {contentEditing ? (
+          <div id="share-content-editor" className="stack share-editor">
+            <label className="field">
+              <span>{strings.title}</span>
+              <input
+                ref={titleEditInput}
+                type="text"
+                value={titleEditDraft}
+                disabled={captureControlsDisabled}
+                onChange={(event) => setTitleEditDraft(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>{strings.shareSourceLabel}</span>
+              <textarea
+                rows={4}
+                value={sourceEditDraft}
+                placeholder={strings.shareSourcePlaceholder}
+                disabled={captureControlsDisabled}
+                onChange={(event) => setSourceEditDraft(event.target.value)}
+              />
+            </label>
+            <div className="share-editor-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={captureControlsDisabled}
+                onClick={() => {
+                  setTitleDraft(titleEditDraft);
+                  setSourceDraft(sourceEditDraft);
+                  setContentEditing(false);
+                }}
+              >
+                {strings.shareSaveEdits}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={captureControlsDisabled}
+                onClick={() => setContentEditing(false)}
+              >
+                {strings.shareCancelEdits}
+              </button>
+            </div>
+          </div>
         ) : null}
+        <button
+          ref={annotationEditButton}
+          type="button"
+          className="btn share-preview-toggle"
+          aria-expanded={noteEditing}
+          aria-controls="share-annotation-editor"
+          disabled={captureControlsDisabled}
+          onClick={() => {
+            if (noteEditing) {
+              annotationEditInput.current?.focus();
+            } else {
+              setNoteEditDraft(note);
+              setNoteEditing(true);
+            }
+          }}
+        >
+          {note.trim() ? strings.shareEditAnnotation : strings.shareAddAnnotation}
+        </button>
+        {noteEditing ? (
+          <div id="share-annotation-editor" className="stack share-editor">
+            <label className="field">
+              <span>{strings.shareNoteLabel}</span>
+              <textarea
+                ref={annotationEditInput}
+                rows={2}
+                value={noteEditDraft}
+                placeholder={strings.shareNotePlaceholder}
+                disabled={captureControlsDisabled}
+                onChange={(event) => setNoteEditDraft(event.target.value)}
+              />
+            </label>
+            <div className="share-editor-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={captureControlsDisabled}
+                onClick={() => {
+                  setNote(noteEditDraft);
+                  setNoteEditing(false);
+                }}
+              >
+                {strings.shareSaveEdits}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={captureControlsDisabled}
+                onClick={() => setNoteEditing(false)}
+              >
+                {strings.shareCancelEdits}
+              </button>
+            </div>
+          </div>
+        ) : (
+          note.trim() ? (
+            <p className="share-annotation-preview">{note.replace(/\s+/g, " ").trim()}</p>
+          ) : null
+        )}
       </section>
       {!pendingConflict ? (
-        <section className="section stack" aria-labelledby="share-destinations-heading">
-          <h2 className="section-title" id="share-destinations-heading">
-            {strings.shareMaterialDestinationHeading}
-          </h2>
-          <button
-            type="button"
-            className="choice-chip"
-            aria-pressed={selectedTargetKey === null}
-            disabled={captureControlsDisabled}
-            onClick={() => setSelectedTargetKey(null)}
+        <>
+          <section
+            className="section stack share-material-destination"
+            aria-labelledby="share-destinations-heading"
           >
-            {strings.shareWithoutProject}
-          </button>
-          <p className="text-muted">{materialDestinationMessage}</p>
-          {recentOptions.length > 0 ? (
-            <section className="section" aria-labelledby="share-recent-heading">
-              <h3 className="section-title" id="share-recent-heading">
-                {strings.recentDestinations}
-              </h3>
-              <TargetRows
-                options={recentOptions}
-                busyKey={captureControlsDisabled ? "busy" : null}
-                selectedKey={selectedTargetKey}
-                onChoose={(option) => setSelectedTargetKey(option.key)}
-              />
-            </section>
-          ) : null}
-          {todayOptions.length > 0 && !query.trim() ? (
-            <section className="section" aria-labelledby="share-today-heading">
-              <h3 className="section-title" id="share-today-heading">{strings.today}</h3>
-              <TargetRows
-                options={todayOptions}
-                busyKey={captureControlsDisabled ? "busy" : null}
-                selectedKey={selectedTargetKey}
-                onChoose={(option) => setSelectedTargetKey(option.key)}
-              />
-            </section>
-          ) : null}
-          <label className="field">
-            <span>{strings.searchShareTargets}</span>
-            <input
-              type="search"
-              value={query}
-              placeholder={strings.searchDestinationPlaceholder}
-              disabled={captureControlsDisabled}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
-          {query.trim() && searchOptions.length === 0 ? (
-            <p className="text-muted">{strings.destinationSearchEmpty}</p>
-          ) : null}
-          {searchOptions.length > 0 ? (
-            <TargetRows
-              options={searchOptions}
-              busyKey={captureControlsDisabled ? "busy" : null}
-              selectedKey={selectedTargetKey}
-              onChoose={(option) => setSelectedTargetKey(option.key)}
-            />
-          ) : null}
-        </section>
-      ) : null}
-
-      {!pendingConflict && !captureOpen ? (
-        <section className="card stack">
-          <h2 className="section-title">{strings.shareActionHeading}</h2>
-          <div className="stack">
-            <p>{strings.shareMaterialActionHint} {materialDestinationMessage}</p>
+            <h2 className="section-title" id="share-destinations-heading">
+              {strings.shareMaterialDestinationHeading}
+            </h2>
+            <p className="share-current-destination">
+              {strings.shareCurrentDestination}:{" "}
+              <strong>
+                {materialTargetUnavailable
+                  ? strings.shareDestinationUnavailable
+                  : selectedMaterialTarget?.path ?? strings.shareWithoutProject}
+              </strong>
+            </p>
+            {materialTargetUnavailable ? (
+              <p className="capture-error" role="alert">
+                {strings.shareDestinationUnavailable}
+              </p>
+            ) : null}
             <button
               type="button"
-              className="btn btn-primary btn-block"
-              disabled={interactionsBusy || !titleDraft.trim()}
+              className="choice-chip"
+              aria-pressed={selectedMaterialKey === null}
+              disabled={captureControlsDisabled || editing || loading}
+              onClick={() => setSelectedMaterialKey(null)}
+            >
+              {strings.shareWithoutProject}
+            </button>
+            {recentMaterialOptions.length > 0 ? (
+              <section className="share-recent-section" aria-labelledby="share-recent-heading">
+                <h3 className="section-title" id="share-recent-heading">
+                  {strings.recentDestinations}
+                </h3>
+                <TargetRows
+                  options={recentMaterialOptions}
+                  compact
+                  busyKey={captureControlsDisabled || editing || loading ? "busy" : null}
+                  selectedKey={selectedMaterialKey}
+                  onChoose={(option) => setSelectedMaterialKey(option.key)}
+                />
+              </section>
+            ) : null}
+            <button
+              ref={materialSearchToggle}
+              type="button"
+              className="btn share-search-toggle"
+              aria-expanded={materialSearchOpen}
+              aria-controls="share-material-search"
+              disabled={captureControlsDisabled || editing || loading}
+              onClick={() => setMaterialSearchOpen((open) => !open)}
+            >
+              {strings.shareSearchDestination}
+            </button>
+            {materialSearchOpen ? (
+              <div id="share-material-search" className="stack share-search-panel">
+                <label className="field">
+                  <span>{strings.searchShareTargets}</span>
+                  <input
+                    ref={materialSearchInput}
+                    type="search"
+                    value={materialQuery}
+                    placeholder={strings.searchDestinationPlaceholder}
+                    disabled={captureControlsDisabled || editing}
+                    onChange={(event) => setMaterialQuery(event.target.value)}
+                  />
+                </label>
+                {materialQuery.trim() && materialSearchOptions.length === 0 ? (
+                  <p className="text-muted">{strings.destinationSearchEmpty}</p>
+                ) : null}
+                {materialSearchOptions.length > 0 ? (
+                  <TargetRows
+                    options={materialSearchOptions}
+                    busyKey={captureControlsDisabled || editing ? "busy" : null}
+                    selectedKey={selectedMaterialKey}
+                    onChoose={chooseMaterialTarget}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-primary btn-block share-save-material"
+              disabled={
+                captureControlsDisabled ||
+                loading ||
+                editing ||
+                !titleDraft.trim() ||
+                materialTargetUnavailable
+              }
               onClick={() => void saveAsMaterial()}
             >
               {busyKey === "material"
                 ? strings.shareSavingMaterial
                 : strings.shareSaveAsMaterial}
             </button>
-          </div>
-          <div className="stack">
-            <p>
-              {selectedTarget
-                ? strings.shareAppendActionHint
-                : strings.shareAppendTargetHint}
-            </p>
-            <button
-              type="button"
-              className="btn btn-block"
-              disabled={interactionsBusy || selectedTarget === null}
-              onClick={() => {
-                if (selectedTarget) appendTo(selectedTarget);
-              }}
-            >
-              {busyKey === selectedTarget?.key
-                ? strings.sharing
-                : strings.shareAppendNotes}
-            </button>
-          </div>
-          <div className="stack">
-            <p>{strings.shareProcessActionHint}</p>
-            <button
-              type="button"
-              className="btn btn-block"
-              disabled={interactionsBusy}
-              onClick={processShared}
-            >
-              {intakePending ? strings.intakeStarting : strings.intakeProcess}
-            </button>
-          </div>
-        </section>
+          </section>
+
+          <details className="share-more-actions">
+            <summary>
+              <span>{strings.shareMoreActions}</span>
+              <span className="share-more-hint">{strings.shareMoreActionsHint}</span>
+            </summary>
+            <div className="stack share-more-content">
+              <section className="stack share-note-destination" aria-labelledby="share-note-heading">
+                <h2 className="section-title" id="share-note-heading">
+                  {strings.shareNoteTargetsHeading}
+                </h2>
+                <p>
+                  {selectedNoteTarget
+                    ? strings.shareAppendActionHint
+                    : strings.shareAppendTargetHint}
+                </p>
+                {noteTargetUnavailable ? (
+                  <p className="capture-error" role="alert">
+                    {strings.shareDestinationUnavailable}
+                  </p>
+                ) : null}
+                {recentNoteOptions.length > 0 ? (
+                  <TargetRows
+                    options={recentNoteOptions}
+                    compact
+                    busyKey={captureControlsDisabled || editing || loading ? "busy" : null}
+                    selectedKey={selectedNoteKey}
+                    onChoose={(option) => setSelectedNoteKey(option.key)}
+                  />
+                ) : null}
+                <button
+                  ref={noteSearchToggle}
+                  type="button"
+                  className="btn share-search-toggle"
+                  aria-expanded={noteSearchOpen}
+                  aria-controls="share-note-search"
+                  disabled={captureControlsDisabled || editing || loading}
+                  onClick={() => setNoteSearchOpen((open) => !open)}
+                >
+                  {strings.shareSearchNoteDestination}
+                </button>
+                {noteSearchOpen ? (
+                  <div id="share-note-search" className="stack share-search-panel">
+                    <label className="field">
+                      <span>{strings.shareSearchNoteTargets}</span>
+                      <input
+                        ref={noteSearchInput}
+                        type="search"
+                        aria-label={strings.shareSearchNoteTargets}
+                        value={noteQuery}
+                        placeholder={strings.searchDestinationPlaceholder}
+                        disabled={captureControlsDisabled || editing}
+                        onChange={(event) => setNoteQuery(event.target.value)}
+                      />
+                    </label>
+                    {noteQuery.trim() && noteSearchOptions.length === 0 ? (
+                      <p className="text-muted">{strings.destinationSearchEmpty}</p>
+                    ) : null}
+                    {noteSearchOptions.length > 0 ? (
+                      <TargetRows
+                        options={noteSearchOptions}
+                        busyKey={captureControlsDisabled || editing ? "busy" : null}
+                        selectedKey={selectedNoteKey}
+                        onChoose={chooseNoteTarget}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn btn-block"
+                  disabled={
+                    captureControlsDisabled ||
+                    loading ||
+                    editing ||
+                    !selectedNoteTarget ||
+                    noteTargetUnavailable
+                  }
+                  onClick={() => {
+                    if (selectedNoteTarget) appendTo(selectedNoteTarget);
+                  }}
+                >
+                  {busyKey === selectedNoteTarget?.key
+                    ? strings.sharing
+                    : selectedNoteTarget
+                      ? strings.shareAppendToDestination(selectedNoteTarget.path)
+                      : strings.shareAppendNotes}
+                </button>
+              </section>
+              <button
+                type="button"
+                className="btn btn-block"
+                disabled={captureControlsDisabled || loading || editing}
+                onClick={() => {
+                  setCaptureVisited(true);
+                  setCaptureOpen(true);
+                }}
+              >
+                {strings.shareCaptureTask}
+              </button>
+              <button
+                type="button"
+                className="btn btn-block"
+                disabled={captureControlsDisabled || editing}
+                onClick={processShared}
+              >
+                {intakePending ? strings.intakeStarting : strings.shareProcessWithAi}
+              </button>
+            </div>
+            {captureVisited ? (
+              <section
+                hidden={!captureOpen}
+                className="section share-capture"
+                aria-labelledby="share-new-heading"
+              >
+                <h2 className="section-title" id="share-new-heading">{strings.shareCaptureTask}</h2>
+                <CaptureForm
+                  initialTitle={titleDraft}
+                  initialNotes={sourceDraft}
+                  initialDueDate={calendarDueDate}
+                  showNotes
+                  showDueDate={calendarDueDate !== null}
+                  pendingFiles={incoming.files}
+                  prepareNotes={async (base) =>
+                    appendTextBlock(
+                      appendTextBlock(base, await resolveAttachmentBlock()),
+                      note.trim(),
+                    )
+                  }
+                  onCancel={() => setCaptureOpen(false)}
+                  onCaptured={completeCapture}
+                />
+              </section>
+            ) : null}
+          </details>
+        </>
       ) : null}
       {intakeError ? <p className="capture-error" role="alert">{intakeError}</p> : null}
 
@@ -749,38 +1103,6 @@ function SharePageContent({
           </div>
         </section>
       ) : null}
-
-      {!pendingConflict && captureOpen ? (
-        <section className="section share-capture" aria-labelledby="share-new-heading">
-          <h2 className="section-title" id="share-new-heading">{strings.shareCaptureTask}</h2>
-          <CaptureForm
-            initialTitle={titleDraft}
-            initialNotes={sourceDraft}
-            initialDueDate={calendarDueDate}
-            showNotes
-            showDueDate={calendarDueDate !== null}
-            pendingFiles={incoming.files}
-            prepareNotes={async (base) =>
-              appendTextBlock(
-                appendTextBlock(base, await resolveAttachmentBlock()),
-                note.trim(),
-              )
-            }
-            onCancel={() => setCaptureOpen(false)}
-            onCaptured={completeCapture}
-          />
-        </section>
-      ) : !pendingConflict ? (
-        <button
-          type="button"
-          className="btn btn-block share-new-button"
-          disabled={interactionsBusy}
-          onClick={() => setCaptureOpen(true)}
-        >
-          {strings.shareCaptureTask}
-        </button>
-      ) : null}
-
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
       {!pendingConflict && loading ? <LoadingState /> : null}
       {!pendingConflict && loadError ? (
@@ -789,7 +1111,6 @@ function SharePageContent({
           onRetry={() => {
             projectsState.reload();
             tasksState.reload();
-            agendaState.reload();
           }}
         />
       ) : null}

@@ -13,7 +13,7 @@ import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { useOptionalInteractionScope } from "../lib/interactionScope";
 import { IntakeComposer } from "./IntakeComposer";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { rememberShareTarget } from "../lib/recentShareTargets";
+import { rememberMaterialTarget } from "../lib/recentShareTargets";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -229,7 +229,17 @@ export function QuickAdd({
                   material,
                 });
                 if (material) {
-                  rememberShareTarget({ kind: "task", id: result.task.id });
+                  if (result.task.parentTaskId !== null) {
+                    rememberMaterialTarget({
+                      kind: "task",
+                      id: result.task.parentTaskId,
+                    });
+                  } else if (result.task.projectId !== null) {
+                    rememberMaterialTarget({
+                      kind: "project",
+                      id: result.task.projectId,
+                    });
+                  }
                 }
                 setPendingFile(null);
                 uploadedAttachmentRef.current = null;

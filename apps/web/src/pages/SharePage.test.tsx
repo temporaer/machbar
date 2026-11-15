@@ -88,13 +88,50 @@ function renderPage() {
   );
 }
 
+async function openMoreActions() {
+  const summary = await screen.findByText("Weitere Aktionen");
+  if (!summary.closest("details")?.open) await userEvent.click(summary);
+}
+
+async function openMaterialSearch() {
+  if (!screen.queryByLabelText("Aufgaben und Projekte durchsuchen")) {
+    await userEvent.click(screen.getByRole("button", { name: "Ziel suchen …" }));
+  }
+  return screen.findByLabelText("Aufgaben und Projekte durchsuchen");
+}
+
+async function openNoteSearch() {
+  await openMoreActions();
+  if (!screen.queryByLabelText("Notizziele durchsuchen")) {
+    await userEvent.click(screen.getByRole("button", { name: "Notizziel suchen …" }));
+  }
+  return screen.findByLabelText("Notizziele durchsuchen");
+}
+
+async function setAnnotation(value: string) {
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Anmerkung hinzufügen|Anmerkung bearbeiten/ }),
+  );
+  await userEvent.type(screen.getByLabelText("Notiz"), value);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+}
+
+async function editShareContent(title: string, source: string) {
+  await userEvent.click(screen.getByRole("button", { name: "Inhalt bearbeiten" }));
+  await userEvent.clear(screen.getByLabelText("Titel"));
+  await userEvent.type(screen.getByLabelText("Titel"), title);
+  await userEvent.clear(screen.getByLabelText("Quelle"));
+  await userEvent.type(screen.getByLabelText("Quelle"), source);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+}
+
 function CurrentPath() {
   const { pathname } = useLocation();
   return <output data-testid="current-path">{pathname}</output>;
 }
 
 async function appendToSelectedTarget() {
-  await userEvent.click(screen.getByRole("button", { name: "An Notiz anhängen" }));
+  await userEvent.click(screen.getByRole("button", { name: /An Notizen/ }));
 }
 
 describe("SharePage", () => {
@@ -137,11 +174,52 @@ describe("SharePage", () => {
     );
     renderPage();
 
+    await openMoreActions();
     await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
 
     expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Farmladen");
     expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("https://maps.example/farm");
     expect(window.location.search).toBe("");
+  });
+
+  it("refreshes untouched capture fields from saved share edits when reopened", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?title=Original&text=Ursprüngliche%20Quelle#/share",
+    );
+    renderPage();
+
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await editShareContent("Aktueller Titel", "Aktuelle Quelle");
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+
+    expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Aktueller Titel");
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("Aktuelle Quelle");
+  });
+
+  it("preserves task-specific capture edits while saved share edits refresh untouched fields", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?title=Original&text=Ursprüngliche%20Quelle#/share",
+    );
+    renderPage();
+
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+    await userEvent.clear(screen.getByLabelText("Nur Titel reicht"));
+    await userEvent.type(screen.getByLabelText("Nur Titel reicht"), "Aufgabentitel");
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    await editShareContent("Aktueller Titel", "Aktuelle Quelle");
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
+
+    expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Aufgabentitel");
+    expect(markdownValue(screen.getByLabelText("Notizen"))).toBe("Aktuelle Quelle");
   });
 
   it.each([
@@ -155,8 +233,9 @@ describe("SharePage", () => {
       "/?text=Geteilte%20Nachricht&url=https%3A%2F%2Fexample.com%2Fstory#/share",
     );
     renderPage();
-    await userEvent.type(screen.getByLabelText("Notiz"), note);
-    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+    await setAnnotation(note);
+    await openMoreActions();
+    await userEvent.click(screen.getByRole("button", { name: "Mit KI verarbeiten" }));
     await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledWith({
       text: expectedText,
       files: [],
@@ -201,11 +280,9 @@ describe("SharePage", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Urlaub",
-    );
+    await userEvent.type(await openNoteSearch(), "Urlaub");
     await userEvent.click(screen.getByRole("button", { name: /Urlaub planen/ }));
+    expect(screen.queryByLabelText("Notizziele durchsuchen")).not.toBeInTheDocument();
     expect(mockedApi.appendTaskNotes).not.toHaveBeenCalled();
     await appendToSelectedTarget();
 
@@ -216,6 +293,10 @@ describe("SharePage", () => {
       ),
     );
     expect(await screen.findByText("Zu „Urlaub planen“ hinzugefügt")).toBeInTheDocument();
+    expect(
+      JSON.parse(window.localStorage.getItem("machbar:recent-share-note-targets") ?? "[]"),
+    ).toEqual([{ kind: "task", id: 8 }]);
+    expect(window.localStorage.getItem("machbar:recent-share-targets")).toBeNull();
   });
 
   it("appends to Project notes only after the explicit action", async () => {
@@ -229,10 +310,7 @@ describe("SharePage", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Sommerreise",
-    );
+    await userEvent.type(await openNoteSearch(), "Sommerreise");
     await userEvent.click(screen.getByRole("button", { name: /Sommerreise/ }));
     expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
     await appendToSelectedTarget();
@@ -257,18 +335,25 @@ describe("SharePage", () => {
     );
     renderPage();
 
-    const title = screen.getByLabelText("Titel");
-    const source = screen.getByLabelText("Quelle");
-    const annotation = screen.getByLabelText("Notiz");
-    await userEvent.clear(title);
-    await userEvent.type(title, "Bearbeiteter Titel");
-    await userEvent.clear(source);
-    await userEvent.type(source, "https://edited.example/source");
-    await userEvent.type(annotation, "Für später prüfen");
+    await editShareContent("Bearbeiteter Titel", "https://edited.example/source");
+    await userEvent.click(screen.getByRole("button", { name: "Inhalt bearbeiten" }));
+    await userEvent.clear(screen.getByLabelText("Titel"));
+    await userEvent.type(screen.getByLabelText("Titel"), "Verwerfen");
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(screen.getByRole("heading", { name: "Bearbeiteter Titel" })).toBeInTheDocument();
+    await openMoreActions();
+    await userEvent.click(screen.getByText("Weitere Aktionen"));
+    expect(screen.getByRole("heading", { name: "Bearbeiteter Titel" })).toBeInTheDocument();
+    await setAnnotation("Für später prüfen");
 
-    expect(screen.getByText("Das Material wird ohne Projekt gespeichert.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) => element?.classList.contains("share-current-destination") ?? false,
+      ),
+    ).toHaveTextContent("Aktuelles Ziel: Ohne Projekt");
     expect(mockedApi.createTask).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "An Notiz anhängen" })).toBeDisabled();
+    await openMoreActions();
+    expect(screen.getByRole("button", { name: "An Notizen anhängen" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
     await waitFor(() =>
@@ -288,7 +373,7 @@ describe("SharePage", () => {
     expect(screen.getByTestId("current-path")).toHaveTextContent("/tasks/92");
   });
 
-  it("shows a recent project before Today targets and creates a Reference under it", async () => {
+  it("shows recent material destinations and creates a Reference under the selected Project", async () => {
     const project = makeProject({ id: 4, title: "Geburtstag" });
     mockedApi.getProjects.mockResolvedValue([project as never]);
     mockedApi.createTask.mockResolvedValue(
@@ -302,6 +387,7 @@ describe("SharePage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Zuletzt verwendet" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Heute" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Geburtstag/ }));
     await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
     await waitFor(() =>
@@ -314,6 +400,244 @@ describe("SharePage", () => {
       }, expect.any(Object)),
     );
     expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
+  });
+
+  it("fills recent material slots from eligible destinations after stale entries", async () => {
+    const projects = [
+      makeProject({ id: 4, title: "Ziel vier" }),
+      makeProject({ id: 5, title: "Ziel fünf" }),
+    ];
+    mockedApi.getProjects.mockResolvedValue(projects);
+    mockedApi.searchTasks.mockResolvedValue([
+      makeTask({ id: 1, title: "Aktion eins", kind: "action" }),
+      makeTask({ id: 2, title: "Aktion zwei", kind: "action" }),
+      makeTask({ id: 3, title: "Aktion drei", kind: "action" }),
+    ]);
+    window.localStorage.setItem(
+      "machbar:recent-share-targets",
+      JSON.stringify([
+        { kind: "task", id: 1 },
+        { kind: "task", id: 2 },
+        { kind: "task", id: 3 },
+        { kind: "project", id: 4 },
+        { kind: "project", id: 5 },
+      ]),
+    );
+    window.history.replaceState(null, "", "/?title=Material#/share");
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /Ziel vier/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ziel fünf/ })).toBeInTheDocument();
+  });
+
+  it("shows project ancestors reached through a task parent", async () => {
+    const outer = makeProject({ id: 4, title: "Außen" });
+    const subproject = makeProject({ id: 5, title: "Teilprojekt", parentId: 11 });
+    const container = makeTask({
+      id: 11,
+      kind: "reference",
+      title: "Behälter",
+      projectId: 4,
+    });
+    mockedApi.getProjects.mockResolvedValue([outer, subproject]);
+    mockedApi.searchTasks.mockResolvedValue([container]);
+    window.localStorage.setItem(
+      "machbar:recent-share-targets",
+      JSON.stringify([{ kind: "project", id: 5 }]),
+    );
+    window.history.replaceState(null, "", "/?title=Material#/share");
+    renderPage();
+
+    const recent = await screen.findByRole("button", { name: /Teilprojekt/ });
+    expect(recent).toHaveTextContent("Außen › Behälter › Teilprojekt");
+  });
+
+  it("closes material destination search after choosing a result", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 4, title: "Geburtstag" }),
+    ]);
+    window.history.replaceState(null, "", "/?title=Kuchenidee#/share");
+    renderPage();
+
+    await userEvent.type(await openMaterialSearch(), "Geburtstag");
+    await userEvent.click(await screen.findByRole("button", { name: /Geburtstag/ }));
+
+    expect(screen.queryByLabelText("Aufgaben und Projekte durchsuchen")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Als Material speichern" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        (_, element) => element?.classList.contains("share-current-destination") ?? false,
+      ),
+    ).toHaveTextContent("Geburtstag");
+  });
+
+  it("files into the exact recent nested Reference in two taps", async () => {
+    const project = makeProject({ id: 4, title: "Sommerurlaub" });
+    const parent = makeTask({
+      id: 11,
+      kind: "reference",
+      title: "Unterkunft",
+      projectId: 4,
+      projectTitle: "Sommerurlaub",
+    });
+
+    const destination = makeTask({
+      id: 12,
+      kind: "reference",
+      title: "Unterkunft B",
+      projectId: 4,
+      parentTaskId: 11,
+      projectTitle: "Sommerurlaub",
+    });
+    mockedApi.getProjects.mockResolvedValue([project]);
+    mockedApi.searchTasks.mockResolvedValue([parent, destination]);
+    mockedApi.createTask.mockResolvedValue(
+      makeTask({ id: 93, kind: "reference", title: "Buchungsbestätigung" }),
+    );
+    window.localStorage.setItem(
+      "machbar:recent-share-targets",
+      JSON.stringify([{ kind: "task", id: 12 }]),
+    );
+    window.history.replaceState(null, "", "/?title=Bestätigung&url=https%3A%2F%2Fexample.test#/share");
+    renderPage();
+
+    const recent = await screen.findByRole("button", { name: /Unterkunft B/ });
+    expect(recent).toHaveTextContent("Sommerurlaub › Unterkunft › Unterkunft B");
+    await userEvent.click(recent);
+    expect(
+      screen.getByText(
+        (_, element) => element?.classList.contains("share-current-destination") ?? false,
+      ),
+    ).toHaveTextContent("Sommerurlaub › Unterkunft › Unterkunft B");
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        {
+          kind: "reference",
+          title: "Bestätigung",
+          notes: "https://example.test",
+          projectId: 4,
+          parentTaskId: 12,
+        },
+        expect.any(Object),
+      ),
+    );
+    expect(JSON.parse(window.localStorage.getItem("machbar:recent-share-targets") ?? "[]")).toEqual([
+      { kind: "task", id: 12 },
+    ]);
+  });
+
+  it("keeps the first screen compact with a long title and three recent targets", async () => {
+    const projects = [
+      makeProject({ id: 1, title: "Ziel Eins" }),
+      makeProject({ id: 2, title: "Ziel Zwei" }),
+      makeProject({ id: 3, title: "Ziel Drei" }),
+    ];
+    const longTitle =
+      "Eine ungewöhnlich lange Überschrift für einen geteilten Reiseartikel";
+    mockedApi.getProjects.mockResolvedValue(projects);
+    window.localStorage.setItem(
+      "machbar:recent-share-targets",
+      JSON.stringify([
+        { kind: "project", id: 1 },
+        { kind: "project", id: 2 },
+        { kind: "project", id: 3 },
+      ]),
+    );
+    window.history.replaceState(
+      null,
+      "",
+      `/?title=${encodeURIComponent(longTitle)}&url=https%3A%2F%2Fexample.test%2Farticle#/share`,
+    );
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: longTitle })).toBeInTheDocument();
+    expect(screen.getByText("example.test")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Ziel Eins/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ziel Zwei/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ziel Drei/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Als Material speichern" })).toBeEnabled();
+    expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Aufgaben und Projekte durchsuchen")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Notiz")).not.toBeInTheDocument();
+  });
+
+  it("never turns a stale selected material destination into a standalone save", async () => {
+    const destination = makeTask({
+      id: 17,
+      kind: "reference",
+      title: "Reiseplan",
+      projectId: 4,
+      projectTitle: "Sommerurlaub",
+    });
+    mockedApi.searchTasks
+      .mockResolvedValueOnce([destination])
+      .mockResolvedValueOnce([]);
+    mockedApi.createTask
+      .mockRejectedValueOnce(
+        Object.assign(new Error("stale"), {
+          name: "ApiError",
+          code: "stale_write_conflict",
+        }),
+      )
+      .mockResolvedValueOnce(makeTask({ id: 94, kind: "reference", title: "Link" }));
+    window.localStorage.setItem(
+      "machbar:recent-share-targets",
+      JSON.stringify([{ kind: "task", id: 17 }]),
+    );
+    window.history.replaceState(null, "", "/?title=Link&url=https%3A%2F%2Fexample.test#/share");
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Reiseplan/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getByText(
+        (_, element) => element?.classList.contains("share-current-destination") ?? false,
+      ),
+    ).toHaveTextContent("Dieses Ziel ist nicht mehr verfügbar");
+    expect(screen.getByRole("button", { name: "Als Material speichern" })).toBeDisabled();
+    expect(mockedApi.createTask).toHaveBeenCalledOnce();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ohne Projekt" }));
+    await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: null, parentTaskId: null }),
+        expect.any(Object),
+      ),
+    );
+  });
+
+  it("keeps action tasks eligible for note append but excludes them from material filing", async () => {
+    const action = makeTask({
+      id: 18,
+      title: "Flug buchen",
+      projectId: 4,
+      projectTitle: "Sommerurlaub",
+    });
+    mockedApi.searchTasks.mockResolvedValue([action]);
+    mockedApi.appendTaskNotes.mockResolvedValue(action);
+    window.history.replaceState(null, "", "/?text=Preisvergleich#/share");
+    renderPage();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ziel suchen …" }));
+    await userEvent.type(
+      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
+      "Flug buchen",
+    );
+    expect(screen.queryByRole("button", { name: /Flug buchen/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Kein Ziel passt zu dieser Suche.")).toBeInTheDocument();
+
+    await userEvent.type(await openNoteSearch(), "Flug buchen");
+    await userEvent.click(screen.getByRole("button", { name: /Flug buchen/ }));
+    await userEvent.click(screen.getByRole("button", { name: /An Notizen bei/ }));
+    await waitFor(() =>
+      expect(mockedApi.appendTaskNotes).toHaveBeenCalledWith(18, "Preisvergleich"),
+    );
   });
 
   it("previews and applies a Calendar deadline atomically to a Task without one", async () => {
@@ -335,10 +659,7 @@ describe("SharePage", () => {
     renderPage();
 
     expect(await screen.findByText("Fällig: 15.09.2026")).toBeInTheDocument();
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Elternabend vorbereiten",
-    );
+    await userEvent.type(await openNoteSearch(), "Elternabend vorbereiten");
     await userEvent.click(
       screen.getByRole("button", { name: /Elternabend vorbereiten/ }),
     );
@@ -372,10 +693,7 @@ describe("SharePage", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Geburtstag",
-    );
+    await userEvent.type(await openMaterialSearch(), "Geburtstag");
     await userEvent.click(screen.getByRole("button", { name: /Geburtstag/ }));
     await userEvent.click(screen.getByRole("button", { name: "Als Material speichern" }));
 
@@ -407,10 +725,7 @@ describe("SharePage", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Geschenk",
-    );
+    await userEvent.type(await openNoteSearch(), "Geschenk");
     await userEvent.click(screen.getByRole("button", { name: /Geschenk kaufen/ }));
     await appendToSelectedTarget();
 
@@ -437,6 +752,7 @@ describe("SharePage", () => {
     );
     renderPage();
 
+    await openMoreActions();
     await userEvent.click(
       await screen.findByRole("button", { name: "Als Aufgabe erfassen" }),
     );
@@ -465,10 +781,7 @@ describe("SharePage", () => {
     );
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Elternabend",
-    );
+    await userEvent.type(await openNoteSearch(), "Elternabend");
     await userEvent.click(
       screen.getByRole("button", { name: /Elternabend vorbereiten/ }),
     );
@@ -482,7 +795,6 @@ describe("SharePage", () => {
     await waitFor(() => {
       expect(mockedApi.getProjects).toHaveBeenCalledTimes(2);
       expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2);
-      expect(mockedApi.getAgenda).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -517,10 +829,7 @@ describe("SharePage", () => {
     renderPage();
 
     expect(await screen.findByText("2 geteilte Anhänge")).toBeInTheDocument();
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Belege",
-    );
+    await userEvent.type(await openNoteSearch(), "Belege");
     await userEvent.click(screen.getByRole("button", { name: /Belege/ }));
     await appendToSelectedTarget();
 
@@ -555,6 +864,7 @@ describe("SharePage", () => {
     window.history.replaceState(null, "", "/?shareId=pending-2#/share");
     renderPage();
 
+    await openMoreActions();
     await userEvent.click(
       await screen.findByRole("button", { name: "Als Aufgabe erfassen" }),
     );
@@ -592,8 +902,8 @@ describe("SharePage", () => {
     window.history.replaceState(null, "", "/?shareId=pending-4#/share");
     renderPage();
 
-    await screen.findByLabelText("Titel");
-    await userEvent.type(screen.getByLabelText("Notiz"), "Für die Steuer");
+    await setAnnotation("Für die Steuer");
+    await openMoreActions();
     await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe erfassen" }));
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
@@ -632,10 +942,7 @@ describe("SharePage", () => {
     window.history.replaceState(null, "", "/?shareId=pending-3#/share");
     renderPage();
 
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Belege",
-    );
+    await userEvent.type(await openNoteSearch(), "Belege");
     const destination = screen.getByRole("button", { name: /Belege/ });
     await userEvent.click(destination);
     await appendToSelectedTarget();
