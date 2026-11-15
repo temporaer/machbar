@@ -71,17 +71,39 @@ function locatePaperlessReferences(
   markdown: string,
 ): LocatedPaperlessMarkdownReference[] {
   const references: LocatedPaperlessMarkdownReference[] = [];
+  const tree = fromMarkdown(markdown);
+  const definitions = new Map<string, string>();
+  for (const child of tree.children) {
+    if (child.type === "definition") {
+      definitions.set(child.identifier, child.url);
+    }
+  }
   const visit = (node: Nodes) => {
-    if (node.type === "link" || node.type === "image") {
-      const id = paperlessDocumentId(node.url);
+    if (
+      node.type === "link" ||
+      node.type === "image" ||
+      node.type === "linkReference" ||
+      node.type === "imageReference"
+    ) {
+      const url =
+        node.type === "link" || node.type === "image"
+          ? node.url
+          : definitions.get(node.identifier);
+      const id = paperlessDocumentId(url);
       const start = node.position?.start.offset;
       const end = node.position?.end.offset;
       if (id !== null && start !== undefined && end !== undefined) {
-        const rawLabel = node.type === "image" ? node.alt ?? "" : nodeText(node);
+        const rawLabel =
+          node.type === "image" || node.type === "imageReference"
+            ? node.alt ?? ""
+            : nodeText(node);
         references.push({
           id,
           label: rawLabel.trim() || `paperless-${id}`,
-          kind: node.type === "image" ? "image" : "document",
+          kind:
+            node.type === "image" || node.type === "imageReference"
+              ? "image"
+              : "document",
           start,
           end,
         });
@@ -92,7 +114,7 @@ function locatePaperlessReferences(
       for (const child of (node as Parent).children) visit(child);
     }
   };
-  visit(fromMarkdown(markdown));
+  visit(tree);
   return references;
 }
 

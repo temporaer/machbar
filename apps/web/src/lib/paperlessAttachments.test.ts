@@ -63,6 +63,16 @@ describe("Paperless Markdown attachments", () => {
     );
   });
 
+  it("resolves reference-style Paperless links before removing them from notes", () => {
+    const markdown = "[Receipt][receipt]\n\n[receipt]: paperless:13";
+    expect(extractPaperlessReferences(markdown)).toEqual([
+      { id: 13, label: "Receipt", kind: "document" },
+    ]);
+    expect(markdownWithoutPaperlessReferences(markdown)).not.toContain(
+      "[Receipt][receipt]",
+    );
+  });
+
   it("accepts only positive safe Paperless IDs", () => {
     expect(paperlessDocumentId("paperless:1")).toBe(1);
     expect(paperlessDocumentId("paperless:0")).toBeNull();

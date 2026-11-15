@@ -69,7 +69,7 @@ describe("AllPage", () => {
     title: "Haftpflichtbedingungen",
     projectId: 2,
     projectTitle: "Wohnung streichen",
-    notes: "[Quelle](https://www.source.example/material)\n\n[Dokument](paperless:72)\n\nWichtige Bedingungen. [Weitere Hinweise](https://other.example) und info@example.org",
+    notes: "[Quelle][source]\n\n[Dokument][document]\n\nWichtige Bedingungen. [Weitere Hinweise](https://other.example) und info@example.org\n\n[source]: https://www.source.example/material\n[document]: paperless:72",
   });
   const standaloneMaterial = makeTask({
     id: 32,

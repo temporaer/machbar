@@ -875,7 +875,7 @@ describe("ProjectDetailPage task explanations", () => {
       kind: "reference",
       projectId: 42,
       parentTaskId: 7,
-      notes: "[Quelle](https://www.insurance.example/policy)\n\nFristen beachten.",
+      notes: "[Quelle][policy]\n\n[Dokument][document]\n\nFristen beachten.\n\n[policy]: https://www.insurance.example/policy\n[document]: paperless:8",
       children: [actionBelowMaterial],
     });
     const parent = makeTask({
@@ -902,6 +902,13 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(materialSection).getByRole("link", {
       name: `${strings.openLink}: insurance.example`,
     })).toHaveAttribute("href", "https://www.insurance.example/policy");
+    expect(within(materialSection).getByRole("link", { name: "Dokument" }))
+      .toHaveAttribute("href", "/api/integrations/paperless/documents/8/download");
+    expect(
+      materialSection.querySelector(
+        'img[src="/api/integrations/paperless/documents/8/thumbnail"]',
+      ),
+    ).toBeInTheDocument();
     expect(within(materialSection).getByText("Fristen beachten.")).toBeVisible();
     expect(await screen.findByText("Anbieter anrufen")).toBeVisible();
 
