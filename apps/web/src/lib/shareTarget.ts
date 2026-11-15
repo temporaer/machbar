@@ -121,7 +121,8 @@ function isWebUrl(text: string): boolean {
 
 function containsUrlToken(text: string, url: string): boolean {
   for (const match of text.matchAll(/(^|[^\p{L}\p{N}_])(https?:\/\/[^\s<>"`]+)/giu)) {
-    if (normalizeUrlToken(match[2] ?? "") === url) return true;
+    const token = match[2] ?? "";
+    if (token === url || normalizeUrlToken(token) === url) return true;
   }
   return false;
 }

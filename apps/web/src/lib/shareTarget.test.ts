@@ -95,6 +95,15 @@ describe("share target helpers", () => {
     expect(shareTargetToTextBlock(target)).toBe(`Artikel\n\n${text}`);
   });
 
+  it("deduplicates identical URLs when the URL ends in valid punctuation", () => {
+    const url = "https://example.test/search?q=why?";
+    const target = { title: "Search", text: url, url, files: [] };
+
+    expect(shareTargetToCaptureDraft(target).notes).toBe(url);
+    expect(shareTargetToSource(target)).toBe(url);
+    expect(shareTargetToTextBlock(target)).toBe(`Search\n\n${url}`);
+  });
+
   it("uses exactly one blank line when appending non-empty text", () => {
     expect(appendTextBlock("Bestehende Notiz\n\n", "\nGeteilter Inhalt\n")).toBe(
       "Bestehende Notiz\n\nGeteilter Inhalt",
