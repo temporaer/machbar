@@ -227,6 +227,50 @@ describe("search/filter and project CRUD/archive", () => {
     ]);
   });
 
+  it("searches reference URLs through the HTTP kind filter and retains project context", async () => {
+    const owner = ctx.handle.db.select().from(schema.members).get()!;
+    const project = createProject(ctx.handle.db, {
+      title: "Quellenprojekt",
+      status: "backlog",
+      ownerMemberId: owner.id,
+    });
+    const projectMaterial = createTask(ctx.handle.db, {
+      title: "Versicherungsseite",
+      kind: "reference",
+      projectId: project.id,
+      notes: "https://sourcequeryonly.example/policy",
+    });
+    const standaloneMaterial = createTask(ctx.handle.db, {
+      title: "Eigenständige Quelle",
+      kind: "reference",
+      notes: "https://other.example/",
+    });
+    const action = createTask(ctx.handle.db, {
+      title: "Versicherung recherchieren",
+      notes: "https://sourcequeryonly.example/policy",
+    });
+
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/search?text=sourcequeryonly&kinds=reference",
+    });
+    const results = response.json() as Array<{
+      id: number;
+      kind: string;
+      projectTitle: string | null;
+    }>;
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        id: projectMaterial.id,
+        kind: "reference",
+        projectTitle: "Quellenprojekt",
+      }),
+    ]);
+    expect(results.map((task) => task.id)).not.toContain(standaloneMaterial.id);
+    expect(results.map((task) => task.id)).not.toContain(action.id);
+  });
+
   it("filters search results by canonical external-wait state", async () => {
     const res = await ctx.app.inject({
       method: "GET",

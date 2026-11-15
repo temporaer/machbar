@@ -59,9 +59,49 @@ import {
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
-import { InteractionScopeProvider } from "../lib/interactionScope";
+import { InteractionScopeProvider, useInteractionScope } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet";
+import { MaterialCard } from "../components/MaterialCard";
+import { projectMaterialItems } from "../lib/projectMaterials";
+
+function ProjectMaterialSection({
+  materials,
+}: {
+  materials: ReturnType<typeof projectMaterialItems>;
+}) {
+  const strings = useStrings();
+  const { captureOpen } = useInteractionScope();
+
+  return (
+    <section className="section project-material-section">
+      <div className="row-between">
+        <h2 className="section-title">{strings.materialLabel}</h2>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={!captureOpen}
+          onClick={() => captureOpen?.()}
+        >
+          {strings.addMaterial}
+        </button>
+      </div>
+      {materials.length > 0 ? (
+        <div className="material-card-list">
+          {materials.map(({ task, parentTitles }) => (
+            <MaterialCard
+              key={task.id}
+              task={task}
+              context={parentTitles.join(" › ") || undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted">{strings.projectMaterialEmpty}</p>
+      )}
+    </section>
+  );
+}
 
 export function ProjectDetailPage() {
   const strings = useStrings();
@@ -138,6 +178,7 @@ export function ProjectDetailPage() {
     return () => { contentOpeningRef.current += 1; };
   }, [projectId]);
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
+  const projectMaterials = project ? projectMaterialItems(project.tasks) : [];
 
   const owner = project
     ? members.find((m) => m.id === project.ownerMemberId)
@@ -626,6 +667,7 @@ export function ProjectDetailPage() {
               </div>
             </div>
             <PaperlessAttachmentStrip attachments={attachments} />
+            <ProjectMaterialSection materials={projectMaterials} />
             {attachmentError ? (
               <WorkItemInlineError message={attachmentError} />
             ) : null}

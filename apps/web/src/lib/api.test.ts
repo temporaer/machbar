@@ -70,6 +70,14 @@ describe("api request() Content-Type handling", () => {
     expect(headersOf(fetchMock)).toMatchObject({ [ACTIVITY_ACTOR_HEADER]: "7" });
   });
 
+  it("passes material kind filters to global search", async () => {
+    const fetchMock = mockFetchOnce({ text: async () => "[]" });
+
+    await api.searchTasks({ kinds: ["reference"] });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/search?kinds=reference");
+  });
+
   it("binds intake reads to the committed initiating identity, without trusting raw local storage", async () => {
     setRequestActorMemberId(7);
     window.localStorage.setItem("machbar:identity-member-id", "999");

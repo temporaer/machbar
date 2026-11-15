@@ -85,6 +85,24 @@ export function SearchFilterBar({
             </select>
           </div>
           <div className="field">
+            <button
+              type="button"
+              className="tag-choice"
+              aria-pressed={filters.kinds?.includes("reference") ?? false}
+              onClick={() => {
+                const kinds: NonNullable<SearchFilters["kinds"]> = filters.kinds?.includes("reference")
+                  ? filters.kinds.filter((kind) => kind !== "reference")
+                  : [...(filters.kinds ?? []), "reference"];
+                const updated = { ...filters };
+                if (kinds.length > 0) updated.kinds = kinds;
+                else delete updated.kinds;
+                onChange(updated);
+              }}
+            >
+              {strings.materialLabel}
+            </button>
+          </div>
+          <div className="field">
             <label htmlFor="filter-status">{strings.status}</label>
             <select
               id="filter-status"

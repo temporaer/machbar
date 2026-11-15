@@ -23,6 +23,7 @@ import { sortInventoryTasks } from "../lib/sortOrder";
 import { recencyRankLookup } from "../lib/recentlyViewed";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
+import { MaterialCard } from "../components/MaterialCard";
 
 export function AllPage() {
   const strings = useStrings();
@@ -53,9 +54,12 @@ export function AllPage() {
     [filtersKey, locale, projects],
   );
   const filtering = hasInventoryFilters(filters);
+  const materialOnly = filters.kinds?.includes("reference") ?? false;
   const taskCandidates = sortInventoryTasks(
     filtering
-      ? topLevelTaskResults(tasks ?? [])
+      ? materialOnly
+        ? tasks ?? []
+        : topLevelTaskResults(tasks ?? [])
       : (tasks ?? []).filter(
           (task) => task.projectId === null && task.parentTaskId === null,
         ),
@@ -64,7 +68,7 @@ export function AllPage() {
     { recencyRank: recencyRankLookup("task") },
   );
   const visibleTasks = taskCandidates;
-  const filteredProjects = projectCandidates;
+  const filteredProjects = materialOnly ? [] : projectCandidates;
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
 
@@ -93,7 +97,7 @@ export function AllPage() {
         ) : null}
         {projects && tasks ? (
           filteredProjects.length === 0 && visibleTasks.length === 0 ? (
-            <EmptyState message={strings.allEmpty} />
+            <EmptyState message={materialOnly ? strings.allMaterialEmpty : strings.allEmpty} />
           ) : (
             <>
               {filteredProjects.length > 0 ? (
@@ -118,19 +122,36 @@ export function AllPage() {
               {visibleTasks.length > 0 ? (
                 <section
                   className="section"
-                  aria-labelledby="all-tasks-heading"
+                  aria-labelledby={materialOnly ? "all-material-heading" : "all-tasks-heading"}
                 >
-                  <h2 id="all-tasks-heading" className="section-title">
-                    {filtering
-                      ? strings.allMatchingTasksHeading
-                      : strings.allStandaloneTasksHeading}
+                  <h2
+                    id={materialOnly ? "all-material-heading" : "all-tasks-heading"}
+                    className="section-title"
+                  >
+                    {materialOnly
+                      ? strings.materialLabel
+                      : filtering
+                        ? strings.allMatchingTasksHeading
+                        : strings.allStandaloneTasksHeading}
                   </h2>
-                  <TaskOutline
-                    key={filtersKey}
-                    tasks={visibleTasks}
-                    emptyMessage={strings.allEmpty}
-                    preserveRootOrder
-                  />
+                  {materialOnly ? (
+                    <div className="material-card-list">
+                      {visibleTasks.map((task) => (
+                        <MaterialCard
+                          key={task.id}
+                          task={task}
+                          context={task.projectTitle ?? undefined}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <TaskOutline
+                      key={filtersKey}
+                      tasks={visibleTasks}
+                      emptyMessage={strings.allEmpty}
+                      preserveRootOrder
+                    />
+                  )}
                 </section>
               ) : null}
             </>

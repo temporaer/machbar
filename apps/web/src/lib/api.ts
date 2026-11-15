@@ -999,6 +999,7 @@ export const api = {
         blocked: filters.blocked,
         externalWait: filters.externalWait,
         includeTerminal: filters.includeTerminal,
+        kinds: filters.kinds?.join(","),
       })}`,
     ),
 

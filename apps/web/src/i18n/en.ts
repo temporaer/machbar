@@ -325,6 +325,9 @@ const en = {
   captureSaved: (title: string) => `Captured: ${title}`,
   materialSaved: (title: string) => `Material saved: ${title}`,
   saveAsMaterial: "Save as material",
+  addMaterial: "Add material",
+  openMaterial: "Open material",
+  projectMaterialEmpty: "No project material yet.",
   viewMaterial: "View",
   openCapturedItem: "Open",
   captureDestination: "Destination",
@@ -1261,6 +1264,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   allStandaloneTasksHeading: "Standalone tasks",
   allMatchingTasksHeading: "Matching tasks",
   allEmpty: "No matching projects or tasks.",
+  allMaterialEmpty: "No matching material found.",
 
   activateStory: "Start project",
   activationDecisionHint: "Review the current requirements and confirm your choices.",
