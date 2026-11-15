@@ -27,11 +27,11 @@ describe("buildProjectAiPromptText", () => {
         "---",
         "## Versicherungsbedingungen",
         "Versicherung prüfen",
-        selected.notes,
+        "[Quelle](<https://example.test/policy>)\n\n**Fristen beachten.**",
       ].join("\n\n"),
     );
-    expect(result).toContain("[policy]: https://example.test/policy");
     expect(result).toContain("**Fristen beachten.**");
+    expect(result).toContain("[Quelle](<https://example.test/policy>)");
     expect(result).not.toContain(unselected.title);
     expect(result).not.toContain(unselected.notes);
   });

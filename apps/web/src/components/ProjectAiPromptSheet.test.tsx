@@ -5,6 +5,7 @@ import { makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { buildProjectAiPromptText } from "../lib/projectAiPrompt";
 import { de as strings } from "../i18n/de";
+import { MarkdownNotes } from "./MarkdownNotes";
 import { ProjectAiPromptSheet } from "./ProjectAiPromptSheet";
 
 describe("ProjectAiPromptSheet", () => {
@@ -77,6 +78,36 @@ describe("ProjectAiPromptSheet", () => {
     await user.click(screen.getByRole("button", { name: strings.projectAiPromptShare }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Ideen sammeln."));
+  });
+
+  it("keeps each selected note's reference-link target when rendered together", () => {
+    const markdown = buildProjectAiPromptText("", [
+      {
+        task: makeTask({
+          id: 1,
+          title: "Quelle A",
+          kind: "reference",
+          notes: "[Link][source]\n\n[source]: https://example.test/a",
+        }),
+        parentTitles: [],
+      },
+      {
+        task: makeTask({
+          id: 2,
+          title: "Quelle B",
+          kind: "reference",
+          notes: "[Link][source]\n\n[source]: https://example.test/b",
+        }),
+        parentTitles: [],
+      },
+    ]);
+
+    const { container } = renderWithProviders(<MarkdownNotes value={markdown} />);
+
+    expect(Array.from(container.querySelectorAll("a"), (link) => link.getAttribute("href"))).toEqual([
+      "https://example.test/a",
+      "https://example.test/b",
+    ]);
   });
 
   it("asks before discarding an authored prompt", async () => {

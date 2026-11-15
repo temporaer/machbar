@@ -510,6 +510,50 @@ test("project AI prompt shares and copies only selected material", async ({ page
   expect(expected).not.toContain("Do not include this annotation.");
 });
 
+test("project AI prompt keeps drafts on Back until discard is confirmed", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Draft project ${randomUUID()}` },
+  })).json();
+  const materialResponse = await page.request.post("/api/tasks", {
+    data: {
+      title: `Draft material ${randomUUID()}`,
+      kind: "reference",
+      projectId: project.id,
+    },
+  });
+  expect(materialResponse.status()).toBe(201);
+  const material = await materialResponse.json();
+  await page.goto("/#/projects");
+  await page.locator('[data-project-section="backlog"] > summary').click();
+  await page.locator(`[data-workitem-id="${project.id}"] .story-row-main`).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await page.getByRole("button", { name: "KI-Prompt erstellen", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "KI-Prompt erstellen" });
+  const prompt = composer.getByRole("textbox", { name: "Deine Anweisung" });
+  const selection = composer.getByRole("checkbox", { name: material.title });
+  await prompt.fill("Vergleiche das Material.");
+  await selection.check();
+
+  expect(await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  })).toBe(true);
+
+  await page.goBack();
+  await expect(composer.getByRole("alert")).toBeVisible();
+  await composer.getByRole("button", { name: "Weiter bearbeiten" }).click();
+  await expect(prompt).toHaveValue("Vergleiche das Material.");
+  await expect(selection).toBeChecked();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+
+  await page.goBack();
+  await expect(composer.getByRole("alert")).toBeVisible();
+  await composer.getByRole("button", { name: "Verwerfen" }).click();
+  await expect(page).toHaveURL(/#\/projects$/);
+  await expect(composer).toHaveCount(0);
+});
+
 test("collapsed project tasks cannot be moved or planned by shortcuts", async ({ page }) => {
   const project = await (await page.request.post("/api/projects", {
     data: { title: `Keyboard project ${randomUUID()}` },

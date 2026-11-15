@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useBeforeUnload, useBlocker } from "react-router-dom";
 import type { ProjectMaterialItem } from "../lib/projectMaterials";
 import { buildProjectAiPromptText } from "../lib/projectAiPrompt";
 import { localizedErrorMessage } from "../lib/errorMessage";
@@ -24,16 +25,28 @@ export function ProjectAiPromptSheet({
   const markdown = buildProjectAiPromptText(prompt, selectedMaterials);
   const canShare = markdown.trim().length > 0;
   const hasDraft = prompt.length > 0 || selectedIds.size > 0;
+  const navigationBlocker = useBlocker(hasDraft);
+  useBeforeUnload((event) => {
+    if (hasDraft) event.preventDefault();
+  });
 
-  const requestClose = () => {
-    if (confirmDiscard) {
-      setConfirmDiscard(false);
-    } else if (hasDraft) {
-      setConfirmDiscard(true);
-    } else {
-      onClose();
-    }
+  const keepEditing = () => {
+    setConfirmDiscard(false);
+    if (navigationBlocker.state === "blocked") navigationBlocker.reset();
   };
+  const discard = () => {
+    setConfirmDiscard(false);
+    if (navigationBlocker.state === "blocked") navigationBlocker.proceed();
+    else onClose();
+  };
+  const requestClose = () => {
+    if (confirmDiscard) keepEditing();
+    else if (hasDraft) setConfirmDiscard(true);
+    else onClose();
+  };
+  useEffect(() => {
+    if (navigationBlocker.state === "blocked") setConfirmDiscard(true);
+  }, [navigationBlocker.state]);
 
   const copy = async () => {
     setStatus(null);
@@ -96,10 +109,10 @@ export function ProjectAiPromptSheet({
           <div className="stack" role="alert">
             <p>{strings.projectAiPromptDiscardWarning}</p>
             <div className="row">
-              <button type="button" className="btn" onClick={() => setConfirmDiscard(false)}>
+              <button type="button" className="btn" onClick={keepEditing}>
                 {strings.projectAiPromptKeepEditing}
               </button>
-              <button type="button" className="btn" onClick={onClose}>
+              <button type="button" className="btn" onClick={discard}>
                 {strings.discard}
               </button>
             </div>
