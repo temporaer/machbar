@@ -29,9 +29,8 @@ import { SwipeCoachHint } from "./SwipeCoachHint";
 import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
 import { useHorizontalSwipe, DEEP_ACTION_THRESHOLD } from "../lib/useHorizontalSwipe";
 import { extractPaperlessReferences, markdownWithoutPaperlessReferences } from "../lib/paperlessAttachments";
-import { parseReferenceContent } from "../lib/referenceContent";
 import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
-import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
+import { MaterialCard } from "./MaterialCard";
 import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
@@ -139,10 +138,6 @@ export function TaskRow({
   const notesWithoutAttachments = useMemo(
     () => markdownWithoutPaperlessReferences(task.notes),
     [task.notes],
-  );
-  const referenceContent = useMemo(
-    () => (isReference ? parseReferenceContent(task.notes) : null),
-    [isReference, task.notes],
   );
   const rowError = errors[taskProp.id];
   const showTodayRevisitActions =
@@ -407,9 +402,7 @@ export function TaskRow({
           this slot instead -- no lifecycle affordance at all.
         */}
         {isReference ? (
-          <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
-            🗎
-          </span>
+          <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true" />
         ) : (
           <button
             type="button"
@@ -422,31 +415,17 @@ export function TaskRow({
           </button>
         )}
         <div className="task-row-main-wrap">
-          <button
-            type="button"
-            className="task-row-main"
-            ref={mainButtonRef}
-            aria-label={task.title}
-            disabled={outlineRefreshing}
-            onClick={() => dispatch({ type: "task.open", taskId: task.id })}
-          >
-            {isReference ? (
-              <>
-                <div className="task-row-header">
-                  <div className="task-row-title">{task.title}</div>
-                </div>
-                <div className="task-row-meta">
-                  <span className="task-row-meta-item task-row-reference-label">
-                    {strings.materialLabel}
-                  </span>
-                  {children.length ? (
-                    <span className="task-row-meta-item">
-                      {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
-                    </span>
-                  ) : null}
-                </div>
-              </>
-            ) : (
+          {isReference ? (
+            <MaterialCard task={task} keyboardNavigable />
+          ) : (
+            <button
+              type="button"
+              className="task-row-main"
+              ref={mainButtonRef}
+              aria-label={task.title}
+              disabled={outlineRefreshing}
+              onClick={() => dispatch({ type: "task.open", taskId: task.id })}
+            >
               <>
                 <div className="task-row-header">
                   {isCompact ? null : (
@@ -538,33 +517,13 @@ export function TaskRow({
                   />
                 ) : null}
               </>
-            )}
-          </button>
-          {isReference && referenceContent?.primaryWebLink ? (
-            <a
-              href={referenceContent.primaryWebLink.url}
-              target="_blank"
-              rel="noreferrer"
-              className="task-row-reference-link"
-              aria-label={`${strings.openLink}: ${referenceContent.primaryWebLink.label}`}
-            >
-              {referenceContent.primaryWebLink.label} ↗
-            </a>
-          ) : null}
-          {isReference && referenceContent?.paperlessAttachments.length ? (
-            <PaperlessAttachmentStrip
-              attachments={referenceContent.paperlessAttachments}
-            />
-          ) : null}
-          {isReference
-            ? referenceContent?.remainingText
-              ? <MarkdownNotes value={referenceContent.remainingText} className="task-row-notes" />
-              : null
-            : isCompact
-              ? null
-              : notesWithoutAttachments
-                ? <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id })} />
-                : null}
+            </button>
+          )}
+          {!isReference && (isCompact
+            ? null
+            : notesWithoutAttachments
+              ? <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id })} />
+              : null)}
         </div>
         {!isReference ? (
           <button

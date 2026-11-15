@@ -894,15 +894,15 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
 
     const taskSection = (await screen.findByRole("button", {
-      name: "Versicherungsbedingungen",
+      name: `${strings.openMaterial}: Versicherungsbedingungen`,
     })).closest("details")!;
     expect(within(taskSection).getByRole("button", {
-      name: "Versicherungsbedingungen",
+      name: `${strings.openMaterial}: Versicherungsbedingungen`,
     })).toBeVisible();
     expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
     expect(within(taskSection).getByText("Versicherung prüfen")).toBeVisible();
     expect(within(taskSection).getByRole("link", {
-      name: `${strings.openLink}: Quelle`,
+      name: `${strings.openLink}: insurance.example`,
     })).toHaveAttribute("href", "https://www.insurance.example/policy");
     expect(within(taskSection).getByRole("link", { name: "Dokument" }))
       .toHaveAttribute("href", "/api/integrations/paperless/documents/8/download");
@@ -938,10 +938,10 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
 
     const taskSection = (await screen.findByRole("button", {
-      name: "Lieferantenliste",
+      name: `${strings.openMaterial}: Lieferantenliste`,
     })).closest("details")!;
     expect(within(taskSection).getByRole("button", {
-      name: "Lieferantenliste",
+      name: `${strings.openMaterial}: Lieferantenliste`,
     })).toBeVisible();
     expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
   });

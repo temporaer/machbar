@@ -36,6 +36,7 @@ export function MaterialCard({
     >
       <div className="material-card-heading">
         <span className="material-card-icon" aria-hidden="true">🗎</span>
+        <span className="material-card-kind">{strings.materialLabel}</span>
         <button
           type="button"
           className={`material-card-open${keyboardNavigable ? " task-row-main" : ""}`}
