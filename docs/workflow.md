@@ -646,6 +646,10 @@ Machbar participates in both directions:
   the same destination choices as text shares and survive sign-in.
 - **Share from Machbar:** send readable task/project text and a deep link
   through Web Share, with a clipboard fallback.
+- From a project, **KI-Prompt erstellen / Create AI prompt** composes a prompt
+  from authored instructions and explicitly selected project material. Copy and
+  Web Share use the same Markdown; material notes retain their original
+  Markdown. This packages text only and does not invoke an AI service.
 
 Deep-link recipients still need network and authentication access to the same
 Machbar deployment.

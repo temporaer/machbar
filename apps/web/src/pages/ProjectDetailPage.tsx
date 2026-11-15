@@ -65,14 +65,18 @@ import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet
 import { MaterialCard } from "../components/MaterialCard";
 import { projectMaterialItems } from "../lib/projectMaterials";
 import { parseReferenceContent } from "../lib/referenceContent";
+import { ProjectAiPromptSheet } from "../components/ProjectAiPromptSheet";
 
 function ProjectMaterialSection({
+  projectTitle,
   materials,
 }: {
+  projectTitle: string;
   materials: ReturnType<typeof projectMaterialItems>;
 }) {
   const strings = useStrings();
   const { captureOpen } = useInteractionScope();
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const hasPaperlessAttachments = materials.some(
     ({ task }) => parseReferenceContent(task.notes).paperlessAttachments.length > 0,
   );
@@ -88,14 +92,19 @@ function ProjectMaterialSection({
     <section className="section project-material-section">
       <div className="row-between">
         <h2 className="section-title">{strings.materialLabel}</h2>
-        <button
-          type="button"
-          className="btn btn-sm"
-          disabled={!captureOpen}
-          onClick={() => captureOpen?.()}
-        >
-          {strings.addMaterial}
-        </button>
+        <div className="row">
+          <button type="button" className="btn btn-sm" onClick={() => setAiPromptOpen(true)}>
+            {strings.projectAiPromptCreate}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={!captureOpen}
+            onClick={() => captureOpen?.()}
+          >
+            {strings.addMaterial}
+          </button>
+        </div>
       </div>
       {materials.length > 0 ? (
         <div className="material-card-list">
@@ -111,6 +120,13 @@ function ProjectMaterialSection({
       ) : (
         <p className="text-muted">{strings.projectMaterialEmpty}</p>
       )}
+      {aiPromptOpen ? (
+        <ProjectAiPromptSheet
+          projectTitle={projectTitle}
+          materials={materials}
+          onClose={() => setAiPromptOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -679,7 +695,7 @@ export function ProjectDetailPage() {
               </div>
             </div>
             <PaperlessAttachmentStrip attachments={attachments} />
-            <ProjectMaterialSection materials={projectMaterials} />
+            <ProjectMaterialSection key={project.id} projectTitle={project.title} materials={projectMaterials} />
             {attachmentError ? (
               <WorkItemInlineError message={attachmentError} />
             ) : null}

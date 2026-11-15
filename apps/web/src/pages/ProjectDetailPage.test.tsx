@@ -940,6 +940,9 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.getByRole("button", {
       name: `${strings.openMaterial}: Lieferantenliste`,
     })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: strings.projectAiPromptCreate }));
+    const composer = await screen.findByRole("dialog", { name: strings.projectAiPromptTitle });
+    expect(within(composer).getByRole("checkbox", { name: "Lieferantenliste" })).not.toBeChecked();
   });
 
   it("keeps project actions on their semantically appropriate detail entry points", async () => {
