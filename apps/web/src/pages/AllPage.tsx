@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { SearchFilters } from "@machbar/shared";
+import type { SearchFilters, Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
@@ -23,6 +23,35 @@ import { sortInventoryTasks } from "../lib/sortOrder";
 import { recencyRankLookup } from "../lib/recentlyViewed";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
+import { MaterialCard } from "../components/MaterialCard";
+import { parseReferenceContent } from "../lib/referenceContent";
+
+function MaterialResults({ tasks }: { tasks: Task[] }) {
+  const hasPaperlessAttachments = tasks.some(
+    (task) => parseReferenceContent(task.notes).paperlessAttachments.length > 0,
+  );
+  const { data: paperlessStatus } = useAsync(
+    () =>
+      hasPaperlessAttachments && typeof api.getPaperlessStatus === "function"
+        ? api.getPaperlessStatus()
+        : Promise.resolve(null),
+    [hasPaperlessAttachments],
+  );
+
+  return (
+    <div className="material-card-list">
+      {tasks.map((task) => (
+        <MaterialCard
+          key={task.id}
+          task={task}
+          context={task.projectTitle ?? undefined}
+          paperlessUiBaseUrl={paperlessStatus?.documentUiBaseUrl ?? null}
+          keyboardNavigable
+        />
+      ))}
+    </div>
+  );
+}
 
 export function AllPage() {
   const strings = useStrings();
@@ -53,9 +82,12 @@ export function AllPage() {
     [filtersKey, locale, projects],
   );
   const filtering = hasInventoryFilters(filters);
+  const materialOnly = filters.kinds?.includes("reference") ?? false;
   const taskCandidates = sortInventoryTasks(
     filtering
-      ? topLevelTaskResults(tasks ?? [])
+      ? materialOnly
+        ? tasks ?? []
+        : topLevelTaskResults(tasks ?? [])
       : (tasks ?? []).filter(
           (task) => task.projectId === null && task.parentTaskId === null,
         ),
@@ -64,7 +96,7 @@ export function AllPage() {
     { recencyRank: recencyRankLookup("task") },
   );
   const visibleTasks = taskCandidates;
-  const filteredProjects = projectCandidates;
+  const filteredProjects = materialOnly ? [] : projectCandidates;
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
 
@@ -93,7 +125,7 @@ export function AllPage() {
         ) : null}
         {projects && tasks ? (
           filteredProjects.length === 0 && visibleTasks.length === 0 ? (
-            <EmptyState message={strings.allEmpty} />
+            <EmptyState message={materialOnly ? strings.allMaterialEmpty : strings.allEmpty} />
           ) : (
             <>
               {filteredProjects.length > 0 ? (
@@ -118,19 +150,28 @@ export function AllPage() {
               {visibleTasks.length > 0 ? (
                 <section
                   className="section"
-                  aria-labelledby="all-tasks-heading"
+                  aria-labelledby={materialOnly ? "all-material-heading" : "all-tasks-heading"}
                 >
-                  <h2 id="all-tasks-heading" className="section-title">
-                    {filtering
-                      ? strings.allMatchingTasksHeading
-                      : strings.allStandaloneTasksHeading}
+                  <h2
+                    id={materialOnly ? "all-material-heading" : "all-tasks-heading"}
+                    className="section-title"
+                  >
+                    {materialOnly
+                      ? strings.materialLabel
+                      : filtering
+                        ? strings.allMatchingTasksHeading
+                        : strings.allStandaloneTasksHeading}
                   </h2>
-                  <TaskOutline
-                    key={filtersKey}
-                    tasks={visibleTasks}
-                    emptyMessage={strings.allEmpty}
-                    preserveRootOrder
-                  />
+                  {materialOnly ? (
+                    <MaterialResults tasks={visibleTasks} />
+                  ) : (
+                    <TaskOutline
+                      key={filtersKey}
+                      tasks={visibleTasks}
+                      emptyMessage={strings.allEmpty}
+                      preserveRootOrder
+                    />
+                  )}
                 </section>
               ) : null}
             </>

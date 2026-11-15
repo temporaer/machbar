@@ -8,13 +8,13 @@
  * projection.
  */
 import type { Nodes, Parent } from "mdast";
-import { fromMarkdown } from "mdast-util-from-markdown";
 import {
   extractPaperlessReferences,
   markdownWithoutPaperlessReferences,
   paperlessDocumentId,
   type PaperlessMarkdownReference,
 } from "./paperlessAttachments";
+import { fromMarkdownWithReferences } from "./markdownReferences";
 
 export interface PrimaryWebLink {
   url: string;
@@ -96,7 +96,7 @@ function locatePrimaryWebLink(markdown: string): LocatedWebLink | null {
       }
     }
   };
-  visit(fromMarkdown(markdown));
+  visit(fromMarkdownWithReferences(markdown));
   return found;
 }
 

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { LocaleProvider } from "../i18n/provider";
@@ -69,6 +69,8 @@ describe("PaperlessAttachmentStrip", () => {
       "href",
       "/api/integrations/paperless/documents/4712/download",
     );
+    expect(container.querySelector('img[src="/api/integrations/paperless/documents/4712/thumbnail"]'))
+      .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "receipt.pdf" })).not.toHaveAttribute(
       "target",
     );
@@ -87,6 +89,7 @@ describe("PaperlessAttachmentStrip", () => {
     const directLink = await screen.findByRole("link", {
       name: "receipt.pdf in Paperless öffnen",
     });
+
     expect(directLink).toHaveAttribute(
       "href",
       "https://paperless.example/archive/documents/4712/details",
@@ -94,6 +97,26 @@ describe("PaperlessAttachmentStrip", () => {
     expect(directLink).toHaveAttribute("target", "_blank");
     expect(directLink).toHaveAttribute("rel", "noopener noreferrer");
     expect(directLink.getAttribute("href")).not.toContain("token");
+  });
+
+  it("falls back to the document glyph when a thumbnail is unavailable", () => {
+    const { container } = renderStrip(
+      <PaperlessAttachmentStrip
+        attachments={[{ id: 4712, label: "receipt.pdf", kind: "document" }]}
+        paperlessUiBaseUrl={null}
+      />,
+    );
+    const thumbnail = container.querySelector("img");
+    expect(thumbnail).toBeInTheDocument();
+
+    fireEvent.error(thumbnail!);
+
+    expect(container.querySelector(".paperless-attachment-document-icon"))
+      .toHaveTextContent("PDF");
+    expect(screen.getByRole("link", { name: "receipt.pdf" })).toHaveAttribute(
+      "href",
+      "/api/integrations/paperless/documents/4712/download",
+    );
   });
 
   it("hides the direct Paperless link when the UI base URL is unavailable", async () => {

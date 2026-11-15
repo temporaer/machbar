@@ -22,6 +22,20 @@ describe("parseReferenceContent", () => {
     expect(parsed.remainingText).toBe("Some notes");
   });
 
+  it("resolves reference-style web links and Paperless attachments", () => {
+    const parsed = parseReferenceContent(
+      "[Policy source][source]\n\n[Policy document][document]\n\nKeep this note.\n\n[source]: https://example.com/policy\n[document]: paperless:8",
+    );
+    expect(parsed.primaryWebLink).toEqual({
+      url: "https://example.com/policy",
+      label: "Policy source",
+    });
+    expect(parsed.paperlessAttachments).toEqual([
+      { id: 8, label: "Policy document", kind: "document" },
+    ]);
+    expect(parsed.remainingText).toContain("Keep this note.");
+  });
+
   it("uses the first suitable http(s) link when multiple links exist", () => {
     const parsed = parseReferenceContent(
       "See [first](https://first.example) and [second](https://second.example)",

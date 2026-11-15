@@ -5,8 +5,8 @@ import {
   type PaperlessDocumentSummary,
 } from "@machbar/shared";
 import type { Nodes, Parent } from "mdast";
-import { fromMarkdown } from "mdast-util-from-markdown";
 import { api } from "./api";
+import { fromMarkdownWithReferences } from "./markdownReferences";
 
 export interface UploadedPaperlessAttachment {
   document: PaperlessDocumentSummary;
@@ -77,7 +77,8 @@ function locatePaperlessReferences(
       const start = node.position?.start.offset;
       const end = node.position?.end.offset;
       if (id !== null && start !== undefined && end !== undefined) {
-        const rawLabel = node.type === "image" ? node.alt ?? "" : nodeText(node);
+        const rawLabel =
+          node.type === "image" ? node.alt ?? "" : nodeText(node);
         references.push({
           id,
           label: rawLabel.trim() || `paperless-${id}`,
@@ -92,7 +93,7 @@ function locatePaperlessReferences(
       for (const child of (node as Parent).children) visit(child);
     }
   };
-  visit(fromMarkdown(markdown));
+  visit(fromMarkdownWithReferences(markdown));
   return references;
 }
 

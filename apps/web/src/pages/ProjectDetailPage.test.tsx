@@ -862,6 +862,86 @@ describe("ProjectDetailPage task explanations", () => {
       .not.toBeInTheDocument();
   });
 
+  it("shows nested project material with its parent and launches project-scoped capture", async () => {
+    const actionBelowMaterial = makeTask({
+      id: 9,
+      title: "Anbieter anrufen",
+      projectId: 42,
+      parentTaskId: 8,
+    });
+    const material = makeTask({
+      id: 8,
+      title: "Versicherungsbedingungen",
+      kind: "reference",
+      projectId: 42,
+      parentTaskId: 7,
+      notes: "[Quelle][policy]\n\n[Dokument][document]\n\nFristen beachten.\n\n[policy]: https://www.insurance.example/policy\n[document]: paperless:8",
+      children: [actionBelowMaterial],
+    });
+    const parent = makeTask({
+      id: 7,
+      title: "Versicherung prüfen",
+      projectId: 42,
+      children: [material],
+    });
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Umzug" }),
+      tasks: [parent],
+    });
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 42, title: "Umzug" }),
+    ]);
+    renderProjectRoute("/projects/42");
+
+    const materialHeading = await screen.findByRole("heading", { name: strings.materialLabel });
+    const materialSection = materialHeading.closest("section")!;
+    expect(within(materialSection).getByRole("button", {
+      name: `${strings.openMaterial}: Versicherungsbedingungen`,
+    })).toBeVisible();
+    expect(within(materialSection).getByText("Versicherung prüfen")).toBeVisible();
+    expect(within(materialSection).getByRole("link", {
+      name: `${strings.openLink}: insurance.example`,
+    })).toHaveAttribute("href", "https://www.insurance.example/policy");
+    expect(within(materialSection).getByRole("link", { name: "Dokument" }))
+      .toHaveAttribute("href", "/api/integrations/paperless/documents/8/download");
+    expect(
+      materialSection.querySelector(
+        'img[src="/api/integrations/paperless/documents/8/thumbnail"]',
+      ),
+    ).toBeInTheDocument();
+    expect(within(materialSection).getByText("Fristen beachten.")).toBeVisible();
+    expect(await screen.findByText("Anbieter anrufen")).toBeVisible();
+
+    const addMaterial = within(materialSection).getByRole("button", {
+      name: strings.addMaterial,
+    });
+    await waitFor(() => expect(addMaterial).toBeEnabled());
+    await userEvent.click(addMaterial);
+    expect(await screen.findByRole("dialog", { name: strings.quickAdd })).toBeVisible();
+    expect(screen.getByText("Ziel: Umzug")).toBeVisible();
+  });
+
+  it("shows the Material section when a project contains only material", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Referenzsammlung" }),
+      tasks: [
+        makeTask({
+          id: 8,
+          title: "Lieferantenliste",
+          kind: "reference",
+          projectId: 42,
+        }),
+      ],
+    });
+    renderProjectRoute("/projects/42");
+
+    expect(await screen.findByRole("heading", { name: strings.materialLabel }))
+      .toBeVisible();
+    expect(screen.getByRole("button", {
+      name: `${strings.openMaterial}: Lieferantenliste`,
+    })).toBeVisible();
+  });
+
   it("keeps project actions on their semantically appropriate detail entry points", async () => {
     renderProjectRoute("/projects/42");
 

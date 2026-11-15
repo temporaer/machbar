@@ -629,6 +629,9 @@ const extra = {
   dropTopLevel: "Auf oberste Ebene",
   dropUnder: "Unter",
   materialLabel: "Material",
+  addMaterial: "Material hinzufügen",
+  openMaterial: "Material öffnen",
+  projectMaterialEmpty: "Noch kein Projektmaterial.",
   makeAction: "Als Aufgabe behandeln",
   makeActionFailed: "Konnte nicht in eine Aufgabe umgewandelt werden",
   openLink: "Link öffnen",
@@ -1204,6 +1207,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   allStandaloneTasksHeading: "Eigenständige Aufgaben",
   allMatchingTasksHeading: "Passende Aufgaben",
   allEmpty: "Keine passenden Projekte oder Aufgaben.",
+  allMaterialEmpty: "Kein passendes Material gefunden.",
 
   // --- Project clarification -------------------------------------------
   activateStory: "Projekt starten",
