@@ -899,7 +899,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(taskSection).getByRole("button", {
       name: `${strings.openMaterial}: Versicherungsbedingungen`,
     })).toBeVisible();
-    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
+    expect(within(taskSection).getByRole("article").querySelector(".material-card-icon")).toBeTruthy();
     expect(within(taskSection).getByText("Versicherung prüfen")).toBeVisible();
     expect(within(taskSection).getByRole("link", {
       name: `${strings.openLink}: insurance.example`,
@@ -943,7 +943,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(taskSection).getByRole("button", {
       name: `${strings.openMaterial}: Lieferantenliste`,
     })).toBeVisible();
-    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
+    expect(within(taskSection).getByRole("article").querySelector(".material-card-icon")).toBeTruthy();
   });
 
   it("keeps project actions on their semantically appropriate detail entry points", async () => {
