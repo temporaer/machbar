@@ -359,7 +359,7 @@ export function TaskRow({
             {collapsed ? "▸" : "▾"}
           </button>
         ) : null}
-        <div className={`task-row-leading-controls${organizeEnabled ? " has-drag-handle" : ""}`}>
+        <div className={`task-row-leading-controls${organizeEnabled ? " has-drag-handle" : ""}${isReference ? " has-reference-glyph" : ""}`}>
           {/*
             Hidden on coarse pointers (touch) via CSS only — see
             `.task-row-checkbox` in styles/index.css — since swiping/chips
@@ -370,7 +370,7 @@ export function TaskRow({
             this slot instead -- no lifecycle affordance at all.
           */}
           {isReference ? (
-            <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true" />
+            <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">🗎</span>
           ) : (
             <button
               type="button"
