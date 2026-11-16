@@ -893,26 +893,28 @@ describe("ProjectDetailPage task explanations", () => {
     ]);
     renderProjectRoute("/projects/42");
 
-    const materialHeading = await screen.findByRole("heading", { name: strings.materialLabel });
-    const materialSection = materialHeading.closest("section")!;
-    expect(within(materialSection).getByRole("button", {
+    const taskSection = (await screen.findByRole("button", {
+      name: `${strings.openMaterial}: Versicherungsbedingungen`,
+    })).closest("details")!;
+    expect(within(taskSection).getByRole("button", {
       name: `${strings.openMaterial}: Versicherungsbedingungen`,
     })).toBeVisible();
-    expect(within(materialSection).getByText("Versicherung prüfen")).toBeVisible();
-    expect(within(materialSection).getByRole("link", {
+    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
+    expect(within(taskSection).getByText("Versicherung prüfen")).toBeVisible();
+    expect(within(taskSection).getByRole("link", {
       name: `${strings.openLink}: insurance.example`,
     })).toHaveAttribute("href", "https://www.insurance.example/policy");
-    expect(within(materialSection).getByRole("link", { name: "Dokument" }))
+    expect(within(taskSection).getByRole("link", { name: "Dokument" }))
       .toHaveAttribute("href", "/api/integrations/paperless/documents/8/download");
     expect(
-      materialSection.querySelector(
+      taskSection.querySelector(
         'img[src="/api/integrations/paperless/documents/8/thumbnail"]',
       ),
     ).toBeInTheDocument();
-    expect(within(materialSection).getByText("Fristen beachten.")).toBeVisible();
+    expect(within(taskSection).getByText("Fristen beachten.")).toBeVisible();
     expect(await screen.findByText("Anbieter anrufen")).toBeVisible();
 
-    const addMaterial = within(materialSection).getByRole("button", {
+    const addMaterial = screen.getByRole("button", {
       name: strings.addMaterial,
     });
     await waitFor(() => expect(addMaterial).toBeEnabled());
@@ -935,11 +937,13 @@ describe("ProjectDetailPage task explanations", () => {
     });
     renderProjectRoute("/projects/42");
 
-    expect(await screen.findByRole("heading", { name: strings.materialLabel }))
-      .toBeVisible();
-    expect(screen.getByRole("button", {
+    const taskSection = (await screen.findByRole("button", {
+      name: `${strings.openMaterial}: Lieferantenliste`,
+    })).closest("details")!;
+    expect(within(taskSection).getByRole("button", {
       name: `${strings.openMaterial}: Lieferantenliste`,
     })).toBeVisible();
+    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: strings.projectAiPromptCreate }));
     const composer = await screen.findByRole("dialog", { name: strings.projectAiPromptTitle });
     expect(within(composer).getByRole("checkbox", { name: "Lieferantenliste" })).not.toBeChecked();

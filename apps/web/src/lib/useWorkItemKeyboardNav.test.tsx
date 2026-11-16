@@ -143,6 +143,25 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     expect(mainButtonFor("Elternaufgabe")).toHaveFocus();
   });
 
+  it("traverses through an inline material row exactly once", async () => {
+    const before = makeTask({ id: 1, title: "Davor", position: 0 });
+    const material = makeTask({ id: 2, title: "Material", kind: "reference", position: 1 });
+    const after = makeTask({ id: 3, title: "Danach", position: 2 });
+    renderWithProviders(
+      <>
+        <WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[before, material, after]} emptyMessage="Nichts da" />
+      </>,
+    );
+    await screen.findByRole("button", { name: "Material öffnen: Material" });
+
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("j");
+
+    expect(screen.getByRole("button", { name: "Danach" })).toHaveFocus();
+  });
+
   it("skips collapsed descendants when traversing with j", async () => {
     const child = makeTask({ id: 2, title: "Kind", position: 0 });
     const parent = makeTask({ id: 1, title: "Elternaufgabe", position: 0, children: [child] });

@@ -358,7 +358,8 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
         })).toEqual({ weight: "500", transform: "none" });
       }
       for (const section of await page.locator(".detail-disclosure-with-actions").all()) {
-        const actionBounds = await section.locator(".detail-disclosure-actions button").boundingBox();
+        const actionGroup = section.locator(".detail-disclosure-actions");
+        const actionBounds = await actionGroup.boundingBox();
         const headingBounds = await section.locator(".task-detail-disclosure-heading").boundingBox();
         const summaryBounds = await section.locator("summary").boundingBox();
         expect(actionBounds!.height).toBeGreaterThanOrEqual(44);
@@ -366,6 +367,11 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
         expect(headingBounds!.x + headingBounds!.width).toBeLessThanOrEqual(actionBounds!.x);
         expect(actionBounds!.y).toBeGreaterThanOrEqual(summaryBounds!.y - 1);
         expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(summaryBounds!.y + summaryBounds!.height + 1);
+        for (const button of await actionGroup.locator("button").all()) {
+          const buttonBounds = await button.boundingBox();
+          expect(buttonBounds!.height).toBeGreaterThanOrEqual(44);
+          expect(buttonBounds!.width).toBeGreaterThanOrEqual(44);
+        }
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       if (kind === "task") {
