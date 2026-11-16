@@ -18,12 +18,14 @@ export function MaterialCard({
   context,
   paperlessUiBaseUrl,
   keyboardNavigable = false,
+  inline = false,
   registerWorkItem,
 }: {
   task: Task;
   context?: string | undefined;
   paperlessUiBaseUrl?: string | null;
   keyboardNavigable?: boolean;
+  inline?: boolean;
   registerWorkItem?: boolean;
 }) {
   const strings = useStrings();
@@ -32,7 +34,7 @@ export function MaterialCard({
 
   return (
     <article
-      className="material-card"
+      className={`material-card${inline ? " material-card-inline" : ""}`}
       data-workitem-id={keyboardNavigable && registerWorkItem !== false ? task.id : undefined}
       data-workitem-role={keyboardNavigable && registerWorkItem !== false ? "task" : undefined}
     >

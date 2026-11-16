@@ -168,6 +168,7 @@ describe("AllPage", () => {
       .toBeVisible();
     expect(screen.getByRole("button", { name: "Material öffnen: Kassenbeleg" }))
       .toBeVisible();
+    expect(document.querySelector(".material-card-inline")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Link öffnen: source.example" }))
       .toHaveAttribute("href", "https://www.source.example/material");
     const preview = document.querySelector(".material-card-notes")!;

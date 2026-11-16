@@ -4357,6 +4357,34 @@ details[open] > .disclosure-summary::after {
   gap: 8px;
 }
 
+.material-card-inline {
+  padding: 6px 8px;
+}
+
+.material-card-inline .material-card-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 6px;
+}
+
+.material-card-inline .material-card-icon {
+  grid-row: 1;
+}
+
+.material-card-inline .material-card-kind {
+  align-self: center;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.material-card-inline .material-card-open {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
 .material-card-icon {
   flex: 0 0 auto;
   color: var(--color-text-muted);
@@ -4379,6 +4407,12 @@ details[open] > .disclosure-summary::after {
   margin: 3px 0 0 26px;
   color: var(--color-text-muted);
   font-size: 0.75rem;
+}
+
+.material-card-inline .material-card-context,
+.material-card-inline .material-card-source,
+.material-card-inline .material-card-notes {
+  margin-inline-start: 0;
 }
 
 .material-card-source {

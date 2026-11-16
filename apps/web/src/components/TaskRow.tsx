@@ -419,6 +419,7 @@ export function TaskRow({
             <MaterialCard
               task={task}
               keyboardNavigable
+              inline
               registerWorkItem={false}
             />
           ) : (
