@@ -366,7 +366,8 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
         })).toEqual({ weight: "500", transform: "none" });
       }
       for (const section of await page.locator(".detail-disclosure-with-actions").all()) {
-        const actionBounds = await section.locator(".detail-disclosure-actions button").boundingBox();
+        const actionGroup = section.locator(".detail-disclosure-actions");
+        const actionBounds = await actionGroup.boundingBox();
         const headingBounds = await section.locator(".task-detail-disclosure-heading").boundingBox();
         const summaryBounds = await section.locator("summary").boundingBox();
         expect(actionBounds!.height).toBeGreaterThanOrEqual(44);
@@ -374,6 +375,36 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
         expect(headingBounds!.x + headingBounds!.width).toBeLessThanOrEqual(actionBounds!.x);
         expect(actionBounds!.y).toBeGreaterThanOrEqual(summaryBounds!.y - 1);
         expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(summaryBounds!.y + summaryBounds!.height + 1);
+        if (kind === "project" && await section.locator(".project-content-tasks").count()) {
+          await section.locator(".project-content-tasks").scrollIntoViewIfNeeded();
+          const projectSummary = section.locator(".project-content-tasks > summary");
+          const chevron = await projectSummary.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return {
+              right: rect.right - Number.parseFloat(style.paddingRight),
+              paddingRight: Number.parseFloat(style.paddingRight),
+            };
+          });
+          expect(actionBounds!.x).toBeGreaterThanOrEqual(chevron.right);
+          const projectSummaryBounds = await projectSummary.boundingBox();
+          const wasOpen = await section.locator(".project-content-tasks").evaluate(
+            node => (node as HTMLDetailsElement).open,
+          );
+          await projectSummary.click({
+            position: {
+              x: projectSummaryBounds!.width - chevron.paddingRight - 4,
+              y: projectSummaryBounds!.height / 2,
+            },
+          });
+          if (wasOpen) await expect(section.locator(".project-content-tasks")).not.toHaveAttribute("open");
+          else await expect(section.locator(".project-content-tasks")).toHaveAttribute("open", "");
+        }
+        for (const button of await actionGroup.locator("button").all()) {
+          const buttonBounds = await button.boundingBox();
+          expect(buttonBounds!.height).toBeGreaterThanOrEqual(44);
+          expect(buttonBounds!.width).toBeGreaterThanOrEqual(44);
+        }
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       if (kind === "task") {
@@ -458,6 +489,161 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
     await expect(action).toBeFocused();
     await expect(details).not.toHaveAttribute("open");
   }
+});
+
+test("project AI prompt shares and copies only selected material", async ({ page }) => {
+  const projectTitle = `AI prompt ${randomUUID()}`;
+  const projectResponse = await page.request.post("/api/projects", {
+    data: { title: projectTitle },
+  });
+  expect(projectResponse.status()).toBe(201);
+  const project = await projectResponse.json();
+  const selectedTitle = `Selected source ${randomUUID()}`;
+  const unselectedTitle = `Unselected source ${randomUUID()}`;
+  const selectedNotes = "[Source](https://example.test/research)\n\n**Keep this annotation.**";
+  for (const [title, notes] of [
+    [selectedTitle, selectedNotes],
+    [unselectedTitle, "Do not include this annotation."],
+  ]) {
+    const response = await page.request.post("/api/tasks", {
+      data: { title, kind: "reference", projectId: project.id, notes },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://127.0.0.1:4173",
+  });
+  await page.addInitScript(() => {
+    const testWindow = window as unknown as {
+      __nativeShareData: { title: string; text: string } | null;
+    };
+    testWindow.__nativeShareData = null;
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: { title: string; text: string }) => {
+        testWindow.__nativeShareData = data;
+      },
+    });
+  });
+  await page.goto(`/#/projects/${project.id}`);
+  await page.getByRole("button", { name: "KI-Prompt erstellen", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "KI-Prompt erstellen" });
+  await composer.getByRole("textbox", { name: "Deine Anweisung" }).fill("Vergleiche die Quelle.");
+  await expect(composer.getByRole("checkbox", { name: selectedTitle })).not.toBeChecked();
+  await composer.getByRole("checkbox", { name: selectedTitle }).check();
+  const expected = `Vergleiche die Quelle.\n\n---\n\n## ${selectedTitle}\n\n${selectedNotes}`;
+
+  await composer.getByRole("button", { name: "Teilen …" }).click();
+  await expect.poll(() => page.evaluate(() => (
+    window as unknown as { __nativeShareData: { title: string; text: string } | null }
+  ).__nativeShareData)).toEqual({
+    title: `KI-Prompt erstellen: ${projectTitle}`,
+    text: expected,
+  });
+
+  await composer.getByRole("button", { name: "Kopieren", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected);
+  expect(expected).toContain("[Source](https://example.test/research)");
+  expect(expected).toContain("**Keep this annotation.**");
+  expect(expected).not.toContain(unselectedTitle);
+  expect(expected).not.toContain("Do not include this annotation.");
+});
+
+test("project AI prompt keeps drafts on same-project Back until discard is confirmed", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Draft project ${randomUUID()}` },
+  })).json();
+  const materialResponse = await page.request.post("/api/tasks", {
+    data: {
+      title: `Draft material ${randomUUID()}`,
+      kind: "reference",
+      projectId: project.id,
+    },
+  });
+  expect(materialResponse.status()).toBe(201);
+  const material = await materialResponse.json();
+  await page.goto("/#/projects");
+  await page.locator('[data-project-section="backlog"] > summary').click();
+  await page.locator(`[data-workitem-id="${project.id}"] .story-row-main`).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await page.getByRole("button", { name: "Aufgaben hinzufügen", exact: true }).click();
+  const taskEntry = page.getByRole("dialog", { name: "Aufgaben hinzufügen", exact: true });
+  await expect(taskEntry).toBeVisible();
+  await taskEntry.getByRole("button", { name: "Schließen", exact: true }).last().click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+
+  await page.getByRole("button", { name: "KI-Prompt erstellen", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "KI-Prompt erstellen" });
+  const prompt = composer.getByRole("textbox", { name: "Deine Anweisung" });
+  const selection = composer.getByRole("checkbox", { name: material.title });
+  await prompt.fill("Vergleiche das Material.");
+  await selection.check();
+
+  expect(await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  })).toBe(true);
+
+  await page.goBack();
+  const confirmation = page.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole("button", { name: "Weiter bearbeiten" })).toBeFocused();
+  await confirmation.getByRole("button", { name: "Weiter bearbeiten" }).click();
+  await expect(prompt).toHaveValue("Vergleiche das Material.");
+  await expect(selection).toBeChecked();
+  await expect(selection).toBeFocused();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+
+  await page.goBack();
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Verwerfen" }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+  await expect(composer).toHaveCount(0);
+});
+
+test("project AI prompt discard confirmation stays visible with overflowing material", async ({ page }) => {
+  const project = await (await page.request.post("/api/projects", {
+    data: { title: `Long prompt project ${randomUUID()}` },
+  })).json();
+  const materialTitles: string[] = [];
+  for (let index = 0; index < 32; index += 1) {
+    const title = `Long-list material ${index} ${randomUUID()}`;
+    const response = await page.request.post("/api/tasks", {
+      data: { title, kind: "reference", projectId: project.id },
+    });
+    expect(response.status()).toBe(201);
+    materialTitles.push(title);
+  }
+
+  await page.setViewportSize({ width: 390, height: 460 });
+  await page.goto(`/#/projects/${project.id}`);
+  await page.getByRole("button", { name: "KI-Prompt erstellen", exact: true }).click();
+  const composer = page.getByRole("dialog", { name: "KI-Prompt erstellen" });
+  const prompt = composer.getByRole("textbox", { name: "Deine Anweisung" });
+  const firstMaterialTitle = materialTitles[0]!;
+  const lastMaterialTitle = materialTitles.at(-1)!;
+  const selection = composer.getByRole("checkbox", { name: firstMaterialTitle });
+  await prompt.fill("Vergleiche das Material.");
+  await selection.check();
+  await expect(composer.getByRole("checkbox", {
+    name: lastMaterialTitle,
+  })).not.toBeInViewport();
+
+  await page.keyboard.press("Escape");
+  const confirmation = page.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
+  const keepEditing = confirmation.getByRole("button", { name: "Weiter bearbeiten" });
+  await expect(confirmation).toBeVisible();
+  await expect(keepEditing).toBeInViewport();
+  await expect(keepEditing).toBeFocused();
+  await keepEditing.click();
+  await expect(prompt).toHaveValue("Vergleiche das Material.");
+  await expect(selection).toBeChecked();
+  await expect(selection).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await confirmation.getByRole("button", { name: "Verwerfen" }).click();
+  await expect(composer).toHaveCount(0);
 });
 
 test("collapsed project tasks cannot be moved or planned by shortcuts", async ({ page }) => {

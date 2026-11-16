@@ -943,7 +943,11 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(taskSection).getByRole("button", {
       name: `${strings.openMaterial}: Lieferantenliste`,
     })).toBeVisible();
+    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
     expect(within(taskSection).getByRole("article").querySelector(".material-card-icon")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: strings.projectAiPromptCreate }));
+    const composer = await screen.findByRole("dialog", { name: strings.projectAiPromptTitle });
+    expect(within(composer).getByRole("checkbox", { name: "Lieferantenliste" })).not.toBeChecked();
   });
 
   it("keeps project actions on their semantically appropriate detail entry points", async () => {

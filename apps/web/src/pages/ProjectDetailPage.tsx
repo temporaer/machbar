@@ -62,6 +62,36 @@ import {
 import { InteractionScopeProvider, useInteractionScope } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet";
+import { projectMaterialItems } from "../lib/projectMaterials";
+import { ProjectAiPromptSheet } from "../components/ProjectAiPromptSheet";
+
+function ProjectAiPromptButton({
+  projectTitle,
+  materials,
+}: {
+  projectTitle: string;
+  materials: ReturnType<typeof projectMaterialItems>;
+}) {
+  const strings = useStrings();
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+
+  return (
+    <>
+      <IconActionButton
+        kind="sparkles"
+        label={strings.projectAiPromptCreate}
+        onClick={() => setAiPromptOpen(true)}
+      />
+      {aiPromptOpen ? (
+        <ProjectAiPromptSheet
+          projectTitle={projectTitle}
+          materials={materials}
+          onClose={() => setAiPromptOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
 
 function AddMaterialButton() {
   const strings = useStrings();
@@ -152,6 +182,7 @@ export function ProjectDetailPage() {
     return () => { contentOpeningRef.current += 1; };
   }, [projectId]);
   const attachments = project ? extractPaperlessReferences(project.notes) : [];
+  const projectMaterials = project ? projectMaterialItems(project.tasks) : [];
 
   const owner = project
     ? members.find((m) => m.id === project.ownerMemberId)
@@ -739,7 +770,16 @@ export function ProjectDetailPage() {
             <WorkItemDetailDisclosure
               title={strings.taskSummary}
               headingLevel={2}
-              actions={<AddMaterialButton />}
+              actions={
+                <>
+                  <ProjectAiPromptButton
+                    key={project.id}
+                    projectTitle={project.title}
+                    materials={projectMaterials}
+                  />
+                  <AddMaterialButton />
+                </>
+              }
               defaultOpen resetKey={project.id} className="project-content-tasks">
               {!project.tasks.length && !project.childStories?.length ? <p className="text-muted">{strings.projectEmptyStepsHint}</p> : null}
               {project.childStories?.length ? (
