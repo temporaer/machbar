@@ -33,7 +33,7 @@ import { MarkdownEditor, type MarkdownEditorHandle } from "./MarkdownEditor";
 import { DetailNotesPreview } from "./DetailNotesPreview";
 import { NativeShareButton } from "./NativeShareButton";
 import { CalendarExportButton } from "./CalendarExportButton";
-import { IconActionButton } from "./IconActionButton";
+import { IconActionButton, IconActionGlyph } from "./IconActionButton";
 import { serializeTaskForShare } from "../lib/shareText";
 import { buildTaskShareUrl } from "../lib/shareUrls";
 import { RecentActivity } from "./RecentActivity";
@@ -986,7 +986,7 @@ export function TaskDetailSheet() {
                     <span className="row">
                       {child.kind === "reference" ? (
                         <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
-                          🗎
+                          <IconActionGlyph kind="notes" />
                         </span>
                       ) : (
                         <button

@@ -4391,6 +4391,12 @@ details[open] > .disclosure-summary::after {
   color: var(--color-text-muted);
 }
 
+.material-card-icon svg,
+.task-row-reference-glyph svg {
+  width: 18px;
+  height: 18px;
+}
+
 .material-card-open {
   min-width: 0;
   padding: 0;

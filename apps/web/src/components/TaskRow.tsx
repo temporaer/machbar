@@ -35,6 +35,7 @@ import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
 import { taskRailActions, type RailAction } from "../lib/workItemRail";
+import { IconActionGlyph } from "./IconActionButton";
 
 const LONG_PRESS_MS = 480;
 
@@ -370,7 +371,9 @@ export function TaskRow({
             this slot instead -- no lifecycle affordance at all.
           */}
           {isReference ? (
-            <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">🗎</span>
+            <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
+              <IconActionGlyph kind="notes" />
+            </span>
           ) : (
             <button
               type="button"
