@@ -3641,6 +3641,12 @@ details[open] > .disclosure-summary::after {
     display: none;
   }
 
+  .task-row-leading-controls:not(.has-drag-handle) {
+    flex-basis: 0;
+    width: 0;
+    gap: 0;
+  }
+
   /*
    * The 44px left padding below aligns these panels' content under the
    * checkbox column above them. On coarse-pointer (touch) devices that
@@ -4475,6 +4481,14 @@ details[open] > .disclosure-summary::after {
  */
 .task-outline {
   position: relative;
+}
+
+.task-row-leading-controls {
+  display: flex;
+  flex: 0 0 26px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .task-row-drag-handle {
