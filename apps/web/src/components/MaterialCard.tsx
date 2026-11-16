@@ -32,7 +32,7 @@ export function MaterialCard({
 
   return (
     <article
-      className="material-card"
+      className={`material-card${keyboardNavigable ? " material-card-inline" : ""}`}
       data-workitem-id={keyboardNavigable && registerWorkItem !== false ? task.id : undefined}
       data-workitem-role={keyboardNavigable && registerWorkItem !== false ? "task" : undefined}
     >

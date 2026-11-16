@@ -871,6 +871,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     const refRow = screen.getByRole("button", { name: "Material öffnen: Material" }).closest(".task-row-content")!;
     expect(refRow.querySelector(".task-row-owner-avatar")).toBeNull();
     expect(refRow).not.toHaveClass("has-owner");
+    expect(refRow.querySelector(".material-card")).toHaveClass("material-card-inline");
   });
 
   it("can make an inherited effective owner explicit from the owner avatar without changing the person", async () => {
