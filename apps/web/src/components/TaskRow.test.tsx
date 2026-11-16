@@ -872,6 +872,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     expect(refRow.querySelector(".task-row-owner-avatar")).toBeNull();
     expect(refRow).not.toHaveClass("has-owner");
     expect(refRow.querySelector(".material-card")).toHaveClass("material-card-inline");
+    expect(refRow.querySelector(".task-row-toggle")).toBeNull();
   });
 
   it("can make an inherited effective owner explicit from the owner avatar without changing the person", async () => {
