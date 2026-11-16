@@ -4,6 +4,7 @@ import { parseReferenceContent } from "../lib/referenceContent";
 import { useStrings } from "../lib/strings";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
+import { IconActionGlyph } from "./IconActionButton";
 
 function sourceDomain(url: string): string {
   try {
@@ -39,7 +40,9 @@ export function MaterialCard({
       data-workitem-role={keyboardNavigable && registerWorkItem !== false ? "task" : undefined}
     >
       <div className="material-card-heading">
-        <span className="material-card-icon" aria-hidden="true">🗎</span>
+        <span className="material-card-icon" aria-hidden="true">
+          <IconActionGlyph kind="notes" />
+        </span>
         <span className="material-card-kind">{strings.materialLabel}</span>
         <button
           type="button"

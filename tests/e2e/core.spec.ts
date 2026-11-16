@@ -127,9 +127,11 @@ test("material previews keep links accessible and long labels within both views"
     await expect(card).toBeVisible();
     if (route.includes("/projects/")) {
       expect(await page.locator(".task-row-reference-glyph").count()).toBe(1);
+      await expect(page.locator(".task-row-reference-glyph svg")).toHaveCount(1);
       expect(await card.locator(".material-card-icon").evaluate(node => getComputedStyle(node).display)).toBe("none");
     } else {
       expect(await card.locator(".material-card-icon").evaluate(node => getComputedStyle(node).display)).not.toBe("none");
+      await expect(card.locator(".material-card-icon svg")).toHaveCount(1);
     }
     const open = card.getByRole("button", { name: `Material öffnen: ${title}` });
     const source = card.getByRole("link", { name: `Link öffnen: ${domain}` });
