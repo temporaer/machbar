@@ -4428,10 +4428,6 @@ details[open] > .disclosure-summary::after {
   .task-row-reference-glyph {
     display: flex;
   }
-
-  .material-card-inline .material-card-icon {
-    display: block;
-  }
 }
 
 .material-card-source {
