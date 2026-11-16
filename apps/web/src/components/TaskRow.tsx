@@ -35,6 +35,7 @@ import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
 import { taskRailActions, type RailAction } from "../lib/workItemRail";
+import { IconActionGlyph } from "./IconActionButton";
 
 const LONG_PRESS_MS = 480;
 
@@ -346,37 +347,6 @@ export function TaskRow({
           e.stopPropagation();
         }}
       >
-        {organizeEnabled ? (
-          // The one always-visible structural control per row: press and
-          // drag it to move the task. Arrow keys move the task directly
-          // while it has focus, without any pointer at all — a plain
-          // click/tap does not open any separate mode.
-          <button
-            type="button"
-            className="task-row-drag-handle"
-            aria-label={`${strings.moveTask}: ${task.title}`}
-            title={strings.moveTask}
-            aria-busy={isMoving}
-            disabled={outlineRefreshing}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              organize?.beginDrag(taskProp.id, e.clientX, e.clientY);
-            }}
-            onClick={() => {
-              // A real drag ends with a click on the handle; swallow it so
-              // it has no further effect.
-              organize?.consumeDragClick();
-            }}
-            onKeyDown={(e) => {
-              const direction = KEY_DIRECTIONS[e.key];
-              if (!direction) return;
-              e.preventDefault();
-              organize?.moveBy(taskProp.id, direction);
-            }}
-          >
-            ⠿
-          </button>
-        ) : null}
         {children.length > 0 ? (
           <button
             type="button"
@@ -389,31 +359,64 @@ export function TaskRow({
           >
             {collapsed ? "▸" : "▾"}
           </button>
-        ) : (
-          <span className="task-row-toggle" aria-hidden="true" />
-        )}
-        {/*
-          Hidden on coarse pointers (touch) via CSS only — see
-          `.task-row-checkbox` in styles/index.css — since swiping/chips
-          cover that role there. Kept for mouse/keyboard use, and the
-          detail sheet's explicit Erledigen/Wieder-öffnen button (opened by
-          tapping the row) remains a non-gesture path everywhere.
-          A reference is never actionable, so it renders a static glyph in
-          this slot instead -- no lifecycle affordance at all.
-        */}
-        {isReference ? (
-          <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true" />
-        ) : (
-          <button
-            type="button"
-            className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
-            aria-label={isDone || isCancelled ? strings.reopen : strings.done}
-            disabled={busy}
-            onClick={() => dispatch({ type: "task.toggleDone", task })}
-          >
-            {isDone ? "✓" : isCancelled ? "×" : ""}
-          </button>
-        )}
+        ) : null}
+        <div className={`task-row-leading-controls${organizeEnabled ? " has-drag-handle" : ""}${isReference ? " has-reference-glyph" : ""}`}>
+          {/*
+            Hidden on coarse pointers (touch) via CSS only — see
+            `.task-row-checkbox` in styles/index.css — since swiping/chips
+            cover that role there. Kept for mouse/keyboard users, and the
+            detail sheet's explicit Erledigen/Wieder-öffnen button (opened by
+            tapping the row) remains a non-gesture path everywhere.
+            A reference is never actionable, so it renders a static glyph in
+            this slot instead -- no lifecycle affordance at all.
+          */}
+          {isReference ? (
+            <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
+              <IconActionGlyph kind="notes" />
+            </span>
+          ) : (
+            <button
+              type="button"
+              className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
+              aria-label={isDone || isCancelled ? strings.reopen : strings.done}
+              disabled={busy}
+              onClick={() => dispatch({ type: "task.toggleDone", task })}
+            >
+              {isDone ? "✓" : isCancelled ? "×" : ""}
+            </button>
+          )}
+          {organizeEnabled ? (
+            // The one always-visible structural control per row: press and
+            // drag it to move the task. Arrow keys move the task directly
+            // while it has focus, without any pointer at all — a plain
+            // click/tap does not open any separate mode.
+            <button
+              type="button"
+              className="task-row-drag-handle"
+              aria-label={`${strings.moveTask}: ${task.title}`}
+              title={strings.moveTask}
+              aria-busy={isMoving}
+              disabled={outlineRefreshing}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                organize?.beginDrag(taskProp.id, e.clientX, e.clientY);
+              }}
+              onClick={() => {
+                // A real drag ends with a click on the handle; swallow it so
+                // it has no further effect.
+                organize?.consumeDragClick();
+              }}
+              onKeyDown={(e) => {
+                const direction = KEY_DIRECTIONS[e.key];
+                if (!direction) return;
+                e.preventDefault();
+                organize?.moveBy(taskProp.id, direction);
+              }}
+            >
+              ⠿
+            </button>
+          ) : null}
+        </div>
         <div className="task-row-main-wrap">
           {isReference ? (
             <MaterialCard

@@ -899,7 +899,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(taskSection).getByRole("button", {
       name: `${strings.openMaterial}: Versicherungsbedingungen`,
     })).toBeVisible();
-    expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
+    expect(within(taskSection).getByRole("article").querySelector(".material-card-icon")).toBeTruthy();
     expect(within(taskSection).getByText("Versicherung prüfen")).toBeVisible();
     expect(within(taskSection).getByRole("link", {
       name: `${strings.openLink}: insurance.example`,
@@ -944,6 +944,7 @@ describe("ProjectDetailPage task explanations", () => {
       name: `${strings.openMaterial}: Lieferantenliste`,
     })).toBeVisible();
     expect(within(taskSection).getByText(strings.materialLabel)).toBeVisible();
+    expect(within(taskSection).getByRole("article").querySelector(".material-card-icon")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: strings.projectAiPromptCreate }));
     const composer = await screen.findByRole("dialog", { name: strings.projectAiPromptTitle });
     expect(within(composer).getByRole("checkbox", { name: "Lieferantenliste" })).not.toBeChecked();

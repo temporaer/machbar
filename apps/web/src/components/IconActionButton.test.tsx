@@ -27,4 +27,11 @@ describe("IconActionButton", () => {
     expect(container.querySelector("path[d='M5 7h14M9.5 7V4.5h5V7M7 7l1 13h8l1-13']")).not.toBeInTheDocument();
     expect(container.querySelector("path[d='M19.5 10a7.5 7.5 0 10.2 3.5']")).toBeInTheDocument();
   });
+
+  it("provides a deterministic document glyph for reference materials", () => {
+    const { container } = render(<IconActionGlyph kind="notes" />);
+
+    expect(container.querySelector("svg")).toBeInTheDocument();
+    expect(container.querySelector("path[d='M5 3.5h10l4 4V20H5zM15 3.5V8h4M8 12h8M8 16h6']")).toBeInTheDocument();
+  });
 });

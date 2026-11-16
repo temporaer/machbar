@@ -3641,6 +3641,12 @@ details[open] > .disclosure-summary::after {
     display: none;
   }
 
+  .task-row-leading-controls:not(.has-drag-handle):not(.has-reference-glyph) {
+    flex-basis: 0;
+    width: 0;
+    gap: 0;
+  }
+
   /*
    * The 44px left padding below aligns these panels' content under the
    * checkbox column above them. On coarse-pointer (touch) devices that
@@ -4358,36 +4364,37 @@ details[open] > .disclosure-summary::after {
 }
 
 .material-card-inline {
-  padding: 6px 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .material-card-inline .material-card-heading {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 6px;
+  display: flex;
+  gap: 8px;
 }
 
 .material-card-inline .material-card-icon {
-  grid-row: 1;
+  display: none;
 }
 
 .material-card-inline .material-card-kind {
-  align-self: center;
-  color: var(--color-text-muted);
-  font-size: 0.7rem;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .material-card-inline .material-card-open {
-  grid-column: 1 / -1;
-  margin-top: 2px;
+  flex: 1;
 }
 
 .material-card-icon {
   flex: 0 0 auto;
   color: var(--color-text-muted);
+}
+
+.material-card-icon svg,
+.task-row-reference-glyph svg {
+  width: 18px;
+  height: 18px;
 }
 
 .material-card-open {
@@ -4413,6 +4420,20 @@ details[open] > .disclosure-summary::after {
 .material-card-inline .material-card-source,
 .material-card-inline .material-card-notes {
   margin-inline-start: 0;
+}
+
+.task-row-reference-glyph {
+  border: 0;
+  border-radius: 0;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+@media (pointer: coarse) {
+  .task-row-reference-glyph {
+    display: flex;
+  }
 }
 
 .material-card-source {
@@ -4475,6 +4496,14 @@ details[open] > .disclosure-summary::after {
  */
 .task-outline {
   position: relative;
+}
+
+.task-row-leading-controls {
+  display: flex;
+  flex: 0 0 26px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .task-row-drag-handle {
