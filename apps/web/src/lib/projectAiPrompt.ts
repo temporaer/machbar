@@ -1,7 +1,6 @@
 import type {
   Definition,
   FootnoteDefinition,
-  FootnoteReference,
   ImageReference,
   LinkReference,
   Parent,
@@ -30,7 +29,6 @@ function resolveMarkdownReferences(markdown: string, sectionId: string): string 
   const definitions = new Map<string, Definition>();
   const definitionNodes: Definition[] = [];
   const footnoteDefinitions: FootnoteDefinition[] = [];
-  const footnoteReferences: FootnoteReference[] = [];
 
   const visit = (parent: Parent) => {
     for (const child of parent.children) {
@@ -40,8 +38,6 @@ function resolveMarkdownReferences(markdown: string, sectionId: string): string 
       } else if (child.type === "footnoteDefinition") {
         footnoteDefinitions.push(child);
         visit(child);
-      } else if (child.type === "footnoteReference") {
-        footnoteReferences.push(child);
       } else if ("children" in child) {
         visit(child);
       }
@@ -49,7 +45,12 @@ function resolveMarkdownReferences(markdown: string, sectionId: string): string 
   };
   visit(tree);
 
-  const collectReferenceEdits = (nodes: Parent["children"]): TextEdit[] => {
+  const scopedFootnoteIdentifier = (identifier: string) =>
+    `machbar-${sectionId}-${Array.from(identifier, (character) =>
+      character.codePointAt(0)!.toString(16),
+    ).join("-")}`;
+
+  const collectInlineEdits = (nodes: Parent["children"]): TextEdit[] => {
     const edits: TextEdit[] = [];
     for (const node of nodes) {
       if (node.type === "linkReference" || node.type === "imageReference") {
@@ -63,10 +64,20 @@ function resolveMarkdownReferences(markdown: string, sectionId: string): string 
             text: renderReference(node, definition, start),
           });
         } else if ("children" in node) {
-          edits.push(...collectReferenceEdits(node.children));
+          edits.push(...collectInlineEdits(node.children));
+        }
+      } else if (node.type === "footnoteReference") {
+        const start = node.position?.start.offset;
+        const end = node.position?.end.offset;
+        if (start !== undefined && end !== undefined) {
+          edits.push({
+            start,
+            end,
+            text: `[^${scopedFootnoteIdentifier(node.identifier)}]`,
+          });
         }
       } else if ("children" in node) {
-        edits.push(...collectReferenceEdits(node.children));
+        edits.push(...collectInlineEdits(node.children));
       }
     }
     return edits;
@@ -94,7 +105,7 @@ function resolveMarkdownReferences(markdown: string, sectionId: string): string 
 
     const labelStart = reference.children[0]?.position?.start.offset ?? start + 1;
     const labelEnd = reference.children.at(-1)?.position?.end.offset ?? labelStart;
-    const nestedEdits = collectReferenceEdits(reference.children).map((edit) => ({
+    const nestedEdits = collectInlineEdits(reference.children).map((edit) => ({
       ...edit,
       start: edit.start - labelStart,
       end: edit.end - labelStart,
@@ -106,22 +117,7 @@ function resolveMarkdownReferences(markdown: string, sectionId: string): string 
     return `[${label}]${destination}`;
   };
 
-  const edits = collectReferenceEdits(tree.children);
-  const scopedFootnoteIdentifier = (identifier: string) =>
-    `machbar-${sectionId}-${Array.from(identifier, (character) =>
-      character.codePointAt(0)!.toString(16),
-    ).join("-")}`;
-  for (const reference of footnoteReferences) {
-    const start = reference.position?.start.offset;
-    const end = reference.position?.end.offset;
-    if (start !== undefined && end !== undefined) {
-      edits.push({
-        start,
-        end,
-        text: `[^${scopedFootnoteIdentifier(reference.identifier)}]`,
-      });
-    }
-  }
+  const edits = collectInlineEdits(tree.children);
   for (const definition of footnoteDefinitions) {
     const start = definition.position?.start.offset;
     if (start === undefined) continue;

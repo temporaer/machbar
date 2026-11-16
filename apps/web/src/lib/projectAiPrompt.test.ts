@@ -211,6 +211,30 @@ describe("buildProjectAiPromptText", () => {
     expect(new Set(rendered.footnoteDefinitionIds).size).toBe(2);
   });
 
+  it("preserves footnotes in reference-link labels", () => {
+    const task = makeTask({
+      id: 18,
+      title: "Quelle mit Fußnote",
+      kind: "reference",
+      notes: [
+        "[Claim[^1]][src]",
+        "",
+        "[^1]: Important annotation",
+        "",
+        "[src]: https://example.test/source",
+      ].join("\n"),
+    });
+
+    const markdown = buildProjectAiPromptText("", [
+      { task, parentTitles: [] },
+    ]);
+    const rendered = renderedElements(markdown);
+
+    expect(rendered.links[0]).toBe("https://example.test/source");
+    expect(rendered.footnoteReferenceHrefs).toHaveLength(1);
+    expect(rendered.footnoteBodies).toEqual(["Important annotation ↩"]);
+  });
+
   it("removes duplicate reference definitions before combining notes", () => {
     const first = makeTask({
       id: 12,

@@ -375,6 +375,31 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
         expect(headingBounds!.x + headingBounds!.width).toBeLessThanOrEqual(actionBounds!.x);
         expect(actionBounds!.y).toBeGreaterThanOrEqual(summaryBounds!.y - 1);
         expect(actionBounds!.y + actionBounds!.height).toBeLessThanOrEqual(summaryBounds!.y + summaryBounds!.height + 1);
+        if (kind === "project" && await section.locator(".project-content-tasks").count()) {
+          await section.locator(".project-content-tasks").scrollIntoViewIfNeeded();
+          const projectSummary = section.locator(".project-content-tasks > summary");
+          const chevron = await projectSummary.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return {
+              right: rect.right - Number.parseFloat(style.paddingRight),
+              paddingRight: Number.parseFloat(style.paddingRight),
+            };
+          });
+          expect(actionBounds!.x).toBeGreaterThanOrEqual(chevron.right);
+          const projectSummaryBounds = await projectSummary.boundingBox();
+          const wasOpen = await section.locator(".project-content-tasks").evaluate(
+            node => (node as HTMLDetailsElement).open,
+          );
+          await projectSummary.click({
+            position: {
+              x: projectSummaryBounds!.width - chevron.paddingRight - 4,
+              y: projectSummaryBounds!.height / 2,
+            },
+          });
+          if (wasOpen) await expect(section.locator(".project-content-tasks")).not.toHaveAttribute("open");
+          else await expect(section.locator(".project-content-tasks")).toHaveAttribute("open", "");
+        }
         for (const button of await actionGroup.locator("button").all()) {
           const buttonBounds = await button.boundingBox();
           expect(buttonBounds!.height).toBeGreaterThanOrEqual(44);
