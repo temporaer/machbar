@@ -38,7 +38,7 @@ import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { getHouseholdAiContext } from "../aiContext.js";
-import { householdToday, householdTimezone } from "../domain/householdCalendar.js";
+import { householdToday, householdTimezone, localDate } from "../domain/householdCalendar.js";
 import { isIsoCalendarDate, addCalendarDays } from "../domain/calendarDate.js";
 import { backIntervention, getGoal, insertAssessment, startIntervention } from "../domain/goals.js";
 import { activeHomeAssistantIntegration } from "../integrations/homeAssistant.js";
@@ -614,6 +614,10 @@ export function acceptAssessmentProposal(
       requestId,
     });
   }
+  const digestWindowEnd =
+    intervention.status === "concluded" && intervention.concludedAt
+      ? localDate(new Date(intervention.concludedAt), householdTimezone(db))
+      : payload.windowEnd;
   // One atomic write: the accepted review becomes a real coach-sourced
   // assessment row through the canonical Phase 1 insert path.
   return insertAssessment(
@@ -636,7 +640,7 @@ export function acceptAssessmentProposal(
       rationaleMd: overrides.rationaleMd ?? proposal.rationaleMd,
       countedItemIds: overrides.countedItemIds ?? proposal.countedItemIds,
       digestWindowStart: payload.windowStart,
-      digestWindowEnd: payload.windowEnd,
+      digestWindowEnd,
       assessedAt: overrides.assessedAt,
     },
     "coach",

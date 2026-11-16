@@ -12,6 +12,7 @@ import type {
 import * as schema from "../src/db/schema.js";
 import { buildReflectionBriefing } from "../src/reflection/briefing.js";
 import { summarizeAssessDigest, assessCandidateItemIds } from "../src/goals/coachPrompt.js";
+import { householdTimezone, localDate } from "../src/domain/householdCalendar.js";
 import { closeTestContext, createTestContext, insertTestTask, type TestContext } from "./helpers.js";
 
 describe("Goals coach AI passes (Phase 3)", () => {
@@ -457,7 +458,11 @@ describe("Goals coach AI passes (Phase 3)", () => {
     const accept = () => ctx.app.inject({ method: "POST", url: `/api/interventions/${intervention.id}/assess/${requested.requestId}/accept`, headers, payload: {} });
     const accepted = await accept();
     expect(accepted.statusCode, accepted.body).toBe(201);
-    expect(accepted.json()).toMatchObject({ decision: "stop", source: "coach", digestWindowEnd: ended.concludedAt.slice(0, 10) });
+    expect(accepted.json()).toMatchObject({
+      decision: "stop",
+      source: "coach",
+      digestWindowEnd: localDate(new Date(ended.concludedAt), householdTimezone(ctx.handle.db)),
+    });
     expect((await accept()).json().id).toBe(accepted.json().id);
     const updated = (await ctx.app.inject({ method: "GET", url: `/api/goals/${goal.id}`, headers })).json().interventions[0];
     expect(updated).toMatchObject({ status: "concluded", revision: ended.revision, concludedAt: ended.concludedAt, derivedState: "reviewed" });

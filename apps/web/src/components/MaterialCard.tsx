@@ -18,11 +18,13 @@ export function MaterialCard({
   context,
   paperlessUiBaseUrl,
   keyboardNavigable = false,
+  registerWorkItem,
 }: {
   task: Task;
   context?: string | undefined;
   paperlessUiBaseUrl?: string | null;
   keyboardNavigable?: boolean;
+  registerWorkItem?: boolean;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
@@ -31,11 +33,12 @@ export function MaterialCard({
   return (
     <article
       className="material-card"
-      data-workitem-id={keyboardNavigable ? task.id : undefined}
-      data-workitem-role={keyboardNavigable ? "task" : undefined}
+      data-workitem-id={keyboardNavigable && registerWorkItem !== false ? task.id : undefined}
+      data-workitem-role={keyboardNavigable && registerWorkItem !== false ? "task" : undefined}
     >
       <div className="material-card-heading">
         <span className="material-card-icon" aria-hidden="true">🗎</span>
+        <span className="material-card-kind">{strings.materialLabel}</span>
         <button
           type="button"
           className={`material-card-open${keyboardNavigable ? " task-row-main" : ""}`}

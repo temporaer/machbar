@@ -868,7 +868,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await screen.findByText("Compact shared");
     const compact = container.querySelector(".task-row-content.compact")!;
     expect(within(compact as HTMLElement).getByRole("button", { name: "Gemeinsam – Zuständigkeit wählen" })).toBeInTheDocument();
-    const refRow = screen.getByText("Material").closest(".task-row-content")!;
+    const refRow = screen.getByRole("button", { name: "Material öffnen: Material" }).closest(".task-row-content")!;
     expect(refRow.querySelector(".task-row-owner-avatar")).toBeNull();
     expect(refRow).not.toHaveClass("has-owner");
   });
