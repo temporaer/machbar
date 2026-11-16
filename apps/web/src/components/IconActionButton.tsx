@@ -30,7 +30,8 @@ export type IconActionKind =
   | "recurrence"
   | "discard"
   | "places"
-  | "work";
+  | "work"
+  | "add";
 
 export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
   const common = {
@@ -163,6 +164,8 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
           <rect x="3.5" y="7.5" width="17" height="12" rx="1.8" {...common} />
           <path d="M8.5 7.5V6a2 2 0 012-2h3a2 2 0 012 2v1.5M3.5 12.5h17" {...common} />
         </>
+      ) : kind === "add" ? (
+        <path d="M12 5v14M5 12h14" {...common} />
       ) : (
         <>
           <path d="M4 6h16M4 12h16M4 18h16" {...common} />

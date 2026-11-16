@@ -68,14 +68,12 @@ function AddMaterialButton() {
   const { captureOpen } = useInteractionScope();
 
   return (
-    <button
-      type="button"
-      className="btn btn-sm"
+    <IconActionButton
+      kind="add"
+      label={strings.addMaterial}
       disabled={!captureOpen}
       onClick={() => captureOpen?.()}
-    >
-      {strings.addMaterial}
-    </button>
+    />
   );
 }
 

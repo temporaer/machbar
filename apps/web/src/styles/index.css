@@ -5715,6 +5715,7 @@ details[open] > .disclosure-summary::after {
   min-height: 44px; padding-inline-end: 52px;
 }
 .detail-disclosure-actions { position: absolute; inset-block-start: 14px; inset-inline-end: 14px; }
+.detail-disclosure-actions button { min-block-size: 44px; min-inline-size: 44px; }
 .detail-disclosure-with-actions:has(> .detail-empty-content) > .detail-disclosure-actions { inset-block-start: 6px; }
 .task-detail-disclosure > summary { min-height: 44px; }
 .task-detail-disclosure-heading { overflow-wrap: anywhere; }
