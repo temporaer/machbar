@@ -113,7 +113,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     vi.useRealTimers();
   });
 
-  it("removes an omitted child and its drag target after server regrouping", async () => {
+  it("keeps an omitted child inert for confirmation without a drag target", async () => {
     const child = makeTask({ id: 2, title: "Retained child", parentTaskId: 1, projectId: 5 });
     const parent = makeTask({ id: 1, title: "Parent", projectId: 5, children: [child] });
     mockedApi.completeTask.mockResolvedValue({ ...child, status: "done", revision: 2 });
@@ -122,7 +122,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
     await act(async () => { await flushMicrotasks(); });
     rerender(<TaskOutline tasks={[{ ...parent, children: [] }]} emptyMessage="Empty" organizable />);
-    expect(screen.queryByText("Retained child")).not.toBeInTheDocument();
+    expect(screen.getByText("Retained child").closest("li")).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("button", { name: "Verschieben: Retained child" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verschieben: Parent" })).toBeInTheDocument();
   });
@@ -644,7 +644,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     rerender(<TaskOutline tasks={[tasks[1]!, tasks[2]!]} emptyMessage="Nichts da" organizable />);
 
     await waitFor(() => expect(screen.getAllByRole("button", { name: /^Verschieben:/ })).toHaveLength(2));
-    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    expect(screen.getByText("Alpha").closest("li")).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("button", { name: "Verschieben: Alpha" })).toBeNull();
   });
 

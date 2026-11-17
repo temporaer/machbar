@@ -3,6 +3,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
+import { TaskListTransitionDepartures } from "./TaskOutline";
+import { TaskListTransitionFeedbackProvider } from "../lib/taskListTransitionFeedback";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
 
@@ -297,13 +299,16 @@ describe("TaskOutline", () => {
       expect(parent.children.map(task => task.position)).toEqual([7, 1]);
     });
 
-    it("moves a task between server sections and removes it when omitted", async () => {
+    it("moves a task between server sections and briefly confirms it when omitted", async () => {
       const moving = makeTask({ id: 181, title: "Moving action" });
       mockedApi.completeTask.mockResolvedValue(makeTask({ ...moving, status: "done" }));
-      const outlines = (inA: boolean, inB: boolean) => <>
-        <TaskOutline tasks={inA ? [moving] : []} emptyMessage="Empty A" compactDescendants />
-        <TaskOutline tasks={inB ? [moving] : []} emptyMessage="Empty B" compactDescendants />
-      </>;
+      const outlines = (inA: boolean, inB: boolean) => (
+        <TaskListTransitionFeedbackProvider externalDepartures>
+          <TaskOutline tasks={inA ? [moving] : []} emptyMessage="Empty A" compactDescendants />
+          <TaskOutline tasks={inB ? [moving] : []} emptyMessage="Empty B" compactDescendants />
+          <TaskListTransitionDepartures />
+        </TaskListTransitionFeedbackProvider>
+      );
       const { rerender } = renderWithProviders(outlines(true, false));
       expect(await screen.findAllByText("Moving action")).toHaveLength(1);
       rerender(outlines(false, true));
@@ -313,11 +318,13 @@ describe("TaskOutline", () => {
       await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
       expect(screen.getAllByText("Moving action")).toHaveLength(1);
       rerender(outlines(false, false));
-      expect(screen.queryByText("Moving action")).not.toBeInTheDocument();
+      const departure = screen.getByText("Moving action").closest("li")!;
+      expect(departure).toHaveAttribute("aria-disabled", "true");
+      expect(screen.getAllByText("Moving action")).toHaveLength(1);
       expect(screen.getByText("Empty A")).toBeInTheDocument();
     });
 
-    it.each(["member", "scope"])("does not retain removed rows across a logical %s selection change", async selection => {
+    it.each(["member", "scope"])("releases the departure on a logical %s selection change", async selection => {
       const task = makeTask({ id: 191, title: "Previous selection action" });
       mockedApi.completeTask.mockResolvedValue(makeTask({ ...task, status: "done" }));
       const outline = (key: string, tasks: typeof task[]) =>
@@ -327,13 +334,13 @@ describe("TaskOutline", () => {
       await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
       await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
       rerender(outline(`${selection}-before`, []));
-      expect(screen.queryByText("Previous selection action")).not.toBeInTheDocument();
+      expect(screen.getByText("Previous selection action").closest("li")).toHaveAttribute("aria-disabled", "true");
       rerender(outline(`${selection}-after`, []));
       expect(screen.queryByText("Previous selection action")).not.toBeInTheDocument();
       expect(screen.getByText("New selection empty")).toBeInTheDocument();
     });
 
-    it("removes a completed descendant after server refresh without disturbing other outlines", async () => {
+    it("confirms a completed descendant after server refresh without disturbing other outlines", async () => {
       const child = makeTask({ id: 161, title: "Completed child" });
       const parent = makeTask({ id: 160, title: "Attention parent", children: [child] });
       const other = makeTask({ id: 162, title: "Other ready work" });
@@ -349,7 +356,7 @@ describe("TaskOutline", () => {
       expect(screen.getAllByText("Completed child")).toHaveLength(1);
       // Today now filters terminal execution descendants out of refreshed trees.
       rerender(outlines([]));
-      expect(screen.queryByText("Completed child")).not.toBeInTheDocument();
+      expect(screen.getByText("Completed child").closest("li")).toHaveAttribute("aria-disabled", "true");
       expect(screen.getByText("Attention parent")).toBeInTheDocument();
       expect(screen.getByText("Other ready work")).toBeInTheDocument();
     });

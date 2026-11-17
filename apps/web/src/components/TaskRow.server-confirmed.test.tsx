@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
@@ -23,10 +23,10 @@ describe("authoritative task row rendering", () => {
     expect(screen.getByText("Fresh parent")).toBeInTheDocument();
   });
   it.each(["leave_open", "complete_children", "cancel_children"] as const)(
-    "forwards the explicit %s descendant policy without changing visible domain state before refetch",
+    "forwards the explicit %s descendant policy and shows pending status feedback",
     async policy => {
       const task = makeTask({ title: "Parent", children: [makeTask({ id: 2, title: "Child" })] });
-      mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: 2 });
+      mockedApi.completeTask.mockImplementation(() => new Promise(() => {}));
       const { useTaskActions } = await import("../lib/useTaskActions");
       function Controls() {
         const actions = useTaskActions();
@@ -35,7 +35,9 @@ describe("authoritative task row rendering", () => {
       renderWithProviders(<><TaskOutline tasks={[task]} emptyMessage="Empty" /><Controls /></>);
       await act(async () => fireEvent.click(screen.getByRole("button", { name: "Confirm policy" })));
       expect(mockedApi.completeTask).toHaveBeenCalledWith(task.id, policy, undefined, task.revision);
-      expect(screen.getByText("Parent")).not.toHaveClass("done");
+      const parentRow = screen.getByText("Parent").closest("li")!;
+      expect(within(parentRow).getByText("Parent")).toHaveClass("done");
+      expect(within(parentRow).getByRole("status")).toHaveTextContent("Wird erledigt");
       expect(screen.getByText("Child")).not.toHaveClass("done");
     },
   );

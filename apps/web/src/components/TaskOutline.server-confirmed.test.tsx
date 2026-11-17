@@ -126,6 +126,19 @@ describe("server-confirmed compiled task rows", () => {
     expect(clearTimer).toHaveBeenCalled();
     clearTimer.mockRestore();
   });
+  it("releases the task snapshot immediately when a refreshed read denies access", async () => {
+    const task = makeTask({ title: "No longer visible task" });
+    const denied = new Error("forbidden");
+    denied.name = "ApiError";
+    Object.assign(denied, { status: 403 });
+    mockedApi.searchTasks.mockResolvedValueOnce([task]).mockRejectedValue(denied);
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: 2 });
+    renderWithProviders(<CompiledSection />);
+    await screen.findByText(task.title);
+    fireEvent.click(screen.getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(screen.queryByText(task.title)).not.toBeInTheDocument());
+  });
   it("keeps the authoritative row and shows the rejection without refetching on network failure", async () => {
     const task = makeTask({ title: "Unchanged server row" });
     mockedApi.searchTasks.mockResolvedValue([task]);

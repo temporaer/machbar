@@ -109,8 +109,8 @@ successful completion, cancellation, or Inbox classification. It stores only
 the departing row's display snapshot, never predicts query values or
 membership; current rows always render fresh query data. Refreshes cannot
 resurrect a departed row, and newer revisions, navigation/unmount, or identity
-retirement release the presentation immediately. This exception is not a
-general-purpose retention or reconciliation mechanism.
+retirement or a read-access denial release the presentation immediately. This
+exception is not a general-purpose retention or reconciliation mechanism.
 
 ### Read invalidation
 

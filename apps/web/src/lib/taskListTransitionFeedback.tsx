@@ -9,7 +9,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Task } from "@machbar/shared";
+import { isReadAccessError } from "./errorMessage";
 import { flattenTasks } from "./taskHelpers";
 import { useTaskActions, type TaskTransitionFeedbackEvent } from "./useTaskActions";
 
@@ -46,15 +48,20 @@ function currentTasks(outlines: Map<string, ReadonlyMap<number, Task>>) {
 export function TaskListTransitionFeedbackProvider({
   children,
   externalDepartures = false,
+  viewIdentity,
 }: {
   children: ReactNode;
   externalDepartures?: boolean;
+  viewIdentity?: string;
 }) {
   const actions = useTaskActions();
+  const queryClient = useQueryClient();
   const outlines = useRef(new Map<string, ReadonlyMap<number, Task>>());
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const nextToken = useRef(0);
   const entriesRef = useRef(new Map<number, StoredTransition>());
+  const retiredTransitions = useRef(new Set<number>());
+  const viewIdentityRef = useRef(viewIdentity);
   const [entries, setEntries] = useState(entriesRef.current);
   const [, setRegistryVersion] = useState(0);
 
@@ -62,6 +69,14 @@ export function TaskListTransitionFeedbackProvider({
     entriesRef.current = next;
     setEntries(next);
   }, []);
+  const retireEntries = useCallback(() => {
+    for (const [taskId, entry] of entriesRef.current) {
+      if (entry.event.phase === "pending") retiredTransitions.current.add(taskId);
+    }
+    for (const timer of timers.current.values()) clearTimeout(timer);
+    timers.current.clear();
+    replaceEntries(new Map());
+  }, [replaceEntries]);
 
   const remove = useCallback((taskId: number, token?: number) => {
     const current = entriesRef.current.get(taskId);
@@ -111,7 +126,22 @@ export function TaskListTransitionFeedbackProvider({
     };
   }, [replaceEntries]);
 
+  useLayoutEffect(() => {
+    if (viewIdentityRef.current === viewIdentity) return;
+    viewIdentityRef.current = viewIdentity;
+    retireEntries();
+  }, [retireEntries, viewIdentity]);
+
+  useEffect(() => queryClient.getQueryCache().subscribe(event => {
+    if (event.type === "updated" && event.action.type === "error" &&
+      isReadAccessError(event.action.error)) retireEntries();
+  }), [queryClient, retireEntries]);
+
   useLayoutEffect(() => actions.subscribeTransitionFeedback(event => {
+    if (retiredTransitions.current.has(event.taskId)) {
+      if (event.phase !== "pending") retiredTransitions.current.delete(event.taskId);
+      return;
+    }
     const task = currentTasks(outlines.current).get(event.taskId);
     const previous = entriesRef.current.get(event.taskId);
     if (event.phase === "failure") {

@@ -153,7 +153,7 @@ export function TodayPage() {
   return (
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
-      <TaskListTransitionFeedbackProvider key={agendaSelectionKey} externalDepartures>
+      <TaskListTransitionFeedbackProvider externalDepartures viewIdentity={agendaSelectionKey}>
       <div className="today-page">
         <PageHeader
           title={strings.today}

@@ -1413,8 +1413,8 @@ does not delay fresh query values, alter membership/order, or retain an
 actionable copy. Recurring completion labels the handled occurrence while
 leaving the continuing task's status actionable. Failure removes the transient
 presentation and keeps the authoritative row. Newer revisions and view,
-navigation, or identity retirement dispose it; ordinary refreshes cannot
-reintroduce a detached row.
+navigation, identity retirement, or a read-access denial dispose it; ordinary
+refreshes cannot reintroduce a detached row.
 Focused editors live in the canonical workflow/detail hosts rather than in the
 row they were opened from. Ordinary refreshes/network errors preserve drafts;
 access revocation deliberately ends the workflow and discards its choices.
