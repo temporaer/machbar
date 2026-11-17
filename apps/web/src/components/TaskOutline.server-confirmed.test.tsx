@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
@@ -18,6 +18,15 @@ function CompiledSection() {
 
 describe("server-confirmed compiled task rows", () => {
   beforeEach(() => { vi.clearAllMocks(); window.localStorage.clear(); });
+  it("announces completion while the server command is still pending", async () => {
+    const task = makeTask({ title: "Slow server row" });
+    mockedApi.searchTasks.mockResolvedValue([task]);
+    mockedApi.completeTask.mockImplementation(() => new Promise(() => {}));
+    renderWithProviders(<CompiledSection />);
+    const title = await screen.findByText(task.title);
+    fireEvent.click(within(title.closest("li")!).getByRole("button", { name: "Erledigt" }));
+    expect(within(title.closest("li")!).getByRole("status")).toHaveTextContent("Wird erledigt");
+  });
   it("keeps server content pending, then removes a completed row on refetch without a timer", async () => {
     const task = makeTask({ title: "Server row" });
     mockedApi.searchTasks.mockResolvedValueOnce([task]).mockResolvedValue([]);
