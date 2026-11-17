@@ -1267,7 +1267,11 @@ nicht aktiv** section, and completed/archived stories remain folded.
   `CompleteWithCriteriaSheet`, then dispatch the same `task.toggleDone`
   command after the criteria are checked. The API independently validates
   criteria inside the canonical task completion transaction.
-- Every row shows its server-confirmed status; pending actions disable conflicting controls.
+- Every row's domain status and membership come from server reads. Accepted
+  lifecycle commands immediately announce a status-appropriate pending state;
+  success may keep an item that left the view as an inert display row for
+  about three seconds. Recurring completion confirms only the occurrence and
+  keeps the continuing task actionable.
 
 #### Filtering and ordering the list
 
@@ -1392,15 +1396,25 @@ action contract.
 
 ### Server-confirmed interactions
 
-The approved simplification deliberately removes optimistic domain updates,
-confirmed DTO overlays, timed row retention and interaction leases. A command
-shows pending feedback and prevents another command for that item until its
-request settles. Failure leaves server data unchanged and displays the error;
-success invalidates reads. Backend revisions still reject stale writes.
+The approved simplification removes optimistic domain updates, confirmed DTO
+overlays, placement snapshots and interaction leases. A command shows pending
+feedback and prevents another command for that item until its request settles.
+Failure leaves server data unchanged, restores available controls and displays
+the inline error; success invalidates reads. Backend revisions still reject
+stale writes.
 
 Lists, Review cards, tag groups and outlines immediately adopt the next server
-result's values, membership and ordering. Rows may move or disappear after a
-successful action; there is no four-second undo/reopen placement window.
+result's values, membership and ordering. The one bounded task-row exception is
+`TaskListTransitionFeedbackProvider`: it announces pending and successful
+completion, cancellation, and Inbox-to-actionable transitions. If a successful
+task leaves all lists registered to that view, it may retain a non-actionable
+display snapshot for three seconds so fast responses remain perceivable. This
+does not delay fresh query values, alter membership/order, or retain an
+actionable copy. Recurring completion labels the handled occurrence while
+leaving the continuing task's status actionable. Failure removes the transient
+presentation and keeps the authoritative row. Newer revisions and view,
+navigation, or identity retirement dispose it; ordinary refreshes cannot
+reintroduce a detached row.
 Focused editors live in the canonical workflow/detail hosts rather than in the
 row they were opened from. Ordinary refreshes/network errors preserve drafts;
 access revocation deliberately ends the workflow and discards its choices.

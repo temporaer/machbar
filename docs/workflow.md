@@ -78,8 +78,15 @@ later.
 
 Changes wait for the server rather than predicting their outcome. While a
 command is pending, conflicting actions for that item are disabled. After
-success, views reload and rows may move to another group or disappear from the
-current view immediately; there is no timed keep-in-place window.
+an accepted task lifecycle command, its row immediately shows the intended
+status and a pending announcement. On success, completion, cancellation, or
+Inbox-to-actionable changes that remove it from the current view remain briefly
+visible (about three seconds) as an inert confirmation before disappearing.
+Recurring completion confirms the occurrence without marking the continuing
+task done. A failed command keeps the real status, restores controls, and shows
+the inline error. Query reads remain authoritative for task values and view
+membership; this brief display does not delay a move or retain an actionable
+copy.
 
 Ordinary refreshes and network failures preserve authored editor drafts.
 Losing access ends the focused editor and discards its choices; reopening

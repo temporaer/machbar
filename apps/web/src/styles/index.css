@@ -3663,7 +3663,8 @@ details[open] > .disclosure-summary::after {
   }
 }
 
-.task-row-checkbox.done {
+.task-row-checkbox.done,
+.task-row-checkbox.occurrence {
   background: var(--color-success-strong);
   border-color: var(--color-success-strong);
   color: var(--color-success-contrast);
@@ -4198,6 +4199,40 @@ details[open] > .disclosure-summary::after {
 .task-row-title.cancelled {
   text-decoration: line-through;
   color: var(--color-text-muted);
+}
+
+.task-row-transition-pending .task-row-content {
+  border-color: color-mix(in srgb, var(--task-row-accent) 48%, var(--color-border));
+}
+
+.task-row-transition-feedback {
+  grid-column: 1;
+  padding: 2px 12px 8px 48px;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.task-row-transition-feedback.confirmed {
+  color: var(--task-row-accent);
+}
+
+.task-row-content.compact ~ .task-row-transition-feedback {
+  padding-left: 8px;
+}
+
+.task-row[aria-disabled="true"] {
+  cursor: default;
+}
+
+.task-transition-departures {
+  margin-block: 8px;
+}
+
+@media (pointer: coarse) {
+  .task-row-transition-feedback {
+    padding-left: 8px;
+  }
 }
 
 .task-row-meta {

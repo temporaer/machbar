@@ -1,7 +1,14 @@
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { flattenTasks, orderTaskTree } from "../lib/taskHelpers";
+import { useIdentity } from "../lib/identity";
+import {
+  TaskListTransitionFeedbackProvider,
+  useRegisterTaskOutline,
+  useTaskListTransitionFeedback,
+  type TaskListTransition,
+} from "../lib/taskListTransitionFeedback";
 import { useTaskActions } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
@@ -49,7 +56,18 @@ export interface TaskOutlineProps {
   attentionTone?: AttentionTone;
 }
 
-export function TaskOutline({
+export function TaskOutline(props: TaskOutlineProps) {
+  const feedback = useTaskListTransitionFeedback();
+  const { authEnabled, authenticated, currentMemberId } = useIdentity();
+  if (feedback) return <TaskOutlineContent {...props} />;
+  return (
+    <TaskListTransitionFeedbackProvider key={`${authEnabled}:${authenticated}:${currentMemberId}`}>
+      <TaskOutlineContent {...props} />
+    </TaskListTransitionFeedbackProvider>
+  );
+}
+
+function TaskOutlineContent({
   tasks,
   emptyMessage,
   organizable = false,
@@ -62,12 +80,18 @@ export function TaskOutline({
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
+  const feedback = useTaskListTransitionFeedback();
+  const outlineId = useId();
   const organize = useOutlineOrganize(tasks, organizable);
 
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
   const roots = sorted;
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
-  if (roots.length === 0) return <EmptyState message={emptyMessage} />;
+  useRegisterTaskOutline(outlineId, organize.tasks);
+  const departures = feedback?.externalDepartures
+    ? []
+    : feedback?.departures(outlineId, actualIds) ?? [];
+  if (roots.length === 0 && departures.length === 0) return <EmptyState message={emptyMessage} />;
 
   const content = (
     <div className="task-outline" ref={organize.containerRef}>
@@ -86,6 +110,18 @@ export function TaskOutline({
             {...(attentionTone ? { attentionTone } : {})} />;
           return <OutlineOrganizeProvider key={task.id} value={actualIds.has(task.id) ? organize.value : null}>{row}</OutlineOrganizeProvider>;
         })}
+        {departures.map(transition => (
+          <TaskRow
+            key={`departing-${transition.event.taskId}`}
+            task={transition.task}
+            parentTask={null}
+            depth={0}
+            compactDescendants={compactDescendants}
+            departing
+            transition={transition}
+            {...(attentionTone ? { attentionTone } : {})}
+          />
+        ))}
       </ul>
       {organize.projection ? (
         <div
@@ -118,5 +154,26 @@ export function TaskOutline({
     <NextActionBadgeProvider value={nextActionInfo}>{content}</NextActionBadgeProvider>
   ) : (
     content
+  );
+}
+
+export function TaskListTransitionDepartures() {
+  const feedback = useTaskListTransitionFeedback();
+  const strings = useStrings();
+  const departures = feedback?.externalDepartures ? feedback.allDepartures() : [];
+  if (departures.length === 0) return null;
+  return (
+    <ul className="list task-transition-departures" aria-label={strings.recentlyChangedTasks}>
+      {departures.map((transition: TaskListTransition) => (
+        <TaskRow
+          key={`departing-${transition.event.taskId}`}
+          task={transition.task}
+          parentTask={null}
+          depth={0}
+          departing
+          transition={transition}
+        />
+      ))}
+    </ul>
   );
 }

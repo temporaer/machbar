@@ -7,6 +7,9 @@ interface ItemMutation<TResult> {
   id: number;
   mutate: () => Promise<TResult>;
   throwOnError?: boolean;
+  onStart?: () => void;
+  onSuccess?: (result: TResult) => void;
+  onError?: () => void;
 }
 
 /** Pending/error feedback only: server reads own every domain value and row. */
@@ -31,7 +34,7 @@ export function useItemMutations() {
   }, []);
 
   const run = useCallback(async <TResult,>({
-    id, mutate, throwOnError = false,
+    id, mutate, throwOnError = false, onStart, onSuccess, onError,
   }: ItemMutation<TResult>): Promise<TResult | undefined> => {
     if (!mounted.current) return undefined;
     if (inFlight.current.has(id)) {
@@ -43,8 +46,10 @@ export function useItemMutations() {
     inFlight.current.add(id);
     setPendingIds(current => new Set(current).add(id));
     clearError(id);
+    onStart?.();
     try {
       const result = await mutate();
+      onSuccess?.(result);
       // The captured refresh owner outlives a sheet, but cannot target a replacement identity.
       // Query errors remain read errors; the write has already committed.
       await Promise.resolve(bump()).catch(() => undefined);
@@ -54,6 +59,7 @@ export function useItemMutations() {
         setErrors(current => ({ ...current, [id]: localizedErrorMessage(error, strings) }));
         if (isReadAccessError(error) || isStaleWriteConflict(error)) bump();
       }
+      onError?.();
       if (throwOnError) throw error;
       return undefined;
     } finally {

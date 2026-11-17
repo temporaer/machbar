@@ -1243,6 +1243,21 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   completeWithCriteriaHint: "Alle Kriterien müssen abgehakt sein, bevor das Projekt abgeschlossen werden kann.",
   completeProjectAction: "Projekt abschließen",
   completeTaskAction: "Aufgabe abschließen",
+  taskTransitionPending: (status: TaskStatus) => {
+    if (status === "done") return "Wird erledigt …";
+    if (status === "cancelled") return "Wird verworfen …";
+    if (status === "actionable") return "Wird machbar …";
+    return status === "someday" ? "Wird auf später verschoben …" : "Wird in den Eingang verschoben …";
+  },
+  taskTransitionConfirmed: (status: TaskStatus) => {
+    if (status === "done") return "Erledigt";
+    if (status === "cancelled") return "Verworfen";
+    if (status === "actionable") return "Jetzt machbar";
+    return status === "someday" ? "Auf später verschoben" : "Im Eingang";
+  },
+  taskOccurrencePending: "Vorkommen wird erledigt …",
+  taskOccurrenceCompleted: "Vorkommen erledigt",
+  recentlyChangedTasks: "Gerade geänderte Aufgaben",
   taskCriteria: "Erledigt, wenn",
   taskCriteriaSummary: (checked: number, total: number) => `${checked}/${total} Kriterien`,
   taskCriteriaCompletionHint: "Alle Kriterien müssen abgehakt sein, bevor die Aufgabe abgeschlossen werden kann.",

@@ -7,7 +7,10 @@ import { TaskActionsProvider, useTaskActions } from "./useTaskActions";
 import { api } from "./api";
 import { makeTask } from "../test/fixtures";
 
-vi.mock("./api", () => ({ api: { updateTask: vi.fn(), completeTask: vi.fn(), moveTask: vi.fn() } }));
+vi.mock("./api", () => ({ api: {
+  updateTask: vi.fn(), completeTask: vi.fn(), cancelTask: vi.fn(),
+  makeTaskAction: vi.fn(), moveTask: vi.fn(),
+} }));
 const mockedApi = vi.mocked(api, true);
 function wrapper({ children }: { children: ReactNode }) {
   return <LocaleProvider initialLocale="de"><RefreshProvider><TaskActionsProvider>{children}</TaskActionsProvider></RefreshProvider></LocaleProvider>;
@@ -51,12 +54,63 @@ describe("server-confirmed task sequence contract", () => {
     const task = makeTask({ children: [makeTask({ id: 2 })] });
     mockedApi.completeTask.mockResolvedValue({ ...task, revision: 2, status: "done" });
     const { result } = renderHook(() => useTaskActions(), { wrapper });
+    const events: string[] = [];
+    const unsubscribe = result.current.subscribeTransitionFeedback(event => events.push(event.phase));
     act(() => result.current.requestToggle(task));
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(result.current.pendingTask).toBe(task);
+    expect(events).toEqual([]);
     await act(async () => result.current.resolvePolicy("cancel_children"));
     expect(mockedApi.completeTask).toHaveBeenCalledWith(task.id, "cancel_children", undefined, task.revision);
     expect(result.current.pendingTask).toBeNull();
+    expect(events).toEqual(["pending", "success"]);
+    unsubscribe();
+  });
+
+  it("reports cancellation and Inbox classification with their actual target statuses", async () => {
+    const task = makeTask();
+    const inboxTask = makeTask({ status: "captured" });
+    mockedApi.cancelTask.mockResolvedValue({ ...task, status: "cancelled", revision: 2 });
+    mockedApi.makeTaskAction.mockResolvedValue({ ...inboxTask, status: "actionable", revision: 2 });
+    const { result } = renderHook(() => useTaskActions(), { wrapper });
+    const events: Array<{ phase: string; targetStatus: string }> = [];
+    const unsubscribe = result.current.subscribeTransitionFeedback(event => {
+      events.push({ phase: event.phase, targetStatus: event.targetStatus });
+    });
+
+    await act(async () => { await result.current.cancel(task); });
+    await act(async () => { await result.current.makeAction(inboxTask); });
+
+    expect(events).toEqual([
+      { phase: "pending", targetStatus: "cancelled" },
+      { phase: "success", targetStatus: "cancelled" },
+      { phase: "pending", targetStatus: "actionable" },
+      { phase: "success", targetStatus: "actionable" },
+    ]);
+    unsubscribe();
+  });
+
+  it("reports recurring completion as an occurrence while the task stays actionable", async () => {
+    const task = makeTask({ repeatAfterDays: 7 });
+    mockedApi.completeTask.mockResolvedValue({ ...task, revision: 2, status: "actionable" });
+    const { result } = renderHook(() => useTaskActions(), { wrapper });
+    const events: Array<{ phase: string; targetStatus: string; occurrence: boolean; resultStatus: string | undefined }> = [];
+    const unsubscribe = result.current.subscribeTransitionFeedback(event => {
+      events.push({
+        phase: event.phase,
+        targetStatus: event.targetStatus,
+        occurrence: event.occurrence,
+        resultStatus: event.resultStatus,
+      });
+    });
+
+    await act(async () => { await result.current.complete(task); });
+
+    expect(events).toEqual([
+      { phase: "pending", targetStatus: "actionable", occurrence: true, resultStatus: undefined },
+      { phase: "success", targetStatus: "actionable", occurrence: true, resultStatus: "actionable" },
+    ]);
+    unsubscribe();
   });
 
   it("shares an outline move's gate with metadata editors until the write settles", async () => {

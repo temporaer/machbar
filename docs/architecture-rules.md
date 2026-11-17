@@ -101,8 +101,16 @@ API transport
 
 Presentation-only wrappers may differ when they do not duplicate mutation
 semantics. `useItemMutations` supplies pending/error handling and successful-write
-invalidation. Do not retain optimistic or confirmed DTO overlays, timed row
-holds, or interaction leases.
+invalidation. Do not retain optimistic or confirmed DTO overlays, placement
+snapshots, or interaction leases. A bounded presentation exception is allowed
+for task lifecycle feedback: the view-local `TaskListTransitionFeedbackProvider`
+may show a pending status, then a short (3-second) inert departure row after a
+successful completion, cancellation, or Inbox classification. It stores only
+the departing row's display snapshot, never predicts query values or
+membership; current rows always render fresh query data. Refreshes cannot
+resurrect a departed row, and newer revisions, navigation/unmount, or identity
+retirement release the presentation immediately. This exception is not a
+general-purpose retention or reconciliation mechanism.
 
 ### Read invalidation
 
@@ -239,7 +247,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 
 | Need | Canonical primitive or path |
 |------|-----------------------------|
-| Mutation feedback and list placement | `useItemMutations` owns per-item pending/errors and duplicate-in-flight protection; canonical actions await successful-write invalidation/read settlement (following superseding invalidations) before releasing their pending gate. Refresh errors remain query errors, not failed writes. Query results supply values, membership and ordering. No optimistic DTOs, confirmed overlays, retention timers, placement snapshots or interaction leases. |
+| Mutation feedback and list placement | `useItemMutations` owns per-item pending/errors and duplicate-in-flight protection; canonical actions await successful-write invalidation/read settlement (following superseding invalidations) before releasing their pending gate. Refresh errors remain query errors, not failed writes. Query results supply values, membership and ordering. No optimistic or confirmed DTO overlays, placement snapshots or interaction leases. The task-only `taskListTransitionFeedback.tsx` exception presents command status and a successful transition's row for up to 3 seconds after it leaves mounted lists; the inert display snapshot is view/identity scoped and never supplies list membership or actionable domain state. |
 | AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakeCanonicalPlanning`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus boundary normalization in `packages/shared/src/inputNormalization.ts` and Zod structural schemas in `apps/api/src/schemas.ts` |
 | AI intake execution (jobs, prompt, apply) | `apps/api/src/intake/` (`jobs.ts`, `prompt.ts`, `apply.ts`, `storage.ts`, `cleanup.ts`), `apps/api/src/routes/intake.ts`, `apps/web/src/pages/IntakeReviewPage.tsx`, and `apps/web/src/lib/useStartIntake.ts`; Apply uses the domain create primitives |
 | Ordinary intake existing-project destinations | `apps/api/src/intake/existingProjects.ts` filters the same-scope visible active/backlog index (complete serialized UTF-8 envelope ≤16 KiB, otherwise explicitly incomplete and empty), and validates review-bound revisions for all pending targets before effects and inside the work transaction. Only action roots carry `existingProjectId`; proposal descendants inherit it. Review reuses `DestinationPicker`; existing-destination creation uses canonical transactional task creation without activating backlog projects. Breakdown/refinement remain separate. |

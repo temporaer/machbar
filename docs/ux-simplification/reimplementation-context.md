@@ -47,7 +47,7 @@ protocol over it:
 | One pending task command is shared across entry points | Metadata-before-move and move-before-metadata; outline and destination picker use the same canonical task action |
 | Successful writes cannot publish a pre-write read | Held read completes before/after invalidation; canceled results cannot replace the post-write projection |
 | External events cannot starve the initial read | Initial and trailing reads, repeated invalidators, and removed/replaced same-key Query objects |
-| Ordinary outages retain useful data and authored drafts | Network failure, explicit retry, stale refresh and cancellation; no new timed row holds |
+| Ordinary outages retain useful data and authored drafts | Network failure, explicit retry, stale refresh and cancellation; the task lifecycle confirmation is a view-local, inert 3-second presentation only |
 | Denial removes protected controls and choices | Read denial and private mutation denial, including when a later GET would still succeed; notice dismissal and explicit fresh reopening |
 | Stale compound decisions require another explicit commit | Changed requirements, including equal target revisions with changed surrounding graph; no automatic command replay |
 | Another identity cannot receive old values or callbacks | Provider retirement and delayed reads; real App mount tree, not just provider-rich component fixtures |

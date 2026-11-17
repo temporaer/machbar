@@ -10,7 +10,7 @@ import {
   ErrorState,
   EmptyState,
 } from "../components/AsyncStates";
-import { TaskOutline } from "../components/TaskOutline";
+import { TaskListTransitionDepartures, TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaRow } from "../components/ProjectAgendaRow";
 import { InterventionFocusStrip } from "../components/InterventionFocusStrip";
@@ -24,6 +24,7 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { useVisibleRefreshInterval } from "../lib/refresh";
 import type { AttentionTone } from "../lib/attentionTone";
 import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
+import { TaskListTransitionFeedbackProvider } from "../lib/taskListTransitionFeedback";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -152,6 +153,7 @@ export function TodayPage() {
   return (
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
+      <TaskListTransitionFeedbackProvider key={agendaSelectionKey} externalDepartures>
       <div className="today-page">
         <PageHeader
           title={strings.today}
@@ -302,8 +304,10 @@ export function TodayPage() {
               );
             })()
           : null}
+        <TaskListTransitionDepartures />
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
+      </TaskListTransitionFeedbackProvider>
     </InteractionScopeProvider>
   );
 }

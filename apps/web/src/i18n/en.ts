@@ -1300,6 +1300,21 @@ When the person ends the reflection, provide a concise human-readable summary an
   completeWithCriteriaHint: "All criteria must be checked before the project can be completed.",
   completeProjectAction: "Complete project",
   completeTaskAction: "Complete task",
+  taskTransitionPending: (status: TaskStatus) => {
+    if (status === "done") return "Completing…";
+    if (status === "cancelled") return "Discarding…";
+    if (status === "actionable") return "Making actionable…";
+    return status === "someday" ? "Moving to someday…" : "Moving to Inbox…";
+  },
+  taskTransitionConfirmed: (status: TaskStatus) => {
+    if (status === "done") return "Completed";
+    if (status === "cancelled") return "Discarded";
+    if (status === "actionable") return "Now actionable";
+    return status === "someday" ? "Moved to someday" : "In Inbox";
+  },
+  taskOccurrencePending: "Completing occurrence…",
+  taskOccurrenceCompleted: "Occurrence completed",
+  recentlyChangedTasks: "Recently changed tasks",
   taskCriteria: "Done when",
   taskCriteriaSummary: (checked: number, total: number) => `${checked}/${total} criteria`,
   taskCriteriaCompletionHint: "Every criterion must be checked before this task can be completed.",
