@@ -337,6 +337,62 @@ test("Today keeps a future recurring plan out despite its reached revisit", asyn
   expect(writes).toBe(0);
 });
 
+test("Today confirms task completion accessibly with reduced motion", async ({ page }, testInfo) => {
+  const scheduledDate = calendarDateForInstant(new Date().toISOString(), "UTC")!;
+  const item = await task(page, { scheduledDate });
+  let releaseWrite!: () => void;
+  const write = new Promise<void>(resolve => { releaseWrite = resolve; });
+  let writeStarted = false;
+  await page.route(`**/api/tasks/${item.id}/complete`, async route => {
+    writeStarted = true;
+    await write;
+    await route.continue();
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/today");
+
+  const row = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
+  await expect(row).toHaveCount(1);
+  if (testInfo.project.name === "mobile-chrome") {
+    const surface = row.locator(".task-row-content");
+    const bounds = await surface.boundingBox();
+    expect(bounds).not.toBeNull();
+    const session = await page.context().newCDPSession(page);
+    const y = bounds!.y + bounds!.height / 2;
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: bounds!.x + 16, y, id: 1 }],
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: bounds!.x + 112, y, id: 1 }],
+    });
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await session.detach();
+  } else {
+    const checkbox = row.getByRole("button", { name: "Erledigt", exact: true });
+    await checkbox.focus();
+    await page.keyboard.press("Enter");
+  }
+  await expect.poll(() => writeStarted).toBe(true);
+
+  await expect(row).toHaveAttribute("aria-busy", "true");
+  await expect(row.locator(".task-row-title")).toHaveClass(/done/);
+  const pending = row.getByRole("status");
+  await expect(pending).toHaveText("Wird erledigt …");
+  await expect(pending).toHaveAttribute("aria-live", "polite");
+  expect(await pending.evaluate(node => getComputedStyle(node).animationName)).toBe("none");
+  releaseWrite();
+  await expect(row).toHaveClass(/task-row-surface-done/);
+  await expect(row.getByRole("status")).toHaveText("Erledigt");
+  await expect(row).toBeVisible();
+  await page.waitForTimeout(1_000);
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("status")).toHaveText("Erledigt");
+  await expect(row.getByRole("status")).toHaveCount(0, { timeout: 2_000 });
+  await expect(row).toBeHidden();
+});
+
 test("detail status control is visible on touch and desktop", async ({ page }) => {
   const item = await task(page);
   await page.goto("/#/today");

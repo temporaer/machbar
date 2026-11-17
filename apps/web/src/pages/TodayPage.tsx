@@ -24,7 +24,59 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { useVisibleRefreshInterval } from "../lib/refresh";
 import type { AttentionTone } from "../lib/attentionTone";
 import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
-import { TaskListTransitionFeedbackProvider } from "../lib/taskListTransitionFeedback";
+import {
+  TaskListTransitionFeedbackProvider,
+  useTaskListTransitionFeedback,
+} from "../lib/taskListTransitionFeedback";
+import { flattenTasks } from "../lib/taskHelpers";
+
+function CompletedTodaySection({
+  tasks,
+  agendaSelectionKey,
+  title,
+  hint,
+  emptyMessage,
+}: {
+  tasks: Task[];
+  agendaSelectionKey: string;
+  title: string;
+  hint: string;
+  emptyMessage: string;
+}) {
+  const feedback = useTaskListTransitionFeedback();
+  const hasTransition = flattenTasks(tasks).some(task => feedback?.get(task.id)?.event.phase === "success");
+  const [manuallyOpen, setManuallyOpen] = useState(false);
+
+  return (
+    <details
+      className="section"
+      key="completedToday"
+      open={hasTransition || manuallyOpen}
+    >
+      <summary
+        className="section-title disclosure-summary"
+        onClick={event => {
+          if (hasTransition) {
+            event.preventDefault();
+            return;
+          }
+          setManuallyOpen(open => !open);
+        }}
+      >
+        {title} ({tasks.length})
+      </summary>
+      <p className="page-subtitle">{hint}</p>
+      <TaskOutline
+        key={agendaSelectionKey}
+        tasks={tasks}
+        emptyMessage={emptyMessage}
+        preserveRootOrder
+        showSwipeHint={false}
+        compactDescendants
+      />
+    </details>
+  );
+}
 
 export function TodayPage() {
   const strings = useStrings();
@@ -285,20 +337,13 @@ export function TodayPage() {
                     </details>
                   ) : null}
                   {completedTodayTasks.length > 0 ? (
-                    <details className="section" key="completedToday">
-                      <summary className="section-title disclosure-summary">
-                        {strings.completedToday} ({completedTodayTasks.length})
-                      </summary>
-                      <p className="page-subtitle">{strings.completedTodayHint}</p>
-                      <TaskOutline
-                        key={agendaSelectionKey}
-                        tasks={completedTodayTasks}
-                        emptyMessage={strings.noItems}
-                        preserveRootOrder
-                        showSwipeHint={false}
-                        compactDescendants
-                      />
-                    </details>
+                    <CompletedTodaySection
+                      tasks={completedTodayTasks}
+                      agendaSelectionKey={agendaSelectionKey}
+                      title={strings.completedToday}
+                      hint={strings.completedTodayHint}
+                      emptyMessage={strings.noItems}
+                    />
                   ) : null}
                 </>
               );
