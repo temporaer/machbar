@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import type { Task, TaskStatus } from "@machbar/shared";
 import { api, type ExternalWaitFollowUpInput, type ExternalWaitInput, type UpdateTaskInput } from "./api";
 import { toIsoCalendarDate } from "./naturalDate";
@@ -11,18 +11,39 @@ export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children"
 export type PendingAction = "complete" | "cancel";
 type WithoutExpectedRevision<T> = T extends unknown ? Omit<T, "expectedRevision"> : never;
 
+interface CompletionFeedback {
+  pendingMessage: string;
+  onCommitted: (task: Task) => void;
+}
+
 function useTaskActionsState() {
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
   const { run, ...feedback } = useItemMutations();
+  const completionFeedback = useRef<CompletionFeedback | null>(null);
+  const registerCompletionFeedback = useCallback((observer: CompletionFeedback) => {
+    const registration = { ...observer };
+    completionFeedback.current = registration;
+    return () => {
+      if (completionFeedback.current === registration) completionFeedback.current = null;
+    };
+  }, []);
   const runTransition = useCallback((task: Pick<Task, "id">, mutate: () => Promise<Task>, throwOnError = false) =>
     run({ id: task.id, mutate, throwOnError }), [run]);
 
-  const complete = useCallback((task: Task, policy?: ChildPolicy, criteriaToCheck?: number[], throwOnError = false) =>
-    runTransition(task, () => api.completeTask(
-      task.id, policy ?? "leave_open",
-      task.repeatAfterDays !== null ? toIsoCalendarDate(new Date()) : undefined,
-      task.revision, ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
-    ), throwOnError), [runTransition]);
+  const complete = useCallback((task: Task, policy?: ChildPolicy, criteriaToCheck?: number[], throwOnError = false) => {
+    const observer = completionFeedback.current;
+    return run({
+      id: task.id, throwOnError, pendingMessage: observer?.pendingMessage,
+      mutate: () => api.completeTask(
+        task.id, policy ?? "leave_open",
+        task.repeatAfterDays !== null ? toIsoCalendarDate(new Date()) : undefined,
+        task.revision, ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
+      ),
+      onCommitted: () => {
+        if (observer && completionFeedback.current === observer) observer.onCommitted(task);
+      },
+    });
+  }, [run]);
   const cancel = useCallback((task: Task, policy?: ChildPolicy) =>
     runTransition(task, () => api.cancelTask(task.id, policy ?? "leave_open", task.revision)), [runTransition]);
   const reopen = useCallback((task: Task) =>
@@ -87,7 +108,7 @@ function useTaskActionsState() {
     requestToggle, requestCancel, setStatus, clarify, deferClarification, makeAction,
     update, appendNotes, assignOwner, setContexts, acknowledgeReview, setExternalWait,
     resolveExternalWait, followUpExternalWait, resolvePolicy, cancelPrompt, complete,
-    cancel, reopen, transitionStatus, move,
+    cancel, reopen, transitionStatus, move, registerCompletionFeedback,
   };
 }
 

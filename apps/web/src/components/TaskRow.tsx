@@ -556,6 +556,9 @@ export function TaskRow({
           }
         />
       </div>
+      {taskActions.pendingMessages.get(task.id) ? (
+        <p role="status" className="task-row-pending">{taskActions.pendingMessages.get(task.id)}</p>
+      ) : null}
       {!isReference && swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}

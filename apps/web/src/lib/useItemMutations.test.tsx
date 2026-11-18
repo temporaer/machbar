@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useItemMutations } from "./useItemMutations";
 
 const bump = vi.fn();
@@ -12,6 +12,52 @@ vi.mock("./errorMessage", () => ({
 }));
 
 describe("server-confirmed item commands", () => {
+  beforeEach(() => bump.mockReset());
+
+  it("announces commit before read settlement, with pending text only during the write", async () => {
+    let confirm!: (value: string) => void;
+    let finishRefresh!: () => void;
+    bump.mockImplementationOnce(() => new Promise<void>(resolve => { finishRefresh = resolve; }));
+    const onCommitted = vi.fn();
+    const { result } = renderHook(() => useItemMutations());
+    let command!: Promise<string | undefined>;
+    act(() => {
+      command = result.current.run({
+        id: 1, pendingMessage: "Completing", onCommitted,
+        mutate: () => new Promise(resolve => { confirm = resolve; }),
+      });
+    });
+    expect(result.current.pendingMessages.get(1)).toBe("Completing");
+    expect(onCommitted).not.toHaveBeenCalled();
+    await act(async () => { confirm("committed"); });
+    expect(onCommitted).toHaveBeenCalledExactlyOnceWith("committed");
+    expect(result.current.pendingMessages.get(1)).toBeUndefined();
+    expect(result.current.isPending(1)).toBe(true);
+    await act(async () => { finishRefresh(); await command; });
+    expect(result.current.isPending(1)).toBe(false);
+  });
+
+  it("never announces success for a rejected or duplicate command", async () => {
+    let reject!: (error: Error) => void;
+    const onCommitted = vi.fn();
+    const { result } = renderHook(() => useItemMutations());
+    let command!: Promise<unknown>;
+    act(() => {
+      command = result.current.run({
+        id: 1, pendingMessage: "Completing", onCommitted,
+        mutate: () => new Promise((_resolve, fail) => { reject = fail; }),
+      });
+    });
+    await act(async () => {
+      await result.current.run({ id: 1, mutate: async () => "duplicate", onCommitted });
+      reject(new Error("Rejected"));
+      await command;
+    });
+    expect(onCommitted).not.toHaveBeenCalled();
+    expect(result.current.pendingMessages.has(1)).toBe(false);
+    expect(result.current.errors[1]).toBe("Rejected");
+  });
+
   it("serializes one item while allowing another, then invalidates on confirmation", async () => {
     bump.mockClear();
     const { result } = renderHook(() => useItemMutations());
@@ -52,10 +98,12 @@ describe("server-confirmed item commands", () => {
 
   it("does not turn a committed write into a failed command when read revalidation fails", async () => {
     bump.mockImplementationOnce(() => Promise.reject(new Error("Read offline")));
+    const onCommitted = vi.fn();
     const { result } = renderHook(() => useItemMutations());
     await act(async () => {
-      expect(await result.current.run({ id: 1, mutate: async () => "confirmed", throwOnError: true })).toBe("confirmed");
+      expect(await result.current.run({ id: 1, mutate: async () => "confirmed", throwOnError: true, onCommitted })).toBe("confirmed");
     });
+    expect(onCommitted).toHaveBeenCalledExactlyOnceWith("confirmed");
     expect(result.current.errors[1]).toBeUndefined();
     expect(result.current.isPending(1)).toBe(false);
   });
@@ -76,10 +124,12 @@ describe("server-confirmed item commands", () => {
     const { result, unmount } = renderHook(() => useItemMutations());
     let confirm!: (value: string) => void;
     let command!: Promise<string | undefined>;
-    act(() => { command = result.current.run({ id: 1, mutate: () => new Promise<string>(resolve => { confirm = resolve; }) }); });
+    const onCommitted = vi.fn();
+    act(() => { command = result.current.run({ id: 1, mutate: () => new Promise<string>(resolve => { confirm = resolve; }), onCommitted }); });
     unmount();
     await act(async () => { confirm("confirmed"); expect(await command).toBe("confirmed"); });
     expect(bump).toHaveBeenCalledOnce();
+    expect(onCommitted).not.toHaveBeenCalled();
   });
 
   it("does not invalidate a failed command after its consumer closes and preserves the rejection", async () => {

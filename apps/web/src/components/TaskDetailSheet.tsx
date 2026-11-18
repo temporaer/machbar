@@ -684,7 +684,7 @@ export function TaskDetailSheet() {
                 ))}
             </div>
           ) : null}
-              {taskMutationPending ? <p role="status" className="detail-status-feedback">{strings.saving}</p> : null}
+              {taskMutationPending ? <p role="status" className="detail-status-feedback">{taskActions.pendingMessages.get(task.id) ?? strings.saving}</p> : null}
               {!saveError && taskActions.errors[task.id] ? <WorkItemInlineError message={taskActions.errors[task.id]!} /> : null}
               {refreshError ? <ErrorState message={`${strings.detailRefreshError} ${refreshError}`} onRetry={reload} /> : null}
             </div> : null}
