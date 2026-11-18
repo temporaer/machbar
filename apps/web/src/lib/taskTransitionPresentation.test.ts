@@ -286,11 +286,28 @@ describe("task transition display layout", () => {
       expect(layout.operations[`move-${task.id}`]?.recurringOccurrence).toBe(
         task.repeatAfterDays !== null,
       );
+      const destinationTask = { ...task, status: "actionable" as const };
+      layout = reconcileTaskSections(layout, {
+        source: { tasks: [], readSettled: true, readFailed: false },
+        destination: {
+          tasks: [destinationTask],
+          readSettled: true,
+          readFailed: false,
+        },
+      });
+      expect(layout.operations[`move-${task.id}`]?.phase).toBe("pending");
+      const visibleBeforeCommit = [
+        ...taskTransitionDisplayChildren(layout, "source", null, []),
+        ...taskTransitionDisplayChildren(layout, "destination", null, [destinationTask]),
+      ];
+      expect(visibleBeforeCommit.map(item => "task" in item ? item.task.id : item.node.taskId))
+        .toEqual([task.id]);
+
       layout = commitTaskTransition(layout, `move-${task.id}`, 2, "actionable");
       layout = reconcileTaskSections(layout, {
         source: { tasks: [], readSettled: true, readFailed: false },
         destination: {
-          tasks: [{ ...task, revision: 2, status: "actionable" }],
+          tasks: [{ ...destinationTask, revision: 2 }],
           readSettled: true,
           readFailed: false,
         },
@@ -298,20 +315,20 @@ describe("task transition display layout", () => {
 
       expect(taskTransitionDisplayChildren(layout, "source", null, [])).toHaveLength(1);
       expect(taskTransitionDisplayChildren(layout, "destination", null, [
-        { ...task, revision: 2, status: "actionable" },
+        { ...destinationTask, revision: 2 },
       ])).toHaveLength(0);
       expect(taskTransitionDisplayChildren(
         reconcileTaskSections(releaseTaskTransition(layout, `move-${task.id}`), {
           source: { tasks: [], readSettled: true, readFailed: false },
           destination: {
-            tasks: [{ ...task, revision: 2, status: "actionable" }],
+            tasks: [{ ...destinationTask, revision: 2 }],
             readSettled: true,
             readFailed: false,
           },
         }),
         "destination",
         null,
-        [{ ...task, revision: 2, status: "actionable" }],
+        [{ ...destinationTask, revision: 2 }],
       )).toHaveLength(1);
     }
   });

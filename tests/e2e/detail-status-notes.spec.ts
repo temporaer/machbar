@@ -148,7 +148,7 @@ for (const role of ["task", "project"] as const) {
   }
 }
 
-test("task transition confirmation stays visible at its source position without scrolling", async ({ page }) => {
+test("task transition feedback survives failed refresh at its source position", async ({ page }) => {
   const title = `Inbox transition ${randomUUID()}`;
   const response = await page.request.post("/api/tasks", {
     data: { title, status: "captured" },
@@ -208,6 +208,84 @@ test("task transition confirmation stays visible at its source position without 
   await expect(feedback).toBeInViewport();
   expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
   expect(Math.abs((await row.boundingBox())!.y - initialBox!.y)).toBeLessThanOrEqual(2);
+});
+
+test("successful refresh retains the removed task at its source position until confirmation expires", async ({ page }) => {
+  const createInboxTask = async (label: string) => {
+    const response = await page.request.post("/api/tasks", {
+      data: { title: `Inbox ${label} ${randomUUID()}`, status: "captured" },
+    });
+    expect(response.status()).toBe(201);
+    return response.json();
+  };
+  const before = await createInboxTask("before");
+  const transitioning = await createInboxTask("transition");
+  const after = await createInboxTask("after");
+  let releaseWrite!: () => void;
+  const write = new Promise<void>(resolve => { releaseWrite = resolve; });
+  let writeStarted = false;
+  let writeStatus: number | undefined;
+  let refreshRemoved = false;
+  await page.route("**/api/inbox**", async route => {
+    if (writeStatus === undefined) {
+      await route.continue();
+      return;
+    }
+    const result = await route.fetch();
+    const tasks = await result.json() as Array<{ id: number }>;
+    refreshRemoved = !tasks.some(task => task.id === transitioning.id);
+    await route.fulfill({ response: result });
+  });
+  await page.route(`**/api/tasks/${transitioning.id}/complete`, async route => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    writeStarted = true;
+    await write;
+    const result = await route.fetch();
+    writeStatus = result.status();
+    await route.fulfill({ response: result });
+  });
+
+  await page.goto("/#/inbox");
+  const row = page.locator(`[data-workitem-id="${transitioning.id}"]`);
+  const beforeRow = page.locator(`[data-workitem-id="${before.id}"]`);
+  const afterRow = page.locator(`[data-workitem-id="${after.id}"]`);
+  await expect(row).toBeVisible();
+  await expect(beforeRow).toBeVisible();
+  await expect(afterRow).toBeVisible();
+  await row.scrollIntoViewIfNeeded();
+  const initialScrollY = await page.evaluate(() => window.scrollY);
+  const initialY = (await row.boundingBox())!.y;
+  const neighborPositions = [
+    (await beforeRow.boundingBox())!.y,
+    (await afterRow.boundingBox())!.y,
+  ];
+
+  await page.getByRole("group", { name: "Status", exact: true })
+    .getByRole("button", { name: "Erledigt", exact: true }).click();
+  await expect.poll(() => writeStarted).toBe(true);
+  const feedback = row.getByRole("status");
+  await expect(feedback).toHaveText("Wird erledigt …");
+  await expect(feedback).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
+  expect(Math.abs((await row.boundingBox())!.y - initialY)).toBeLessThanOrEqual(2);
+
+  releaseWrite();
+  await expect.poll(() => writeStatus).toBe(200);
+  await expect.poll(() => refreshRemoved).toBe(true);
+  await expect(feedback).toHaveText("Erledigt");
+  await expect(row).toBeVisible();
+  await expect(feedback).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
+  expect(Math.abs((await row.boundingBox())!.y - initialY)).toBeLessThanOrEqual(2);
+  expect(Math.abs((await beforeRow.boundingBox())!.y - neighborPositions[0]!)).toBeLessThanOrEqual(2);
+  expect(Math.abs((await afterRow.boundingBox())!.y - neighborPositions[1]!)).toBeLessThanOrEqual(2);
+
+  await expect(row).toHaveCount(0, { timeout: 5_000 });
+  await expect(beforeRow).toBeVisible();
+  await expect(afterRow).toBeVisible();
 });
 
 test("task descendant confirmation hands saving feedback back to details", async ({ page }) => {

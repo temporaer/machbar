@@ -224,11 +224,17 @@ function TaskTransitionPresentationOwner({
 
   useLayoutEffect(() => {
     retired.current = false;
+    projection.current = nextProjection;
+    appliedProjectionSignature.current = nextProjectionSignature;
+    const initialLayout = reconcileTaskSections(emptyTaskTransitionLayout(), nextProjection);
+    layoutRef.current = initialLayout;
+    setLayout(initialLayout);
     return () => {
       retired.current = true;
       for (const timer of timers.current.values()) clearTimeout(timer);
       timers.current.clear();
       projection.current = {};
+      appliedProjectionSignature.current = null;
       layoutRef.current = emptyTaskTransitionLayout();
     };
   }, []);

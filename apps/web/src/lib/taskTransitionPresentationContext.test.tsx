@@ -1,6 +1,7 @@
-import { useLayoutEffect, useState, type MutableRefObject } from "react";
+import { StrictMode, useLayoutEffect, useState, type MutableRefObject } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Task } from "@machbar/shared";
 import { makeTask } from "../test/fixtures";
 import {
   TaskTransitionPresentationProvider,
@@ -39,12 +40,27 @@ function Harness({ origins }: { origins: Map<string, TaskTransitionOrigin> }) {
   );
 }
 
+function StrictHarness({ origins }: { origins: Map<string, TaskTransitionOrigin> }) {
+  return (
+    <StrictMode>
+      <TaskTransitionPresentationProvider
+        identityKey="today:mine:1"
+        projection={{ source: { tasks: [task], readSettled: true, readFailed: false } }}
+      >
+        <OriginProbe origins={origins} />
+      </TaskTransitionPresentationProvider>
+    </StrictMode>
+  );
+}
+
 function TimedTransitions({
   origins,
   readLayout,
+  removeProjection,
 }: {
   origins: MutableRefObject<Record<number, TaskTransitionOrigin>>;
   readLayout(layout: TaskTransitionLayout): void;
+  removeProjection(): void;
 }) {
   const presentation = useTaskTransitionPresentation();
   const child = makeTask({ id: 602, parentTaskId: 603, title: "Child" });
@@ -76,6 +92,7 @@ function TimedTransitions({
       <button onClick={() => run(child, "complete")}>Complete child</button>
       <button onClick={() => run(sibling, "complete")}>Complete sibling</button>
       <button onClick={() => run(parent, "cancel")}>Cancel parent</button>
+      <button onClick={removeProjection}>Remove projected rows</button>
     </>
   );
 }
@@ -101,6 +118,16 @@ describe("task transition presentation owner", () => {
     expect(oldOrigin?.begin("late", task, "complete")).toBe("unavailable");
   });
 
+  it("can start an origin after StrictMode effect replay without changing the projection", async () => {
+    const origins = new Map<string, TaskTransitionOrigin>();
+    render(<StrictHarness origins={origins} />);
+    await waitFor(() => expect(origins.size).toBeGreaterThan(0));
+    const origin = [...origins.values()].at(-1)!;
+
+    expect(origin.begin("strict-replay", task, "complete")).toBe("started");
+    expect(screen.getByTestId("operations")).toHaveTextContent("strict-replay");
+  });
+
   it("expires overlapping child, sibling, and parent holds on their own deadlines", async () => {
     vi.useFakeTimers();
     const origins = { current: {} as Record<number, TaskTransitionOrigin> };
@@ -108,13 +135,23 @@ describe("task transition presentation owner", () => {
     const child = makeTask({ id: 602, parentTaskId: 603, title: "Child" });
     const parent = makeTask({ id: 603, title: "Parent", children: [child] });
     const sibling = makeTask({ id: 604, title: "Sibling" });
+    function OverlapHarness() {
+      const [tasks, setTasks] = useState([parent, sibling]);
+      return (
+        <TaskTransitionPresentationProvider
+          identityKey="today:mine:1"
+          projection={{ source: { tasks, readSettled: true, readFailed: false } }}
+        >
+          <TimedTransitions
+            origins={origins}
+            readLayout={next => { layout = next; }}
+            removeProjection={() => setTasks([])}
+          />
+        </TaskTransitionPresentationProvider>
+      );
+    }
     render(
-      <TaskTransitionPresentationProvider
-        identityKey="today:mine:1"
-        projection={{ source: { tasks: [parent, sibling], readSettled: true, readFailed: false } }}
-      >
-        <TimedTransitions origins={origins} readLayout={next => { layout = next; }} />
-      </TaskTransitionPresentationProvider>,
+      <OverlapHarness />,
     );
 
     await act(async () => {});
@@ -124,6 +161,17 @@ describe("task transition presentation owner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Complete sibling" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     fireEvent.click(screen.getByRole("button", { name: "Cancel parent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove projected rows" }));
+    await waitFor(() => expect(layout?.sections.source?.rootKeys).toEqual([
+      "task:603",
+      "task:604",
+    ]));
+    expect(taskTransitionDisplayChildren(layout!, "source", null, []).map(item =>
+      "task" in item ? item.task.id : item.node.taskId,
+    )).toEqual([parent.id, sibling.id]);
+    const parentBranch = taskTransitionDisplayChildren(layout!, "source", null, [])[0];
+    expect(parentBranch && "children" in parentBranch ? parentBranch.children.map(node => node.taskId) : [])
+      .toEqual([child.id]);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(TASK_TRANSITION_CONFIRMATION_MS - 1_000); });
     expect(layout?.operations["transition-602"]).toBeUndefined();
@@ -132,13 +180,16 @@ describe("task transition presentation owner", () => {
     expect(taskTransitionDisplayChildren(layout!, "source", null, []).map(item =>
       "task" in item ? item.task.id : item.node.taskId,
     )).toContain(parent.id);
+    const retainedParent = taskTransitionDisplayChildren(layout!, "source", null, [])[0];
+    expect(retainedParent && "children" in retainedParent ? retainedParent.children : [])
+      .toHaveLength(0);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     expect(layout?.operations["transition-604"]).toBeUndefined();
     expect(layout?.operations["transition-603"]).toBeDefined();
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     expect(layout?.operations).toEqual({});
-    expect(taskTransitionDisplayChildren(layout!, "source", null, [parent, sibling])).toHaveLength(2);
+    expect(taskTransitionDisplayChildren(layout!, "source", null, [])).toHaveLength(0);
     vi.useRealTimers();
   });
 });
