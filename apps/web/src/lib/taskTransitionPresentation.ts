@@ -209,7 +209,7 @@ export function reconcileTaskSection(
     if (!node) continue;
     const existingChildren = layout.nodes[key]?.childKeys ?? [];
     node.childKeys = insertHeldSiblings(
-      spec.childKeys.filter(childKey => !active.has(childKey) || layout.nodes[childKey]?.sectionId === sectionId),
+      spec.childKeys.filter(childKey => !sectionHeld.has(childKey)),
       existingChildren,
       sectionHeld,
     );
@@ -220,7 +220,7 @@ export function reconcileTaskSection(
   }
 
   const rootKeys = insertHeldSiblings(
-    roots.filter(key => !active.has(key) || layout.nodes[key]?.sectionId === sectionId),
+    roots.filter(key => !sectionHeld.has(key)),
     oldSection.rootKeys,
     sectionHeld,
   );
@@ -232,9 +232,7 @@ export function reconcileTaskSection(
     const node = nodes[key];
     if (!node) return;
     keep.add(key);
-    for (const child of node.childKeys) {
-      if (sectionHeld.has(child)) keepBranch(child);
-    }
+    for (const child of node.childKeys) keepBranch(child);
   };
   for (const key of rootKeys) keepBranch(key);
   for (const [key, node] of Object.entries(nodes)) {

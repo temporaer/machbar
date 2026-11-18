@@ -80,11 +80,11 @@ function workflowReducer(state: WorkflowState, event: WorkflowEvent): WorkflowSt
     case "DETAIL_ADVANCE_QUEUE": {
       if (!state.detail) return state;
       const [next, ...rest] = state.detail.queueTaskIds;
+      const nextDetail = { ...state.detail, taskId: next ?? state.detail.taskId, queueTaskIds: rest, focusField: null };
+      delete nextDetail.presentationOrigin;
       return {
         ...state,
-        detail: next === undefined
-          ? null
-          : { ...state.detail, taskId: next, queueTaskIds: rest, focusField: null },
+        detail: next === undefined ? null : nextDetail,
         detailOpeningId: next === undefined ? null : state.detailOpeningId,
         detailMode: next === undefined ? null : state.detailMode,
       };

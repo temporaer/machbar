@@ -28,13 +28,14 @@ export function WaitingGroupList({
       )
       .map((entry) => entry.task),
   );
+  const externalIds = new Set(externalCandidates.map(task => task.id));
   const contextCandidates = uniqueDisplayTasks(
     entries
       .filter((entry) =>
         entry.reasons.some((reason) => reason.type === "context"),
       )
       .map((entry) => entry.task),
-  );
+  ).filter(task => !externalIds.has(task.id));
   const externalTasks = externalCandidates;
   const contextTasks = contextCandidates;
   const outline = (items: Task[], external: boolean, sectionId: string) => (

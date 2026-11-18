@@ -54,6 +54,28 @@ describe("WaitingGroupList", () => {
     expect(screen.getByText("Im Garten arbeiten")).toBeInTheDocument();
   });
 
+  it("renders a task with both waiting reasons only once in the logical view", async () => {
+    renderWithProviders(
+      <WaitingGroupList
+        entries={[
+          {
+            task: makeTask({
+              id: 3,
+              title: "Doppelt blockiert",
+              externalWait: { waitingFor: "Vermieter", revisitDate: null },
+            }),
+            reasons: [
+              { type: "external", waitingFor: "Vermieter", revisitDate: null },
+              { type: "context", contexts: [] },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findAllByText("Doppelt blockiert")).toHaveLength(1);
+  });
+
   it("offers follow-up only for an external wait", async () => {
     const { container } = renderWithProviders(
       <WaitingGroupList

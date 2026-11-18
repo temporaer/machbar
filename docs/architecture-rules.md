@@ -228,8 +228,17 @@ chosen status and resolves centrally which lifecycle mutation that requires
 (complete, cancel, reopen, clarify, or a direct transition).
 
 Rows keep only genuinely row-specific behavior: gesture mechanics, folding,
-drag/outline manipulation and rail visibility. Lists regroup from fresh server
-results immediately; open editors must not depend on retaining their source row.
+drag/outline manipulation and rail visibility. A logical task view may briefly
+retain the initiating displayed node after an accepted lifecycle command, but
+only through `TaskTransitionPresentationProvider`; the view owns its single
+display tree, source placement and confirmation deadlines. The canonical
+mutation controller owns operation identity and read settlement, while Query
+continues to own task values, hierarchy, membership and ordering. Detail and
+workflow hosts carry an optional origin reference from the initiating view;
+they never discover an origin by task ID. Closing a sheet leaves the view
+alive, while selection changes, navigation and unmount retire it. Read/error
+paths and rows without a live origin keep their normal feedback and do not
+invent a source position.
 
 `canonical-workflow-host` and `canonical-workflow-routing` in
 `scripts/check-architecture.mjs` enforce this. Its exception map is empty:
@@ -239,7 +248,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 
 | Need | Canonical primitive or path |
 |------|-----------------------------|
-| Mutation feedback and list placement | `useItemMutations` owns per-item pending/errors and duplicate-in-flight protection; canonical actions await successful-write invalidation/read settlement (following superseding invalidations) before releasing their pending gate. Refresh errors remain query errors, not failed writes. Query results supply values, membership and ordering. No optimistic DTOs, confirmed overlays, retention timers, placement snapshots or interaction leases. |
+| Mutation feedback and task-transition presentation | `useItemMutations` and canonical actions own pending/errors, accepted operation identity, duplicate-write protection, result revision/status and captured read settlement. `TaskTransitionPresentationProvider` in `apps/web/src/lib/taskTransitionPresentationContext.tsx` owns one displayed tree per logical view and its temporary source nodes/deadlines; it retains only the visual fields needed for departures. Query remains authoritative for task DTOs, hierarchy, membership and ordering. Origin references are optional UI context passed through detail/workflow hosts, never API data. |
 | AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakeCanonicalPlanning`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus boundary normalization in `packages/shared/src/inputNormalization.ts` and Zod structural schemas in `apps/api/src/schemas.ts` |
 | AI intake execution (jobs, prompt, apply) | `apps/api/src/intake/` (`jobs.ts`, `prompt.ts`, `apply.ts`, `storage.ts`, `cleanup.ts`), `apps/api/src/routes/intake.ts`, `apps/web/src/pages/IntakeReviewPage.tsx`, and `apps/web/src/lib/useStartIntake.ts`; Apply uses the domain create primitives |
 | Ordinary intake existing-project destinations | `apps/api/src/intake/existingProjects.ts` filters the same-scope visible active/backlog index (complete serialized UTF-8 envelope ≤16 KiB, otherwise explicitly incomplete and empty), and validates review-bound revisions for all pending targets before effects and inside the work transaction. Only action roots carry `existingProjectId`; proposal descendants inherit it. Review reuses `DestinationPicker`; existing-destination creation uses canonical transactional task creation without activating backlog projects. Breakdown/refinement remain separate. |
@@ -338,7 +347,8 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Commitment and project activation decisions | Pure rules live in `apps/api/src/domain/commitmentTransition.ts` over an explicit snapshot, intent, and user decisions. `apps/api/src/domain/commitmentActivation.ts` adapts current DB/Graph readiness into that snapshot and transactionally executes its concrete plan. Task/project CRUD and explicit lifecycle workflow commands use this shared evaluation; HTTP, MCP, and Intake enter through those canonical mutations. The server returns current activation requirements and revisions; `ProjectActivationSheet` and `projectActivationResolution.ts` only present requirements, collect decisions, and retry. |
 | Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
 | Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
-| Compiled-view (Today) compact descendant presentation and terminal-descendant hiding | `apps/web/src/components/TaskOutline.tsx` (`compactDescendants` prop) and `apps/web/src/components/TaskRow.tsx`; compiled descendants preserve traversal order across promoted branches; each outline owns its current IDs plus actively retained removals, relinquishes stale section membership, and resets on Today member/scope changes. |
+| Compiled-view (Today) compact descendant presentation and terminal-descendant hiding | `apps/web/src/components/TaskOutline.tsx` (`compactDescendants` prop) and `apps/web/src/components/TaskRow.tsx`; compiled descendants preserve traversal order across promoted branches. |
+| View-owned task-transition placement and lifecycle | `apps/web/src/lib/taskTransitionPresentation.ts` and `taskTransitionPresentationContext.tsx`, composed explicitly by logical view boundaries; `TaskOutline`/Review register stable sections, and rows pass origin references through `useWorkItemCommands`, `TaskDetailSheet`, and `TaskWorkflowHost`. |
 | Task/Project scalar-property control | `DetailPropertyPill` in labelled Responsibility/Planning/Organization groups; task/project ownership labels and API-derived inheritance provenance, unchanged focused editors and canonical commands. Add details sits beside Planning; project lifecycle uses a read-only badge and separate Change status control, not More actions. |
 | Task/Project inline work-item error presentation | `apps/web/src/components/WorkItemInlineError.tsx` |
 | In-app single-choice delete confirmation | `apps/web/src/components/ConfirmDeleteSheet.tsx` (project deletion's task-cascade choice remains `apps/web/src/components/ProjectDeleteChoiceSheet.tsx`) |

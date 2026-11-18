@@ -1392,19 +1392,33 @@ action contract.
 
 ### Server-confirmed interactions
 
-The approved simplification deliberately removes optimistic domain updates,
-confirmed DTO overlays, timed row retention and interaction leases. A command
-shows pending feedback and prevents another command for that item until its
-request settles. Failure leaves server data unchanged and displays the error;
-success invalidates reads. Backend revisions still reject stale writes.
+Commands remain server-confirmed: no optimistic task DTOs or confirmed-value
+overlays are introduced. The canonical mutation controller owns operation
+identity, pending/errors, duplicate-write protection, result revision/status
+and captured refresh settlement. Query continues to supply task values,
+hierarchy, membership and ordering.
 
-Lists, Review cards, tag groups and outlines immediately adopt the next server
-result's values, membership and ordering. Rows may move or disappear after a
-successful action; there is no four-second undo/reopen placement window.
-Focused editors live in the canonical workflow/detail hosts rather than in the
-row they were opened from. Ordinary refreshes/network errors preserve drafts;
-access revocation deliberately ends the workflow and discards its choices.
-Stale compound operations require explicit reconfirmation.
+An accepted local lifecycle command may keep a brief visual result at its
+initiating position, including when a filtered result removes or relocates the
+task. This presentation is owned by one `TaskTransitionPresentationProvider`
+per logical view, with one displayed tree, shared stable task nodes,
+source-order preservation and independent confirmation deadlines. Only nodes
+affected by active feedback retain minimum visual fields; retained ancestors
+are inert identity/title shells. A transfer is suppressed at its destination
+only while its source node can be drawn. Stale rows below the command's result
+revision cannot start another write. Failed commands release the hold and use
+the existing error path; successful writes use the captured invalidation/read
+settlement and do not become failed writes when refresh reports an error.
+
+Rows pass an optional origin reference (view instance plus displayed node)
+through `TaskDetailSheet`, `TaskWorkflowHost`, Review and any confirmation
+steps. Sheet state and view placement remain separately owned. Closing a sheet
+does not retire the view; navigation, member/scope/filter changes and unmount
+do. Direct deep links and workflows without a live originating row retain
+ordinary feedback and never synthesize source placement. Ordinary
+refresh/network errors preserve drafts; access revocation deliberately ends
+the workflow and discards its choices. Stale compound operations require
+explicit reconfirmation.
 
 `queryClient.ts` contains the small native Query cancellation/invalidation
 adapter and access-error cache eviction. It does not merge revisions, traverse
@@ -2091,11 +2105,14 @@ promoted descendants may belong to different original parents, so comparing
 their stored positions would reverse branch traversal. Original positions and
 parent IDs remain intact, and full outlines still sort actual sibling groups.
 
-`TaskOutline` renders current server membership, including nested rows.
-Completion-triggered removal and regrouping take effect on the next read.
-Today keys every outline by member/scope selection so local fold/interaction
-state cannot survive a logical selection change. No removed-row ownership or
-retention timer participates in eligibility.
+`TaskOutline` renders current server membership, including nested rows, through
+the owning logical view's displayed tree. Completion-triggered removal and
+regrouping adopt the next read while an accepted source node remains inert for
+its brief confirmation. Today, Inbox, All, Waiting, Discussion, project
+outlines and Review key owners to their logical member/scope/filter selection;
+ordinary refreshes do not replace the owner. Row data and task eligibility
+remain server-derived, and transition presentation never participates in
+domain eligibility.
 
 ### Intervention-generated task privacy
 

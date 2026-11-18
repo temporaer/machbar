@@ -48,10 +48,18 @@ export function useItemMutations() {
       if (throwOnError) throw error;
       return undefined;
     }
-    if (presentation?.origin.isBlocked()) return undefined;
     const token = `task-transition:${++operationSequence.current}`;
     const originState = presentation?.origin.begin(token, presentation.task, presentation.intent);
-    if (originState === "blocked") return undefined;
+    if (originState === "blocked") {
+      const error = Object.assign(new Error("The task revision is stale."), {
+        name: "ApiError",
+        code: "stale_write_conflict",
+      });
+      setErrors(current => ({ ...current, [id]: localizedErrorMessage(error, strings) }));
+      void bump().catch(() => undefined);
+      if (throwOnError) throw error;
+      return undefined;
+    }
     inFlight.current.add(id);
     setPendingIds(current => new Set(current).add(id));
     clearError(id);

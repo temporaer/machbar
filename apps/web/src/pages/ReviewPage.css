@@ -20,6 +20,10 @@
   margin: 6px 0 10px;
 }
 
+.review-item .task-row-transition-status {
+  padding: 0;
+}
+
 .review-item-actions {
   display: flex;
   flex-wrap: wrap;

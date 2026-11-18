@@ -557,7 +557,10 @@ export function TaskRow({
           {!isReference && (isCompact
             ? null
             : notesWithoutAttachments
-              ?               <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id }, transitionOrigin)} />
+              ? <NotesTail
+                  value={notesWithoutAttachments}
+                  onOpen={() => dispatch({ type: "task.open", taskId: task.id }, transitionOrigin)}
+                />
               : null)}
         </div>
         {!isReference ? (
@@ -568,7 +571,7 @@ export function TaskRow({
             title={ownerLabel}
             disabled={busy}
             onPointerDown={event => event.stopPropagation()}
-            onClick={event => { event.stopPropagation(); dispatch({ type: "task.assignOwner", taskId: task.id }); }}
+            onClick={event => { event.stopPropagation(); dispatch({ type: "task.assignOwner", taskId: task.id }, transitionOrigin); }}
           >
             <MemberAvatar member={ownerMember} placeholder={task.effectiveOwnerId === null ? "shared" : undefined} size={isCompact ? "xs" : "sm"} />
           </button>
@@ -626,7 +629,7 @@ export function TaskRow({
             disabled={busy}
             onClick={() => {
               scope.setOpenLifecycle(null);
-              dispatch({ type: "task.waitingLifecycle", taskId: task.id });
+              dispatch({ type: "task.waitingLifecycle", taskId: task.id }, transitionOrigin);
             }}
           >
             {task.externalWait ? strings.followUp : strings.waiting}

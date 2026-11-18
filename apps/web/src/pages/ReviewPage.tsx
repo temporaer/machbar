@@ -1,5 +1,5 @@
 import { flattenTasks } from "../lib/taskHelpers";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ReviewCategory,
   ReviewItem,
@@ -32,7 +32,6 @@ import {
 } from "../lib/taskTransitionPresentationContext";
 import {
   taskTransitionForNode,
-  taskTransitionNodeKey,
   type TaskDisplayNode,
   type TaskTransitionOperation,
   type TaskTransitionVisualContext,
@@ -150,8 +149,6 @@ function ReviewPageContent() {
     reconsider: candidates.filter(item => item.category === "reconsider"),
   };
   const visibleItems = categoryOrder.flatMap(category => buckets[category]);
-  const groups = categoryOrder.map(category => ({ category, items: buckets[category] }))
-    .filter(group => group.items.length > 0);
   const presentation = useTaskTransitionPresentation();
   const reviewTaskSections = useMemo(() => categoryOrder.map(category => {
     const reviewItems = visibleItems.filter(
@@ -171,7 +168,7 @@ function ReviewPageContent() {
   const transitionReadSettled =
     !itemsLoading && !itemsError && !tasksLoading && !tasksError;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!presentation) return;
     for (const section of reviewTaskSections) {
       presentation.registerSection(section.sectionId, section.tasks, transitionReadSettled);
@@ -197,9 +194,11 @@ function ReviewPageContent() {
     const target =
       candidates.find((item) => reviewItemKey(item) === origin.issueKey) ??
       candidates[Math.min(origin.issueIndex, candidates.length - 1)];
-    if (!target) return;
+    const targetKey = target ? reviewItemKey(target) :
+      itemRefs.current.has(origin.issueKey) ? origin.issueKey : null;
+    if (!targetKey) return;
     requestAnimationFrame(() => {
-      const element = itemRefs.current.get(reviewItemKey(target));
+      const element = itemRefs.current.get(targetKey);
       element?.scrollIntoView?.({ block: "nearest" });
       element?.focus();
     });
