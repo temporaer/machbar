@@ -100,6 +100,24 @@ export function TaskListTransitionFeedbackProvider({
     }
     const next = new Map(entriesRef.current);
     next.delete(taskId);
+    const sourceOutline = current.sourceOutlineId
+      ? outlines.current.get(current.sourceOutlineId)
+      : undefined;
+    if (
+      current.sourceIndex !== null &&
+      sourceOutline &&
+      !sourceOutline.tasks.has(taskId)
+    ) {
+      for (const [id, entry] of next) {
+        if (
+          entry.sourceOutlineId === current.sourceOutlineId &&
+          entry.sourceIndex !== null &&
+          entry.sourceIndex > current.sourceIndex
+        ) {
+          next.set(id, { ...entry, sourceIndex: entry.sourceIndex - 1 });
+        }
+      }
+    }
     replaceEntries(next);
   }, [replaceEntries]);
 
@@ -206,6 +224,7 @@ export function TaskListTransitionFeedbackProvider({
       !outlineId ||
       !entry.sourceOutlineId ||
       entry.sourceOutlineId === outlineId ||
+      outlines.current.get(outlineId)?.tasks.has(taskId) ||
       !outlines.current.has(entry.sourceOutlineId)
     )
       ? entry
@@ -218,10 +237,9 @@ export function TaskListTransitionFeedbackProvider({
       for (const taskId of outline.tasks.keys()) visibleElsewhere.add(taskId);
     }
     return [...entries.values()].filter(entry =>
-      !taskIds.has(entry.event.taskId) && (
-        entry.sourceOutlineId === outlineId ||
-        (!entry.sourceOutlineId && !visibleElsewhere.has(entry.event.taskId))
-      ),
+      !taskIds.has(entry.event.taskId) &&
+      !visibleElsewhere.has(entry.event.taskId) &&
+      (entry.sourceOutlineId === outlineId || !entry.sourceOutlineId),
     );
   }, [entries]);
   const allDepartures = useCallback(() => {

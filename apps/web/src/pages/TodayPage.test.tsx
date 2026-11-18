@@ -372,6 +372,29 @@ describe("TodayPage", () => {
     expect(sourceSection).not.toBeInTheDocument();
   });
 
+  it("moves completion feedback to a sibling section while the source outline remains mounted", async () => {
+    const task = makeTask({ id: 9002, title: "Transferred into completed history" });
+    const sibling = makeTask({ id: 9003, title: "Keeps source section mounted" });
+    const done = makeTask({ ...task, status: "done", revision: 2 });
+    let completed = false;
+    mockedApi.getAgenda.mockImplementation(async () => ({
+      ...makeEmptyAgenda(),
+      dueToday: completed ? [sibling] : [task, sibling],
+      completedToday: completed ? [done] : [],
+    }));
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    renderWithProviders(<TodayPage />);
+    const row = (await screen.findByText(task.title)).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(screen.getAllByText(task.title)).toHaveLength(1));
+    const transferredRow = screen.getByText(task.title).closest("li")!;
+    expect(transferredRow).not.toHaveAttribute("aria-disabled", "true");
+    expect(within(transferredRow).getByRole("status")).toHaveTextContent("Erledigt");
+    expect(transferredRow).toBeVisible();
+    expect(screen.getAllByRole("status").filter(status => status.textContent === "Erledigt")).toHaveLength(1);
+  });
+
   it.each([false, true])("regroups open children independently of a completed parent, menu open: %s", async openMenu => {
     const child = makeTask({ id: 9022, title: "Child left open", parentTaskId: 9021 });
     const parent = makeTask({ id: 9021, title: "Completed parent", children: [child] });
@@ -684,6 +707,11 @@ describe("TodayPage", () => {
 
     await userEvent.click(summary);
     expect(screen.getByText("Barbara anrufen")).toBeVisible();
+    expect(details).toHaveAttribute("open");
+
+    await userEvent.click(summary);
+    expect(screen.getByText("Barbara anrufen")).not.toBeVisible();
+    expect(details).not.toHaveAttribute("open");
   });
 
   it("zeigt machbare Aufgaben ohne Termin als standardmäßig geöffneten Nebenabschnitt, wenn es die einzige Arbeitsgruppe ist", async () => {

@@ -58,6 +58,23 @@ function RelocatedTransitionSection({ task }: { task: ReturnType<typeof makeTask
     </TaskListTransitionFeedbackProvider>
   );
 }
+function SiblingTransitionSection({ task }: { task: ReturnType<typeof makeTask> }) {
+  const [sourceTasks, setSourceTasks] = useState([task, makeTask({ id: task.id + 1, title: "Remaining source row" })]);
+  const [destinationTasks, setDestinationTasks] = useState<typeof sourceTasks>([]);
+  return (
+    <TaskListTransitionFeedbackProvider externalDepartures>
+      <button type="button" onClick={() => {
+        setSourceTasks(sourceTasks.slice(1));
+        setDestinationTasks([{ ...task, status: "done", revision: task.revision + 1 }]);
+      }}>
+        Transfer task
+      </button>
+      <TaskOutline tasks={sourceTasks} emptyMessage="Empty source" />
+      <TaskOutline tasks={destinationTasks} emptyMessage="Empty destination" />
+      <TaskListTransitionDepartures />
+    </TaskListTransitionFeedbackProvider>
+  );
+}
 
 describe("server-confirmed compiled task rows", () => {
   beforeEach(() => { vi.clearAllMocks(); vi.useRealTimers(); window.localStorage.clear(); });
@@ -154,6 +171,24 @@ describe("server-confirmed compiled task rows", () => {
     expect(within(row).getByRole("status")).toHaveTextContent("Erledigt");
     expect(screen.getAllByRole("status").filter(status => status.textContent === "Erledigt")).toHaveLength(1);
   });
+  it("moves confirmation to a sibling outline without duplicating a departure", async () => {
+    const task = makeTask({ title: "Transferred while source remains" });
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: task.revision + 1 });
+    renderWithProviders(<SiblingTransitionSection task={task} />);
+    await screen.findByText(task.title);
+    fireEvent.click(within(screen.getByText(task.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(within(screen.getByText(task.title).closest("li")!)
+      .getByRole("status")).toHaveTextContent("Erledigt"));
+    fireEvent.click(screen.getByRole("button", { name: "Transfer task" }));
+
+    await waitFor(() => expect(screen.getAllByText(task.title)).toHaveLength(1));
+    const row = screen.getByText(task.title).closest("li")!;
+    expect(row).not.toHaveAttribute("aria-disabled", "true");
+    expect(within(row).getByRole("status")).toHaveTextContent("Erledigt");
+    expect(screen.getAllByRole("status").filter(status => status.textContent === "Erledigt")).toHaveLength(1);
+  });
   it("keeps concurrent departures in their original root order", async () => {
     const first = makeTask({ title: "First removed row", position: 0 });
     const second = makeTask({ title: "Second removed row", position: 1 });
@@ -209,6 +244,49 @@ describe("server-confirmed compiled task rows", () => {
       .toHaveLength(2));
     expect([...container.querySelectorAll(".task-row-title")].map(title => title.textContent))
       .toEqual([first.title, second.title, remaining.title]);
+  });
+  it("rebases staggered departures without shifting a still-authoritative row", async () => {
+    const recurring = makeTask({ title: "Recurring retained row", position: 0, repeatAfterDays: 7 });
+    const second = makeTask({ title: "First detached row", position: 1 });
+    const third = makeTask({ title: "Second detached row", position: 2 });
+    const last = makeTask({ title: "Untouched last row", position: 3 });
+    const refreshedRecurring = { ...recurring, revision: 2, status: "actionable" as const };
+    mockedApi.searchTasks
+      .mockResolvedValueOnce([recurring, second, third, last])
+      .mockResolvedValueOnce([refreshedRecurring, second, third, last])
+      .mockResolvedValueOnce([refreshedRecurring, third, last])
+      .mockResolvedValueOnce([refreshedRecurring, last]);
+    mockedApi.completeTask.mockImplementation(async id => id === recurring.id
+      ? refreshedRecurring
+      : { ...(id === second.id ? second : third), status: "done", revision: 2 });
+    const { container } = renderWithProviders(<CompiledSection />);
+    await screen.findByText(recurring.title);
+
+    fireEvent.click(within(screen.getByText(recurring.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(within(screen.getByText(recurring.title).closest("li")!)
+      .getByRole("status")).toHaveTextContent("Vorkommen erledigt"));
+    await new Promise(resolve => setTimeout(resolve, 1_200));
+
+    fireEvent.click(within(screen.getByText(second.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(container.querySelectorAll("li.task-row[aria-disabled='true']"))
+      .toHaveLength(1));
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+
+    fireEvent.click(within(screen.getByText(third.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(container.querySelectorAll("li.task-row[aria-disabled='true']"))
+      .toHaveLength(2));
+    await new Promise(resolve => setTimeout(resolve, 900));
+
+    expect([...container.querySelectorAll(".task-row-title")].map(title => title.textContent))
+      .toEqual([recurring.title, second.title, third.title, last.title]);
+    await new Promise(resolve => setTimeout(resolve, 1_200));
+
+    expect([...container.querySelectorAll(".task-row-title")].map(title => title.textContent))
+      .toEqual([recurring.title, third.title, last.title]);
+    expect(container.querySelectorAll("li.task-row[aria-disabled='true']")).toHaveLength(1);
   });
   it("keeps a pending row inert when membership refresh removes it before the write settles", async () => {
     const task = makeTask({ title: "Refreshed while pending" });

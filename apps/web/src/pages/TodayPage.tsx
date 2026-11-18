@@ -56,8 +56,8 @@ function CompletedTodaySection({
       <summary
         className="section-title disclosure-summary"
         onClick={event => {
+          event.preventDefault();
           if (hasTransition) {
-            event.preventDefault();
             return;
           }
           setManuallyOpen(open => !open);
