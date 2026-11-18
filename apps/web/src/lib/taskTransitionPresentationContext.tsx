@@ -61,25 +61,51 @@ export function TaskTransitionPresentationProvider({
   identityKey: string;
   children: ReactNode;
 }) {
-  return <TaskTransitionPresentationOwner key={identityKey}>{children}</TaskTransitionPresentationOwner>;
+  return <TaskTransitionPresentationOwner identityKey={identityKey}>{children}</TaskTransitionPresentationOwner>;
 }
 
-function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) {
-  const [viewId] = useState(() => `task-view:${nextViewId++}`);
+function TaskTransitionPresentationOwner({
+  identityKey,
+  children,
+}: {
+  identityKey: string;
+  children: ReactNode;
+}) {
+  const [viewId, setViewId] = useState(() => `task-view:${nextViewId++}`);
   const [layout, setLayout] = useState(emptyTaskTransitionLayout);
   const layoutRef = useRef(layout);
+  const identityRef = useRef(identityKey);
+  const generation = useRef(0);
   const retired = useRef(false);
   const sections = useRef(new Map<string, SectionInput>());
   const tasksBySection = useRef(new Map<string, Map<number, Task>>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
+  if (identityRef.current !== identityKey) {
+    retired.current = true;
+    for (const timer of timers.current.values()) clearTimeout(timer);
+    timers.current.clear();
+    sections.current.clear();
+    tasksBySection.current.clear();
+    generation.current += 1;
+    identityRef.current = identityKey;
+    retired.current = false;
+    const emptyLayout = emptyTaskTransitionLayout();
+    layoutRef.current = emptyLayout;
+    setLayout(emptyLayout);
+    setViewId(`task-view:${nextViewId++}`);
+  }
+  const ownerGeneration = generation.current;
+  const isCurrentOwner = () =>
+    !retired.current && generation.current === ownerGeneration;
+
   const updateLayout = useCallback((update: (current: TaskTransitionLayout) => TaskTransitionLayout) => {
-    if (retired.current) return;
+    if (!isCurrentOwner()) return;
     const next = update(layoutRef.current);
     if (next === layoutRef.current) return;
     layoutRef.current = next;
     setLayout(next);
-  }, []);
+  }, [ownerGeneration]);
 
   const refreshSections = useCallback(() => {
     updateLayout(current => {
@@ -92,6 +118,7 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
   }, [updateLayout]);
 
   const registerSection = useCallback((sectionId: string, tasks: Task[], readSettled: boolean) => {
+    if (!isCurrentOwner()) return;
     const previous = sections.current.get(sectionId);
     const signatureOf = (items: Task[]): string => items.map(task =>
       `${task.id}:${task.revision}[${signatureOf(task.children)}]`).join(",");
@@ -109,7 +136,7 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
     }
     sections.current.set(sectionId, { tasks, readSettled, signature });
     refreshSections();
-  }, [refreshSections]);
+  }, [ownerGeneration, refreshSections]);
 
   const isBlocked = useCallback((taskId: number, revision?: number) => {
     const guard = layoutRef.current.staleGuards[taskId];
@@ -121,7 +148,7 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
     task: Task,
     visualContext?: TaskTransitionVisualContext,
   ): TaskTransitionOrigin | undefined => {
-    if (retired.current || !sections.current.has(sectionId)) return undefined;
+    if (!isCurrentOwner() || !sections.current.has(sectionId)) return undefined;
     const nodeKey = taskTransitionNodeKey(task.id);
     const initialNode = layoutRef.current.nodes[nodeKey];
     if (!initialNode || initialNode.sectionId !== sectionId) return undefined;
@@ -130,9 +157,9 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
       nodeKey,
       taskId: task.id,
       ...(visualContext ? { visualContext } : {}),
-      isBlocked: () => !retired.current && isBlocked(task.id, task.revision),
+      isBlocked: () => isCurrentOwner() && isBlocked(task.id, task.revision),
       begin: (token, sourceTask, intent) => {
-        if (retired.current) return "unavailable";
+        if (!isCurrentOwner()) return "unavailable";
         if (isBlocked(sourceTask.id, sourceTask.revision)) return "blocked";
         const current = layoutRef.current;
         const currentNode = current.nodes[nodeKey];
@@ -151,12 +178,12 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
       commit: (token, revision, status) => updateLayout(value =>
         commitTaskTransition(value, token, revision, status)),
       settled: token => {
-        if (retired.current) return;
+        if (!isCurrentOwner()) return;
         updateLayout(value => confirmTaskTransition(value, token));
         const existing = timers.current.get(token);
         if (existing) clearTimeout(existing);
         timers.current.set(token, setTimeout(() => {
-          if (retired.current) return;
+          if (!isCurrentOwner()) return;
           timers.current.delete(token);
           updateLayout(value => releaseTaskTransition(value, token));
           refreshSections();
@@ -164,7 +191,7 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
       },
     };
     return originRef;
-  }, [isBlocked, refreshSections, updateLayout, viewId]);
+  }, [isBlocked, ownerGeneration, refreshSections, updateLayout, viewId]);
 
   const items = useCallback((sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[] => {
     const current = layoutRef.current;

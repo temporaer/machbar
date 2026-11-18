@@ -352,7 +352,7 @@ describe("TodayPage", () => {
     );
   });
 
-  it("regroups a completed task into server-confirmed completed history immediately", async () => {
+  it("keeps a completed task at its source until transition confirmation ends", async () => {
     const task = makeTask({ id: 9001, title: "Bleibt kurz in Today", status: "actionable" });
     const done = makeTask({ ...task, status: "done", revision: 2 });
     let completed = false;
@@ -368,8 +368,8 @@ describe("TodayPage", () => {
     expect(mockedApi.getAgenda.mock.calls.length).toBeGreaterThan(1);
     fireEvent.click(screen.getByText("Heute erledigt (1)"));
     expect(screen.getAllByText(task.title)).toHaveLength(1);
-    expect(screen.getByText(task.title).closest(".section")).not.toBe(sourceSection);
-    expect(sourceSection).not.toBeInTheDocument();
+    expect(screen.getByText(task.title).closest(".section")).toBe(sourceSection);
+    expect(sourceSection).toBeInTheDocument();
   });
 
   it.each([false, true])("regroups open children independently of a completed parent, menu open: %s", async openMenu => {
@@ -434,7 +434,7 @@ describe("TodayPage", () => {
     expect(screen.getAllByText(child.title)).toHaveLength(1);
   });
 
-  it.each([false, true])("removes an omitted ancestor after child completion, menu open: %s", async openParentMenu => {
+  it.each([false, true])("retains an omitted ancestor during child confirmation, menu open: %s", async openParentMenu => {
     const child = makeTask({ id: 9012, title: "Nested retained task" });
     const parent = makeTask({ id: 9011, title: "Retained ancestor", children: [child] });
     const done = makeTask({ ...child, status: "done", revision: 2 });
@@ -447,8 +447,10 @@ describe("TodayPage", () => {
     const row = (await screen.findByText(child.title)).closest("li")!;
     if (openParentMenu) fireEvent.click(within(screen.getByText(parent.title).closest("li")!).getAllByRole("button", { name: "Weitere Aktionen" })[0]!);
     fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
-    await waitFor(() => expect(screen.queryByText(parent.title)).not.toBeInTheDocument());
-    expect(screen.queryByText(parent.title)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(parent.title).closest("li")).toHaveAttribute("aria-disabled", "true"),
+    );
+    expect(screen.getAllByText(child.title)).toHaveLength(1);
   });
 
   it.each(["member", "scope"])("does not expose a retained row after changing the selected %s", async selection => {
