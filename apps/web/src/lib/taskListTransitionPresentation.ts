@@ -1,5 +1,14 @@
-import type { Task } from "@machbar/shared";
-import type { TaskTransitionFeedbackEvent } from "./useTaskActions";
+import type { Task, TaskStatus } from "@machbar/shared";
+
+export interface TaskTransitionFeedbackEvent {
+  taskId: number;
+  targetStatus: TaskStatus;
+  occurrence: boolean;
+  phase: "pending" | "success" | "failure";
+  sourceRevision: number;
+  resultStatus?: TaskStatus;
+  resultRevision?: number;
+}
 
 export interface TaskListTransition {
   task: Task;

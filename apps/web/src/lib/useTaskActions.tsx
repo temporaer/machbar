@@ -5,19 +5,11 @@ import { toIsoCalendarDate } from "./naturalDate";
 import { hasOpenDescendants } from "./taskHelpers";
 import { ownerAssignmentPatch, updateTask } from "./taskMutations";
 import { useItemMutations } from "./useItemMutations";
+import type { TaskTransitionFeedbackEvent } from "./taskListTransitionPresentation";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
 export type PendingAction = "complete" | "cancel";
-export interface TaskTransitionFeedbackEvent {
-  taskId: number;
-  targetStatus: TaskStatus;
-  occurrence: boolean;
-  phase: "pending" | "success" | "failure";
-  sourceRevision: number;
-  resultStatus?: TaskStatus;
-  resultRevision?: number;
-}
 type TaskTransitionFeedbackListener = (event: TaskTransitionFeedbackEvent) => void;
 type WithoutExpectedRevision<T> = T extends unknown ? Omit<T, "expectedRevision"> : never;
 
