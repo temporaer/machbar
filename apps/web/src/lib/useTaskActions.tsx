@@ -5,6 +5,7 @@ import { toIsoCalendarDate } from "./naturalDate";
 import { hasOpenDescendants } from "./taskHelpers";
 import { ownerAssignmentPatch, updateTask } from "./taskMutations";
 import { useItemMutations } from "./useItemMutations";
+import type { TaskTransitionIntent, TaskTransitionOrigin } from "./taskTransitionPresentation";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
@@ -12,27 +13,44 @@ export type PendingAction = "complete" | "cancel";
 type WithoutExpectedRevision<T> = T extends unknown ? Omit<T, "expectedRevision"> : never;
 
 function useTaskActionsState() {
-  const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
+  const [pending, setPending] = useState<{
+    task: Task;
+    action: PendingAction;
+    origin?: TaskTransitionOrigin;
+  } | null>(null);
   const { run, ...feedback } = useItemMutations();
-  const runTransition = useCallback((task: Pick<Task, "id">, mutate: () => Promise<Task>, throwOnError = false) =>
-    run({ id: task.id, mutate, throwOnError }), [run]);
+  const runTransition = useCallback((
+    task: Pick<Task, "id">,
+    mutate: () => Promise<Task>,
+    throwOnError = false,
+    origin?: TaskTransitionOrigin,
+    intent?: TaskTransitionIntent,
+  ) => run({
+    id: task.id,
+    mutate,
+    throwOnError,
+    ...(origin && intent && "revision" in task
+      ? { presentation: { origin, task: task as Task, intent } }
+      : {}),
+  }), [run]);
 
-  const complete = useCallback((task: Task, policy?: ChildPolicy, criteriaToCheck?: number[], throwOnError = false) =>
+  const complete = useCallback((task: Task, policy?: ChildPolicy, criteriaToCheck?: number[], throwOnError = false, origin?: TaskTransitionOrigin) =>
     runTransition(task, () => api.completeTask(
       task.id, policy ?? "leave_open",
       task.repeatAfterDays !== null ? toIsoCalendarDate(new Date()) : undefined,
       task.revision, ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
-    ), throwOnError), [runTransition]);
-  const cancel = useCallback((task: Task, policy?: ChildPolicy) =>
-    runTransition(task, () => api.cancelTask(task.id, policy ?? "leave_open", task.revision)), [runTransition]);
-  const reopen = useCallback((task: Task) =>
-    runTransition(task, () => api.reopenTask(task.id, task.revision)), [runTransition]);
-  const transitionStatus = useCallback((task: Task, status: TaskStatus) =>
-    runTransition(task, () => api.transitionTaskStatus(task.id, status, undefined, task.revision)), [runTransition]);
-  const setStatus = useCallback((task: Task, status: Extract<TaskStatus, "someday" | "actionable">) =>
-    runTransition(task, () => updateTask(task, { status })), [runTransition]);
-  const clarify = useCallback((task: Task) =>
-    runTransition(task, () => api.clarifyTask(task.id, task.revision)), [runTransition]);
+    ), throwOnError, origin, "complete"), [runTransition]);
+  const cancel = useCallback((task: Task, policy?: ChildPolicy, origin?: TaskTransitionOrigin) =>
+    runTransition(task, () => api.cancelTask(task.id, policy ?? "leave_open", task.revision), false, origin, "cancel"), [runTransition]);
+  const reopen = useCallback((task: Task, origin?: TaskTransitionOrigin) =>
+    runTransition(task, () => api.reopenTask(task.id, task.revision), false, origin, "reopen"), [runTransition]);
+  const transitionStatus = useCallback((task: Task, status: TaskStatus, origin?: TaskTransitionOrigin) =>
+    runTransition(task, () => api.transitionTaskStatus(task.id, status, undefined, task.revision), false, origin,
+      status === "done" ? "complete" : status === "cancelled" ? "cancel" : status), [runTransition]);
+  const setStatus = useCallback((task: Task, status: Extract<TaskStatus, "someday" | "actionable">, origin?: TaskTransitionOrigin) =>
+    runTransition(task, () => updateTask(task, { status }), false, origin, status), [runTransition]);
+  const clarify = useCallback((task: Task, origin?: TaskTransitionOrigin) =>
+    runTransition(task, () => api.clarifyTask(task.id, task.revision), false, origin, "actionable"), [runTransition]);
   const deferClarification = useCallback((task: Task, date: string, throwOnError = false) =>
     runTransition(task, () => api.deferTaskClarification(task.id, date, task.revision), throwOnError), [runTransition]);
   const makeAction = useCallback((task: Task) =>
@@ -64,21 +82,21 @@ function useTaskActionsState() {
     task: Task, input: WithoutExpectedRevision<ExternalWaitFollowUpInput>, options: { throwOnError?: boolean } = {},
   ) => runTransition(task, () => api.followUpExternalWait(task.id, { ...input, expectedRevision: task.revision }), options.throwOnError), [runTransition]);
 
-  const requestToggle = useCallback((task: Task) => {
-    if (task.status === "done" || task.status === "cancelled") { void reopen(task); return; }
-    if (hasOpenDescendants(task)) { setPending({ task, action: "complete" }); return; }
-    void complete(task);
+  const requestToggle = useCallback((task: Task, origin?: TaskTransitionOrigin) => {
+    if (task.status === "done" || task.status === "cancelled") { void reopen(task, origin); return; }
+    if (hasOpenDescendants(task)) { setPending({ task, action: "complete", ...(origin ? { origin } : {}) }); return; }
+    void complete(task, undefined, undefined, false, origin);
   }, [complete, reopen]);
-  const requestCancel = useCallback((task: Task) => {
+  const requestCancel = useCallback((task: Task, origin?: TaskTransitionOrigin) => {
     if (task.status === "cancelled") return;
-    if (hasOpenDescendants(task)) { setPending({ task, action: "cancel" }); return; }
-    void cancel(task);
+    if (hasOpenDescendants(task)) { setPending({ task, action: "cancel", ...(origin ? { origin } : {}) }); return; }
+    void cancel(task, undefined, origin);
   }, [cancel]);
   const resolvePolicy = useCallback((policy: ChildPolicy) => {
     if (!pending) return;
     setPending(null);
-    if (pending.action === "complete") void complete(pending.task, policy);
-    else void cancel(pending.task, policy);
+    if (pending.action === "complete") void complete(pending.task, policy, undefined, false, pending.origin);
+    else void cancel(pending.task, policy, pending.origin);
   }, [pending, complete, cancel]);
   const cancelPrompt = useCallback(() => setPending(null), []);
 

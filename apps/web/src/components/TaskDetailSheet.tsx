@@ -95,7 +95,7 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
-  const { openTaskId, queueActive, focusField, clearFocusField, open, inspect, advanceQueue, close } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, presentationOrigin, clearFocusField, open, inspect, advanceQueue, close } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const dispatch = useWorkItemCommands();
@@ -411,8 +411,8 @@ export function TaskDetailSheet() {
     try {
       const updated =
         status === "actionable"
-          ? await taskActions.clarify(task)
-          : await taskActions.setStatus(task, "someday");
+          ? await taskActions.clarify(task, presentationOrigin ?? undefined)
+          : await taskActions.setStatus(task, "someday", presentationOrigin ?? undefined);
       if (!updated) return;
       finishClassification();
     } catch (err) {

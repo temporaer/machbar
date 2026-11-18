@@ -36,6 +36,9 @@ import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
 import { taskRailActions, type RailAction } from "../lib/workItemRail";
 import { IconActionGlyph } from "./IconActionButton";
+import { useTaskTransitionPresentation } from "../lib/taskTransitionPresentationContext";
+import { taskTransitionForNode, taskTransitionNodeKey } from "../lib/taskTransitionPresentation";
+import { TaskTransitionDepartureRow, TaskTransitionDepartureChildren } from "./TaskTransitionDepartureRow";
 
 const LONG_PRESS_MS = 480;
 
@@ -66,6 +69,7 @@ export interface TaskRowProps {
   compactDescendants?: boolean;
   /** Optional compiled-view emphasis; status styling remains the fallback. */
   attentionTone?: AttentionTone;
+  transitionSectionId?: string;
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
@@ -95,6 +99,7 @@ export function TaskRow({
   showRevisitDate = false,
   compactDescendants = false,
   attentionTone,
+  transitionSectionId,
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -108,6 +113,10 @@ export function TaskRow({
     (value: boolean) => scope.setCollapsed(taskProp.id, value),
     [scope, taskProp.id],
   );
+  const displayedChildren = presentation && transitionSectionId
+    ? presentation.items(transitionSectionId, task.id, visibleChildren)
+    : visibleChildren.map(child => ({ kind: "live" as const, task: child, transition: null }));
+  const hasDisplayedChildren = displayedChildren.length > 0 || hiddenTerminalChildren.length > 0;
   const chipsOpen = scope.openRailId === taskProp.id;
   const kebabButtonRef = useRef<HTMLButtonElement>(null);
   const mainButtonRef = useRef<HTMLButtonElement>(null);
@@ -127,7 +136,16 @@ export function TaskRow({
   const taskActions = useTaskActions();
   const { isPending, errors, clearError } = taskActions;
   const outlineRefreshing = organize?.pendingId != null;
-  const busy = isPending(taskProp.id) || outlineRefreshing;
+  const presentation = useTaskTransitionPresentation();
+  const transition = presentation && transitionSectionId
+    ? taskTransitionForNode(presentation.layout, taskTransitionNodeKey(taskProp.id))
+    : null;
+  const transitionOrigin = presentation && transitionSectionId
+    ? presentation.origin(transitionSectionId, taskProp)
+    : undefined;
+  const staleTransitionGuard = presentation?.isBlocked(taskProp.id) ?? false;
+  const busy = isPending(taskProp.id) || outlineRefreshing ||
+    transition?.phase === "pending" || transition?.phase === "refreshing" || staleTransitionGuard;
 
   const task = taskProp;
   const isReference = task.kind === "reference";
@@ -188,8 +206,16 @@ export function TaskRow({
     ? children.filter(isEntirelyTerminal)
     : [];
   const [showHiddenTerminal, setShowHiddenTerminal] = useState(false);
-  const isDone = task.status === "done";
-  const isCancelled = task.status === "cancelled";
+  const isDone = task.status === "done" ||
+    (transition?.intent === "complete" && !transition.recurringOccurrence);
+  const isCancelled = task.status === "cancelled" || transition?.intent === "cancel";
+  const transitionLabel = transition
+    ? transition.phase === "confirmed"
+      ? transition.recurringOccurrence
+        ? strings.taskTransitionOccurrence
+        : strings.taskTransitionConfirmed[transition.intent]
+      : strings.taskTransitionPending[transition.intent]
+    : null;
   const overdue = isOverdue(task.dueDate, task.status);
   const ownerMember =
     task.effectiveOwnerId === null
@@ -245,7 +271,7 @@ export function TaskRow({
     cancel: cancelSwipe,
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null || isReference,
-    onPrimary: () => dispatch({ type: "task.primaryAction", task }),
+    onPrimary: () => dispatch({ type: "task.primaryAction", task }, transitionOrigin),
     onDeepPrimary: () => scope.setOpenLifecycle(taskProp.id),
     onSecondary: () => scope.setOpenRail(taskProp.id),
     onRealDrag: clearLongPress,
@@ -291,7 +317,7 @@ export function TaskRow({
     // Restore to a connected opener before the rail unmounts.
     kebabButtonRef.current?.focus();
     scope.setOpenRail(null);
-    dispatch(action.command);
+    dispatch(action.command, transitionOrigin);
   };
 
   const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
@@ -317,6 +343,7 @@ export function TaskRow({
       <div
         ref={contentRef}
         className={`task-row-content${!isReference ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}${isCompact ? " compact" : ""}`}
+        aria-busy={busy || undefined}
         style={
           dragX || dragDepthShift
             ? { transform: `translateX(${dragX + dragDepthShift}px)` }
@@ -380,7 +407,7 @@ export function TaskRow({
               className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
               aria-label={isDone || isCancelled ? strings.reopen : strings.done}
               disabled={busy}
-              onClick={() => dispatch({ type: "task.toggleDone", task })}
+              onClick={() => dispatch({ type: "task.toggleDone", task }, transitionOrigin)}
             >
               {isDone ? "✓" : isCancelled ? "×" : ""}
             </button>
@@ -417,6 +444,7 @@ export function TaskRow({
             </button>
           ) : null}
         </div>
+        {transitionLabel ? <p className="task-row-transition-status" role="status" aria-live="polite">{transitionLabel}</p> : null}
         <div className="task-row-main-wrap">
           {isReference ? (
             <MaterialCard
@@ -432,7 +460,7 @@ export function TaskRow({
               ref={mainButtonRef}
               aria-label={task.title}
               disabled={outlineRefreshing}
-              onClick={() => dispatch({ type: "task.open", taskId: task.id })}
+              onClick={() => dispatch({ type: "task.open", taskId: task.id }, transitionOrigin)}
             >
               <>
                 <div className="task-row-header">
@@ -530,7 +558,7 @@ export function TaskRow({
           {!isReference && (isCompact
             ? null
             : notesWithoutAttachments
-              ? <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id })} />
+              ?               <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id }, transitionOrigin)} />
               : null)}
         </div>
         {!isReference ? (
@@ -586,7 +614,7 @@ export function TaskRow({
               aria-current={task.status === status ? "true" : undefined}
               onClick={() => {
                 scope.setOpenLifecycle(null);
-                dispatch({ type: "task.setStatus", task, status });
+                dispatch({ type: "task.setStatus", task, status }, transitionOrigin);
               }}
             >
               {strings.taskStatusLabels[status]}
@@ -615,15 +643,27 @@ export function TaskRow({
         />
       ) : null}
 
-      {!collapsed && (visibleChildren.length > 0 || hiddenTerminalChildren.length > 0) ? (
+      {!collapsed && hasDisplayedChildren ? (
         <ul className="task-row-children">
-          {visibleChildren.map((child) => (
+          {displayedChildren.map(item => item.kind === "departure" ? (
+            <TaskTransitionDepartureRow
+              key={item.node.key}
+              node={item.node}
+              operation={presentation ? taskTransitionForNode(presentation.layout, item.node.key) : null}
+            >
+              <TaskTransitionDepartureChildren
+                items={item.children}
+                getOperation={nodeKey => presentation ? taskTransitionForNode(presentation.layout, nodeKey) : null}
+              />
+            </TaskTransitionDepartureRow>
+          ) : (
             <TaskRow
-              key={child.id}
-              task={child}
+              key={item.task.id}
+              task={item.task}
               parentTask={task}
               depth={depth + 1}
               compactDescendants={compactDescendants}
+              transitionSectionId={transitionSectionId}
               {...(attentionTone ? { attentionTone } : {})}
             />
           ))}

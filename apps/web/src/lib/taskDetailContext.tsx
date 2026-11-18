@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
+import type { TaskTransitionOrigin } from "./taskTransitionPresentation";
 import {
   TaskWorkflowProvider,
   useOptionalTaskWorkflow,
@@ -25,6 +26,7 @@ export type TaskDetailHandoff = {
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
   openingId?: number;
+  presentationOrigin?: TaskTransitionOrigin;
 };
 
 export type WorkRefinementOrigin = {
@@ -51,7 +53,8 @@ interface TaskDetailContextValue {
   /** True while stepping through a "Klären" queue (Inbox clarify-all flow). */
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
-  open: (taskId: number, focusField?: TaskDetailFocusField) => void;
+  presentationOrigin: TaskTransitionOrigin | null;
+  open: (taskId: number, focusField?: TaskDetailFocusField, presentationOrigin?: TaskTransitionOrigin) => void;
   inspect: (taskId: number, focusField?: TaskDetailFocusField) => void;
   /** Opens the first id and remembers the rest so `advanceQueue` can step through them. */
   openQueue: (taskIds: number[], focusField?: TaskDetailFocusField) => void;
@@ -79,12 +82,13 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
 function TaskDetailFacade({ children }: { children: ReactNode }) {
   const workflow = useTaskWorkflow();
   const detail = workflow.detail;
-  const open = (taskId: number, field?: TaskDetailFocusField) =>
+  const open = (taskId: number, field?: TaskDetailFocusField, presentationOrigin?: TaskTransitionOrigin) =>
     workflow.openDetail({
       taskId,
       queueTaskIds: [],
       queueActive: false,
       focusField: field ?? null,
+      ...(presentationOrigin ? { presentationOrigin } : {}),
     });
   const inspect = (taskId: number, field?: TaskDetailFocusField) =>
     workflow.inspectDetail({
@@ -112,6 +116,7 @@ function TaskDetailFacade({ children }: { children: ReactNode }) {
       openTaskId: detail?.taskId ?? null,
       queueActive: detail?.queueActive ?? false,
       focusField: detail?.focusField ?? null,
+      presentationOrigin: detail?.presentationOrigin ?? null,
       open,
       inspect,
       openQueue,

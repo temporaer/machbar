@@ -13,6 +13,7 @@ import { useOptionalInteractionScope } from "./interactionScope";
 import { taskAvailabilityForLocalDate } from "./taskAvailability";
 import { calendarDateForInstant } from "@machbar/shared";
 import { useHouseholdTimezone } from "./householdTimezone";
+import type { TaskTransitionOrigin } from "./taskTransitionPresentation";
 
 /**
  * Every `task.*`/`story.*` command carries the id of the WorkItem it
@@ -226,20 +227,26 @@ export function useWorkItemCommands() {
     [projectActions, projectWorkflow, resolveStoryPrerequisite],
   );
 
-  const requestTaskCompletion = useCallback((task: Task) => {
+  const requestTaskCompletion = useCallback((task: Task, origin?: TaskTransitionOrigin) => {
     if (task.status === "done" || task.status === "cancelled") {
-      taskActions.requestToggle(task);
+      taskActions.requestToggle(task, origin);
       return;
     }
     if (task.acceptanceCriteria.some((criterion) => !criterion.checked)) {
-      taskWorkflow.open("completeWithCriteria", task.id);
+      taskWorkflow.open("completeWithCriteria", task.id, undefined, taskDetail.getHandoff(), origin);
       return;
     }
-    taskActions.requestToggle(task);
-  }, [taskActions, taskWorkflow]);
+    taskActions.requestToggle(task, origin);
+  }, [taskActions, taskDetail, taskWorkflow]);
 
   const dispatch = useCallback(
-    (command: WorkItemCommand) => {
+    (command: WorkItemCommand, presentationOrigin?: TaskTransitionOrigin) => {
+      const sourceOrigin = presentationOrigin ?? taskDetail.getHandoff()?.presentationOrigin;
+      const openTaskWorkflow = (
+        kind: Parameters<typeof taskWorkflow.open>[0],
+        taskId: number,
+        target?: Parameters<typeof taskWorkflow.open>[2],
+      ) => taskWorkflow.open(kind, taskId, target, taskDetail.getHandoff(), sourceOrigin);
       const workItemId = commandWorkItemId(command);
       if (workItemId !== null) scope?.setActive(workItemId, commandWorkItemRole(command));
       if (
@@ -267,28 +274,28 @@ export function useWorkItemCommands() {
             );
             return;
           }
-          if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
+          if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField, sourceOrigin);
           else taskDetail.open(command.workItem.id);
           return;
         case "task.plan":
           if (taskWorkflow.detailMode === "prerequisite") return;
-          taskWorkflow.open("plan", command.taskId, command.target, taskDetail.getHandoff());
+          openTaskWorkflow("plan", command.taskId, command.target);
           return;
         case "task.availability":
           if (taskWorkflow.detailMode === "prerequisite") return;
-          taskWorkflow.open("availability", command.taskId, "availability", taskDetail.getHandoff());
+          openTaskWorkflow("availability", command.taskId, "availability");
           return;
         case "task.deferClarification":
-          taskWorkflow.open("deferClarification", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("deferClarification", command.taskId);
           return;
         case "task.structure":
-          taskWorkflow.open("structure", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("structure", command.taskId);
           return;
         case "task.reminders":
-          taskWorkflow.open("plan", command.taskId, "reminders", taskDetail.getHandoff());
+          openTaskWorkflow("plan", command.taskId, "reminders");
           return;
         case "task.waitingLifecycle":
-          taskWorkflow.open("waitingLifecycle", command.taskId, "waiting", taskDetail.getHandoff());
+          openTaskWorkflow("waitingLifecycle", command.taskId, "waiting");
           return;
         case "task.startToday": {
           if (!timezoneLoaded) return;
@@ -307,31 +314,31 @@ export function useWorkItemCommands() {
           void taskActions.resolveExternalWait(command.task);
           return;
         case "task.refine":
-          taskWorkflow.open("refinement", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("refinement", command.taskId);
           return;
         case "task.split":
-          taskWorkflow.open("split", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("split", command.taskId);
           return;
         case "task.assignOwner":
-          taskWorkflow.open("assignOwner", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("assignOwner", command.taskId);
           return;
         case "task.changeProject":
-          taskWorkflow.open("changeProject", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("changeProject", command.taskId);
           return;
         case "task.recurrence":
-          taskWorkflow.open("plan", command.taskId, "recurrence", taskDetail.getHandoff());
+          openTaskWorkflow("plan", command.taskId, "recurrence");
           return;
         case "task.priority":
-          taskWorkflow.open("priority", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("priority", command.taskId);
           return;
         case "task.tags":
-          taskWorkflow.open("tags", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("tags", command.taskId);
           return;
         case "task.contexts":
-          taskWorkflow.open("contexts", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("contexts", command.taskId);
           return;
         case "task.convertToProject":
-          taskWorkflow.open("convertToProject", command.taskId, undefined, taskDetail.getHandoff());
+          openTaskWorkflow("convertToProject", command.taskId);
           return;
         case "task.lifecycle":
           scope?.setOpenLifecycle(command.taskId);
@@ -345,29 +352,29 @@ export function useWorkItemCommands() {
           if (current === next) return;
           if (current === "done" || current === "cancelled") {
             if (next === "actionable") {
-              taskActions.requestToggle(command.task);
+              taskActions.requestToggle(command.task, sourceOrigin);
             } else {
-              taskActions.transitionStatus(command.task, next);
+              taskActions.transitionStatus(command.task, next, sourceOrigin);
             }
             return;
           }
           if (next === "done") {
-            requestTaskCompletion(command.task);
+            requestTaskCompletion(command.task, sourceOrigin);
             return;
           }
           if (next === "cancelled") {
-            taskActions.requestCancel(command.task);
+            taskActions.requestCancel(command.task, sourceOrigin);
             return;
           }
           if (next === "captured") {
-            taskActions.transitionStatus(command.task, "captured");
+            taskActions.transitionStatus(command.task, "captured", sourceOrigin);
             return;
           }
-          taskActions.setStatus(command.task, next);
+          taskActions.setStatus(command.task, next, sourceOrigin);
           return;
         }
         case "task.toggleDone":
-          requestTaskCompletion(command.task);
+          requestTaskCompletion(command.task, sourceOrigin);
           return;
         case "task.toggleAdditionalNextAction": {
           const nextValue = !command.task.additionalNextAction;
@@ -378,8 +385,8 @@ export function useWorkItemCommands() {
           return;
         }
         case "task.primaryAction":
-          if (command.task.status === "captured") void taskActions.clarify(command.task);
-          else requestTaskCompletion(command.task);
+          if (command.task.status === "captured") void taskActions.clarify(command.task, sourceOrigin);
+          else requestTaskCompletion(command.task, sourceOrigin);
           return;
         case "task.makeAction":
           void taskActions.makeAction(command.task);

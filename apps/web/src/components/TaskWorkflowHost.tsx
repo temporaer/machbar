@@ -228,7 +228,13 @@ function TaskWorkflowContent({ state, openingId }: {
           onClose={close}
           onRefresh={reload}
           onComplete={async (criteriaToCheck, childPolicy) => {
-            await run(() => taskActions.complete(task, childPolicy, criteriaToCheck, true));
+            await run(() => taskActions.complete(
+              task,
+              childPolicy,
+              criteriaToCheck,
+              true,
+              state.presentationOrigin ?? state.originDetail?.presentationOrigin,
+            ));
           }}
         />
       );

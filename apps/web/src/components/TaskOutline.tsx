@@ -6,9 +6,12 @@ import { useTaskActions } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
 import { TaskRow } from "./TaskRow";
+import { TaskTransitionDepartureChildren, TaskTransitionDepartureRow } from "./TaskTransitionDepartureRow";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { EmptyState } from "./AsyncStates";
 import type { AttentionTone } from "../lib/attentionTone";
+import { useTaskTransitionSection } from "../lib/taskTransitionPresentationContext";
+import { taskTransitionForNode, taskTransitionNodeKey } from "../lib/taskTransitionPresentation";
 
 export interface TaskOutlineProps {
   tasks: Task[];
@@ -47,6 +50,10 @@ export interface TaskOutlineProps {
   compactDescendants?: boolean;
   /** Optional Today-only emphasis shared by every row in this compiled list. */
   attentionTone?: AttentionTone;
+  /** Stable section key within the explicit logical-view presentation owner. */
+  transitionSectionId?: string;
+  /** True when this section's latest read settled without an access/read error. */
+  transitionReadSettled?: boolean;
 }
 
 export function TaskOutline({
@@ -59,6 +66,8 @@ export function TaskOutline({
   nextActionInfo,
   compactDescendants = false,
   attentionTone,
+  transitionSectionId,
+  transitionReadSettled = true,
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
@@ -66,8 +75,12 @@ export function TaskOutline({
 
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
   const roots = sorted;
+  const presentation = useTaskTransitionSection(transitionSectionId, roots, transitionReadSettled);
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
-  if (roots.length === 0) return <EmptyState message={emptyMessage} />;
+  const displayItems = presentation && transitionSectionId
+    ? presentation.items(transitionSectionId, null, roots)
+    : roots.map(task => ({ kind: "live" as const, task, transition: null }));
+  if (displayItems.length === 0) return <EmptyState message={emptyMessage} />;
 
   const content = (
     <div className="task-outline" ref={organize.containerRef}>
@@ -80,9 +93,23 @@ export function TaskOutline({
         </div>
       ) : null}
       <ul className="list" style={{ padding: 0, margin: 0 }}>
-        {roots.map(task => {
+        {displayItems.map(item => {
+          if (item.kind === "departure") {
+            return <TaskTransitionDepartureRow
+              key={item.node.key}
+              node={item.node}
+              operation={presentation ? taskTransitionForNode(presentation.layout, item.node.key) : null}
+            >
+              <TaskTransitionDepartureChildren
+                items={item.children}
+                getOperation={nodeKey => presentation ? taskTransitionForNode(presentation.layout, nodeKey) : null}
+              />
+            </TaskTransitionDepartureRow>;
+          }
+          const task = item.task;
           const row = <TaskRow task={task} parentTask={null} depth={0}
             showRevisitDate={showRevisitDate} compactDescendants={compactDescendants}
+            transitionSectionId={transitionSectionId}
             {...(attentionTone ? { attentionTone } : {})} />;
           return <OutlineOrganizeProvider key={task.id} value={actualIds.has(task.id) ? organize.value : null}>{row}</OutlineOrganizeProvider>;
         })}

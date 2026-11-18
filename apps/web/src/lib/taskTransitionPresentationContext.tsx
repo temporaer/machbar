@@ -1,0 +1,241 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import type { Task } from "@machbar/shared";
+import {
+  beginTaskTransition,
+  commitTaskTransition,
+  confirmTaskTransition,
+  emptyTaskTransitionLayout,
+  reconcileTaskSection,
+  rejectTaskTransition,
+  releaseTaskTransition,
+  taskTransitionDisplayChildren,
+  taskTransitionForNode,
+  taskTransitionNodeKey,
+  taskTransitionOriginAncestors,
+  type TaskDisplayNode,
+  type TaskTransitionIntent,
+  type TaskTransitionLayout,
+  type TaskTransitionOperation,
+  type TaskTransitionOrigin,
+} from "./taskTransitionPresentation";
+
+type DisplayItem =
+  | { kind: "live"; task: Task; transition: TaskTransitionOperation | null }
+  | { kind: "departure"; node: TaskDisplayNode; children: DisplayItem[] };
+
+interface SectionInput {
+  tasks: Task[];
+  readSettled: boolean;
+  signature: string;
+}
+
+interface TaskTransitionPresentationValue {
+  viewId: string;
+  layout: TaskTransitionLayout;
+  registerSection(sectionId: string, tasks: Task[], readSettled: boolean): void;
+  items(sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[];
+  origin(sectionId: string, task: Task): TaskTransitionOrigin | undefined;
+  isBlocked(taskId: number): boolean;
+  hasHeldRows(sectionId: string): boolean;
+}
+
+const PresentationContext = createContext<TaskTransitionPresentationValue | null>(null);
+
+let nextViewId = 1;
+
+export function TaskTransitionPresentationProvider({
+  identityKey,
+  children,
+}: {
+  identityKey: string;
+  children: ReactNode;
+}) {
+  return <TaskTransitionPresentationOwner key={identityKey}>{children}</TaskTransitionPresentationOwner>;
+}
+
+function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) {
+  const [viewId] = useState(() => `task-view:${nextViewId++}`);
+  const [layout, setLayout] = useState(emptyTaskTransitionLayout);
+  const layoutRef = useRef(layout);
+  const retired = useRef(false);
+  const sections = useRef(new Map<string, SectionInput>());
+  const tasksBySection = useRef(new Map<string, Map<number, Task>>());
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  const updateLayout = useCallback((update: (current: TaskTransitionLayout) => TaskTransitionLayout) => {
+    if (retired.current) return;
+    const next = update(layoutRef.current);
+    if (next === layoutRef.current) return;
+    layoutRef.current = next;
+    setLayout(next);
+  }, []);
+
+  const refreshSections = useCallback(() => {
+    updateLayout(current => {
+      let next = current;
+      for (const [sectionId, input] of sections.current) {
+        next = reconcileTaskSection(next, sectionId, input.tasks, input.readSettled);
+      }
+      return next;
+    });
+  }, [updateLayout]);
+
+  const registerSection = useCallback((sectionId: string, tasks: Task[], readSettled: boolean) => {
+    const previous = sections.current.get(sectionId);
+    const signatureOf = (items: Task[]): string => items.map(task =>
+      `${task.id}:${task.revision}[${signatureOf(task.children)}]`).join(",");
+    const signature = signatureOf(tasks);
+    const taskMap = new Map<number, Task>();
+    const visit = (task: Task) => {
+      taskMap.set(task.id, task);
+      task.children.forEach(visit);
+    };
+    tasks.forEach(visit);
+    tasksBySection.current.set(sectionId, taskMap);
+    if (previous?.signature === signature && previous.readSettled === readSettled) {
+      sections.current.set(sectionId, { tasks, readSettled, signature });
+      return;
+    }
+    sections.current.set(sectionId, { tasks, readSettled, signature });
+    refreshSections();
+  }, [refreshSections]);
+
+  const findTask = useCallback((taskId: number) => {
+    for (const tasks of tasksBySection.current.values()) {
+      const task = tasks.get(taskId);
+      if (task) return task;
+    }
+    return undefined;
+  }, []);
+
+  const isBlocked = useCallback((taskId: number) => layoutRef.current.staleGuards[taskId] !== undefined, []);
+
+  const origin = useCallback((sectionId: string, task: Task): TaskTransitionOrigin | undefined => {
+    if (retired.current || !sections.current.has(sectionId)) return undefined;
+    const nodeKey = taskTransitionNodeKey(task.id);
+    const taskId = task.id;
+    const initialNode = layoutRef.current.nodes[nodeKey];
+    if (!initialNode || initialNode.sectionId !== sectionId) return undefined;
+    const originRef: TaskTransitionOrigin = {
+      viewId,
+      nodeKey,
+      taskId: task.id,
+      isBlocked: () => !retired.current && isBlocked(task.id),
+      begin: (token, sourceTask, intent) => {
+        if (retired.current) return "unavailable";
+        if (isBlocked(sourceTask.id)) return "blocked";
+        const current = layoutRef.current;
+        const currentNode = current.nodes[nodeKey];
+        if (!currentNode || currentNode.sectionId !== sectionId) return "unavailable";
+        const titles = new Map<number, string>();
+        for (const byId of tasksBySection.current.values()) {
+          for (const [id, value] of byId) titles.set(id, value.title);
+        }
+        const ancestors = taskTransitionOriginAncestors(current, nodeKey, titles);
+        updateLayout(value => beginTaskTransition(value, token, nodeKey, sourceTask, intent, ancestors));
+        return "started";
+      },
+      reject: token => updateLayout(value => rejectTaskTransition(value, token)),
+      commit: (token, revision, status) => updateLayout(value =>
+        commitTaskTransition(value, token, revision, status)),
+      settled: (token, readFailed) => {
+        if (retired.current) return;
+        updateLayout(value => confirmTaskTransition(value, token));
+        const existing = timers.current.get(token);
+        if (existing) clearTimeout(existing);
+        timers.current.set(token, setTimeout(() => {
+          timers.current.delete(token);
+          updateLayout(value => releaseTaskTransition(value, token));
+          refreshSections();
+          const task = findTask(taskId);
+          const guard = layoutRef.current.staleGuards[taskId];
+          if (readFailed && guard !== undefined && task && task.revision < guard) return;
+          if (!readFailed && !task && guard !== undefined) {
+            updateLayout(value => {
+              const staleGuards = { ...value.staleGuards };
+              delete staleGuards[taskId];
+              return { ...value, staleGuards };
+            });
+          }
+        }, 3_000));
+      },
+    };
+    return originRef;
+  }, [findTask, isBlocked, refreshSections, updateLayout, viewId]);
+
+  const items = useCallback((sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[] => {
+    const current = layoutRef.current;
+    const parentKey = parentId === null ? null : taskTransitionNodeKey(parentId);
+    const project = (parent: string | null, fresh: Task[]): DisplayItem[] =>
+      taskTransitionDisplayChildren(current, sectionId, parent, fresh).map(item => {
+        if ("task" in item) {
+          return {
+            kind: "live",
+            task: item.task,
+            transition: taskTransitionForNode(current, taskTransitionNodeKey(item.task.id)),
+          };
+        }
+        return {
+          kind: "departure",
+          node: item.node,
+          children: project(item.node.key, []),
+        };
+      });
+    return project(parentKey, tasks);
+  }, []);
+
+  const hasHeldRows = useCallback((sectionId: string) =>
+    Object.values(layout.operations).some(operation =>
+      layout.nodes[operation.nodeKey]?.sectionId === sectionId), [layout]);
+
+  useLayoutEffect(() => {
+    retired.current = false;
+    return () => {
+      retired.current = true;
+      for (const timer of timers.current.values()) clearTimeout(timer);
+      timers.current.clear();
+      sections.current.clear();
+      tasksBySection.current.clear();
+      layoutRef.current = emptyTaskTransitionLayout();
+    };
+  }, []);
+
+  const value = useMemo<TaskTransitionPresentationValue>(() => ({
+    viewId,
+    layout,
+    registerSection,
+    items,
+    origin,
+    isBlocked,
+    hasHeldRows,
+  }), [hasHeldRows, isBlocked, items, layout, origin, registerSection, viewId]);
+
+  return <PresentationContext.Provider value={value}>{children}</PresentationContext.Provider>;
+}
+
+export function useTaskTransitionPresentation(): TaskTransitionPresentationValue | null {
+  return useContext(PresentationContext);
+}
+
+export function useTaskTransitionSection(
+  sectionId: string | undefined,
+  tasks: Task[],
+  readSettled = true,
+) {
+  const presentation = useTaskTransitionPresentation();
+  useLayoutEffect(() => {
+    if (presentation && sectionId) presentation.registerSection(sectionId, tasks, readSettled);
+  }, [presentation, readSettled, sectionId, tasks]);
+  return presentation;
+}
+
+export type { DisplayItem as TaskTransitionDisplayItem };
