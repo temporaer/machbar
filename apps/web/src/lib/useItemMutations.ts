@@ -49,10 +49,10 @@ export function useItemMutations() {
     onStart?.();
     try {
       const result = await mutate();
-      onSuccess?.(result);
       // The captured refresh owner outlives a sheet, but cannot target a replacement identity.
       // Query errors remain read errors; the write has already committed.
       await Promise.resolve(bump()).catch(() => undefined);
+      onSuccess?.(result);
       return result;
     } catch (error) {
       if (mounted.current) {

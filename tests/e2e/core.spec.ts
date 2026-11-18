@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { calendarDateForInstant, type ReviewItem } from "@machbar/shared";
+import { test, expect, type Locator, type Page } from "@playwright/test";
+import { ACTIVITY_ACTOR_HEADER, calendarDateForInstant, type ReviewItem } from "@machbar/shared";
 import { randomUUID } from "node:crypto";
 
 const pageErrors = new WeakMap<Page, string[]>();
@@ -15,10 +15,38 @@ test.beforeEach(async ({ page, request }) => {
   }, member.id);
 });
 test.afterEach(async ({ page }) => { expect(pageErrors.get(page) ?? []).toEqual([]); });
-async function task(page: Page, extra: object = {}) {
-  const result = await page.request.post("/api/tasks", { data: { title: `Browser task ${randomUUID()}`, status: "actionable", ...extra } });
-  expect(result.status()).toBe(201);
+async function task(page: Page, extra: object = {}, actorMemberId?: number) {
+  const result = await page.request.post("/api/tasks", {
+    data: { title: `Browser task ${randomUUID()}`, status: "actionable", ...extra },
+    ...(actorMemberId ? { headers: { [ACTIVITY_ACTOR_HEADER]: String(actorMemberId) } } : {}),
+  });
+  expect(result.status(), await result.text()).toBe(201);
   return result.json();
+}
+
+async function swipeRight(page: Page, row: Locator, testInfo: { project: { name: string } }, deep = false) {
+  const bounds = await row.locator(".task-row-content").boundingBox();
+  expect(bounds).not.toBeNull();
+  const y = bounds!.y + bounds!.height / 2;
+  const distance = deep ? 180 : 120;
+  if (testInfo.project.name === "mobile-chrome") {
+    const session = await page.context().newCDPSession(page);
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: bounds!.x + 16, y, id: 1 }],
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: bounds!.x + 16 + distance, y, id: 1 }],
+    });
+    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await session.detach();
+  } else {
+    await page.mouse.move(bounds!.x + 16, y);
+    await page.mouse.down();
+    await page.mouse.move(bounds!.x + 16 + distance, y, { steps: 6 });
+    await page.mouse.up();
+  }
 }
 
 test("global material results retain keyboard navigation and theme contrast", async ({ page }) => {
@@ -339,6 +367,9 @@ test("Today keeps a future recurring plan out despite its reached revisit", asyn
 
 test("Today confirms task completion accessibly with reduced motion", async ({ page }, testInfo) => {
   const scheduledDate = calendarDateForInstant(new Date().toISOString(), "UTC")!;
+  for (let index = 0; index < 12; index += 1) {
+    await task(page, { scheduledDate });
+  }
   const item = await task(page, { scheduledDate });
   let releaseWrite!: () => void;
   const write = new Promise<void>(resolve => { releaseWrite = resolve; });
@@ -353,6 +384,8 @@ test("Today confirms task completion accessibly with reduced motion", async ({ p
 
   const row = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
   await expect(row).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true);
+  await row.scrollIntoViewIfNeeded();
   if (testInfo.project.name === "mobile-chrome") {
     const surface = row.locator(".task-row-content");
     const bounds = await surface.boundingBox();
@@ -376,21 +409,92 @@ test("Today confirms task completion accessibly with reduced motion", async ({ p
   }
   await expect.poll(() => writeStarted).toBe(true);
 
-  await expect(row).toHaveAttribute("aria-busy", "true");
+  await expect(row.locator(".task-row-content")).toHaveAttribute("aria-busy", "true");
   await expect(row.locator(".task-row-title")).toHaveClass(/done/);
   const pending = row.getByRole("status");
   await expect(pending).toHaveText("Wird erledigt …");
   await expect(pending).toHaveAttribute("aria-live", "polite");
   expect(await pending.evaluate(node => getComputedStyle(node).animationName)).toBe("none");
   releaseWrite();
-  await expect(row).toHaveClass(/task-row-surface-done/);
-  await expect(row.getByRole("status")).toHaveText("Erledigt");
-  await expect(row).toBeVisible();
+  const departure = page.locator("li.task-row[aria-disabled='true']").filter({ hasText: item.title });
+  await expect(departure).toBeVisible();
+  await expect(departure.getByRole("status")).toHaveText("Erledigt");
+  await expect(departure).toBeInViewport();
   await page.waitForTimeout(1_000);
+  await expect(departure).toBeInViewport();
+  await expect(departure.getByRole("status")).toHaveText("Erledigt");
+  await expect(departure).toHaveCount(0, { timeout: 5_000 });
+});
+
+for (const action of ["completion", "cancellation", "classification"] as const) {
+  test(`Inbox keeps the final item's ${action} confirmation after the page empties`, async ({ page }, testInfo) => {
+    await page.goto("/#/inbox");
+    const memberId = Number(await page.evaluate(() => localStorage.getItem("machbar:identity-member-id")));
+    expect(memberId).toBeGreaterThan(0);
+    const viewerInbox = await page.request.get("/api/inbox?scope=work", {
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(memberId) },
+    });
+    expect(viewerInbox.status(), await viewerInbox.text()).toBe(200);
+    const scopeToggle = page.locator(".inbox-scope-toggle");
+    await scopeToggle.click();
+    await scopeToggle.click();
+    const item = await task(page, {
+      ...(action === "classification"
+        ? { status: "captured" }
+        : { status: "actionable", needsClarification: true }),
+      ownerMemberId: memberId,
+      ownerInheritanceMode: "explicit",
+      scope: "work",
+    }, memberId);
+    await page.reload();
+    const row = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
+    await expect(row).toBeVisible();
+
+    if (action === "completion") {
+      await swipeRight(page, row, testInfo);
+    } else if (action === "classification") {
+      await row.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+      await row.getByRole("button", { name: "Jetzt klären", exact: true }).click();
+    } else {
+      await swipeRight(page, row, testInfo, true);
+      await row.getByRole("group", { name: "Status", exact: true })
+        .getByRole("button", { name: "Verworfen", exact: true }).click();
+    }
+
+    const expectedStatus = {
+      completion: "done",
+      cancellation: "cancelled",
+      classification: "actionable",
+    }[action];
+    await expect.poll(async () => (await (await page.request.get(`/api/tasks/${item.id}`, {
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(memberId) },
+    })).json()).status)
+      .toBe(expectedStatus);
+    const departure = page.locator("li.task-row[aria-disabled='true']").filter({ hasText: item.title });
+    await expect(departure).toBeVisible();
+    await expect(departure.getByRole("status")).toBeVisible();
+    await expect(departure).toHaveAttribute("aria-disabled", "true");
+    await expect(departure).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.getByText("Der Eingang ist leer. Gute Arbeit!")).toBeVisible();
+  });
+}
+
+test("Today keeps completion confirmation at its original row in a long list", async ({ page }, testInfo) => {
+  const scheduledDate = calendarDateForInstant(new Date().toISOString(), "UTC")!;
+  for (let index = 0; index < 12; index += 1) {
+    await task(page, { scheduledDate });
+  }
+  const item = await task(page, { scheduledDate });
+  await page.goto("/#/today");
+  const row = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
   await expect(row).toBeVisible();
-  await expect(row.getByRole("status")).toHaveText("Erledigt");
-  await expect(row.getByRole("status")).toHaveCount(0, { timeout: 2_000 });
-  await expect(row).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true);
+  await row.scrollIntoViewIfNeeded();
+  await swipeRight(page, row, testInfo);
+
+  const departure = page.locator("li.task-row[aria-disabled='true']").filter({ hasText: item.title });
+  await expect(departure.getByRole("status")).toHaveText("Erledigt");
+  await expect(departure).toBeInViewport();
 });
 
 test("detail status control is visible on touch and desktop", async ({ page }) => {

@@ -7,7 +7,6 @@ import { useStrings } from "../lib/strings";
 import {
   LoadingState,
   ErrorState,
-  EmptyState,
 } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
@@ -96,17 +95,13 @@ export function InboxPage() {
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
         {tasks ? (
-          tasks.length === 0 ? (
-            <EmptyState message={strings.clarifyEmpty} />
-          ) : (
-            <TaskOutline
-              key={`${scope}:${currentMemberId}`}
-              tasks={tasks}
-              emptyMessage={strings.clarifyEmpty}
-              preserveRootOrder
-              showSwipeHint={false}
-            />
-          )
+          <TaskOutline
+            key={`${scope}:${currentMemberId}`}
+            tasks={tasks}
+            emptyMessage={strings.clarifyEmpty}
+            preserveRootOrder
+            showSwipeHint={false}
+          />
         ) : null}
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>

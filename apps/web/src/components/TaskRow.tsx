@@ -74,6 +74,8 @@ export interface TaskRowProps {
   departing?: boolean;
   /** Transition data for a detached presentation row. */
   transition?: TaskListTransition;
+  /** Outline that owns the row, used to keep confirmations at their origin. */
+  feedbackOutlineId?: string;
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
@@ -105,6 +107,7 @@ export function TaskRow({
   attentionTone,
   departing = false,
   transition: transitionOverride,
+  feedbackOutlineId,
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -138,7 +141,7 @@ export function TaskRow({
   const taskListFeedback = useTaskListTransitionFeedback();
   const { isPending, errors, clearError } = taskActions;
   const outlineRefreshing = organize?.pendingId != null;
-  const transition = transitionOverride ?? taskListFeedback?.get(taskProp.id);
+  const transition = transitionOverride ?? taskListFeedback?.get(taskProp.id, feedbackOutlineId);
   const transitionPending = transition?.event.phase === "pending";
   const busy = isPending(taskProp.id) || outlineRefreshing || departing;
 
@@ -321,9 +324,8 @@ export function TaskRow({
     <li
       className={`task-row task-row-surface-${displayedStatus}${transition ? ` task-row-transition-${transition.event.phase}` : ""}${transition?.event.occurrence ? " task-row-occurrence" : ""}${attentionTone ? ` task-row-attention-${attentionTone}` : ""}`}
       style={{ listStyle: "none" }}
-      data-workitem-id={taskProp.id}
-      data-workitem-role="task"
-      aria-busy={transitionPending || undefined}
+      data-workitem-id={departing ? undefined : taskProp.id}
+      data-workitem-role={departing ? undefined : "task"}
       aria-disabled={departing || undefined}
       tabIndex={departing ? -1 : undefined}
     >
@@ -666,6 +668,7 @@ export function TaskRow({
               task={child}
               parentTask={task}
               depth={depth + 1}
+              {...(feedbackOutlineId === undefined ? {} : { feedbackOutlineId })}
               compactDescendants={compactDescendants}
               {...(attentionTone ? { attentionTone } : {})}
             />
@@ -677,6 +680,7 @@ export function TaskRow({
                   task={child}
                   parentTask={task}
                   depth={depth + 1}
+                  {...(feedbackOutlineId === undefined ? {} : { feedbackOutlineId })}
                   compactDescendants={compactDescendants}
                   {...(attentionTone ? { attentionTone } : {})}
                 />

@@ -87,11 +87,49 @@ function TaskOutlineContent({
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
   const roots = sorted;
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
-  useRegisterTaskOutline(outlineId, organize.tasks);
-  const departures = feedback?.externalDepartures
-    ? []
-    : feedback?.departures(outlineId, actualIds) ?? [];
+  const rootTaskIds = useMemo(() => roots.map(task => task.id), [roots]);
+  useRegisterTaskOutline(outlineId, organize.tasks, rootTaskIds);
+  const departures = feedback?.departures(outlineId, actualIds) ?? [];
   if (roots.length === 0 && departures.length === 0) return <EmptyState message={emptyMessage} />;
+  const departuresByIndex = new Map<number, TaskListTransition[]>();
+  const trailingDepartures: TaskListTransition[] = [];
+  const orderedDepartures = [...departures].sort((left, right) =>
+    (left.sourceIndex ?? Number.POSITIVE_INFINITY) -
+      (right.sourceIndex ?? Number.POSITIVE_INFINITY) ||
+    left.event.taskId - right.event.taskId,
+  );
+  for (const transition of orderedDepartures) {
+    if (transition.sourceIndex === undefined || transition.sourceIndex === null) {
+      trailingDepartures.push(transition);
+    } else {
+      const precedingCount = orderedDepartures.filter(entry =>
+        entry.sourceIndex !== undefined &&
+        entry.sourceIndex !== null &&
+        entry.sourceIndex < transition.sourceIndex!,
+      ).length;
+      const index = Math.max(0, Math.min(roots.length, transition.sourceIndex - precedingCount));
+      if (index === roots.length) {
+        trailingDepartures.push(transition);
+        continue;
+      }
+      const entries = departuresByIndex.get(index) ?? [];
+      entries.push(transition);
+      departuresByIndex.set(index, entries);
+    }
+  }
+  const renderDeparture = (transition: TaskListTransition) => (
+    <TaskRow
+      key={`departing-${transition.event.taskId}`}
+      task={transition.task}
+      parentTask={null}
+      depth={0}
+      feedbackOutlineId={outlineId}
+      compactDescendants={compactDescendants}
+      departing
+      transition={transition}
+      {...(attentionTone ? { attentionTone } : {})}
+    />
+  );
 
   const content = (
     <div className="task-outline" ref={organize.containerRef}>
@@ -104,24 +142,17 @@ function TaskOutlineContent({
         </div>
       ) : null}
       <ul className="list" style={{ padding: 0, margin: 0 }}>
-        {roots.map(task => {
+        {roots.flatMap((task, index) => {
           const row = <TaskRow task={task} parentTask={null} depth={0}
+            feedbackOutlineId={outlineId}
             showRevisitDate={showRevisitDate} compactDescendants={compactDescendants}
             {...(attentionTone ? { attentionTone } : {})} />;
-          return <OutlineOrganizeProvider key={task.id} value={actualIds.has(task.id) ? organize.value : null}>{row}</OutlineOrganizeProvider>;
+          return [
+            ...(departuresByIndex.get(index) ?? []).map(renderDeparture),
+            <OutlineOrganizeProvider key={task.id} value={actualIds.has(task.id) ? organize.value : null}>{row}</OutlineOrganizeProvider>,
+          ];
         })}
-        {departures.map(transition => (
-          <TaskRow
-            key={`departing-${transition.event.taskId}`}
-            task={transition.task}
-            parentTask={null}
-            depth={0}
-            compactDescendants={compactDescendants}
-            departing
-            transition={transition}
-            {...(attentionTone ? { attentionTone } : {})}
-          />
-        ))}
+        {trailingDepartures.map(renderDeparture)}
       </ul>
       {organize.projection ? (
         <div

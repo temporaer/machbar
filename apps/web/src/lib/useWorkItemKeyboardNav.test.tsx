@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect, useState } from "react";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "../components/TaskOutline";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
@@ -8,6 +9,7 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
 import { BottomSheet } from "../components/BottomSheet";
 import { api } from "./api";
+import { useInteractionScope } from "./interactionScope";
 import { useTaskDetail } from "./taskDetailContext";
 import { useTaskWorkflow } from "./taskWorkflowContext";
 import { makeMember, makeTask, makeProject } from "../test/fixtures";
@@ -42,6 +44,33 @@ function OpenWorkflowProbe() {
     <output data-testid="open-workflow">
       {workflow.current ? `${workflow.current.taskId}|${workflow.current.kind}` : "none|none"}
     </output>
+  );
+}
+
+function ActiveTask({ taskId }: { taskId: number }) {
+  const { setActive } = useInteractionScope();
+  useEffect(() => setActive(taskId, "task"), [setActive, taskId]);
+  return null;
+}
+
+function DepartureScenario({
+  task,
+  nextTask,
+}: {
+  task: ReturnType<typeof makeTask>;
+  nextTask: ReturnType<typeof makeTask>;
+}) {
+  const [tasks, setTasks] = useState([task, nextTask]);
+  return (
+    <>
+      <WorkItemKeyboardNavMount />
+      <ActiveTask taskId={task.id} />
+      <button type="button" onClick={() => setTasks([nextTask])}>Refresh membership</button>
+      <TaskOutline tasks={tasks} emptyMessage="Nichts da" />
+      <TaskWorkflowHost />
+      <OpenWorkflowProbe />
+      <OpenTaskProbe />
+    </>
   );
 }
 
@@ -336,6 +365,34 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     await userEvent.keyboard("w");
     expect(screen.getByTestId("open-workflow")).toHaveTextContent("42|waitingLifecycle");
     expect(await screen.findByRole("heading", { name: "Wartet auf" })).toBeInTheDocument();
+  });
+
+  it("skips inert departure rows for navigation and task commands", async () => {
+    const task = makeTask({ id: 42, title: "Departing task", position: 0 });
+    const nextTask = makeTask({ id: 43, title: "Next task", position: 1 });
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: 2 });
+    const { container } = renderWithProviders(<DepartureScenario task={task} nextTask={nextTask} />);
+    await screen.findByText(task.title);
+
+    fireEvent.click(within(container.querySelector(`[data-workitem-id="${task.id}"]`!)!)
+      .getByRole("button", { name: "Erledigt" }));
+    const activeRow = container.querySelector<HTMLElement>(`[data-workitem-id="${task.id}"]`)!;
+    await waitFor(() => expect(within(activeRow).getByRole("status")).toHaveTextContent("Erledigt"));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh membership" }));
+
+    const departingRow = screen.getByText(task.title).closest("li")!;
+    await waitFor(() => expect(departingRow).toHaveAttribute("aria-disabled", "true"));
+    expect(departingRow).not.toHaveAttribute("data-workitem-id");
+    expect(departingRow).not.toHaveAttribute("data-workitem-role");
+
+    for (const key of ["s", "w", "a", "m"]) {
+      await userEvent.keyboard(key);
+      expect(screen.getByTestId("open-workflow")).toHaveTextContent("none|none");
+      expect(screen.getByTestId("open-task-id")).toHaveTextContent("none|none");
+    }
+
+    await userEvent.keyboard("j");
+    expect(mainButtonFor(nextTask.title)).toHaveFocus();
   });
 
   it("does not run task-focused shortcuts for an active story", async () => {

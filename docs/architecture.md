@@ -1408,11 +1408,14 @@ result's values, membership and ordering. The one bounded task-row exception is
 `TaskListTransitionFeedbackProvider`: it announces pending and successful
 completion, cancellation, and Inbox-to-actionable transitions. If a successful
 task leaves all lists registered to that view, it may retain a non-actionable
-display snapshot for three seconds so fast responses remain perceivable. This
-does not delay fresh query values, alter membership/order, or retain an
-actionable copy. Recurring completion labels the handled occurrence while
-leaving the continuing task's status actionable. Failure removes the transient
-presentation and keeps the authoritative row. Newer revisions and view,
+display snapshot and its root-list index for three seconds so fast responses
+remain perceivable in the originating slot. This does not delay fresh query
+values, alter server membership/order, or retain an actionable copy. Recurring
+completion labels the handled occurrence while leaving the continuing task's
+status actionable. The confirmation window starts after the mutation refresh
+settles, and a detached confirmation remains in its
+originating root slot while that outline is mounted. Failure removes the
+transient presentation and keeps the authoritative row. Newer revisions and view,
 navigation, identity retirement, or a read-access denial dispose it; ordinary
 refreshes cannot reintroduce a detached row.
 Focused editors live in the canonical workflow/detail hosts rather than in the

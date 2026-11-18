@@ -105,12 +105,16 @@ invalidation. Do not retain optimistic or confirmed DTO overlays, placement
 snapshots, or interaction leases. A bounded presentation exception is allowed
 for task lifecycle feedback: the view-local `TaskListTransitionFeedbackProvider`
 may show a pending status, then a short (3-second) inert departure row after a
-successful completion, cancellation, or Inbox classification. It stores only
-the departing row's display snapshot, never predicts query values or
+successful completion, cancellation, or Inbox classification. It stores the
+departing row's display snapshot and its root-list index solely to place that
+inert confirmation in its prior slot, never to predict query values or
 membership; current rows always render fresh query data. Refreshes cannot
 resurrect a departed row, and newer revisions, navigation/unmount, or identity
 retirement or a read-access denial release the presentation immediately. This
-exception is not a general-purpose retention or reconciliation mechanism.
+confirmation remains in its originating outline's prior root slot while that
+outline is mounted. The confirmation interval begins after the successful
+write's refresh settles.
+This exception is not a general-purpose retention or reconciliation mechanism.
 
 ### Read invalidation
 

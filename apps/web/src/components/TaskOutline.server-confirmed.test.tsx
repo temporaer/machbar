@@ -1,12 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { renderWithProviders } from "../test/testUtils";
-import { TaskOutline } from "./TaskOutline";
+import { TaskListTransitionDepartures, TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { makeTask } from "../test/fixtures";
 import { useInteractionScope } from "../lib/interactionScope";
+import {
+  TASK_TRANSITION_CONFIRMATION_MS,
+  TaskListTransitionFeedbackProvider,
+} from "../lib/taskListTransitionFeedback";
 
 vi.mock("../lib/api", () => ({ api: {
   getMembers: vi.fn().mockResolvedValue([]), getTags: vi.fn().mockResolvedValue([]),
@@ -26,6 +30,34 @@ function CompiledSection({ openLifecycleTaskId }: { openLifecycleTaskId?: number
     <TaskOutline tasks={data ?? []} emptyMessage="Empty server view" />
   </>;
 }
+function ExternalDepartureSection() {
+  const { data } = useAsync(() => api.searchTasks({}), []);
+  return (
+    <TaskListTransitionFeedbackProvider externalDepartures>
+      <TaskOutline tasks={data ?? []} emptyMessage="Empty server view" />
+      <TaskListTransitionDepartures />
+    </TaskListTransitionFeedbackProvider>
+  );
+}
+function RelocatedTransitionSection({ task }: { task: ReturnType<typeof makeTask> }) {
+  const [inSource, setInSource] = useState(true);
+  const [inDestination, setInDestination] = useState(false);
+  return (
+    <TaskListTransitionFeedbackProvider externalDepartures>
+      <button type="button" onClick={() => {
+        setInSource(false);
+        setInDestination(true);
+      }}>
+        Move to completed outline
+      </button>
+      {inSource ? <TaskOutline tasks={[task]} emptyMessage="Empty source" /> : null}
+      {inDestination ? (
+        <TaskOutline tasks={[{ ...task, status: "done", revision: task.revision + 1 }]} emptyMessage="Empty destination" />
+      ) : null}
+      <TaskListTransitionDepartures />
+    </TaskListTransitionFeedbackProvider>
+  );
+}
 
 describe("server-confirmed compiled task rows", () => {
   beforeEach(() => { vi.clearAllMocks(); vi.useRealTimers(); window.localStorage.clear(); });
@@ -37,7 +69,10 @@ describe("server-confirmed compiled task rows", () => {
     const title = await screen.findByText(task.title);
     fireEvent.click(within(title.closest("li")!).getByRole("button", { name: "Erledigt" }));
     expect(title).toHaveClass("done");
-    expect(within(title.closest("li")!).getByRole("status")).toHaveTextContent("Wird erledigt");
+    const row = title.closest("li")!;
+    expect(row).not.toHaveAttribute("aria-busy", "true");
+    expect(row.querySelector(".task-row-content")).toHaveAttribute("aria-busy", "true");
+    expect(within(row).getByRole("status")).toHaveTextContent("Wird erledigt");
     fireEvent.click(within(title.closest("li")!).getByRole("button", { name: /Wird erledigt/ }));
     expect(mockedApi.completeTask).toHaveBeenCalledTimes(1);
   });
@@ -58,6 +93,122 @@ describe("server-confirmed compiled task rows", () => {
     await waitFor(() => expect(screen.queryByText(task.title)).not.toBeInTheDocument());
     expect(screen.queryByText(task.title)).not.toBeInTheDocument();
     expect(screen.getByText("Empty server view")).toBeInTheDocument();
+  });
+  it("keeps pending feedback through a refresh delayed beyond the confirmation interval", async () => {
+    const task = makeTask({ title: "Slow refresh row" });
+    let releaseRead!: (tasks: typeof task[]) => void;
+    const delayedRead = new Promise<typeof task[]>(resolve => { releaseRead = resolve; });
+    let reads = 0;
+    mockedApi.searchTasks.mockImplementation(() => {
+      reads += 1;
+      return reads === 1 ? Promise.resolve([task]) : delayedRead;
+    });
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: 2 });
+    renderWithProviders(<CompiledSection />);
+    await screen.findByText(task.title);
+    const row = screen.getByText(task.title).closest("li")!;
+    fireEvent.click(screen.getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+    await new Promise(resolve => setTimeout(resolve, TASK_TRANSITION_CONFIRMATION_MS + 200));
+    expect(screen.getByText(task.title)).toBeInTheDocument();
+    expect(within(row).getByRole("status")).toHaveTextContent("Wird erledigt");
+
+    await act(async () => { releaseRead([]); });
+    const departure = screen.getByText(task.title).closest("li")!;
+    await waitFor(() => expect(within(departure).getByRole("status")).toHaveTextContent("Erledigt"));
+    expect(departure).toHaveAttribute("aria-disabled", "true");
+  });
+  it("does not render a detached task in both local and external departure lists", async () => {
+    const task = makeTask({ title: "Cancelled Today row" });
+    mockedApi.searchTasks.mockResolvedValueOnce([task]).mockResolvedValue([]);
+    mockedApi.cancelTask.mockResolvedValue({ ...task, status: "cancelled", revision: 2 });
+    renderWithProviders(
+      <>
+        <OpenLifecycle taskId={task.id} />
+        <ExternalDepartureSection />
+      </>,
+    );
+    await screen.findByText(task.title);
+    fireEvent.click(screen.getByRole("button", { name: "Verworfen" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(task.title).closest("li")).toHaveAttribute("aria-disabled", "true"),
+    );
+    const row = screen.getByText(task.title).closest("li")!;
+    expect(within(row).getByRole("status")).toHaveTextContent("Verworfen");
+  });
+  it("moves confirmation to a visible authoritative row when its source outline unmounts", async () => {
+    const task = makeTask({ title: "Completed in another section" });
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: task.revision + 1 });
+    renderWithProviders(<RelocatedTransitionSection task={task} />);
+    await screen.findByText(task.title);
+    const sourceRow = screen.getByText(task.title).closest("li")!;
+    fireEvent.click(within(sourceRow).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(within(sourceRow).getByRole("status")).toHaveTextContent("Erledigt"));
+    fireEvent.click(screen.getByRole("button", { name: "Move to completed outline" }));
+
+    await waitFor(() => expect(screen.getAllByText(task.title)).toHaveLength(1));
+    const row = screen.getByText(task.title).closest("li")!;
+    expect(row).not.toHaveAttribute("aria-disabled", "true");
+    expect(within(row).getByRole("status")).toHaveTextContent("Erledigt");
+    expect(screen.getAllByRole("status").filter(status => status.textContent === "Erledigt")).toHaveLength(1);
+  });
+  it("keeps concurrent departures in their original root order", async () => {
+    const first = makeTask({ title: "First removed row", position: 0 });
+    const second = makeTask({ title: "Second removed row", position: 1 });
+    const remaining = makeTask({ title: "Remaining row", position: 2 });
+    let releaseRead!: (tasks: typeof first[]) => void;
+    const delayedRead = new Promise<typeof first[]>(resolve => { releaseRead = resolve; });
+    let reads = 0;
+    mockedApi.searchTasks.mockImplementation(() => {
+      reads += 1;
+      return reads === 1 ? Promise.resolve([first, second, remaining]) : delayedRead;
+    });
+    mockedApi.completeTask.mockImplementation(async id => ({
+      ...(id === first.id ? first : second),
+      status: "done",
+      revision: 2,
+    }));
+    const { container } = renderWithProviders(<CompiledSection />);
+    await screen.findByText(first.title);
+    fireEvent.click(within(screen.getByText(first.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+    fireEvent.click(within(screen.getByText(second.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+    await act(async () => { releaseRead([remaining]); });
+    await waitFor(() => expect(container.querySelectorAll("li.task-row[aria-disabled='true']"))
+      .toHaveLength(2));
+    expect([...container.querySelectorAll(".task-row-title")].map(title => title.textContent))
+      .toEqual([first.title, second.title, remaining.title]);
+  });
+  it("keeps sequential departures in their original root order", async () => {
+    const first = makeTask({ title: "Earlier removed row", position: 0 });
+    const second = makeTask({ title: "Later removed row", position: 1 });
+    const remaining = makeTask({ title: "Last row", position: 2 });
+    mockedApi.searchTasks
+      .mockResolvedValueOnce([first, second, remaining])
+      .mockResolvedValueOnce([second, remaining])
+      .mockResolvedValueOnce([remaining]);
+    mockedApi.completeTask.mockImplementation(async id => ({
+      ...(id === first.id ? first : second),
+      status: "done",
+      revision: 2,
+    }));
+    const { container } = renderWithProviders(<CompiledSection />);
+    await screen.findByText(first.title);
+    fireEvent.click(within(screen.getByText(first.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(screen.getAllByText(first.title)).toHaveLength(1));
+    fireEvent.click(within(screen.getByText(second.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(container.querySelectorAll("li.task-row[aria-disabled='true']"))
+      .toHaveLength(2));
+    expect([...container.querySelectorAll(".task-row-title")].map(title => title.textContent))
+      .toEqual([first.title, second.title, remaining.title]);
   });
   it("keeps a pending row inert when membership refresh removes it before the write settles", async () => {
     const task = makeTask({ title: "Refreshed while pending" });
