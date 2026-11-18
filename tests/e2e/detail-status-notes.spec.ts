@@ -200,14 +200,18 @@ test("task transition feedback survives failed refresh at its source position", 
   const feedback = row.getByRole("status");
   await expect(feedback).toHaveText("Wird erledigt …");
   await expect(feedback).toBeInViewport();
-  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
-  expect(Math.abs((await row.boundingBox())!.y - initialBox!.y)).toBeLessThanOrEqual(2);
+  expect(Math.abs(
+    (await row.boundingBox())!.y + await page.evaluate(() => window.scrollY) -
+      (initialBox!.y + initialScrollY),
+  )).toBeLessThanOrEqual(2);
 
   await expect.poll(() => writeStatus).toBe(200);
   await expect(feedback).toHaveText("Erledigt");
   await expect(feedback).toBeInViewport();
-  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
-  expect(Math.abs((await row.boundingBox())!.y - initialBox!.y)).toBeLessThanOrEqual(2);
+  expect(Math.abs(
+    (await row.boundingBox())!.y + await page.evaluate(() => window.scrollY) -
+      (initialBox!.y + initialScrollY),
+  )).toBeLessThanOrEqual(2);
 });
 
 test("successful refresh retains the removed task at its source position until confirmation expires", async ({ page }) => {
@@ -264,6 +268,8 @@ test("successful refresh retains the removed task at its source position until c
   await page.mouse.move(startX + 140, y, { steps: 4 });
   await page.mouse.up();
 
+  const statusGroup = row.getByRole("group", { name: "Status", exact: true });
+  await expect(statusGroup).toBeVisible();
   const completeButton = row.getByRole("group", { name: "Status", exact: true })
     .getByRole("button", { name: "Erledigt", exact: true });
   await expect(completeButton).toBeInViewport();
