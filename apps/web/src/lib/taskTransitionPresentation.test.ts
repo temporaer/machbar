@@ -3,7 +3,6 @@ import { makeTask } from "../test/fixtures";
 import {
   beginTaskTransition,
   commitTaskTransition,
-  commitTaskTransition,
   emptyTaskTransitionLayout,
   reconcileTaskSection,
   rejectTaskTransition,
