@@ -10,7 +10,7 @@ import { TaskTransitionDepartureChildren, TaskTransitionDepartureRow } from "./T
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { EmptyState } from "./AsyncStates";
 import type { AttentionTone } from "../lib/attentionTone";
-import { useTaskTransitionSection } from "../lib/taskTransitionPresentationContext";
+import { useTaskTransitionPresentation } from "../lib/taskTransitionPresentationContext";
 import { taskTransitionForNode, taskTransitionNodeKey } from "../lib/taskTransitionPresentation";
 
 export interface TaskOutlineProps {
@@ -52,10 +52,6 @@ export interface TaskOutlineProps {
   attentionTone?: AttentionTone;
   /** Stable section key within the explicit logical-view presentation owner. */
   transitionSectionId?: string;
-  /** True when this section's latest read settled without an access/read error. */
-  transitionReadSettled?: boolean;
-  /** True when the query for this section failed, rather than remaining pending. */
-  transitionReadFailed?: boolean;
 }
 
 export function TaskOutline({
@@ -69,8 +65,6 @@ export function TaskOutline({
   compactDescendants = false,
   attentionTone,
   transitionSectionId,
-  transitionReadSettled = true,
-  transitionReadFailed = false,
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
@@ -78,12 +72,7 @@ export function TaskOutline({
 
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
   const roots = sorted;
-  const presentation = useTaskTransitionSection(
-    transitionSectionId,
-    roots,
-    transitionReadSettled,
-    transitionReadFailed,
-  );
+  const presentation = useTaskTransitionPresentation();
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
   const displayItems = presentation && transitionSectionId
     ? presentation.items(transitionSectionId, null, roots)

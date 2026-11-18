@@ -35,17 +35,10 @@ type DisplayItem =
   | { kind: "live"; task: Task; transition: TaskTransitionOperation | null }
   | { kind: "departure"; node: TaskDisplayNode; children: DisplayItem[] };
 
-interface SectionInput {
-  tasks: Task[];
-  readSettled: boolean;
-  readFailed: boolean;
-  signature: string;
-}
-
 interface TaskTransitionPresentationValue {
   viewId: string;
   layout: TaskTransitionLayout;
-  registerSection(sectionId: string, tasks: Task[], readSettled: boolean, readFailed: boolean): void;
+  replaceProjection(projection: Record<string, TaskTransitionSectionProjection>): void;
   items(sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[];
   origin(sectionId: string, task: Task, visualContext?: TaskTransitionVisualContext): TaskTransitionOrigin | undefined;
   isBlocked(taskId: number, revision?: number): boolean;
@@ -79,17 +72,14 @@ function TaskTransitionPresentationOwner({
   const identityRef = useRef(identityKey);
   const generation = useRef(0);
   const retired = useRef(false);
-  const sections = useRef(new Map<string, SectionInput>());
-  const tasksBySection = useRef(new Map<string, Map<number, Task>>());
+  const projection = useRef<Record<string, TaskTransitionSectionProjection>>({});
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const refreshQueued = useRef(false);
 
   if (identityRef.current !== identityKey) {
     retired.current = true;
     for (const timer of timers.current.values()) clearTimeout(timer);
     timers.current.clear();
-    sections.current.clear();
-    tasksBySection.current.clear();
+    projection.current = {};
     generation.current += 1;
     identityRef.current = identityKey;
     retired.current = false;
@@ -110,58 +100,13 @@ function TaskTransitionPresentationOwner({
     setLayout(next);
   }, [ownerGeneration]);
 
-  const refreshSections = useCallback(() => {
-    updateLayout(current => {
-      const projection: Record<string, TaskTransitionSectionProjection> = {};
-      for (const [sectionId, input] of sections.current) {
-        projection[sectionId] = {
-          tasks: input.tasks,
-          readSettled: input.readSettled,
-          readFailed: input.readFailed,
-        };
-      }
-      return reconcileTaskSections(current, projection);
-    });
-  }, [updateLayout]);
-
-  const queueRefreshSections = useCallback(() => {
-    if (refreshQueued.current) return;
-    refreshQueued.current = true;
-    queueMicrotask(() => {
-      refreshQueued.current = false;
-      refreshSections();
-    });
-  }, [refreshSections]);
-
-  const registerSection = useCallback((
-    sectionId: string,
-    tasks: Task[],
-    readSettled: boolean,
-    readFailed: boolean,
+  const replaceProjection = useCallback((
+    nextProjection: Record<string, TaskTransitionSectionProjection>,
   ) => {
     if (!isCurrentOwner()) return;
-    const previous = sections.current.get(sectionId);
-    const signatureOf = (items: Task[]): string => items.map(task =>
-      `${task.id}:${task.revision}[${signatureOf(task.children)}]`).join(",");
-    const signature = signatureOf(tasks);
-    const taskMap = new Map<number, Task>();
-    const visit = (task: Task) => {
-      taskMap.set(task.id, task);
-      task.children.forEach(visit);
-    };
-    tasks.forEach(visit);
-    tasksBySection.current.set(sectionId, taskMap);
-    if (
-      previous?.signature === signature &&
-      previous.readSettled === readSettled &&
-      previous.readFailed === readFailed
-    ) {
-      sections.current.set(sectionId, { tasks, readSettled, readFailed, signature });
-      return;
-    }
-    sections.current.set(sectionId, { tasks, readSettled, readFailed, signature });
-    queueRefreshSections();
-  }, [ownerGeneration, queueRefreshSections]);
+    projection.current = nextProjection;
+    updateLayout(current => reconcileTaskSections(current, nextProjection));
+  }, [ownerGeneration, updateLayout]);
 
   const isBlocked = useCallback((taskId: number, revision?: number) => {
     const guard = layoutRef.current.staleGuards[taskId];
@@ -173,7 +118,7 @@ function TaskTransitionPresentationOwner({
     task: Task,
     visualContext?: TaskTransitionVisualContext,
   ): TaskTransitionOrigin | undefined => {
-    if (!isCurrentOwner() || !sections.current.has(sectionId)) return undefined;
+    if (!isCurrentOwner() || !projection.current[sectionId]) return undefined;
     const nodeKey = taskTransitionNodeKey(task.id);
     const initialNode = layoutRef.current.nodes[nodeKey];
     if (!initialNode || initialNode.sectionId !== sectionId) return undefined;
@@ -190,8 +135,12 @@ function TaskTransitionPresentationOwner({
         const currentNode = current.nodes[nodeKey];
         if (!currentNode || currentNode.sectionId !== sectionId) return "unavailable";
         const titles = new Map<number, string>();
-        for (const byId of tasksBySection.current.values()) {
-          for (const [id, value] of byId) titles.set(id, value.title);
+        const visit = (task: Task) => {
+          titles.set(task.id, task.title);
+          task.children.forEach(visit);
+        };
+        for (const section of Object.values(projection.current)) {
+          section.tasks.forEach(visit);
         }
         const ancestors = taskTransitionOriginAncestors(current, nodeKey, titles);
         const next = beginTaskTransition(
@@ -213,12 +162,11 @@ function TaskTransitionPresentationOwner({
           if (!isCurrentOwner()) return;
           timers.current.delete(token);
           updateLayout(value => releaseTaskTransition(value, token));
-          refreshSections();
         }, TASK_TRANSITION_CONFIRMATION_MS));
       },
     };
     return originRef;
-  }, [isBlocked, ownerGeneration, refreshSections, updateLayout, viewId]);
+  }, [isBlocked, ownerGeneration, updateLayout, viewId]);
 
   const items = useCallback((sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[] => {
     const current = layoutRef.current;
@@ -258,8 +206,7 @@ function TaskTransitionPresentationOwner({
       retired.current = true;
       for (const timer of timers.current.values()) clearTimeout(timer);
       timers.current.clear();
-      sections.current.clear();
-      tasksBySection.current.clear();
+      projection.current = {};
       layoutRef.current = emptyTaskTransitionLayout();
     };
   }, []);
@@ -267,12 +214,12 @@ function TaskTransitionPresentationOwner({
   const value = useMemo<TaskTransitionPresentationValue>(() => ({
     viewId,
     layout,
-    registerSection,
+    replaceProjection,
     items,
     origin,
     isBlocked,
     hasHeldRows,
-  }), [hasHeldRows, isBlocked, items, layout, origin, registerSection, viewId]);
+  }), [hasHeldRows, isBlocked, items, layout, origin, replaceProjection, viewId]);
 
   return <PresentationContext.Provider value={value}>{children}</PresentationContext.Provider>;
 }
@@ -281,17 +228,34 @@ export function useTaskTransitionPresentation(): TaskTransitionPresentationValue
   return useContext(PresentationContext);
 }
 
-export function useTaskTransitionSection(
-  sectionId: string | undefined,
-  tasks: Task[],
-  readSettled = true,
-  readFailed = false,
-) {
+export function TaskTransitionProjection({
+  sections,
+  children,
+}: {
+  sections: Record<string, TaskTransitionSectionProjection>;
+  children: ReactNode;
+}) {
   const presentation = useTaskTransitionPresentation();
+  const signature = projectionSignature(sections);
+  const appliedSignature = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (presentation && sectionId) presentation.registerSection(sectionId, tasks, readSettled, readFailed);
-  }, [presentation, readFailed, readSettled, sectionId, tasks]);
-  return presentation;
+    if (!presentation || appliedSignature.current === signature) return;
+    appliedSignature.current = signature;
+    presentation.replaceProjection(sections);
+  }, [presentation, sections, signature]);
+  return children;
+}
+
+function projectionSignature(sections: Record<string, TaskTransitionSectionProjection>): string {
+  const taskSignature = (tasks: Task[]): string => tasks.map(task =>
+    `${task.id}:${task.revision}:${task.status}:${task.title}[${taskSignature(task.children)}]`,
+  ).join(",");
+  return Object.entries(sections)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, section]) =>
+      `${id}:${section.readSettled ? "settled" : "pending"}:${section.readFailed ? "failed" : "ok"}:${taskSignature(section.tasks)}`,
+    )
+    .join("|");
 }
 
 export function TaskTransitionSection({
