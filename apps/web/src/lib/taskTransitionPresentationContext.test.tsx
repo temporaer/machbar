@@ -23,7 +23,12 @@ function OriginProbe({ origins }: { origins: Map<string, TaskTransitionOrigin> }
     const origin = presentation?.origin("source", task);
     if (presentation && origin) origins.set(presentation.viewId, origin);
   }, [presentation, origins]);
-  return <output data-testid="operations">{Object.keys(presentation?.layout.operations ?? {}).join(",")}</output>;
+  return (
+    <>
+      <output data-testid="operations">{Object.keys(presentation?.layout.operations ?? {}).join(",")}</output>
+      <output data-testid="source-rows">{presentation?.layout.sections.source?.rootKeys.join(",")}</output>
+    </>
+  );
 }
 
 function Harness({ origins }: { origins: Map<string, TaskTransitionOrigin> }) {
@@ -101,10 +106,12 @@ function TimedTransitions({
 function PendingTransfer({
   origins,
   write,
+  refresh,
   readLayout,
 }: {
   origins: MutableRefObject<Record<number, TaskTransitionOrigin>>;
   write: Promise<{ revision: number; status: Task["status"] }>;
+  refresh: Promise<void>;
   readLayout(layout: TaskTransitionLayout): void;
 }) {
   const [sections, setSections] = useState({
@@ -135,15 +142,17 @@ function PendingTransfer({
     if (origin?.begin("pending-transfer", transferTask, "actionable") !== "started") return;
     void write.then(({ revision, status }) => {
       origin.commit("pending-transfer", revision, status);
-      replaceSections({
-        source: { tasks: [], readSettled: true, readFailed: false },
-        destination: {
-          tasks: [{ ...transferTask, revision, status }],
-          readSettled: true,
-          readFailed: false,
-        },
+      return refresh.then(() => {
+        replaceSections({
+          source: { tasks: [], readSettled: true, readFailed: false },
+          destination: {
+            tasks: [{ ...transferTask, revision, status }],
+            readSettled: true,
+            readFailed: false,
+          },
+        });
+        origin.settled("pending-transfer", false);
       });
-      origin.settled("pending-transfer", false);
     });
   };
   return (
@@ -189,11 +198,14 @@ describe("task transition presentation owner", () => {
     render(<StrictHarness origins={origins} />);
     await waitFor(() => expect(origins.size).toBeGreaterThan(0));
     const origin = [...origins.values()].at(-1)!;
+    const sourceRows = screen.getByTestId("source-rows").textContent;
+    expect(sourceRows).toBe("task:601");
 
     let result: ReturnType<TaskTransitionOrigin["begin"]> = "unavailable";
     act(() => { result = origin.begin("strict-replay", task, "complete"); });
     expect(result).toBe("started");
     expect(screen.getByTestId("operations")).toHaveTextContent("strict-replay");
+    expect(screen.getByTestId("source-rows").textContent).toBe(sourceRows);
   });
 
   it("expires overlapping child, sibling, and parent holds on their own deadlines", async () => {
@@ -269,6 +281,10 @@ describe("task transition presentation owner", () => {
     const write = new Promise<{ revision: number; status: Task["status"] }>(resolve => {
       resolveWrite = resolve;
     });
+    let resolveRefresh!: () => void;
+    const refresh = new Promise<void>(resolve => {
+      resolveRefresh = resolve;
+    });
     render(
       <TaskTransitionPresentationProvider
         identityKey="today:mine:1"
@@ -280,6 +296,7 @@ describe("task transition presentation owner", () => {
         <PendingTransfer
           origins={origins}
           write={write}
+          refresh={refresh}
           readLayout={next => { layout = next; }}
         />
       </TaskTransitionPresentationProvider>,
@@ -299,6 +316,16 @@ describe("task transition presentation owner", () => {
     await act(async () => {
       resolveWrite({ revision: transferTask.revision + 1, status: "actionable" });
       await write;
+      await Promise.resolve();
+    });
+    expect(layout?.operations["pending-transfer"]?.phase).toBe("refreshing");
+    expect(screen.getByTestId("source-task")).toHaveTextContent(transferTask.title);
+    expect(screen.queryByTestId("destination-task")).toBeNull();
+    expect(screen.getAllByText(transferTask.title)).toHaveLength(1);
+
+    await act(async () => {
+      resolveRefresh();
+      await refresh;
       await Promise.resolve();
     });
     expect(layout?.operations["pending-transfer"]?.phase).toBe("confirmed");
