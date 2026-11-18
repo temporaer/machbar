@@ -109,8 +109,9 @@ successful completion, cancellation, or Inbox classification. It stores the
 departing row's display snapshot and identity-anchored ancestor/sibling path
 solely to place that inert confirmation in its prior tree slot, never to
 predict query values or membership; current rows always render fresh query
-data. A Today section with an active transition stays mounted through an empty
-result. During that interval the originating slot renders the confirmation and
+data. Today, All, and Waiting source sections with an active transition stay
+mounted through an empty result; Inbox keeps its outline mounted for the same
+reason. During that interval the originating slot renders the confirmation and
 other sections suppress only that transitioning task; expiry restores its
 latest query result there. Nested confirmations remain under their original
 parent, with inert ancestor placeholders when those ancestors have also left the
@@ -120,9 +121,10 @@ release the presentation immediately. This
 confirmation remains in its originating outline's prior tree slot while that
 outline is mounted. The confirmation interval begins after the successful
 write's refresh settles. Each view explicitly owns one provider: a standalone
-`TaskOutline` owns its presentation lifetime, while multi-outline views such as
-Today and Inbox mount a keyed provider at the view boundary and render
-`TaskOutlineInTransitionView` consumers. `taskListTransitionPresentation.ts`
+`TaskOutline` owns its presentation lifetime, Today and Inbox mount keyed
+providers at their view boundaries, and All and Waiting retain their page/list
+owners across empty results. These views render `TaskOutlineInTransitionView`
+consumers. `taskListTransitionPresentation.ts`
 owns identity-path capture, transfer suppression, and pure tree-row composition;
 detached rows render through `TaskTransitionRow`, which has no task controls or
 keyboard registration. Today does not open completed history or append a

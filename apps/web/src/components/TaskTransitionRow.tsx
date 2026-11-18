@@ -6,11 +6,13 @@ import { TaskCardTags } from "./TaskCardTags";
 export function TaskTransitionRow({
   transition,
   ancestor,
+  nestedRows,
   attentionTone,
   compact = false,
 }: {
   transition?: TaskListTransitionEntry;
   ancestor?: Extract<TaskListRow, { kind: "ancestor" }>;
+  nestedRows?: TaskListRow[];
   attentionTone?: AttentionTone;
   compact?: boolean;
 }) {
@@ -34,18 +36,11 @@ export function TaskTransitionRow({
             </div>
           </div>
         </div>
-        {ancestor.children.length ? (
-          <ul className="task-row-children">
-            {ancestor.children.map(row => row.kind === "transition" || row.kind === "ancestor" ? (
-              <TaskTransitionRow
-                key={row.kind === "transition" ? `transition-${row.transition.event.taskId}` : `ancestor-${row.taskId}`}
-                {...(row.kind === "transition" ? { transition: row.transition } : { ancestor: row })}
-                compact={compact}
-                {...(attentionTone ? { attentionTone } : {})}
-              />
-            ) : null)}
-          </ul>
-        ) : null}
+        <NestedTransitionRows
+          rows={ancestor.children}
+          compact={compact}
+          {...(attentionTone ? { attentionTone } : {})}
+        />
       </li>
     );
   }
@@ -102,6 +97,35 @@ export function TaskTransitionRow({
       >
         {message}
       </div>
+      <NestedTransitionRows
+        rows={nestedRows ?? []}
+        compact={compact}
+        {...(attentionTone ? { attentionTone } : {})}
+      />
     </li>
+  );
+}
+
+function NestedTransitionRows({
+  rows,
+  compact,
+  attentionTone,
+}: {
+  rows: TaskListRow[];
+  compact: boolean;
+  attentionTone?: AttentionTone;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <ul className="task-row-children">
+      {rows.map(row => row.kind === "transition" || row.kind === "ancestor" ? (
+        <TaskTransitionRow
+          key={row.kind === "transition" ? `transition-${row.transition.event.taskId}` : `ancestor-${row.taskId}`}
+          {...(row.kind === "transition" ? { transition: row.transition, nestedRows: row.children } : { ancestor: row })}
+          compact={compact}
+          {...(attentionTone ? { attentionTone } : {})}
+        />
+      ) : null)}
+    </ul>
   );
 }

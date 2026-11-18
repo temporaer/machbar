@@ -117,7 +117,7 @@ export function TaskListTransitionFeedbackProvider({
       const fresh = available.get(id);
       if (!fresh) continue;
       if (entry.event.phase === "success" && entry.event.resultRevision !== undefined &&
-        fresh.revision > entry.event.resultRevision && fresh.status !== entry.event.targetStatus) {
+        fresh.revision > entry.event.resultRevision) {
         const timer = timers.current.get(id);
         if (timer !== undefined) clearTimeout(timer);
         timers.current.delete(id);

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { SearchFilters, Task } from "@machbar/shared";
-import { api } from "../lib/api";
+import { api, type ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import {
@@ -16,7 +16,12 @@ import {
 import { PageHeader } from "../components/PageHeader";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { SearchFilterBar } from "../components/SearchFilterBar";
-import { TaskOutline } from "../components/TaskOutline";
+import { TaskOutlineInTransitionView } from "../components/TaskOutline";
+import { useIdentity } from "../lib/identity";
+import {
+  TaskListTransitionFeedbackProvider,
+  useRequiredTaskListTransitionFeedback,
+} from "../lib/taskListTransitionFeedback";
 import { filterAndSortProjects } from "../lib/projectListFilter";
 import { useLocale } from "../lib/locale";
 import { sortInventoryTasks } from "../lib/sortOrder";
@@ -53,9 +58,91 @@ function MaterialResults({ tasks }: { tasks: Task[] }) {
   );
 }
 
+function AllPageResults({
+  filteredProjects,
+  visibleTasks,
+  materialOnly,
+  filtering,
+  filtersKey,
+  strings,
+}: {
+  filteredProjects: ProjectWithActions[];
+  visibleTasks: Task[];
+  materialOnly: boolean;
+  filtering: boolean;
+  filtersKey: string;
+  strings: ReturnType<typeof useStrings>;
+}) {
+  const feedback = useRequiredTaskListTransitionFeedback();
+  const hasTaskTransitions = feedback.hasTransitions("all:tasks");
+
+  return (
+    <>
+      {filteredProjects.length > 0 ? (
+        <section
+          className="section"
+          aria-labelledby="all-projects-heading"
+        >
+          <h2 id="all-projects-heading" className="section-title">
+            {strings.allProjectsHeading}
+          </h2>
+          <ul className="list story-row-list">
+            {filteredProjects.map((project) => (
+              <ProjectStoryRow
+                key={project.id}
+                story={project}
+                variant="compact"
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {materialOnly ? (
+        visibleTasks.length > 0 ? (
+          <section className="section" aria-labelledby="all-material-heading">
+            <h2 id="all-material-heading" className="section-title">
+              {strings.materialLabel}
+            </h2>
+            <MaterialResults tasks={visibleTasks} />
+          </section>
+        ) : null
+      ) : visibleTasks.length > 0 || hasTaskTransitions ? (
+        <section
+          className="section"
+          aria-labelledby="all-tasks-heading"
+        >
+          <h2
+            id="all-tasks-heading"
+            className="section-title"
+          >
+            {filtering
+              ? strings.allMatchingTasksHeading
+              : strings.allStandaloneTasksHeading}
+          </h2>
+          <TaskOutlineInTransitionView
+            key={filtersKey}
+            transitionOutlineId="all:tasks"
+            tasks={visibleTasks}
+            emptyMessage={strings.allEmpty}
+            preserveRootOrder
+          />
+        </section>
+      ) : null}
+      {filteredProjects.length === 0 &&
+      visibleTasks.length === 0 &&
+      !hasTaskTransitions ? (
+        <EmptyState
+          message={materialOnly ? strings.allMaterialEmpty : strings.allEmpty}
+        />
+      ) : null}
+    </>
+  );
+}
+
 export function AllPage() {
   const strings = useStrings();
   const { locale } = useLocale();
+  const { authEnabled, authenticated, currentMemberId } = useIdentity();
   const [filters, setFilters] = useState<SearchFilters>({});
   const filtersKey = JSON.stringify(filters);
   const {
@@ -100,84 +187,44 @@ export function AllPage() {
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
 
+  const identityKey = `${authEnabled}:${authenticated}:${currentMemberId}:${filtersKey}`;
+
   return (
     <InteractionScopeProvider>
-      <WorkItemKeyboardNavMount />
-      <div>
-        <PageHeader
-          title={strings.allTitle}
-        />
-        <SearchFilterBar
-          filters={filters}
-          onChange={setFilters}
-          projects={projects ?? []}
-          tags={tags ?? []}
-        />
-        {loading ? <LoadingState /> : null}
-        {error ? (
-          <ErrorState
-            message={error}
-            onRetry={() => {
-              reloadProjects();
-              reloadTasks();
-            }}
+      <TaskListTransitionFeedbackProvider identityKey={identityKey}>
+        <WorkItemKeyboardNavMount />
+        <div>
+          <PageHeader
+            title={strings.allTitle}
           />
-        ) : null}
-        {projects && tasks ? (
-          filteredProjects.length === 0 && visibleTasks.length === 0 ? (
-            <EmptyState message={materialOnly ? strings.allMaterialEmpty : strings.allEmpty} />
-          ) : (
-            <>
-              {filteredProjects.length > 0 ? (
-                <section
-                  className="section"
-                  aria-labelledby="all-projects-heading"
-                >
-                  <h2 id="all-projects-heading" className="section-title">
-                    {strings.allProjectsHeading}
-                  </h2>
-                  <ul className="list story-row-list">
-                    {filteredProjects.map((project) => (
-                      <ProjectStoryRow
-                        key={project.id}
-                        story={project}
-                        variant="compact"
-                      />
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-              {visibleTasks.length > 0 ? (
-                <section
-                  className="section"
-                  aria-labelledby={materialOnly ? "all-material-heading" : "all-tasks-heading"}
-                >
-                  <h2
-                    id={materialOnly ? "all-material-heading" : "all-tasks-heading"}
-                    className="section-title"
-                  >
-                    {materialOnly
-                      ? strings.materialLabel
-                      : filtering
-                        ? strings.allMatchingTasksHeading
-                        : strings.allStandaloneTasksHeading}
-                  </h2>
-                  {materialOnly ? (
-                    <MaterialResults tasks={visibleTasks} />
-                  ) : (
-                    <TaskOutline
-                      key={filtersKey}
-                      tasks={visibleTasks}
-                      emptyMessage={strings.allEmpty}
-                      preserveRootOrder
-                    />
-                  )}
-                </section>
-              ) : null}
-            </>
-          )
-        ) : null}
-      </div>
+          <SearchFilterBar
+            filters={filters}
+            onChange={setFilters}
+            projects={projects ?? []}
+            tags={tags ?? []}
+          />
+          {loading ? <LoadingState /> : null}
+          {error ? (
+            <ErrorState
+              message={error}
+              onRetry={() => {
+                reloadProjects();
+                reloadTasks();
+              }}
+            />
+          ) : null}
+          {projects && tasks ? (
+            <AllPageResults
+              filteredProjects={filteredProjects}
+              visibleTasks={visibleTasks}
+              materialOnly={materialOnly}
+              filtering={filtering}
+              filtersKey={filtersKey}
+              strings={strings}
+            />
+          ) : null}
+        </div>
+      </TaskListTransitionFeedbackProvider>
     </InteractionScopeProvider>
   );
 }

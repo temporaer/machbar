@@ -24,6 +24,7 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn().mockResolvedValue([]),
     getProjects: vi.fn(),
     searchTasks: vi.fn(),
+    completeTask: vi.fn(),
     getPaperlessStatus: vi.fn(),
   },
 }));
@@ -228,6 +229,34 @@ describe("AllPage", () => {
       .toBe("var(--color-primary)");
     expect(materialFilter.style.getPropertyValue("--color-tag-contrast"))
       .toBe("var(--color-primary-contrast)");
+  });
+
+  it("keeps the last filtered task confirmation after the result list becomes empty", async () => {
+    const task = makeTask({ id: 44, title: "Letzte passende Aufgabe", status: "actionable" });
+    let completed = false;
+    mockedApi.searchTasks.mockImplementation(async filters =>
+      filters.status === "actionable" ? (completed ? [] : [task]) : [],
+    );
+    mockedApi.completeTask.mockImplementation(async () => {
+      completed = true;
+      return { ...task, status: "done", revision: task.revision + 1 };
+    });
+    renderWithProviders(<AllPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Status" }),
+      "actionable",
+    );
+
+    await screen.findByText(task.title);
+    await userEvent.click(within(screen.getByText(task.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => {
+      const row = screen.getByText(task.title).closest("li");
+      expect(row).toHaveAttribute("aria-disabled", "true");
+      expect(within(row!).getByRole("status")).toHaveTextContent("Erledigt");
+    });
   });
 
   it("keeps Material results keyboard navigable and opens them with Enter and m", async () => {

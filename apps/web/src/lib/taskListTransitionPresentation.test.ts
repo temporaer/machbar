@@ -48,6 +48,24 @@ describe("task list transition presentation", () => {
       .toEqual(["First", "Second", "Third", "Last"]);
   });
 
+  it("orders sequential departures by sibling identity across refreshed snapshots", () => {
+    const first = makeTask({ id: 20, title: "First completed" });
+    const second = makeTask({ id: 10, title: "Second completed" });
+    const remaining = makeTask({ id: 30, title: "Remaining" });
+    const firstPath = findTaskListPosition([first, second, remaining], first.id);
+    const secondPath = findTaskListPosition([second, remaining], second.id);
+
+    const rows = composeTaskListRows(
+      [remaining],
+      [transition(first, firstPath), transition(second, secondPath)],
+      "origin",
+    );
+
+    expect(rows.map(row =>
+      row.kind === "task" ? row.task.title : row.kind === "ancestor" ? row.title : row.transition.task.title,
+    )).toEqual(["First completed", "Second completed", "Remaining"]);
+  });
+
   it("keeps the original source slot when its section has no authoritative roots", () => {
     const before = makeTask({ id: 11, title: "Before" });
     const moved = makeTask({ id: 12, title: "Moved", status: "done" });
@@ -139,6 +157,35 @@ describe("task list transition presentation", () => {
     expect(composeTaskListPresentation([], [entry], "destination", new Set(["origin"])).rows).toMatchObject([]);
   });
 
+  it("nests a child's confirmation under its departing parent instead of duplicating the parent", () => {
+    const child = makeTask({ id: 62, title: "Completed child", status: "done", parentTaskId: 61 });
+    const parent = makeTask({
+      id: 61,
+      title: "Completed parent",
+      status: "done",
+    });
+    const originalTree = [makeTask({
+      id: parent.id,
+      title: parent.title,
+      children: [makeTask({ ...child, status: "actionable" })],
+    })];
+
+    const rows = composeTaskListRows([], [
+      transition(parent, findTaskListPosition(originalTree, parent.id)),
+      transition(child, findTaskListPosition(originalTree, child.id)),
+    ], "origin");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: "transition",
+      transition: { task: { id: parent.id } },
+      children: [{
+        kind: "transition",
+        transition: { task: { id: child.id } },
+      }],
+    });
+  });
+
   it("anchors missing ancestors among remaining source rows and reveals destination if source is unavailable", () => {
     const parent = makeTask({ id: 55, title: "Omitted parent", children: [
       makeTask({ id: 56, title: "Omitted child", parentTaskId: 55, status: "actionable" }),
@@ -168,5 +215,32 @@ describe("task list transition presentation", () => {
     expect(composeTaskListRows([task], [], "destination")).toMatchObject([
       { kind: "task", task: { id: task.id } },
     ]);
+  });
+
+  it.each([
+    ["pending", false],
+    ["success", true],
+  ] as const)("suppresses an active %s transition in a registered destination", (phase, occurrence) => {
+    const task = makeTask({ id: 71, title: "Moving task", status: "actionable" });
+    const sourcePath = findTaskListPosition([task], task.id);
+    const entry: TaskListTransitionEntry = {
+      ...transition(task, sourcePath),
+      event: {
+        ...transition(task, sourcePath).event,
+        phase,
+        occurrence,
+        targetStatus: occurrence ? "actionable" : "done",
+        resultStatus: occurrence ? "actionable" : "done",
+      },
+    };
+
+    expect(suppressedTransitionTaskIds([entry], "destination", new Set(["origin"])))
+      .toEqual(new Set([task.id]));
+    expect(composeTaskListPresentation(
+      [task],
+      [entry],
+      "destination",
+      new Set(["origin"]),
+    ).rows).toEqual([]);
   });
 });

@@ -13,7 +13,7 @@ import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todaySc
 
 export function WaitingPage() {
   const strings = useStrings();
-  const { currentMemberId } = useIdentity();
+  const { authEnabled, authenticated, currentMemberId } = useIdentity();
   const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const selectScope = (nextScope: AgendaScope) => {
     setScope(nextScope);
@@ -63,7 +63,10 @@ export function WaitingPage() {
         />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
-        {entries ? <WaitingGroupList key={`${scope}:${currentMemberId}`} entries={entries} /> : null}
+        <WaitingGroupList
+          entries={entries}
+          identityKey={`${authEnabled}:${authenticated}:${scope}:${currentMemberId}`}
+        />
       </div>
     </InteractionScopeProvider>
   );

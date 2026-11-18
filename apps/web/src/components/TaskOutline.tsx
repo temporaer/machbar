@@ -121,6 +121,7 @@ function TaskOutlineContent({
           <TaskTransitionRow
             key={row.kind === "transition" ? `transition-${row.transition.event.taskId}` : `ancestor-${row.taskId}`}
             {...(row.kind === "transition" ? { transition: row.transition } : { ancestor: row })}
+            {...(row.kind === "transition" ? { nestedRows: row.children } : {})}
             {...(attentionTone ? { attentionTone } : {})}
           />
         ) : (

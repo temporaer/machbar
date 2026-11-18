@@ -145,6 +145,10 @@ export function TaskRow({
   const outlineRefreshing = organize?.pendingId != null;
   const transition = taskListFeedback?.get(taskProp.id, feedbackOutlineId);
   const transitionPending = transition?.event.phase === "pending";
+  const transitionAheadOfQuery =
+    transition?.event.phase === "success" &&
+    transition.event.resultRevision !== undefined &&
+    transition.event.resultRevision > taskProp.revision;
   const busy = isPending(taskProp.id) || outlineRefreshing;
 
   const task = taskProp;
@@ -423,7 +427,7 @@ export function TaskRow({
                     ? strings.taskTransitionPending(displayedStatus)
                     : isDone || isCancelled ? strings.reopen : strings.done
               }
-              disabled={busy}
+              disabled={busy || transitionAheadOfQuery}
               onClick={() => dispatch({ type: "task.toggleDone", task })}
             >
               {isDone || transition?.event.occurrence ? "✓" : isCancelled ? "×" : ""}

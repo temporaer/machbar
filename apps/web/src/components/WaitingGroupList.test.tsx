@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../test/testUtils";
 import { WaitingGroupList } from "./WaitingGroupList";
 import { api } from "../lib/api";
@@ -25,6 +25,7 @@ describe("WaitingGroupList", () => {
   it("separates external and physical-context reasons", async () => {
     renderWithProviders(
       <WaitingGroupList
+        identityKey="test"
         entries={[
           {
             task: makeTask({
@@ -57,6 +58,7 @@ describe("WaitingGroupList", () => {
   it("offers follow-up only for an external wait", async () => {
     const { container } = renderWithProviders(
       <WaitingGroupList
+        identityKey="test"
         entries={[
           {
             task: makeTask({
@@ -83,5 +85,39 @@ describe("WaitingGroupList", () => {
     fireEvent.pointerMove(content, { clientX: 150, pointerId: 1 });
     fireEvent.pointerUp(content, { clientX: 150, pointerId: 1 });
     expect(screen.getByRole("button", { name: "Nachhaken" })).toBeInTheDocument();
+  });
+
+  it("keeps the last completed waiting task mounted through an empty result", async () => {
+    const task = makeTask({
+      id: 3,
+      title: "Letzte wartende Aufgabe",
+      externalWait: { waitingFor: "Vermieter", revisitDate: null },
+    });
+    const entry = {
+      task,
+      reasons: [{ type: "external" as const, waitingFor: "Vermieter", revisitDate: null }],
+    };
+    vi.mocked(api.completeTask).mockResolvedValue({
+      ...task,
+      status: "done",
+      revision: task.revision + 1,
+    });
+    const { rerender } = renderWithProviders(
+      <WaitingGroupList identityKey="mine:1" entries={[entry]} />,
+    );
+    await screen.findByText(task.title);
+
+    fireEvent.click(within(screen.getByText(task.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(api.completeTask).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Wieder öffnen" }))
+      .toBeDisabled());
+
+    rerender(<WaitingGroupList identityKey="mine:1" entries={[]} />);
+
+    const confirmation = await screen.findByText(task.title);
+    expect(confirmation.closest("li")).toHaveAttribute("aria-disabled", "true");
+    expect(within(confirmation.closest("li")!).getByRole("status"))
+      .toHaveTextContent("Erledigt");
   });
 });

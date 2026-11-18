@@ -40,7 +40,7 @@ export type TaskListRow =
       children: TaskListRow[];
       sourceStep: TaskListPositionStep;
     }
-  | { kind: "transition"; transition: TaskListTransitionEntry };
+  | { kind: "transition"; transition: TaskListTransitionEntry; children: TaskListRow[] };
 
 export function findTaskListPosition(
   roots: readonly Task[],
@@ -106,7 +106,7 @@ export function composeTaskListRows(
     const step = transition.sourcePath?.[0];
     if (!step) continue;
     if (transition.sourcePath?.length === 1) {
-      candidates.push({ step, row: { kind: "transition", transition } });
+      candidates.push({ step, row: { kind: "transition", transition, children: [] } });
       continue;
     }
     const group = groupedAncestors.get(step.taskId) ?? { step, entries: [] };
@@ -116,16 +116,30 @@ export function composeTaskListRows(
   for (const [taskId, group] of groupedAncestors) {
     const children = composeTaskListRows([], group.entries, outlineId, taskId, suppressedTaskIds);
     if (children.length) {
-      candidates.push({
-        step: group.step,
-        row: {
-          kind: "ancestor",
-          taskId,
-          title: group.step.taskTitle,
-          children,
-          sourceStep: group.step,
-        },
-      });
+      const directTransition = candidates.findIndex(candidate =>
+        candidate.row.kind === "transition" &&
+        candidate.row.transition.event.taskId === taskId,
+      );
+      if (directTransition >= 0) {
+        const candidate = candidates[directTransition]!;
+        if (candidate.row.kind === "transition") {
+          candidates[directTransition] = {
+            ...candidate,
+            row: { ...candidate.row, children: [...candidate.row.children, ...children] },
+          };
+        }
+      } else {
+        candidates.push({
+          step: group.step,
+          row: {
+            kind: "ancestor",
+            taskId,
+            title: group.step.taskTitle,
+            children,
+            sourceStep: group.step,
+          },
+        });
+      }
     }
   }
 
@@ -145,10 +159,23 @@ export function composeTaskListRows(
     placements.set(anchor, group);
   }
 
-  const rank = (candidate: { step: TaskListPositionStep }) =>
-    candidate.step.siblingIds.indexOf(candidate.step.taskId);
+  const compareSiblings = (
+    left: TaskListPositionStep,
+    right: TaskListPositionStep,
+  ) => {
+    if (left.parentTaskId === right.parentTaskId) {
+      const leftKnowsRightAfter =
+        left.siblingIds.indexOf(right.taskId) > left.siblingIds.indexOf(left.taskId);
+      const rightKnowsLeftAfter =
+        right.siblingIds.indexOf(left.taskId) > right.siblingIds.indexOf(right.taskId);
+      if (leftKnowsRightAfter !== rightKnowsLeftAfter) {
+        return leftKnowsRightAfter ? -1 : 1;
+      }
+    }
+    return left.taskId - right.taskId;
+  };
   const ordered = (group: Array<{ step: TaskListPositionStep; row: TaskListRow }>) =>
-    group.sort((left, right) => rank(left) - rank(right) || left.step.taskId - right.step.taskId)
+    group.sort((left, right) => compareSiblings(left.step, right.step))
       .map(candidate => candidate.row);
   const result: TaskListRow[] = [];
   for (const task of visibleRoots) {
@@ -176,8 +203,7 @@ export function suppressedTransitionTaskIds(
       entry.sourceOutlineId !== outlineId &&
       entry.sourceOutlineId !== null &&
       renderableOutlineIds.has(entry.sourceOutlineId) &&
-      entry.sourcePath !== null &&
-      isDetachedConfirmation(entry),
+      entry.sourcePath !== null,
     )
     .map(entry => entry.event.taskId));
 }

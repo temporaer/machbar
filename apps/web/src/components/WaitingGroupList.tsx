@@ -1,7 +1,11 @@
 import type { Task, WaitingEntry } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
-import { TaskOutline } from "./TaskOutline";
+import { TaskOutlineInTransitionView } from "./TaskOutline";
 import { CollapsibleGroup } from "./CollapsibleGroup";
+import {
+  TaskListTransitionFeedbackProvider,
+  useRequiredTaskListTransitionFeedback,
+} from "../lib/taskListTransitionFeedback";
 
 function uniqueDisplayTasks(tasks: Task[]): Task[] {
   const seen = new Set<number>();
@@ -14,19 +18,37 @@ function uniqueDisplayTasks(tasks: Task[]): Task[] {
 
 export function WaitingGroupList({
   entries,
+  identityKey,
 }: {
-  entries: WaitingEntry[];
+  entries: WaitingEntry[] | null;
+  identityKey: string;
+}) {
+  return (
+    <TaskListTransitionFeedbackProvider identityKey={identityKey}>
+      <WaitingGroupListContent entries={entries} />
+    </TaskListTransitionFeedbackProvider>
+  );
+}
+
+function WaitingGroupListContent({
+  entries,
+}: {
+  entries: WaitingEntry[] | null;
 }) {
   const strings = useStrings();
+  const feedback = useRequiredTaskListTransitionFeedback();
+  const hasExternalTransition = feedback.hasTransitions("waiting:external");
+  const hasContextTransition = feedback.hasTransitions("waiting:context");
+  const resolvedEntries = entries ?? [];
   const externalCandidates = uniqueDisplayTasks(
-    entries
+    resolvedEntries
       .filter((entry) =>
         entry.reasons.some((reason) => reason.type === "external"),
       )
       .map((entry) => entry.task),
   );
   const contextCandidates = uniqueDisplayTasks(
-    entries
+    resolvedEntries
       .filter((entry) =>
         entry.reasons.some((reason) => reason.type === "context"),
       )
@@ -34,8 +56,9 @@ export function WaitingGroupList({
   );
   const externalTasks = externalCandidates;
   const contextTasks = contextCandidates;
-  const outline = (items: Task[], external: boolean) => (
-    <TaskOutline
+  const outline = (items: Task[], external: boolean, transitionOutlineId: string) => (
+    <TaskOutlineInTransitionView
+      transitionOutlineId={transitionOutlineId}
       tasks={items}
       emptyMessage={strings.waitingEmpty}
       organizable={false}
@@ -47,19 +70,23 @@ export function WaitingGroupList({
 
   return (
     <>
-      {externalTasks.length > 0 ? (
+      {externalTasks.length > 0 || hasExternalTransition ? (
         <CollapsibleGroup title={strings.waitingExternal} headingLevel={2}>
-          {outline(externalTasks, true)}
+          {outline(externalTasks, true, "waiting:external")}
         </CollapsibleGroup>
       ) : null}
-      {contextTasks.length > 0 ? (
+      {contextTasks.length > 0 || hasContextTransition ? (
         <CollapsibleGroup title={strings.waitingContext} headingLevel={2}>
           <p className="text-muted">{strings.waitingContextHint}</p>
-          {outline(contextTasks, false)}
+          {outline(contextTasks, false, "waiting:context")}
         </CollapsibleGroup>
       ) : null}
-      {externalTasks.length === 0 && contextTasks.length === 0
-        ? outline([], false)
+      {entries !== null &&
+      externalTasks.length === 0 &&
+      contextTasks.length === 0 &&
+      !hasExternalTransition &&
+      !hasContextTransition
+        ? outline([], false, "waiting:empty")
         : null}
     </>
   );

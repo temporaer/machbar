@@ -18,6 +18,7 @@ import {
 vi.mock("../lib/api", () => ({ api: {
   getMembers: vi.fn().mockResolvedValue([]), getTags: vi.fn().mockResolvedValue([]),
   searchTasks: vi.fn(), completeTask: vi.fn(), cancelTask: vi.fn(),
+  reopenTask: vi.fn(),
 } }));
 const mockedApi = vi.mocked(api, true);
 function OpenLifecycle({ taskId }: { taskId: number }) {
@@ -112,6 +113,60 @@ describe("server-confirmed compiled task rows", () => {
     await waitFor(() => expect(screen.queryByText(task.title)).not.toBeInTheDocument());
     expect(screen.queryByText(task.title)).not.toBeInTheDocument();
     expect(screen.getByText("Empty server view")).toBeInTheDocument();
+  });
+  it("does not submit a second completion when the success refresh fails", async () => {
+    const task = makeTask({ title: "Stale success row" });
+    mockedApi.searchTasks.mockResolvedValueOnce([task]).mockRejectedValueOnce(new Error("refresh failed"));
+    mockedApi.completeTask.mockResolvedValue({
+      ...task,
+      status: "done",
+      revision: task.revision + 1,
+    });
+    renderWithProviders(<CompiledSection />);
+    await screen.findByText(task.title);
+    fireEvent.click(screen.getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
+    const row = await screen.findByText(task.title).then(title => title.closest("li")!);
+    await waitFor(() => expect(within(row).getByRole("status")).toHaveTextContent("Erledigt"));
+    const reopen = within(row).getByRole("button", { name: "Wieder öffnen" });
+
+    expect(reopen).toBeDisabled();
+    fireEvent.click(reopen);
+    expect(mockedApi.completeTask).toHaveBeenCalledTimes(1);
+    expect(mockedApi.reopenTask).not.toHaveBeenCalled();
+  });
+  it("retires the nested confirmation after a newer same-status root result", async () => {
+    const child = makeTask({
+      id: 82,
+      title: "Moved completed child",
+      parentTaskId: 81,
+      status: "actionable",
+    });
+    const parent = makeTask({ id: 81, title: "Parent row", children: [child] });
+    const completedChild = { ...child, status: "done" as const, revision: child.revision + 1 };
+    const completedParent = { ...parent, children: [completedChild] };
+    const movedParent = { ...parent, children: [] };
+    const movedChild = { ...completedChild, parentTaskId: null, revision: completedChild.revision + 1 };
+    mockedApi.searchTasks
+      .mockResolvedValueOnce([parent])
+      .mockResolvedValueOnce([completedParent])
+      .mockResolvedValueOnce([movedParent, movedChild]);
+    mockedApi.completeTask.mockResolvedValue(completedChild);
+    const { container } = renderWithProviders(<CompiledSection />);
+    await screen.findByText(child.title);
+    fireEvent.click(within(screen.getByText(child.title).closest("li")!)
+      .getByRole("button", { name: "Erledigt" }));
+
+    await waitFor(() => expect(within(screen.getByText(child.title).closest("li")!)
+      .getByRole("status")).toHaveTextContent("Erledigt"));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh server view" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(child.title)).toHaveLength(1);
+      expect(container.querySelectorAll("li.task-row-transition-row")).toHaveLength(0);
+    });
+    expect(screen.getByText(child.title).closest("li")).not.toHaveAttribute("aria-disabled", "true");
   });
   it("keeps pending feedback through a refresh delayed beyond the confirmation interval", async () => {
     const task = makeTask({ title: "Slow refresh row" });

@@ -1415,18 +1415,21 @@ completion labels the handled occurrence while leaving the continuing task's
 status actionable. The confirmation window starts after the mutation refresh
 settles, and a detached confirmation remains in its originating tree slot while
 that outline is mounted. Missing ancestors render as inert path placeholders.
-Today keeps the source section mounted while its owner has an active transition,
-even if its refreshed task array is empty; changing its member or scope retires
-all transitions, including late success from an in-flight write. A transferred
-task is suppressed only in another section for the same confirmation interval;
-its latest server result appears there after expiry. Nested task confirmations
-remain below their original parent. Failure removes the
-transient presentation and keeps the authoritative row. Newer revisions and view,
-navigation, identity retirement, or a read-access denial dispose it; ordinary
-refreshes cannot reintroduce a detached row.
+Today, All, and Waiting keep the source section mounted while their view owner
+has an active transition, even if its refreshed task array is empty; Inbox keeps
+its outline mounted for the same reason. Owner changes retire the relevant
+transitions, including late success from an in-flight write. A transferred task
+is suppressed only in another section for the same confirmation interval; its
+latest server result appears there after expiry. Nested task confirmations remain
+below their original parent, merging with a departing parent row when both
+transition together. Failure removes the transient presentation and keeps the
+authoritative row. Newer revisions and view, navigation, identity retirement, or
+a read-access denial dispose it; ordinary refreshes cannot reintroduce a detached
+row.
 Each view explicitly owns the presentation provider: standalone `TaskOutline`
-instances own one, while Today and Inbox mount keyed owners at their view
-boundaries and render `TaskOutlineInTransitionView` consumers. The pure
+instances own one, Today and Inbox mount keyed owners at their view boundaries,
+and All and Waiting retain their owners across empty results while rendering
+`TaskOutlineInTransitionView` consumers. The pure
 `taskListTransitionPresentation.ts` module owns identity-path capture, transfer
 suppression, and pure tree-row composition; detached snapshots render through
 `TaskTransitionRow`, which has no task controls or keyboard registration.
