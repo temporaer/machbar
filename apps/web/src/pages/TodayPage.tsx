@@ -24,6 +24,11 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { useVisibleRefreshInterval } from "../lib/refresh";
 import type { AttentionTone } from "../lib/attentionTone";
 import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
+import {
+  TaskTransitionEmptyState,
+  TaskTransitionPresentationProvider,
+  TaskTransitionSection,
+} from "../lib/taskTransitionPresentationContext";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -115,19 +120,26 @@ export function TodayPage() {
         projectsByBucket[section.key].length > 0,
     ) || revisitTasks.length > 0;
   const renderAgendaSection = (section: (typeof sections)[number]) => (
-    <div className="section" key={section.key}>
+    <TaskTransitionSection
+      key={section.key}
+      sectionId={`today-${section.key}`}
+      tasks={visibleSectionTasks[section.key]}
+      keep={projectsByBucket[section.key].length > 0}
+    >
+    <div className="section">
       <div className="section-title">{section.label}</div>
-      {visibleSectionTasks[section.key].length > 0 ? (
+      <TaskTransitionSection sectionId={`today-${section.key}`} tasks={visibleSectionTasks[section.key]}>
         <TaskOutline
-          key={agendaSelectionKey}
           tasks={visibleSectionTasks[section.key]}
           emptyMessage={strings.noItems}
           preserveRootOrder
           showSwipeHint={false}
           compactDescendants
           attentionTone={toneBySection[section.key]}
+          transitionSectionId={`today-${section.key}`}
+          transitionReadSettled={!loading && !error && agenda !== null}
         />
-      ) : null}
+      </TaskTransitionSection>
       {projectsByBucket[section.key].length > 0 ? (
         <div
           className={`list${
@@ -147,9 +159,11 @@ export function TodayPage() {
         </div>
       ) : null}
     </div>
+    </TaskTransitionSection>
   );
 
   return (
+    <TaskTransitionPresentationProvider identityKey={`today:${agendaSelectionKey}`}>
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div className="today-page">
@@ -231,23 +245,21 @@ export function TodayPage() {
                 agenda.interventions.running.length +
                 agenda.interventions.review.length +
                 (agenda.interventions.reports?.length ?? 0);
-              if (total + interventionContent === 0)
-                return <EmptyState message={strings.todayEmpty} />;
               return (
                 <>
-                  {sections
-                    .filter(
-                      (section) =>
-                        section.key !== "dueSoon" &&
-                        (visibleSectionTasks[section.key].length > 0 ||
-                          projectsByBucket[section.key].length > 0),
-                    )
-                    .map(renderAgendaSection)}
-                  {revisitTasks.length > 0 ? (
-                    <div className="section" key="revisit">
+                  {total + interventionContent === 0 ? (
+                    <TaskTransitionEmptyState sectionIds={[
+                      "today-planned", "today-overdue", "today-dueToday", "today-dueSoon",
+                      "today-revisit", "today-additional", "today-completed",
+                    ]}>
+                      <EmptyState message={strings.todayEmpty} />
+                    </TaskTransitionEmptyState>
+                  ) : null}
+                  {sections.filter(section => section.key !== "dueSoon").map(renderAgendaSection)}
+                  <TaskTransitionSection sectionId="today-revisit" tasks={revisitTasks}>
+                    <div className="section">
                       <div className="section-title">{strings.revisit}</div>
                       <TaskOutline
-                        key={agendaSelectionKey}
                         tasks={revisitTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
@@ -255,49 +267,46 @@ export function TodayPage() {
                         showSwipeHint={false}
                         compactDescendants
                         attentionTone="revisit"
+                        transitionSectionId="today-revisit"
+                        transitionReadSettled={!loading && !error && agenda !== null}
                       />
                     </div>
-                  ) : null}
-                  {sections
-                    .filter(
-                      (section) =>
-                        section.key === "dueSoon" &&
-                        (visibleSectionTasks[section.key].length > 0 ||
-                          projectsByBucket[section.key].length > 0),
-                    )
-                    .map(renderAgendaSection)}
-                  {additionalTasks.length > 0 ? (
+                  </TaskTransitionSection>
+                  {sections.filter(section => section.key === "dueSoon").map(renderAgendaSection)}
+                  <TaskTransitionSection sectionId="today-additional" tasks={additionalTasks}>
                     <details className="section" open={!hasForegroundAttention}>
                       <summary className="section-title disclosure-summary">
                         {strings.unscheduled} ({additionalTasks.length})
                       </summary>
                       <TaskOutline
-                        key={agendaSelectionKey}
                         tasks={additionalTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
                         showSwipeHint={false}
                         compactDescendants
                         attentionTone="available"
+                        transitionSectionId="today-additional"
+                        transitionReadSettled={!loading && !error && agenda !== null}
                       />
                     </details>
-                  ) : null}
-                  {completedTodayTasks.length > 0 ? (
+                  </TaskTransitionSection>
+                  <TaskTransitionSection sectionId="today-completed" tasks={completedTodayTasks}>
                     <details className="section" key="completedToday">
                       <summary className="section-title disclosure-summary">
                         {strings.completedToday} ({completedTodayTasks.length})
                       </summary>
                       <p className="page-subtitle">{strings.completedTodayHint}</p>
                       <TaskOutline
-                        key={agendaSelectionKey}
                         tasks={completedTodayTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
                         showSwipeHint={false}
                         compactDescendants
+                        transitionSectionId="today-completed"
+                        transitionReadSettled={!loading && !error && agenda !== null}
                       />
                     </details>
-                  ) : null}
+                  </TaskTransitionSection>
                 </>
               );
             })()
@@ -305,5 +314,6 @@ export function TodayPage() {
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
     </InteractionScopeProvider>
+    </TaskTransitionPresentationProvider>
   );
 }

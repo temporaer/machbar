@@ -21,6 +21,8 @@ export function TaskTransitionDepartureRow({
         : strings.taskTransitionConfirmed[operation.intent]
       : strings.taskTransitionPending[operation.intent]
     : null;
+  const completed = snapshot?.status === "done" ||
+    (operation?.resultStatus === "done" && !operation.recurringOccurrence);
   return (
     <>
       <li
@@ -30,13 +32,13 @@ export function TaskTransitionDepartureRow({
       >
         <div className="task-row-content">
           {snapshot ? (
-            <span className={`task-row-checkbox${operation?.intent === "complete" && !operation.recurringOccurrence ? " done" : ""}`} aria-hidden="true">
-              {operation?.intent === "complete" && !operation.recurringOccurrence ? "✓" : ""}
+            <span className={`task-row-checkbox${completed ? " done" : ""}`} aria-hidden="true">
+              {completed ? "✓" : ""}
             </span>
           ) : null}
           <div className="task-row-main">
             {snapshot ? (
-              <div className={`task-row-title${operation?.intent === "complete" && !operation.recurringOccurrence ? " done" : ""}`}>
+              <div className={`task-row-title${completed ? " done" : ""}`}>
                 {snapshot.title}
               </div>
             ) : (

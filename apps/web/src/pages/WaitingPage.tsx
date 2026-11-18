@@ -10,6 +10,7 @@ import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
+import { TaskTransitionPresentationProvider } from "../lib/taskTransitionPresentationContext";
 
 export function WaitingPage() {
   const strings = useStrings();
@@ -29,6 +30,7 @@ export function WaitingPage() {
     [currentMemberId, scope],
   );
   return (
+    <TaskTransitionPresentationProvider identityKey={`waiting:${scope}:${currentMemberId ?? "none"}`}>
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div className="waiting-page">
@@ -63,8 +65,9 @@ export function WaitingPage() {
         />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
-        {entries ? <WaitingGroupList key={`${scope}:${currentMemberId}`} entries={entries} /> : null}
+        {entries ? <WaitingGroupList entries={entries} readSettled={!loading && !error} /> : null}
       </div>
     </InteractionScopeProvider>
+    </TaskTransitionPresentationProvider>
   );
 }

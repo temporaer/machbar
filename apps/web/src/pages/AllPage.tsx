@@ -25,6 +25,8 @@ import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { MaterialCard } from "../components/MaterialCard";
 import { parseReferenceContent } from "../lib/referenceContent";
+import { useIdentity } from "../lib/identity";
+import { TaskTransitionPresentationProvider, TaskTransitionSection } from "../lib/taskTransitionPresentationContext";
 
 function MaterialResults({ tasks }: { tasks: Task[] }) {
   const hasPaperlessAttachments = tasks.some(
@@ -56,6 +58,7 @@ function MaterialResults({ tasks }: { tasks: Task[] }) {
 export function AllPage() {
   const strings = useStrings();
   const { locale } = useLocale();
+  const { currentMemberId } = useIdentity();
   const [filters, setFilters] = useState<SearchFilters>({});
   const filtersKey = JSON.stringify(filters);
   const {
@@ -101,6 +104,7 @@ export function AllPage() {
   const error = projectsError ?? tasksError;
 
   return (
+    <TaskTransitionPresentationProvider identityKey={`all:${filtersKey}:${currentMemberId ?? "none"}`}>
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div>
@@ -124,9 +128,6 @@ export function AllPage() {
           />
         ) : null}
         {projects && tasks ? (
-          filteredProjects.length === 0 && visibleTasks.length === 0 ? (
-            <EmptyState message={materialOnly ? strings.allMaterialEmpty : strings.allEmpty} />
-          ) : (
             <>
               {filteredProjects.length > 0 ? (
                 <section
@@ -147,37 +148,43 @@ export function AllPage() {
                   </ul>
                 </section>
               ) : null}
-              {visibleTasks.length > 0 ? (
+              {!materialOnly ? (
+                <TaskTransitionSection
+                  sectionId="all-tasks"
+                  tasks={visibleTasks}
+                  emptyFallback={filteredProjects.length === 0 ? <EmptyState message={strings.allEmpty} /> : null}
+                >
                 <section
                   className="section"
-                  aria-labelledby={materialOnly ? "all-material-heading" : "all-tasks-heading"}
+                  aria-labelledby="all-tasks-heading"
                 >
                   <h2
-                    id={materialOnly ? "all-material-heading" : "all-tasks-heading"}
+                    id="all-tasks-heading"
                     className="section-title"
                   >
-                    {materialOnly
-                      ? strings.materialLabel
-                      : filtering
-                        ? strings.allMatchingTasksHeading
-                        : strings.allStandaloneTasksHeading}
+                    {filtering ? strings.allMatchingTasksHeading : strings.allStandaloneTasksHeading}
                   </h2>
-                  {materialOnly ? (
-                    <MaterialResults tasks={visibleTasks} />
-                  ) : (
                     <TaskOutline
-                      key={filtersKey}
                       tasks={visibleTasks}
                       emptyMessage={strings.allEmpty}
                       preserveRootOrder
+                      transitionSectionId="all-tasks"
+                      transitionReadSettled={!loading && !error}
                     />
-                  )}
                 </section>
+                </TaskTransitionSection>
+              ) : visibleTasks.length > 0 ? (
+                <section className="section" aria-labelledby="all-material-heading">
+                  <h2 id="all-material-heading" className="section-title">{strings.materialLabel}</h2>
+                  <MaterialResults tasks={visibleTasks} />
+                </section>
+              ) : filteredProjects.length === 0 ? (
+                <EmptyState message={strings.allMaterialEmpty} />
               ) : null}
             </>
-          )
         ) : null}
       </div>
     </InteractionScopeProvider>
+    </TaskTransitionPresentationProvider>
   );
 }

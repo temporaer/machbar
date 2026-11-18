@@ -165,12 +165,14 @@ export function reconcileTaskSection(
         (operation.resultRevision === undefined && latest.task.revision > operation.baseRevision));
     if (superseded) {
       delete operations[operation.token];
-      active.delete(operation.nodeKey);
     }
     if (!latest && readSettled && operation.resultRevision !== undefined) {
       staleGuards[nodes[operation.nodeKey]!.taskId] = operation.resultRevision;
     }
   }
+
+  active.clear();
+  for (const key of activeNodeKeys({ ...layout, operations })) active.add(key);
 
   const oldSection = layout.sections[sectionId] ?? { rootKeys: [] };
   const required = requiredNodeKeys({ ...layout, operations }, sectionId);
@@ -278,18 +280,18 @@ export function rejectTaskTransition(layout: TaskTransitionLayout, token: string
   if (!operation) return layout;
   const operations = { ...layout.operations };
   delete operations[token];
-  const stillActive = Object.values(operations).some(candidate => candidate.nodeKey === operation.nodeKey);
   const nodes = { ...layout.nodes };
-  if (!stillActive && nodes[operation.nodeKey]) {
-    const nodeWithoutSnapshot = { ...nodes[operation.nodeKey]! };
-    delete nodeWithoutSnapshot.snapshot;
-    nodes[operation.nodeKey] = nodeWithoutSnapshot;
+  const sectionId = nodes[operation.nodeKey]?.sectionId;
+  if (sectionId) {
+    const nextLayout = { ...layout, nodes, operations };
+    const active = activeNodeKeys(nextLayout);
+    const required = requiredNodeKeys(nextLayout, sectionId);
     for (const node of Object.values(nodes)) {
-      if (node.sectionId === nodes[operation.nodeKey]!.sectionId && node.shellTitle !== undefined) {
-        const nodeWithoutShellTitle = { ...node };
-        delete nodeWithoutShellTitle.shellTitle;
-        nodes[node.key] = nodeWithoutShellTitle;
-      }
+      if (node.sectionId !== sectionId) continue;
+      const nextNode = { ...node };
+      if (!active.has(node.key)) delete nextNode.snapshot;
+      if (!required.has(node.key)) delete nextNode.shellTitle;
+      nodes[node.key] = nextNode;
     }
   }
   return { ...layout, nodes, operations };

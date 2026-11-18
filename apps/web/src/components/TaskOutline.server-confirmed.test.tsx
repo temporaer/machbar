@@ -5,6 +5,7 @@ import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { makeTask } from "../test/fixtures";
+import { TaskTransitionPresentationProvider } from "../lib/taskTransitionPresentationContext";
 
 vi.mock("../lib/api", () => ({ api: {
   getMembers: vi.fn().mockResolvedValue([]), getTags: vi.fn().mockResolvedValue([]),
@@ -13,12 +14,20 @@ vi.mock("../lib/api", () => ({ api: {
 const mockedApi = vi.mocked(api, true);
 function CompiledSection() {
   const { data } = useAsync(() => api.searchTasks({}), []);
-  return <TaskOutline tasks={data ?? []} emptyMessage="Empty server view" />;
+  return (
+    <TaskTransitionPresentationProvider identityKey="compiled-section">
+      <TaskOutline
+        tasks={data ?? []}
+        emptyMessage="Empty server view"
+        transitionSectionId="compiled-tasks"
+      />
+    </TaskTransitionPresentationProvider>
+  );
 }
 
 describe("server-confirmed compiled task rows", () => {
   beforeEach(() => { vi.clearAllMocks(); window.localStorage.clear(); });
-  it("keeps server content pending, then removes a completed row on refetch without a timer", async () => {
+  it("shows pending feedback, then retains the confirmed source result after refetch", async () => {
     const task = makeTask({ title: "Server row" });
     mockedApi.searchTasks.mockResolvedValueOnce([task]).mockResolvedValue([]);
     let confirm!: (value: typeof task) => void;
@@ -26,12 +35,13 @@ describe("server-confirmed compiled task rows", () => {
     renderWithProviders(<CompiledSection />);
     await screen.findByText(task.title);
     fireEvent.click(screen.getByRole("button", { name: "Erledigt" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Wird erledigt");
+    expect(screen.getByText("Wird erledigt …")).toBeInTheDocument();
     expect(screen.getByText(task.title)).not.toHaveClass("done");
     expect(screen.getByRole("button", { name: "Erledigt" })).toBeDisabled();
     await act(async () => { confirm({ ...task, status: "done", revision: 2 }); });
-    await screen.findByText("Empty server view");
-    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+    expect(await screen.findByText("Erledigt")).toBeInTheDocument();
+    expect(screen.getByText(task.title)).toBeInTheDocument();
+    expect(screen.getByText(task.title).closest("li")).toHaveAttribute("aria-disabled", "true");
   });
   it("keeps the authoritative row and shows the rejection without refetching on network failure", async () => {
     const task = makeTask({ title: "Unchanged server row" });

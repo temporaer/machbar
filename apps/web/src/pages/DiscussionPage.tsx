@@ -6,10 +6,17 @@ import { PageHeader } from "../components/PageHeader";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
+import { useIdentity } from "../lib/identity";
+import {
+  TaskTransitionEmptyState,
+  TaskTransitionPresentationProvider,
+  TaskTransitionSection,
+} from "../lib/taskTransitionPresentationContext";
 
 /** A quiet, shared list of work nominated for a future household discussion. */
 export function DiscussionPage() {
   const strings = useStrings();
+  const { currentMemberId } = useIdentity();
   const { data, loading, error, refreshError, reload } = useAsync(() => api.getDiscussion(), []);
   const readError = error ?? refreshError;
   const tasks = data?.tasks ?? [];
@@ -17,12 +24,17 @@ export function DiscussionPage() {
   const empty = data !== null && tasks.length === 0 && projects.length === 0;
 
   return (
+    <TaskTransitionPresentationProvider identityKey={`discussion:${currentMemberId ?? "none"}`}>
     <InteractionScopeProvider>
     <div className="discussion-page">
       <PageHeader title={strings.discussionTitle} />
       {loading ? <LoadingState /> : null}
       {readError ? <ErrorState message={readError} onRetry={reload} /> : null}
-      {empty ? <EmptyState message={strings.discussionEmpty} /> : null}
+      {empty ? (
+        <TaskTransitionEmptyState sectionIds={["discussion-tasks"]}>
+          <EmptyState message={strings.discussionEmpty} />
+        </TaskTransitionEmptyState>
+      ) : null}
       {projects.length ? (
         <section className="section" aria-label={strings.projects}>
           <ul className="list" style={{ padding: 0, margin: 0 }}>
@@ -32,12 +44,13 @@ export function DiscussionPage() {
           </ul>
         </section>
       ) : null}
-      {tasks.length ? (
+      <TaskTransitionSection sectionId="discussion-tasks" tasks={tasks}>
         <section className="section" aria-label={strings.inbox}>
-          <TaskOutline tasks={tasks} emptyMessage={strings.discussionEmpty} preserveRootOrder showSwipeHint={false} />
+          <TaskOutline tasks={tasks} emptyMessage={strings.discussionEmpty} preserveRootOrder showSwipeHint={false} transitionSectionId="discussion-tasks" transitionReadSettled={!loading && !readError} />
         </section>
-      ) : null}
+      </TaskTransitionSection>
     </div>
     </InteractionScopeProvider>
+    </TaskTransitionPresentationProvider>
   );
 }

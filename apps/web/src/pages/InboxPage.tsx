@@ -18,6 +18,7 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { useIdentity } from "../lib/identity";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
+import { TaskTransitionPresentationProvider, TaskTransitionSection } from "../lib/taskTransitionPresentationContext";
 
 export function InboxPage() {
   const strings = useStrings();
@@ -41,6 +42,7 @@ export function InboxPage() {
   const location = useLocation();
 
   return (
+    <TaskTransitionPresentationProvider identityKey={`inbox:${scope}:${currentMemberId ?? "none"}`}>
     <InteractionScopeProvider>
       <InboxFocusRail tasks={tasks} focusId={new URLSearchParams(location.search).get("focus")} />
       <WorkItemKeyboardNavMount />
@@ -96,21 +98,25 @@ export function InboxPage() {
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
         {tasks ? (
-          tasks.length === 0 ? (
-            <EmptyState message={strings.clarifyEmpty} />
-          ) : (
+          <TaskTransitionSection
+            sectionId="inbox-tasks"
+            tasks={tasks}
+            emptyFallback={<EmptyState message={strings.clarifyEmpty} />}
+          >
             <TaskOutline
-              key={`${scope}:${currentMemberId}`}
               tasks={tasks}
               emptyMessage={strings.clarifyEmpty}
               preserveRootOrder
               showSwipeHint={false}
+              transitionSectionId="inbox-tasks"
+              transitionReadSettled={!loading && !error}
             />
-          )
+          </TaskTransitionSection>
         ) : null}
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
     </InteractionScopeProvider>
+    </TaskTransitionPresentationProvider>
   );
 }
 

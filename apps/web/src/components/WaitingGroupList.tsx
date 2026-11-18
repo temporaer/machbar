@@ -2,6 +2,7 @@ import type { Task, WaitingEntry } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { TaskOutline } from "./TaskOutline";
 import { CollapsibleGroup } from "./CollapsibleGroup";
+import { TaskTransitionEmptyState, TaskTransitionSection } from "../lib/taskTransitionPresentationContext";
 
 function uniqueDisplayTasks(tasks: Task[]): Task[] {
   const seen = new Set<number>();
@@ -14,8 +15,10 @@ function uniqueDisplayTasks(tasks: Task[]): Task[] {
 
 export function WaitingGroupList({
   entries,
+  readSettled = true,
 }: {
   entries: WaitingEntry[];
+  readSettled?: boolean;
 }) {
   const strings = useStrings();
   const externalCandidates = uniqueDisplayTasks(
@@ -34,7 +37,7 @@ export function WaitingGroupList({
   );
   const externalTasks = externalCandidates;
   const contextTasks = contextCandidates;
-  const outline = (items: Task[], external: boolean) => (
+  const outline = (items: Task[], external: boolean, sectionId: string) => (
     <TaskOutline
       tasks={items}
       emptyMessage={strings.waitingEmpty}
@@ -42,24 +45,28 @@ export function WaitingGroupList({
       preserveRootOrder
       {...(external ? { showRevisitDate: true } : {})}
       showSwipeHint={false}
+      transitionSectionId={sectionId}
+      transitionReadSettled={readSettled}
     />
   );
 
   return (
     <>
-      {externalTasks.length > 0 ? (
+      <TaskTransitionSection sectionId="waiting-external" tasks={externalTasks}>
         <CollapsibleGroup title={strings.waitingExternal} headingLevel={2}>
-          {outline(externalTasks, true)}
+          {outline(externalTasks, true, "waiting-external")}
         </CollapsibleGroup>
-      ) : null}
-      {contextTasks.length > 0 ? (
+      </TaskTransitionSection>
+      <TaskTransitionSection sectionId="waiting-context" tasks={contextTasks}>
         <CollapsibleGroup title={strings.waitingContext} headingLevel={2}>
           <p className="text-muted">{strings.waitingContextHint}</p>
-          {outline(contextTasks, false)}
+          {outline(contextTasks, false, "waiting-context")}
         </CollapsibleGroup>
-      ) : null}
+      </TaskTransitionSection>
       {externalTasks.length === 0 && contextTasks.length === 0
-        ? outline([], false)
+        ? <TaskTransitionEmptyState sectionIds={["waiting-external", "waiting-context"]}>
+            {outline([], false, "waiting-empty")}
+          </TaskTransitionEmptyState>
         : null}
     </>
   );

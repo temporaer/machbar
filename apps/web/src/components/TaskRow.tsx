@@ -207,8 +207,8 @@ export function TaskRow({
   const hasDisplayedChildren = displayedChildren.length > 0 || hiddenTerminalChildren.length > 0;
   const [showHiddenTerminal, setShowHiddenTerminal] = useState(false);
   const isDone = task.status === "done" ||
-    (transition?.intent === "complete" && !transition.recurringOccurrence);
-  const isCancelled = task.status === "cancelled" || transition?.intent === "cancel";
+    (transition?.resultStatus === "done" && !transition.recurringOccurrence);
+  const isCancelled = task.status === "cancelled" || transition?.resultStatus === "cancelled";
   const transitionLabel = transition
     ? transition.phase === "confirmed"
       ? transition.recurringOccurrence
@@ -444,7 +444,6 @@ export function TaskRow({
             </button>
           ) : null}
         </div>
-        {transitionLabel ? <p className="task-row-transition-status" role="status" aria-live="polite">{transitionLabel}</p> : null}
         <div className="task-row-main-wrap">
           {isReference ? (
             <MaterialCard
@@ -584,6 +583,7 @@ export function TaskRow({
           }
         />
       </div>
+      {transitionLabel ? <p className="task-row-transition-status" role="status" aria-live="polite">{transitionLabel}</p> : null}
       {!isReference && swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}

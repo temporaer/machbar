@@ -21,6 +21,7 @@ import {
   taskTransitionForNode,
   taskTransitionNodeKey,
   taskTransitionOriginAncestors,
+  TASK_TRANSITION_CONFIRMATION_MS,
   type TaskDisplayNode,
   type TaskTransitionIntent,
   type TaskTransitionLayout,
@@ -109,14 +110,6 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
     refreshSections();
   }, [refreshSections]);
 
-  const findTask = useCallback((taskId: number) => {
-    for (const tasks of tasksBySection.current.values()) {
-      const task = tasks.get(taskId);
-      if (task) return task;
-    }
-    return undefined;
-  }, []);
-
   const isBlocked = useCallback((taskId: number) => layoutRef.current.staleGuards[taskId] !== undefined, []);
 
   const origin = useCallback((sectionId: string, task: Task): TaskTransitionOrigin | undefined => {
@@ -147,7 +140,7 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
       reject: token => updateLayout(value => rejectTaskTransition(value, token)),
       commit: (token, revision, status) => updateLayout(value =>
         commitTaskTransition(value, token, revision, status)),
-      settled: (token, readFailed) => {
+      settled: token => {
         if (retired.current) return;
         updateLayout(value => confirmTaskTransition(value, token));
         const existing = timers.current.get(token);
@@ -166,11 +159,11 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
               return { ...value, staleGuards };
             });
           }
-        }, 3_000));
+        }, TASK_TRANSITION_CONFIRMATION_MS));
       },
     };
     return originRef;
-  }, [findTask, isBlocked, refreshSections, updateLayout, viewId]);
+  }, [isBlocked, refreshSections, updateLayout, viewId]);
 
   const items = useCallback((sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[] => {
     const current = layoutRef.current;
@@ -243,6 +236,35 @@ export function useTaskTransitionSection(
     if (presentation && sectionId) presentation.registerSection(sectionId, tasks, readSettled);
   }, [presentation, readSettled, sectionId, tasks]);
   return presentation;
+}
+
+export function TaskTransitionSection({
+  sectionId,
+  tasks,
+  children,
+  emptyFallback = null,
+  keep = false,
+}: {
+  sectionId: string;
+  tasks: Task[];
+  children: ReactNode;
+  emptyFallback?: ReactNode;
+  keep?: boolean;
+}) {
+  const presentation = useTaskTransitionPresentation();
+  if (tasks.length === 0 && !presentation?.hasHeldRows(sectionId) && !keep) return emptyFallback;
+  return children;
+}
+
+export function TaskTransitionEmptyState({
+  sectionIds,
+  children,
+}: {
+  sectionIds: string[];
+  children: ReactNode;
+}) {
+  const presentation = useTaskTransitionPresentation();
+  return sectionIds.some(sectionId => presentation?.hasHeldRows(sectionId)) ? null : children;
 }
 
 export type { DisplayItem as TaskTransitionDisplayItem };

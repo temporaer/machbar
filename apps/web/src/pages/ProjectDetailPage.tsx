@@ -64,6 +64,7 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet";
 import { projectMaterialItems } from "../lib/projectMaterials";
 import { ProjectAiPromptSheet } from "../components/ProjectAiPromptSheet";
+import { TaskTransitionPresentationProvider, TaskTransitionSection } from "../lib/taskTransitionPresentationContext";
 
 function ProjectAiPromptButton({
   projectTitle,
@@ -117,7 +118,7 @@ export function ProjectDetailPage() {
   const projectId = Number(params.id);
   const [searchParams, setSearchParams] = useSearchParams();
   const focus = searchParams.get("focus");
-  const { members } = useIdentity();
+  const { members, currentMemberId } = useIdentity();
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -420,6 +421,7 @@ export function ProjectDetailPage() {
   }, [storyFocusCommand, projectId]);
 
   return (
+    <TaskTransitionPresentationProvider identityKey={`project:${projectId}:${currentMemberId ?? "none"}`}>
     <InteractionScopeProvider
       captureTarget={{ kind: "story", storyId: projectId }}
     >
@@ -789,19 +791,23 @@ export function ProjectDetailPage() {
                   ))}
                 </ul>
               ) : null}
-              {project.tasks.length > 0 ? <TaskOutline
-                key={project.id}
-                tasks={project.tasks}
-                emptyMessage={strings.noTasks}
-                organizable
-                showSwipeHint={false}
-                nextActionInfo={{
-                  canonicalId: project.nextAction?.id ?? null,
-                  additionalSelectedIds: new Set(
-                    (project.additionalNextActions ?? []).map((t) => t.id),
-                  ),
-                }}
-              /> : null}
+              <TaskTransitionSection sectionId="project-outline" tasks={project.tasks}>
+                <TaskOutline
+                  key={project.id}
+                  tasks={project.tasks}
+                  emptyMessage={strings.noTasks}
+                  organizable
+                  showSwipeHint={false}
+                  nextActionInfo={{
+                    canonicalId: project.nextAction?.id ?? null,
+                    additionalSelectedIds: new Set(
+                      (project.additionalNextActions ?? []).map((t) => t.id),
+                    ),
+                  }}
+                  transitionSectionId="project-outline"
+                  transitionReadSettled={!projectLoading && !projectError}
+                />
+              </TaskTransitionSection>
             </WorkItemDetailDisclosure>
             <RecentActivity
               key={`project-activity-${project.id}`}
@@ -854,5 +860,6 @@ export function ProjectDetailPage() {
         ) : null}
       </div>
     </InteractionScopeProvider>
+    </TaskTransitionPresentationProvider>
   );
 }
