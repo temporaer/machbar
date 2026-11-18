@@ -108,6 +108,26 @@ describe("server-confirmed item commands", () => {
     expect(result.current.isPending(1)).toBe(false);
   });
 
+  it("isolates committed feedback failures and still awaits the captured refresh", async () => {
+    let finishRefresh!: () => void;
+    bump.mockImplementationOnce(() => new Promise<void>(resolve => { finishRefresh = resolve; }));
+    const onCommitted = vi.fn(() => { throw new Error("Presentation failed"); });
+    const { result } = renderHook(() => useItemMutations());
+    let command!: Promise<string | undefined>;
+    await act(async () => {
+      command = result.current.run({ id: 1, mutate: async () => "confirmed", onCommitted });
+      await Promise.resolve();
+    });
+    expect(onCommitted).toHaveBeenCalledOnce();
+    expect(result.current.isPending(1)).toBe(true);
+    expect(bump).toHaveBeenCalledOnce();
+    await act(async () => {
+      finishRefresh();
+      expect(await command).toBe("confirmed");
+    });
+    expect(result.current.isPending(1)).toBe(false);
+  });
+
   it("publishes explicit errors and preserves the actual rejection for throwing callers", async () => {
     bump.mockClear();
     const failure = new Error("server rejected");

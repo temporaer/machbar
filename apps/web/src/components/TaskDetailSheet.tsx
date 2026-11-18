@@ -139,7 +139,11 @@ export function TaskDetailSheet() {
     error,
     refreshError,
     reload,
-  } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
+  } = useAsync(
+    () => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)),
+    [openTaskId],
+    openTaskId !== null ? { type: "task", taskId: openTaskId } : undefined,
+  );
   const taskActions = useTaskActions();
   const task = loadedTask;
   const currentTaskRef = useRef(task);
@@ -178,6 +182,7 @@ export function TaskDetailSheet() {
             })
         : Promise.resolve(null),
     [openTaskId, task?.revision],
+    openTaskId !== null ? { type: "task", taskId: openTaskId } : undefined,
   );
 
   // Resets the drafts (and the dirty-check baseline) whenever a *different*

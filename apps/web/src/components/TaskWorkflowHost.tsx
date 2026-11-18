@@ -119,6 +119,7 @@ function TaskWorkflowContent({ state, openingId }: {
       }
     },
     [taskId, requirementsEpoch],
+    { type: "task", taskId },
   );
   const dismiss = () => { if (isCurrent()) workflow.close(); };
   const close = () => {

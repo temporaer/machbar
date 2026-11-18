@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type AgendaScope } from "../lib/api";
-import { useAsync } from "../lib/useAsync";
+import { useAsync, type ReadAccessResource } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { WaitingGroupList } from "../components/WaitingGroupList";
@@ -15,33 +15,61 @@ import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todaySc
 import { useTaskActions } from "../lib/useTaskActions";
 import { isReadAccessError } from "../lib/errorMessage";
 
-function WaitingCompletionFeedback() {
+function WaitingCompletionFeedback({ scope }: { scope: AgendaScope }) {
   const strings = useStrings();
   const client = useQueryClient();
-  const { registerCompletionFeedback } = useTaskActions();
-  const [notice, setNotice] = useState<{ message: string; sequence: number } | null>(null);
+  const { currentMemberId } = useIdentity();
+  const { registerCompletionFeedback, pendingIds } = useTaskActions();
+  const [notice, setNotice] = useState<{ taskId: number; message: string; sequence: number } | null>(null);
+  const noticeRef = useRef(notice);
+  const pendingIdsRef = useRef(pendingIds);
+  const deniedTaskIds = useRef(new Set<number>());
+  noticeRef.current = notice;
+  pendingIdsRef.current = pendingIds;
   useLayoutEffect(() => {
     const unregister = registerCompletionFeedback({
       pendingMessage: strings.taskCompleting,
-      onCommitted: task => setNotice(previous => ({
-        message: task.repeatAfterDays === null
-          ? strings.taskCompletionConfirmed(task.title)
-          : strings.taskOccurrenceConfirmed(task.title),
-        sequence: (previous?.sequence ?? 0) + 1,
-      })),
+      onCommitted: task => {
+        if (deniedTaskIds.current.has(task.id)) return;
+        const next = {
+          taskId: task.id,
+          message: task.repeatAfterDays === null
+            ? strings.taskCompletionConfirmed(task.title)
+            : strings.taskOccurrenceConfirmed(task.title),
+          sequence: (noticeRef.current?.sequence ?? 0) + 1,
+        };
+        noticeRef.current = next;
+        setNotice(next);
+      },
     });
-    // A detail/workflow denial can precede (or outlive) the view's own refresh.
     const unsubscribe = client.getQueryCache().subscribe(event => {
-      if (event.type === "updated" && isReadAccessError(event.query.state.error)) {
+      if (event.type !== "updated" || !isReadAccessError(event.query.state.error)) return;
+      const resource = event.query.meta?.accessResource as ReadAccessResource | undefined;
+      if (resource?.type === "waiting" &&
+        resource.memberId === currentMemberId && resource.scope === scope) {
         unregister();
+        noticeRef.current = null;
+        setNotice(null);
+        return;
+      }
+      if (resource?.type !== "task" ||
+        (!pendingIdsRef.current.has(resource.taskId) && noticeRef.current?.taskId !== resource.taskId)) return;
+      deniedTaskIds.current.add(resource.taskId);
+      if (noticeRef.current?.taskId === resource.taskId) {
+        noticeRef.current = null;
         setNotice(null);
       }
     });
     return () => { unsubscribe(); unregister(); };
-  }, [client, registerCompletionFeedback, strings]);
+  }, [client, currentMemberId, registerCompletionFeedback, scope, strings]);
   useEffect(() => {
     if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(current => current === notice ? null : current), 3_000);
+    const timer = window.setTimeout(() => {
+      if (noticeRef.current === notice) {
+        noticeRef.current = null;
+        setNotice(null);
+      }
+    }, 3_000);
     return () => window.clearTimeout(timer);
   }, [notice]);
   return createPortal(
@@ -70,11 +98,12 @@ export function WaitingPage() {
   } = useAsync(
     () => api.getWaiting(currentMemberId, scope),
     [currentMemberId, scope],
+    { type: "waiting", memberId: currentMemberId, scope },
   );
   return (
     <InteractionScopeProvider>
       {!refreshError ? <WorkItemKeyboardNavMount /> : null}
-      {entries ? <WaitingCompletionFeedback key={`${scope}:${currentMemberId}`} /> : null}
+      {entries ? <WaitingCompletionFeedback key={`${scope}:${currentMemberId}`} scope={scope} /> : null}
       <div className="waiting-page">
         <PageHeader
           title={strings.waiting}

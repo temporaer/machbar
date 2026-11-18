@@ -63,7 +63,11 @@ export function useItemMutations() {
       const refresh = Promise.resolve(bump()).catch(() => undefined);
       if (mounted.current) {
         setPendingMessages(current => new Map(current).set(id, undefined));
-        onCommitted?.(result);
+        try {
+          onCommitted?.(result);
+        } catch {
+          // Presentation feedback must not change the outcome of a committed write.
+        }
       }
       await refresh;
       return result;

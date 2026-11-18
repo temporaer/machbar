@@ -13,15 +13,21 @@ export interface AsyncState<T> {
   reload: () => void;
 }
 
+export type ReadAccessResource =
+  | { type: "waiting"; memberId: number | null; scope: string }
+  | { type: "task"; taskId: number };
+
 export function useAsync<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,
   deps: ReadonlyArray<unknown> = [],
+  accessResource?: ReadAccessResource,
 ): AsyncState<T> {
   const strings = useStrings();
   const client = useQueryClient();
   const readId = useId();
   const query = useQuery({
     queryKey: ["read", readId, ...deps],
+    ...(accessResource ? { meta: { accessResource } } : {}),
     queryFn: async ({ signal }) => {
       const result = await fetcher(signal);
       signal.throwIfAborted();
