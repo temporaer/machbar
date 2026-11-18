@@ -124,7 +124,9 @@ describe("task transition presentation owner", () => {
     await waitFor(() => expect(origins.size).toBeGreaterThan(0));
     const origin = [...origins.values()].at(-1)!;
 
-    expect(origin.begin("strict-replay", task, "complete")).toBe("started");
+    let result: ReturnType<TaskTransitionOrigin["begin"]> = "unavailable";
+    act(() => { result = origin.begin("strict-replay", task, "complete"); });
+    expect(result).toBe("started");
     expect(screen.getByTestId("operations")).toHaveTextContent("strict-replay");
   });
 
@@ -162,10 +164,10 @@ describe("task transition presentation owner", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     fireEvent.click(screen.getByRole("button", { name: "Cancel parent" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove projected rows" }));
-    await waitFor(() => expect(layout?.sections.source?.rootKeys).toEqual([
+    expect(layout?.sections.source?.rootKeys).toEqual([
       "task:603",
       "task:604",
-    ]));
+    ]);
     expect(taskTransitionDisplayChildren(layout!, "source", null, []).map(item =>
       "task" in item ? item.task.id : item.node.taskId,
     )).toEqual([parent.id, sibling.id]);

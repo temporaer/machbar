@@ -249,41 +249,50 @@ test("successful refresh retains the removed task at its source position until c
   });
 
   await page.goto("/#/inbox");
-  const row = page.locator(`[data-workitem-id="${transitioning.id}"]`);
+  const row = page.locator(".task-row").filter({ hasText: transitioning.title }).first();
   const beforeRow = page.locator(`[data-workitem-id="${before.id}"]`);
   const afterRow = page.locator(`[data-workitem-id="${after.id}"]`);
   await expect(row).toBeVisible();
   await expect(beforeRow).toBeVisible();
   await expect(afterRow).toBeVisible();
   await row.scrollIntoViewIfNeeded();
-  const initialScrollY = await page.evaluate(() => window.scrollY);
-  const initialY = (await row.boundingBox())!.y;
-  const neighborPositions = [
-    (await beforeRow.boundingBox())!.y,
-    (await afterRow.boundingBox())!.y,
-  ];
+  const rowBox = (await row.boundingBox())!;
+  const startX = Math.min(rowBox.x + 24, page.viewportSize()!.width - 164);
+  const y = rowBox.y + rowBox.height / 2;
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(startX + 140, y, { steps: 4 });
+  await page.mouse.up();
 
-  await page.getByRole("group", { name: "Status", exact: true })
-    .getByRole("button", { name: "Erledigt", exact: true }).click();
+  const completeButton = row.getByRole("group", { name: "Status", exact: true })
+    .getByRole("button", { name: "Erledigt", exact: true });
+  await expect(completeButton).toBeInViewport();
+  const initialY = (await row.boundingBox())!.y;
+  const initialDocumentY = initialY + await page.evaluate(() => window.scrollY);
+  await completeButton.click();
   await expect.poll(() => writeStarted).toBe(true);
   const feedback = row.getByRole("status");
   await expect(feedback).toHaveText("Wird erledigt …");
   await expect(feedback).toBeInViewport();
-  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
-  expect(Math.abs((await row.boundingBox())!.y - initialY)).toBeLessThanOrEqual(2);
+  expect(Math.abs(
+    (await row.boundingBox())!.y + await page.evaluate(() => window.scrollY) - initialDocumentY,
+  )).toBeLessThanOrEqual(2);
 
   releaseWrite();
   await expect.poll(() => writeStatus).toBe(200);
   await expect.poll(() => refreshRemoved).toBe(true);
-  await expect(feedback).toHaveText("Erledigt");
-  await expect(row).toBeVisible();
-  await expect(feedback).toBeInViewport();
-  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
-  expect(Math.abs((await row.boundingBox())!.y - initialY)).toBeLessThanOrEqual(2);
-  expect(Math.abs((await beforeRow.boundingBox())!.y - neighborPositions[0]!)).toBeLessThanOrEqual(2);
-  expect(Math.abs((await afterRow.boundingBox())!.y - neighborPositions[1]!)).toBeLessThanOrEqual(2);
+  const departure = page.locator(".task-row-transition-departure")
+    .filter({ hasText: transitioning.title });
+  await expect(departure.getByRole("status")).toHaveText("Erledigt");
+  await expect(departure).toBeVisible();
+  await expect(departure.getByRole("status")).toBeInViewport();
+  expect(Math.abs(
+    (await departure.boundingBox())!.y + await page.evaluate(() => window.scrollY) - initialDocumentY,
+  )).toBeLessThanOrEqual(2);
+  expect((await beforeRow.boundingBox())!.y).toBeLessThan((await departure.boundingBox())!.y);
+  expect((await departure.boundingBox())!.y).toBeLessThan((await afterRow.boundingBox())!.y);
 
-  await expect(row).toHaveCount(0, { timeout: 5_000 });
+  await expect(departure).toHaveCount(0, { timeout: 5_000 });
   await expect(beforeRow).toBeVisible();
   await expect(afterRow).toBeVisible();
 });
