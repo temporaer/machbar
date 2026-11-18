@@ -18,6 +18,14 @@ export interface TaskTransitionSnapshot {
   status: TaskStatus;
   kind: Task["kind"];
   recurring: boolean;
+  visualContext?: TaskTransitionVisualContext;
+}
+
+export interface TaskTransitionVisualContext {
+  kind: "review";
+  reviewKey: string;
+  detail: string;
+  category: string;
 }
 
 export interface TaskDisplayNode {
@@ -49,7 +57,8 @@ export interface TaskTransitionOrigin {
   readonly viewId: string;
   readonly nodeKey: string;
   readonly taskId: number;
-  isBlocked(): boolean;
+  readonly visualContext?: TaskTransitionVisualContext;
+  isBlocked(revision?: number): boolean;
   begin(token: string, task: Task, intent: TaskTransitionIntent): "started" | "blocked" | "unavailable";
   reject(token: string): void;
   commit(token: string, revision: number, status: TaskStatus): void;
@@ -152,11 +161,6 @@ export function reconcileTaskSection(
   const staleGuards = { ...layout.staleGuards };
   const active = activeNodeKeys(layout);
 
-  for (const task of specs.values()) {
-    const guard = staleGuards[task.task.id];
-    if (guard !== undefined && task.task.revision >= guard) delete staleGuards[task.task.id];
-  }
-
   for (const operation of Object.values(operations)) {
     const latest = [...specs.values()].find(spec => spec.task.id === nodes[operation.nodeKey]?.taskId);
     const superseded =
@@ -250,10 +254,20 @@ export function beginTaskTransition(
   task: Task,
   intent: TaskTransitionIntent,
   ancestorTitles: Array<{ key: string; title: string }>,
+  visualContext?: TaskTransitionVisualContext,
 ): TaskTransitionLayout {
   const node = layout.nodes[nodeKey];
   if (!node || layout.staleGuards[task.id] !== undefined || layout.operations[token]) return layout;
-  const nodes = { ...layout.nodes, [nodeKey]: { ...node, snapshot: taskSnapshot(task) } };
+  const nodes = {
+    ...layout.nodes,
+    [nodeKey]: {
+      ...node,
+      snapshot: {
+        ...taskSnapshot(task),
+        ...(visualContext ? { visualContext } : {}),
+      },
+    },
+  };
   for (const ancestor of ancestorTitles) {
     const ancestorNode = nodes[ancestor.key];
     if (ancestorNode) nodes[ancestor.key] = { ...ancestorNode, shellTitle: ancestor.title };

@@ -24,6 +24,20 @@ import { ErrorState, EmptyState, LoadingState } from "../components/AsyncStates"
 import { PageHeader } from "../components/PageHeader";
 import { RefinementTools } from "../components/RefinementTools";
 import { ChildPolicyPrompt } from "../components/ChildPolicyPrompt";
+import {
+  TaskTransitionEmptyState,
+  TaskTransitionPresentationProvider,
+  TaskTransitionSection,
+  useTaskTransitionPresentation,
+} from "../lib/taskTransitionPresentationContext";
+import {
+  taskTransitionForNode,
+  taskTransitionNodeKey,
+  type TaskDisplayNode,
+  type TaskTransitionOperation,
+  type TaskTransitionVisualContext,
+} from "../lib/taskTransitionPresentation";
+import { useIdentity } from "../lib/identity";
 import "./ReviewPage.css";
 
 interface ReviewReturn {
@@ -53,6 +67,43 @@ function ReviewCard({ cardRef, children }: {
 }
 
 export function ReviewPage() {
+  const { currentMemberId } = useIdentity();
+  return (
+    <TaskTransitionPresentationProvider identityKey={`review:${currentMemberId ?? "none"}`}>
+      <ReviewPageContent />
+    </TaskTransitionPresentationProvider>
+  );
+}
+
+function ReviewTransitionDeparture({
+  node,
+  operation,
+  cardRef,
+}: {
+  node: TaskDisplayNode;
+  operation: TaskTransitionOperation | null;
+  cardRef: (element: HTMLElement | null) => void;
+}) {
+  const strings = useStrings();
+  const snapshot = node.snapshot;
+  if (!snapshot) return null;
+  const label = operation
+    ? operation.phase === "confirmed"
+      ? operation.recurringOccurrence
+        ? strings.taskTransitionOccurrence
+        : strings.taskTransitionConfirmed[operation.intent]
+      : strings.taskTransitionPending[operation.intent]
+    : null;
+  return (
+    <article className="card review-item" ref={cardRef} tabIndex={-1} aria-disabled="true">
+      <div className="review-item-heading"><strong>{snapshot.title}</strong></div>
+      {snapshot.visualContext?.detail ? <p>{snapshot.visualContext.detail}</p> : null}
+      {label ? <p className="task-row-transition-status" role="status" aria-live="polite">{label}</p> : null}
+    </article>
+  );
+}
+
+function ReviewPageContent() {
   const strings = useStrings();
   const navigate = useNavigate();
   const location = useLocation();
@@ -101,6 +152,45 @@ export function ReviewPage() {
   const visibleItems = categoryOrder.flatMap(category => buckets[category]);
   const groups = categoryOrder.map(category => ({ category, items: buckets[category] }))
     .filter(group => group.items.length > 0);
+  const presentation = useTaskTransitionPresentation();
+  const reviewTaskSections = useMemo(() => categoryOrder.map(category => {
+    const reviewItems = visibleItems.filter(
+      item => item.category === category && item.entityType === "task",
+    );
+    const sectionTasks = reviewItems.flatMap(item => {
+      const task = taskById.get(item.entityId);
+      return task ? [{ ...task, children: [] }] : [];
+    });
+    return {
+      category,
+      sectionId: `review-${category}`,
+      reviewItems,
+      tasks: sectionTasks,
+    };
+  }), [taskById, visibleItems]);
+  const transitionReadSettled =
+    !itemsLoading && !itemsError && !tasksLoading && !tasksError;
+
+  useEffect(() => {
+    if (!presentation) return;
+    for (const section of reviewTaskSections) {
+      presentation.registerSection(section.sectionId, section.tasks, transitionReadSettled);
+    }
+  }, [presentation, reviewTaskSections, transitionReadSettled]);
+
+  const reviewTransitionOrigin = (item: ReviewItem, taskId = item.entityId) => {
+    if (item.entityType !== "task" || taskId !== item.entityId) return undefined;
+    const task = taskById.get(taskId);
+    const sectionId = `review-${item.category}`;
+    if (!task || !presentation) return undefined;
+    const visualContext: TaskTransitionVisualContext = {
+      kind: "review",
+      reviewKey: reviewItemKey(item),
+      detail: reasonText(item.reason),
+      category: categoryLabel(item.category),
+    };
+    return presentation.origin(sectionId, task, visualContext);
+  };
 
   const focusReturnedItem = (origin: ReviewReturn) => {
     const candidates = visibleItems;
@@ -233,6 +323,7 @@ export function ReviewPage() {
       focus ? { type: "task.open", taskId, focusField: focus } : { type: "task.open", taskId },
       item,
       issueIndex,
+      reviewTransitionOrigin(item, taskId),
     );
   };
   /**
@@ -246,10 +337,11 @@ export function ReviewPage() {
     command: WorkItemCommand,
     item: ReviewItem,
     issueIndex: number,
+    origin?: ReturnType<typeof reviewTransitionOrigin>,
   ) => {
     setWorkflowReturn({ issueKey: reviewItemKey(item), issueIndex });
     setWorkflowOpened(false);
-    dispatch(command);
+    dispatch(command, origin);
   };
   /** Repairs that genuinely belong on the project page rather than in a sheet. */
   const openProjectPage = (item: ReviewItem, issueIndex: number, focus?: string) => {
@@ -273,7 +365,12 @@ export function ReviewPage() {
         openProjectPage(item, issueIndex, "next-action");
         return;
       case "plan_task":
-        dispatchWithReturn({ type: "task.plan", taskId: targetId }, item, issueIndex);
+        dispatchWithReturn(
+          { type: "task.plan", taskId: targetId },
+          item,
+          issueIndex,
+          reviewTransitionOrigin(item, targetId),
+        );
         return;
       case "defer_project":
         if (story) {
@@ -298,6 +395,7 @@ export function ReviewPage() {
           { type: "task.availability", taskId: targetId },
           item,
           issueIndex,
+          reviewTransitionOrigin(item, targetId),
         );
         return;
       case "resolve_blocker":
@@ -434,13 +532,14 @@ export function ReviewPage() {
     const task = taskById.get(item.entityId);
     if (!task) return null;
     const displayed: Task = task;
+    const origin = reviewTransitionOrigin(item);
     return (
       <>
         {displayed.status !== "actionable" ? (
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => void taskActions.setStatus(displayed, "actionable")}
+            onClick={() => void taskActions.setStatus(displayed, "actionable", origin)}
           >
             {strings.classifyAsAction}
           </button>
@@ -449,7 +548,7 @@ export function ReviewPage() {
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => void taskActions.setStatus(displayed, "someday")}
+            onClick={() => void taskActions.setStatus(displayed, "someday", origin)}
           >
             {strings.reviewSomeday}
           </button>
@@ -457,7 +556,7 @@ export function ReviewPage() {
         <button
           type="button"
           className="btn btn-sm btn-ghost"
-          onClick={() => taskActions.requestCancel(displayed)}
+          onClick={() => taskActions.requestCancel(displayed, origin)}
         >
           {strings.reviewCancel}
         </button>
@@ -471,6 +570,52 @@ export function ReviewPage() {
           </button>
         ) : null}
       </>
+    );
+  };
+
+  const renderReviewCard = (item: ReviewItem) => {
+    const actions = item.entityType === "task" ? taskActions : projectActions;
+    const pending = actions.isPending(item.entityId);
+    const mutationError = actions.errors[item.entityId];
+    const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
+    const equivalentInspection =
+      item.suggestedAction.code === (item.entityType === "task" ? "review_task" : "review_project") &&
+      (item.suggestedAction.targetEntityType ?? item.entityType) === item.entityType &&
+      (item.suggestedAction.targetEntityId ?? item.entityId) === item.entityId &&
+      (item.entityType !== "project" || (item.projectId ?? item.entityId) === item.entityId);
+    return (
+      <ReviewCard
+        key={reviewItemKey(item)}
+        cardRef={(element) => {
+          if (element) itemRefs.current.set(reviewItemKey(item), element);
+          else itemRefs.current.delete(reviewItemKey(item));
+        }}
+      >
+        <div className="review-item-heading">
+          <strong>{item.entityTitle}</strong>
+          {item.projectTitle && item.entityType === "task" ? (
+            <span className="text-muted"> · {item.projectTitle}</span>
+          ) : null}
+        </div>
+        <p>{reasonText(item.reason)}</p>
+        <fieldset className="review-item-actions" disabled={pending} aria-busy={pending}
+          style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+          {!equivalentInspection ? (
+            <button type="button" className="btn btn-sm" onClick={() => repair(item, issueIndex)}>
+              {actionLabel(item)}
+            </button>
+          ) : null}
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => openDetails(item, issueIndex)}>
+            {strings.reviewOpenDetails}
+          </button>
+          {item.entityType === "project" ? projectDecisionButtons(item) : taskDecisionButtons(item)}
+        </fieldset>
+        {mutationError ? <div role="alert" className="capture-error">
+          {mutationError}
+          <button type="button" className="btn btn-sm btn-ghost"
+            onClick={() => actions.clearError(item.entityId)}>{strings.close}</button>
+        </div> : null}
+      </ReviewCard>
     );
   };
 
@@ -496,69 +641,57 @@ export function ReviewPage() {
           <h2 id="review-queue-heading" className="section-title">
             {strings.reviewPrimaryQueue}
           </h2>
-          {visibleItems.length === 0 ? <EmptyState message={strings.reviewEmpty} /> : null}
-          {groups.map((group) => (
-            <section className="review-group" key={group.category}>
-              <h3>{categoryLabel(group.category)}</h3>
-              <div className="review-list">
-                {group.items.map((item) => {
-                  const actions = item.entityType === "task" ? taskActions : projectActions;
-                  const pending = actions.isPending(item.entityId);
-                  const mutationError = actions.errors[item.entityId];
-                  const issueIndex = visibleItems.findIndex(candidate => reviewItemKey(candidate) === reviewItemKey(item));
-                  const equivalentInspection =
-                    item.suggestedAction.code === (item.entityType === "task" ? "review_task" : "review_project") &&
-                    (item.suggestedAction.targetEntityType ?? item.entityType) === item.entityType &&
-                    (item.suggestedAction.targetEntityId ?? item.entityId) === item.entityId &&
-                    (item.entityType !== "project" || (item.projectId ?? item.entityId) === item.entityId);
-                  return (
-                  <ReviewCard
-                    key={reviewItemKey(item)}
-                    cardRef={(element) => {
-                      if (element) itemRefs.current.set(reviewItemKey(item), element);
-                      else itemRefs.current.delete(reviewItemKey(item));
-                    }}
-                  >
-                    <div className="review-item-heading">
-                      <strong>{item.entityTitle}</strong>
-                      {item.projectTitle && item.entityType === "task" ? (
-                        <span className="text-muted"> · {item.projectTitle}</span>
-                      ) : null}
-                    </div>
-                    <p>{reasonText(item.reason)}</p>
-                    <fieldset className="review-item-actions" disabled={pending} aria-busy={pending}
-                      style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-                      {!equivalentInspection ? (
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() => repair(item, issueIndex)}
-                        >
-                          {actionLabel(item)}
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost"
-                        onClick={() => openDetails(item, issueIndex)}
-                      >
-                        {strings.reviewOpenDetails}
-                      </button>
-                      {item.entityType === "project"
-                        ? projectDecisionButtons(item)
-                        : taskDecisionButtons(item)}
-                    </fieldset>
-                    {mutationError ? <div role="alert" className="capture-error">
-                      {mutationError}
-                      <button type="button" className="btn btn-sm btn-ghost"
-                        onClick={() => actions.clearError(item.entityId)}>{strings.close}</button>
-                    </div> : null}
-                  </ReviewCard>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+          {visibleItems.length === 0 ? (
+            <TaskTransitionEmptyState sectionIds={reviewTaskSections.map(section => section.sectionId)}>
+              <EmptyState message={strings.reviewEmpty} />
+            </TaskTransitionEmptyState>
+          ) : null}
+          {categoryOrder.map(category => {
+            const groupItems = buckets[category];
+            const projectItems = groupItems.filter(item => item.entityType === "project");
+            const section = reviewTaskSections.find(candidate => candidate.category === category)!;
+            const displayedTasks = presentation
+              ? presentation.items(section.sectionId, null, section.tasks)
+              : section.tasks.map(task => ({ kind: "live" as const, task, transition: null }));
+            const reviewItemByTaskId = new Map(
+              section.reviewItems.map(item => [item.entityId, item]),
+            );
+            return (
+              <TaskTransitionSection
+                key={category}
+                sectionId={section.sectionId}
+                tasks={section.tasks}
+                keep={projectItems.length > 0}
+              >
+                <section className="review-group">
+                  <h3>{categoryLabel(category)}</h3>
+                  <div className="review-list">
+                    {projectItems.map(renderReviewCard)}
+                    {displayedTasks.map(displayItem => {
+                      if (displayItem.kind === "departure") {
+                        const reviewKey = displayItem.node.snapshot?.visualContext?.reviewKey ?? "";
+                        return (
+                          <ReviewTransitionDeparture
+                            key={displayItem.node.key}
+                            node={displayItem.node}
+                            operation={presentation
+                              ? taskTransitionForNode(presentation.layout, displayItem.node.key)
+                              : null}
+                            cardRef={element => {
+                              if (element) itemRefs.current.set(reviewKey, element);
+                              else itemRefs.current.delete(reviewKey);
+                            }}
+                          />
+                        );
+                      }
+                      const item = reviewItemByTaskId.get(displayItem.task.id);
+                      return item ? renderReviewCard(item) : null;
+                    })}
+                  </div>
+                </section>
+              </TaskTransitionSection>
+            );
+          })}
         </section>
       ) : null}
       <details

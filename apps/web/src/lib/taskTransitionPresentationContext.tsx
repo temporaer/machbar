@@ -27,6 +27,7 @@ import {
   type TaskTransitionLayout,
   type TaskTransitionOperation,
   type TaskTransitionOrigin,
+  type TaskTransitionVisualContext,
 } from "./taskTransitionPresentation";
 
 type DisplayItem =
@@ -44,8 +45,8 @@ interface TaskTransitionPresentationValue {
   layout: TaskTransitionLayout;
   registerSection(sectionId: string, tasks: Task[], readSettled: boolean): void;
   items(sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[];
-  origin(sectionId: string, task: Task): TaskTransitionOrigin | undefined;
-  isBlocked(taskId: number): boolean;
+  origin(sectionId: string, task: Task, visualContext?: TaskTransitionVisualContext): TaskTransitionOrigin | undefined;
+  isBlocked(taskId: number, revision?: number): boolean;
   hasHeldRows(sectionId: string): boolean;
 }
 
@@ -110,22 +111,29 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
     refreshSections();
   }, [refreshSections]);
 
-  const isBlocked = useCallback((taskId: number) => layoutRef.current.staleGuards[taskId] !== undefined, []);
+  const isBlocked = useCallback((taskId: number, revision?: number) => {
+    const guard = layoutRef.current.staleGuards[taskId];
+    return guard !== undefined && (revision === undefined || revision < guard);
+  }, []);
 
-  const origin = useCallback((sectionId: string, task: Task): TaskTransitionOrigin | undefined => {
+  const origin = useCallback((
+    sectionId: string,
+    task: Task,
+    visualContext?: TaskTransitionVisualContext,
+  ): TaskTransitionOrigin | undefined => {
     if (retired.current || !sections.current.has(sectionId)) return undefined;
     const nodeKey = taskTransitionNodeKey(task.id);
-    const taskId = task.id;
     const initialNode = layoutRef.current.nodes[nodeKey];
     if (!initialNode || initialNode.sectionId !== sectionId) return undefined;
     const originRef: TaskTransitionOrigin = {
       viewId,
       nodeKey,
       taskId: task.id,
-      isBlocked: () => !retired.current && isBlocked(task.id),
+      ...(visualContext ? { visualContext } : {}),
+      isBlocked: () => !retired.current && isBlocked(task.id, task.revision),
       begin: (token, sourceTask, intent) => {
         if (retired.current) return "unavailable";
-        if (isBlocked(sourceTask.id)) return "blocked";
+        if (isBlocked(sourceTask.id, sourceTask.revision)) return "blocked";
         const current = layoutRef.current;
         const currentNode = current.nodes[nodeKey];
         if (!currentNode || currentNode.sectionId !== sectionId) return "unavailable";
@@ -134,7 +142,9 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
           for (const [id, value] of byId) titles.set(id, value.title);
         }
         const ancestors = taskTransitionOriginAncestors(current, nodeKey, titles);
-        updateLayout(value => beginTaskTransition(value, token, nodeKey, sourceTask, intent, ancestors));
+        updateLayout(value => beginTaskTransition(
+          value, token, nodeKey, sourceTask, intent, ancestors, visualContext,
+        ));
         return "started";
       },
       reject: token => updateLayout(value => rejectTaskTransition(value, token)),
@@ -146,19 +156,10 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
         const existing = timers.current.get(token);
         if (existing) clearTimeout(existing);
         timers.current.set(token, setTimeout(() => {
+          if (retired.current) return;
           timers.current.delete(token);
           updateLayout(value => releaseTaskTransition(value, token));
           refreshSections();
-          const task = findTask(taskId);
-          const guard = layoutRef.current.staleGuards[taskId];
-          if (readFailed && guard !== undefined && task && task.revision < guard) return;
-          if (!readFailed && !task && guard !== undefined) {
-            updateLayout(value => {
-              const staleGuards = { ...value.staleGuards };
-              delete staleGuards[taskId];
-              return { ...value, staleGuards };
-            });
-          }
         }, TASK_TRANSITION_CONFIRMATION_MS));
       },
     };
@@ -252,7 +253,8 @@ export function TaskTransitionSection({
   keep?: boolean;
 }) {
   const presentation = useTaskTransitionPresentation();
-  if (tasks.length === 0 && !presentation?.hasHeldRows(sectionId) && !keep) return emptyFallback;
+  if (!presentation) return children;
+  if (tasks.length === 0 && !presentation.hasHeldRows(sectionId) && !keep) return emptyFallback;
   return children;
 }
 

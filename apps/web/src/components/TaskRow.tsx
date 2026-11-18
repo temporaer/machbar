@@ -139,7 +139,7 @@ export function TaskRow({
   const transitionOrigin = presentation && transitionSectionId
     ? presentation.origin(transitionSectionId, taskProp)
     : undefined;
-  const staleTransitionGuard = presentation?.isBlocked(taskProp.id) ?? false;
+  const staleTransitionGuard = presentation?.isBlocked(taskProp.id, taskProp.revision) ?? false;
   const busy = isPending(taskProp.id) || outlineRefreshing ||
     transition?.phase === "pending" || transition?.phase === "refreshing" || staleTransitionGuard;
 
