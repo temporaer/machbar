@@ -10,7 +10,10 @@ import {
   ErrorState,
   EmptyState,
 } from "../components/AsyncStates";
-import { TaskListTransitionDepartures, TaskOutline } from "../components/TaskOutline";
+import {
+  TaskListTransitionDepartures,
+  TaskOutlineInTransitionView,
+} from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaRow } from "../components/ProjectAgendaRow";
 import { InterventionFocusStrip } from "../components/InterventionFocusStrip";
@@ -66,7 +69,7 @@ function CompletedTodaySection({
         {title} ({tasks.length})
       </summary>
       <p className="page-subtitle">{hint}</p>
-      <TaskOutline
+      <TaskOutlineInTransitionView
         key={agendaSelectionKey}
         tasks={tasks}
         emptyMessage={emptyMessage}
@@ -98,7 +101,7 @@ export function TodayPage() {
   // page never throws and never ends up requesting -- or rendering --
   // another member's tasks. Re-fetching whenever `currentMemberId` changes
   // ensures switching identities always shows that member's own agenda.
-  const { currentMemberId, members } = useIdentity();
+  const { authEnabled, authenticated, currentMemberId, members } = useIdentity();
   const agendaSelectionKey = `${scope}:${currentMemberId ?? "none"}`;
   const {
     data: loadedAgenda,
@@ -171,7 +174,7 @@ export function TodayPage() {
     <div className="section" key={section.key}>
       <div className="section-title">{section.label}</div>
       {visibleSectionTasks[section.key].length > 0 ? (
-        <TaskOutline
+        <TaskOutlineInTransitionView
           key={agendaSelectionKey}
           tasks={visibleSectionTasks[section.key]}
           emptyMessage={strings.noItems}
@@ -205,7 +208,7 @@ export function TodayPage() {
   return (
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
-      <TaskListTransitionFeedbackProvider externalDepartures viewIdentity={agendaSelectionKey}>
+      <TaskListTransitionFeedbackProvider identityKey={`${authEnabled}:${authenticated}:${agendaSelectionKey}`}>
       <div className="today-page">
         <PageHeader
           title={strings.today}
@@ -300,7 +303,7 @@ export function TodayPage() {
                   {revisitTasks.length > 0 ? (
                     <div className="section" key="revisit">
                       <div className="section-title">{strings.revisit}</div>
-                      <TaskOutline
+                      <TaskOutlineInTransitionView
                         key={agendaSelectionKey}
                         tasks={revisitTasks}
                         emptyMessage={strings.noItems}
@@ -325,7 +328,7 @@ export function TodayPage() {
                       <summary className="section-title disclosure-summary">
                         {strings.unscheduled} ({additionalTasks.length})
                       </summary>
-                      <TaskOutline
+                      <TaskOutlineInTransitionView
                         key={agendaSelectionKey}
                         tasks={additionalTasks}
                         emptyMessage={strings.noItems}

@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
-import { TaskOutline } from "./TaskOutline";
+import { TaskOutline, TaskOutlineInTransitionView } from "./TaskOutline";
 import { TaskListTransitionDepartures } from "./TaskOutline";
 import { TaskListTransitionFeedbackProvider } from "../lib/taskListTransitionFeedback";
 import { api } from "../lib/api";
@@ -303,9 +303,9 @@ describe("TaskOutline", () => {
       const moving = makeTask({ id: 181, title: "Moving action" });
       mockedApi.completeTask.mockResolvedValue(makeTask({ ...moving, status: "done" }));
       const outlines = (inA: boolean, inB: boolean) => (
-        <TaskListTransitionFeedbackProvider externalDepartures>
-          <TaskOutline tasks={inA ? [moving] : []} emptyMessage="Empty A" compactDescendants />
-          <TaskOutline tasks={inB ? [moving] : []} emptyMessage="Empty B" compactDescendants />
+        <TaskListTransitionFeedbackProvider identityKey="test">
+          <TaskOutlineInTransitionView tasks={inA ? [moving] : []} emptyMessage="Empty A" compactDescendants />
+          <TaskOutlineInTransitionView tasks={inB ? [moving] : []} emptyMessage="Empty B" compactDescendants />
           <TaskListTransitionDepartures />
         </TaskListTransitionFeedbackProvider>
       );

@@ -8,7 +8,6 @@ import { formatDate, isOverdue } from "../lib/format";
 import { useTaskActions } from "../lib/useTaskActions";
 import {
   useTaskListTransitionFeedback,
-  type TaskListTransition,
 } from "../lib/taskListTransitionFeedback";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useInteractionScope } from "../lib/interactionScope";
@@ -70,10 +69,6 @@ export interface TaskRowProps {
   compactDescendants?: boolean;
   /** Optional compiled-view emphasis; status styling remains the fallback. */
   attentionTone?: AttentionTone;
-  /** A server-removed row retained only for its short transition confirmation. */
-  departing?: boolean;
-  /** Transition data for a detached presentation row. */
-  transition?: TaskListTransition;
   /** Outline that owns the row, used to keep confirmations at their origin. */
   feedbackOutlineId?: string;
 }
@@ -105,8 +100,6 @@ export function TaskRow({
   showRevisitDate = false,
   compactDescendants = false,
   attentionTone,
-  departing = false,
-  transition: transitionOverride,
   feedbackOutlineId,
 }: TaskRowProps) {
   const strings = useStrings();
@@ -141,9 +134,9 @@ export function TaskRow({
   const taskListFeedback = useTaskListTransitionFeedback();
   const { isPending, errors, clearError } = taskActions;
   const outlineRefreshing = organize?.pendingId != null;
-  const transition = transitionOverride ?? taskListFeedback?.get(taskProp.id, feedbackOutlineId);
+  const transition = taskListFeedback?.get(taskProp.id, feedbackOutlineId);
   const transitionPending = transition?.event.phase === "pending";
-  const busy = isPending(taskProp.id) || outlineRefreshing || departing;
+  const busy = isPending(taskProp.id) || outlineRefreshing;
 
   const task = taskProp;
   const isReference = task.kind === "reference";
@@ -324,10 +317,8 @@ export function TaskRow({
     <li
       className={`task-row task-row-surface-${displayedStatus}${transition ? ` task-row-transition-${transition.event.phase}` : ""}${transition?.event.occurrence ? " task-row-occurrence" : ""}${attentionTone ? ` task-row-attention-${attentionTone}` : ""}`}
       style={{ listStyle: "none" }}
-      data-workitem-id={departing ? undefined : taskProp.id}
-      data-workitem-role={departing ? undefined : "task"}
-      aria-disabled={departing || undefined}
-      tabIndex={departing ? -1 : undefined}
+      data-workitem-id={taskProp.id}
+      data-workitem-role="task"
     >
       <RowSwipeBackgrounds
         classPrefix="task-row"
@@ -463,7 +454,7 @@ export function TaskRow({
               className="task-row-main"
               ref={mainButtonRef}
               aria-label={task.title}
-              disabled={outlineRefreshing || departing}
+              disabled={outlineRefreshing}
               onClick={() => dispatch({ type: "task.open", taskId: task.id })}
             >
               <>
@@ -559,7 +550,7 @@ export function TaskRow({
               </>
             </button>
           )}
-          {!isReference && !departing && (isCompact
+          {!isReference && (isCompact
             ? null
             : notesWithoutAttachments
               ? <NotesTail value={notesWithoutAttachments} onOpen={() => dispatch({ type: "task.open", taskId: task.id })} />
@@ -601,11 +592,11 @@ export function TaskRow({
               : strings.taskTransitionConfirmed(displayedStatus)}
         </div>
       ) : null}
-      {!departing && !transition && !isReference && swipeCoach.active ? (
+      {!transition && !isReference && swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}
 
-      {chipsOpen && !departing ? (
+      {chipsOpen ? (
         <WorkItemActionRail
           kind="task"
           disabled={busy}
@@ -620,7 +611,7 @@ export function TaskRow({
           }))}
         />
       ) : null}
-      {lifecycleOpen && !departing ? (
+      {lifecycleOpen ? (
         <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
           {(["captured", "actionable", "someday", "done", "cancelled"] as const).map((status) => (
             <button

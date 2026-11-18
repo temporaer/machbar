@@ -8,7 +8,7 @@ import {
   LoadingState,
   ErrorState,
 } from "../components/AsyncStates";
-import { TaskOutline } from "../components/TaskOutline";
+import { TaskOutlineInTransitionView } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { PageHeader } from "../components/PageHeader";
@@ -17,10 +17,11 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { useIdentity } from "../lib/identity";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
+import { TaskListTransitionFeedbackProvider } from "../lib/taskListTransitionFeedback";
 
 export function InboxPage() {
   const strings = useStrings();
-  const { currentMemberId } = useIdentity();
+  const { authEnabled, authenticated, currentMemberId } = useIdentity();
   const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const selectScope = (nextScope: AgendaScope) => {
     setScope(nextScope);
@@ -41,6 +42,7 @@ export function InboxPage() {
 
   return (
     <InteractionScopeProvider>
+      <TaskListTransitionFeedbackProvider identityKey={`${authEnabled}:${authenticated}:${scope}:${currentMemberId}`}>
       <InboxFocusRail tasks={tasks} focusId={new URLSearchParams(location.search).get("focus")} />
       <WorkItemKeyboardNavMount />
       <div className="inbox-page">
@@ -95,8 +97,7 @@ export function InboxPage() {
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
         {tasks ? (
-          <TaskOutline
-            key={`${scope}:${currentMemberId}`}
+          <TaskOutlineInTransitionView
             tasks={tasks}
             emptyMessage={strings.clarifyEmpty}
             preserveRootOrder
@@ -105,6 +106,7 @@ export function InboxPage() {
         ) : null}
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
+      </TaskListTransitionFeedbackProvider>
     </InteractionScopeProvider>
   );
 }

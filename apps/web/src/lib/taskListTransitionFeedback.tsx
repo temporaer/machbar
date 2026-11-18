@@ -13,18 +13,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Task } from "@machbar/shared";
 import { isReadAccessError } from "./errorMessage";
 import { flattenTasks } from "./taskHelpers";
-import { useTaskActions, type TaskTransitionFeedbackEvent } from "./useTaskActions";
+import { useTaskActions } from "./useTaskActions";
+import {
+  removeTransitionAndRebase,
+  transitionSourceIndex,
+  type TaskListTransition,
+} from "./taskListTransitionPresentation";
 
 export const TASK_TRANSITION_CONFIRMATION_MS = 3_000;
 
-export interface TaskListTransition {
-  task: Task;
-  event: TaskTransitionFeedbackEvent;
-  sourceIndex?: number | null;
-}
-
 interface TaskListTransitionFeedbackValue {
-  externalDepartures: boolean;
   get: (taskId: number, outlineId?: string) => TaskListTransition | undefined;
   registerOutline: (
     outlineId: string,
@@ -32,7 +30,7 @@ interface TaskListTransitionFeedbackValue {
     rootTaskIds: readonly number[],
   ) => () => void;
   departures: (outlineId: string, taskIds: ReadonlySet<number>) => TaskListTransition[];
-  allDepartures: () => TaskListTransition[];
+  orphanedDepartures: () => TaskListTransition[];
 }
 
 interface StoredTransition extends TaskListTransition {
@@ -59,12 +57,10 @@ function currentTasks(outlines: Map<string, RegisteredOutline>) {
 
 export function TaskListTransitionFeedbackProvider({
   children,
-  externalDepartures = false,
-  viewIdentity,
+  identityKey,
 }: {
   children: ReactNode;
-  externalDepartures?: boolean;
-  viewIdentity?: string;
+  identityKey: string;
 }) {
   const actions = useTaskActions();
   const queryClient = useQueryClient();
@@ -73,7 +69,7 @@ export function TaskListTransitionFeedbackProvider({
   const nextToken = useRef(0);
   const entriesRef = useRef(new Map<number, StoredTransition>());
   const retiredTransitions = useRef(new Set<number>());
-  const viewIdentityRef = useRef(viewIdentity);
+  const identityRef = useRef(identityKey);
   const [entries, setEntries] = useState(entriesRef.current);
   const [, setRegistryVersion] = useState(0);
 
@@ -98,26 +94,17 @@ export function TaskListTransitionFeedbackProvider({
       clearTimeout(timer);
       timers.current.delete(taskId);
     }
-    const next = new Map(entriesRef.current);
-    next.delete(taskId);
     const sourceOutline = current.sourceOutlineId
       ? outlines.current.get(current.sourceOutlineId)
       : undefined;
-    if (
-      current.sourceIndex !== null &&
-      sourceOutline &&
-      !sourceOutline.tasks.has(taskId)
-    ) {
-      for (const [id, entry] of next) {
-        if (
-          entry.sourceOutlineId === current.sourceOutlineId &&
-          entry.sourceIndex !== null &&
-          entry.sourceIndex > current.sourceIndex
-        ) {
-          next.set(id, { ...entry, sourceIndex: entry.sourceIndex - 1 });
-        }
-      }
-    }
+    const next = sourceOutline
+      ? removeTransitionAndRebase(
+          entriesRef.current,
+          taskId,
+          new Set(sourceOutline.tasks.keys()),
+        )
+      : new Map(entriesRef.current);
+    next.delete(taskId);
     replaceEntries(next);
   }, [replaceEntries]);
 
@@ -157,10 +144,10 @@ export function TaskListTransitionFeedbackProvider({
   }, [replaceEntries]);
 
   useLayoutEffect(() => {
-    if (viewIdentityRef.current === viewIdentity) return;
-    viewIdentityRef.current = viewIdentity;
+    if (identityRef.current === identityKey) return;
+    identityRef.current = identityKey;
     retireEntries();
-  }, [retireEntries, viewIdentity]);
+  }, [identityKey, retireEntries]);
 
   useEffect(() => queryClient.getQueryCache().subscribe(event => {
     if (event.type === "updated" && event.action.type === "error" &&
@@ -182,27 +169,20 @@ export function TaskListTransitionFeedbackProvider({
     if (event.phase === "success" && !previous) return;
     if (!task && !previous) return;
     const token = event.phase === "pending" ? ++nextToken.current : previous!.token;
-    let sourceIndex = sourceOutline?.[1].rootTaskIds.indexOf(event.taskId) ?? -1;
-    if (!previous && sourceOutline && sourceIndex >= 0) {
-      const priorDepartures = [...entriesRef.current.values()]
-        .filter(entry =>
-          entry.sourceOutlineId === sourceOutline[0] &&
-          entry.sourceIndex !== null &&
-          !sourceOutline[1].tasks.has(entry.event.taskId),
-        )
-        .map(entry => entry.sourceIndex!)
-        .sort((left, right) => left - right);
-      for (const index of priorDepartures) {
-        if (index <= sourceIndex) sourceIndex += 1;
-      }
-    }
+    const sourceIndex = previous?.sourceIndex ?? transitionSourceIndex(
+      sourceOutline?.[1].rootTaskIds ?? [],
+      event.taskId,
+      sourceOutline?.[0],
+      entriesRef.current.values(),
+      new Set(currentTasks(outlines.current).keys()),
+    );
     const next = new Map(entriesRef.current);
     next.set(event.taskId, {
       task: { ...((task && task.revision >= (previous?.task.revision ?? 0) ? task : previous!.task)), children: [] },
       event,
       token,
       sourceOutlineId: previous ? previous.sourceOutlineId : sourceOutline?.[0] ?? null,
-      sourceIndex: previous ? previous.sourceIndex : sourceIndex >= 0 ? sourceIndex : null,
+      sourceIndex,
     });
     replaceEntries(next);
     if (event.phase === "success") {
@@ -242,7 +222,7 @@ export function TaskListTransitionFeedbackProvider({
       (entry.sourceOutlineId === outlineId || !entry.sourceOutlineId),
     );
   }, [entries]);
-  const allDepartures = useCallback(() => {
+  const orphanedDepartures = useCallback(() => {
     const visible = new Set(currentTasks(outlines.current).keys());
     return [...entries.values()].filter(entry =>
       !visible.has(entry.event.taskId) &&
@@ -251,12 +231,11 @@ export function TaskListTransitionFeedbackProvider({
   }, [entries]);
 
   const value: TaskListTransitionFeedbackValue = {
-    externalDepartures,
-    get,
-    registerOutline,
-    departures,
-    allDepartures,
-  };
+      get,
+      registerOutline,
+      departures,
+      orphanedDepartures,
+    };
   return (
     <TaskListTransitionFeedbackContext.Provider value={value}>
       {children}
@@ -268,12 +247,18 @@ export function useTaskListTransitionFeedback() {
   return useContext(TaskListTransitionFeedbackContext);
 }
 
+export function useRequiredTaskListTransitionFeedback() {
+  const feedback = useTaskListTransitionFeedback();
+  if (!feedback) throw new Error("Task list transition feedback requires an explicit view owner");
+  return feedback;
+}
+
 export function useRegisterTaskOutline(
   outlineId: string,
   tasks: Task[],
   rootTaskIds: readonly number[],
 ) {
-  const feedback = useTaskListTransitionFeedback();
+  const feedback = useRequiredTaskListTransitionFeedback();
   const taskMap = useMemo(() => new Map(flattenTasks(tasks).map(task => [task.id, task])), [tasks]);
-  useLayoutEffect(() => feedback?.registerOutline(outlineId, taskMap, rootTaskIds), [feedback?.registerOutline, outlineId, taskMap, rootTaskIds]);
+  useLayoutEffect(() => feedback.registerOutline(outlineId, taskMap, rootTaskIds), [feedback.registerOutline, outlineId, taskMap, rootTaskIds]);
 }

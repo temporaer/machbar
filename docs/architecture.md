@@ -1418,6 +1418,12 @@ originating root slot while that outline is mounted. Failure removes the
 transient presentation and keeps the authoritative row. Newer revisions and view,
 navigation, identity retirement, or a read-access denial dispose it; ordinary
 refreshes cannot reintroduce a detached row.
+Each view explicitly owns the presentation provider: standalone `TaskOutline`
+instances own one, while Today and Inbox mount keyed owners at their view
+boundaries and render `TaskOutlineInTransitionView` consumers. The pure
+`taskListTransitionPresentation.ts` module owns source-index capture, expiry
+rebasing, and row composition; detached snapshots render through
+`TaskTransitionRow`, which has no task controls or keyboard registration.
 Focused editors live in the canonical workflow/detail hosts rather than in the
 row they were opened from. Ordinary refreshes/network errors preserve drafts;
 access revocation deliberately ends the workflow and discards its choices.

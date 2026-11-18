@@ -2,7 +2,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { renderWithProviders } from "../test/testUtils";
-import { TaskListTransitionDepartures, TaskOutline } from "./TaskOutline";
+import {
+  TaskListTransitionDepartures,
+  TaskOutline,
+  TaskOutlineInTransitionView,
+} from "./TaskOutline";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { makeTask } from "../test/fixtures";
@@ -33,8 +37,8 @@ function CompiledSection({ openLifecycleTaskId }: { openLifecycleTaskId?: number
 function ExternalDepartureSection() {
   const { data } = useAsync(() => api.searchTasks({}), []);
   return (
-    <TaskListTransitionFeedbackProvider externalDepartures>
-      <TaskOutline tasks={data ?? []} emptyMessage="Empty server view" />
+    <TaskListTransitionFeedbackProvider identityKey="test">
+      <TaskOutlineInTransitionView tasks={data ?? []} emptyMessage="Empty server view" />
       <TaskListTransitionDepartures />
     </TaskListTransitionFeedbackProvider>
   );
@@ -43,16 +47,16 @@ function RelocatedTransitionSection({ task }: { task: ReturnType<typeof makeTask
   const [inSource, setInSource] = useState(true);
   const [inDestination, setInDestination] = useState(false);
   return (
-    <TaskListTransitionFeedbackProvider externalDepartures>
+    <TaskListTransitionFeedbackProvider identityKey="test">
       <button type="button" onClick={() => {
         setInSource(false);
         setInDestination(true);
       }}>
         Move to completed outline
       </button>
-      {inSource ? <TaskOutline tasks={[task]} emptyMessage="Empty source" /> : null}
+      {inSource ? <TaskOutlineInTransitionView tasks={[task]} emptyMessage="Empty source" /> : null}
       {inDestination ? (
-        <TaskOutline tasks={[{ ...task, status: "done", revision: task.revision + 1 }]} emptyMessage="Empty destination" />
+        <TaskOutlineInTransitionView tasks={[{ ...task, status: "done", revision: task.revision + 1 }]} emptyMessage="Empty destination" />
       ) : null}
       <TaskListTransitionDepartures />
     </TaskListTransitionFeedbackProvider>
@@ -62,15 +66,15 @@ function SiblingTransitionSection({ task }: { task: ReturnType<typeof makeTask> 
   const [sourceTasks, setSourceTasks] = useState([task, makeTask({ id: task.id + 1, title: "Remaining source row" })]);
   const [destinationTasks, setDestinationTasks] = useState<typeof sourceTasks>([]);
   return (
-    <TaskListTransitionFeedbackProvider externalDepartures>
+    <TaskListTransitionFeedbackProvider identityKey="test">
       <button type="button" onClick={() => {
         setSourceTasks(sourceTasks.slice(1));
         setDestinationTasks([{ ...task, status: "done", revision: task.revision + 1 }]);
       }}>
         Transfer task
       </button>
-      <TaskOutline tasks={sourceTasks} emptyMessage="Empty source" />
-      <TaskOutline tasks={destinationTasks} emptyMessage="Empty destination" />
+      <TaskOutlineInTransitionView tasks={sourceTasks} emptyMessage="Empty source" />
+      <TaskOutlineInTransitionView tasks={destinationTasks} emptyMessage="Empty destination" />
       <TaskListTransitionDepartures />
     </TaskListTransitionFeedbackProvider>
   );
@@ -104,7 +108,7 @@ describe("server-confirmed compiled task rows", () => {
     const title = screen.getByText(task.title);
     expect(title).toHaveClass("done");
     expect(within(title.closest("li")!).getByRole("status")).toHaveTextContent("Erledigt");
-    expect(within(title.closest("li")!).getByRole("button", { name: "Wieder öffnen" })).toBeDisabled();
+    expect(title.closest("li")!.querySelectorAll("button")).toHaveLength(0);
     await new Promise(resolve => setTimeout(resolve, 2_500));
     expect(screen.getByText(task.title)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(task.title)).not.toBeInTheDocument());
