@@ -26,6 +26,7 @@ describe("server-confirmed compiled task rows", () => {
     renderWithProviders(<CompiledSection />);
     await screen.findByText(task.title);
     fireEvent.click(screen.getByRole("button", { name: "Erledigt" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Wird erledigt");
     expect(screen.getByText(task.title)).not.toHaveClass("done");
     expect(screen.getByRole("button", { name: "Erledigt" })).toBeDisabled();
     await act(async () => { confirm({ ...task, status: "done", revision: 2 }); });
