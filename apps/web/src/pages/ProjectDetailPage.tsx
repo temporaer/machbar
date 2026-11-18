@@ -172,6 +172,14 @@ export function ProjectDetailPage() {
   }, [projectId]);
   const projectActions = useProjectActions();
   const project = loadedProject;
+  const transitionProjection = {
+    "project-outline": {
+      tasks: project?.tasks ?? [],
+      readSettled:
+        !projectLoading && !projectRefreshing && !projectError && !projectRefreshError,
+      readFailed: Boolean(projectError || projectRefreshError),
+    },
+  };
   const currentProjectRef = useRef(project);
   currentProjectRef.current = project;
   const contentOpeningRef = useRef(0);
@@ -422,7 +430,10 @@ export function ProjectDetailPage() {
   }, [storyFocusCommand, projectId]);
 
   return (
-    <TaskTransitionPresentationProvider identityKey={`project:${projectId}:${currentMemberId ?? "none"}`}>
+    <TaskTransitionPresentationProvider
+      identityKey={`project:${projectId}:${currentMemberId ?? "none"}`}
+      projection={transitionProjection}
+    >
     <InteractionScopeProvider
       captureTarget={{ kind: "story", storyId: projectId }}
     >
@@ -806,10 +817,6 @@ export function ProjectDetailPage() {
                     ),
                   }}
                   transitionSectionId="project-outline"
-                  transitionReadSettled={
-                    !projectLoading && !projectRefreshing && !projectError && !projectRefreshError
-                  }
-                  transitionReadFailed={Boolean(projectError || projectRefreshError)}
                 />
               </TaskTransitionSection>
             </WorkItemDetailDisclosure>

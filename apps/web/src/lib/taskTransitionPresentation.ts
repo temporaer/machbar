@@ -154,36 +154,17 @@ function sectionSpecs(sectionId: string, tasks: Task[]): {
   return { specs, roots: tasks.map(task => visit(task, null)) };
 }
 
-export function reconcileTaskSection(
+function reconcileSectionLayout(
   layout: TaskTransitionLayout,
   sectionId: string,
   tasks: Task[],
-  readSettled: boolean,
-  processOperations = true,
 ): TaskTransitionLayout {
   const { specs, roots } = sectionSpecs(sectionId, tasks);
   const nodes = { ...layout.nodes };
   const sections = { ...layout.sections };
-  const operations = { ...layout.operations };
-  const staleGuards = { ...layout.staleGuards };
+  const operations = layout.operations;
+  const staleGuards = layout.staleGuards;
   const active = activeNodeKeys(layout);
-
-  if (processOperations) for (const operation of Object.values(operations)) {
-    const latest = [...specs.values()].find(spec => spec.task.id === nodes[operation.nodeKey]?.taskId);
-    const superseded =
-      latest &&
-      ((operation.resultRevision !== undefined && latest.task.revision > operation.resultRevision) ||
-        (operation.resultRevision === undefined && latest.task.revision > operation.baseRevision));
-    if (superseded) {
-      delete operations[operation.token];
-    }
-    if (!latest && readSettled && operation.resultRevision !== undefined) {
-      staleGuards[nodes[operation.nodeKey]!.taskId] = operation.resultRevision;
-    }
-  }
-
-  active.clear();
-  for (const key of activeNodeKeys({ ...layout, operations })) active.add(key);
 
   const oldSection = layout.sections[sectionId] ?? { rootKeys: [] };
   const required = requiredNodeKeys({ ...layout, operations }, sectionId);
@@ -246,9 +227,6 @@ export function reconcileTaskSection(
     if (node.sectionId === sectionId && !keep.has(key)) delete nodes[key];
   }
 
-  for (const [token, operation] of Object.entries(operations)) {
-    if (!nodes[operation.nodeKey] || !active.has(operation.nodeKey)) delete operations[token];
-  }
   return { nodes, sections, operations, staleGuards };
 }
 
@@ -335,16 +313,11 @@ export function reconcileTaskSections(
   for (const sectionId of Object.keys(projections).sort()) {
     const projection = projections[sectionId]!;
     const filteredTasks = filterTasksForSection(projection.tasks, sectionId, owners);
-    Object.assign(
+    Object.assign(result, reconcileSectionLayout(
       result,
-      reconcileTaskSection(
-        result,
-        sectionId,
-        filteredTasks,
-        projection.readSettled && !projection.readFailed,
-        false,
-      ),
-    );
+      sectionId,
+      filteredTasks,
+    ));
   }
   return result;
 }

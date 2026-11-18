@@ -14,10 +14,20 @@ vi.mock("../lib/api", () => ({ api: {
 const mockedApi = vi.mocked(api, true);
 function CompiledSection() {
   const { data } = useAsync(() => api.searchTasks({}), []);
+  const tasks = data ?? [];
   return (
-    <TaskTransitionPresentationProvider identityKey="compiled-section">
+    <TaskTransitionPresentationProvider
+      identityKey="compiled-section"
+      projection={{
+        "compiled-tasks": {
+          tasks,
+          readSettled: data !== undefined,
+          readFailed: false,
+        },
+      }}
+    >
       <TaskOutline
-        tasks={data ?? []}
+        tasks={tasks}
         emptyMessage="Empty server view"
         transitionSectionId="compiled-tasks"
       />

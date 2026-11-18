@@ -5,7 +5,6 @@ import { makeTask } from "../test/fixtures";
 import {
   TaskTransitionPresentationProvider,
   useTaskTransitionPresentation,
-  useTaskTransitionSection,
 } from "./taskTransitionPresentationContext";
 import type { TaskTransitionOrigin } from "./taskTransitionPresentation";
 
@@ -13,7 +12,6 @@ const task = makeTask({ id: 601, title: "Origin task" });
 
 function OriginProbe({ origins }: { origins: Map<string, TaskTransitionOrigin> }) {
   const presentation = useTaskTransitionPresentation();
-  useTaskTransitionSection("source", [task]);
   useLayoutEffect(() => {
     const origin = presentation?.origin("source", task);
     if (presentation && origin) origins.set(presentation.viewId, origin);
@@ -26,7 +24,10 @@ function Harness({ origins }: { origins: Map<string, TaskTransitionOrigin> }) {
   return (
     <>
       <button onClick={() => setIdentityKey("today:all:1")}>Change selection</button>
-      <TaskTransitionPresentationProvider identityKey={identityKey}>
+      <TaskTransitionPresentationProvider
+        identityKey={identityKey}
+        projection={{ source: { tasks: [task], readSettled: true, readFailed: false } }}
+      >
         <OriginProbe origins={origins} />
       </TaskTransitionPresentationProvider>
     </>

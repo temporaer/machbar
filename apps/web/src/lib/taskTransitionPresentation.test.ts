@@ -4,7 +4,6 @@ import {
   beginTaskTransition,
   commitTaskTransition,
   emptyTaskTransitionLayout,
-  reconcileTaskSection,
   reconcileTaskSections,
   rejectTaskTransition,
   releaseTaskTransition,
@@ -17,10 +16,14 @@ describe("task transition display layout", () => {
     const first = makeTask({ id: 501, title: "First" });
     const second = makeTask({ id: 502, title: "Second" });
     const third = makeTask({ id: 503, title: "Third" });
-    let layout = reconcileTaskSection(emptyTaskTransitionLayout(), "source", [first, second, third], true);
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [first, second, third], readSettled: true, readFailed: false },
+    });
     layout = beginTaskTransition(layout, "first", taskTransitionNodeKey(first.id), first, "complete", []);
     layout = beginTaskTransition(layout, "second", taskTransitionNodeKey(second.id), second, "cancel", []);
-    layout = reconcileTaskSection(layout, "source", [third], true);
+    layout = reconcileTaskSections(layout, {
+      source: { tasks: [third], readSettled: true, readFailed: false },
+    });
 
     const displayed = taskTransitionDisplayChildren(layout, "source", null, [third]);
     expect(displayed.map(item => "task" in item ? item.task.id : item.node.taskId)).toEqual([
@@ -33,12 +36,16 @@ describe("task transition display layout", () => {
   it("keeps the active row's source slot while unaffected rows adopt current order and values", () => {
     const active = makeTask({ id: 505, title: "Original active" });
     const sibling = makeTask({ id: 506, title: "Original sibling" });
-    let layout = reconcileTaskSection(emptyTaskTransitionLayout(), "source", [active, sibling], true);
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [active, sibling], readSettled: true, readFailed: false },
+    });
     layout = beginTaskTransition(layout, "active", taskTransitionNodeKey(active.id), active, "someday", []);
     layout = commitTaskTransition(layout, "active", 2, "someday");
     const freshActive = { ...active, status: "someday" as const, revision: 2 };
     const freshSibling = { ...sibling, title: "Fresh sibling", revision: 2 };
-    layout = reconcileTaskSection(layout, "source", [freshSibling, freshActive], true);
+    layout = reconcileTaskSections(layout, {
+      source: { tasks: [freshSibling, freshActive], readSettled: true, readFailed: false },
+    });
 
     const displayed = taskTransitionDisplayChildren(layout, "source", null, [freshSibling, freshActive]);
     expect(displayed.map(item => "task" in item ? item.task.title : item.node.snapshot?.title)).toEqual([
@@ -51,13 +58,17 @@ describe("task transition display layout", () => {
   it("keeps an active child under its departing parent and releases only the rejected parent hold", () => {
     const child = makeTask({ id: 511, parentTaskId: 510, title: "Child" });
     const parent = makeTask({ id: 510, title: "Parent", children: [child] });
-    let layout = reconcileTaskSection(emptyTaskTransitionLayout(), "source", [parent], true);
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [parent], readSettled: true, readFailed: false },
+    });
     layout = beginTaskTransition(layout, "child", taskTransitionNodeKey(child.id), child, "complete", [
       { key: taskTransitionNodeKey(parent.id), title: parent.title },
     ]);
     layout = beginTaskTransition(layout, "parent", taskTransitionNodeKey(parent.id), parent, "cancel", []);
     layout = rejectTaskTransition(layout, "parent");
-    layout = reconcileTaskSection(layout, "source", [], true);
+    layout = reconcileTaskSections(layout, {
+      source: { tasks: [], readSettled: true, readFailed: false },
+    });
 
     const displayed = taskTransitionDisplayChildren(layout, "source", null, []);
     expect(displayed).toHaveLength(1);
@@ -71,11 +82,15 @@ describe("task transition display layout", () => {
 
   it("suppresses a transferred destination while the source slot is held", () => {
     const task = makeTask({ id: 521, title: "Transferred" });
-    let layout = reconcileTaskSection(emptyTaskTransitionLayout(), "source", [task], true);
-    layout = reconcileTaskSection(layout, "destination", [], true);
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [task], readSettled: true, readFailed: false },
+      destination: { tasks: [], readSettled: true, readFailed: false },
+    });
     layout = beginTaskTransition(layout, "move", taskTransitionNodeKey(task.id), task, "actionable", []);
-    layout = reconcileTaskSection(layout, "source", [], true);
-    layout = reconcileTaskSection(layout, "destination", [task], true);
+    layout = reconcileTaskSections(layout, {
+      source: { tasks: [], readSettled: true, readFailed: false },
+      destination: { tasks: [task], readSettled: true, readFailed: false },
+    });
 
     expect(taskTransitionDisplayChildren(layout, "source", null, [])).toHaveLength(1);
     expect(taskTransitionDisplayChildren(layout, "destination", null, [task])).toHaveLength(0);
@@ -110,16 +125,15 @@ describe("task transition display layout", () => {
 
   it("keeps a revision watermark so later stale section data remains blocked", () => {
     const task = makeTask({ id: 531 });
-    let layout = reconcileTaskSection(emptyTaskTransitionLayout(), "source", [task], true);
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [task], readSettled: true, readFailed: false },
+    });
     layout = beginTaskTransition(layout, "complete", taskTransitionNodeKey(task.id), task, "complete", []);
     layout = commitTaskTransition(layout, "complete", 2, "done");
-    layout = reconcileTaskSection(
-      layout,
-      "other-section",
-      [{ ...task, revision: 2, status: "done" }],
-      true,
-    );
-    layout = reconcileTaskSection(layout, "source", [{ ...task, revision: 1 }], false);
+    layout = reconcileTaskSections(layout, {
+      source: { tasks: [{ ...task, revision: 1 }], readSettled: false, readFailed: true },
+      "other-section": { tasks: [], readSettled: true, readFailed: false },
+    });
 
     expect(layout.staleGuards[task.id]).toBe(2);
   });

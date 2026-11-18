@@ -1,5 +1,5 @@
 import { flattenTasks } from "../lib/taskHelpers";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ReviewCategory,
   ReviewItem,
@@ -67,9 +67,49 @@ function ReviewCard({ cardRef, children }: {
 
 export function ReviewPage() {
   const { currentMemberId } = useIdentity();
+  const review = useAsync(() => api.getReviewItems(), []);
+  const projectsQuery = useAsync(() => api.getProjects(), []);
+  const tasksQuery = useAsync(() => api.searchTasks({}), []);
+  const taskById = new Map(flattenTasks(tasksQuery.data ?? []).map(task => [task.id, task]));
+  const visibleItems = (review.data ?? []).filter(item => item.entityType === "task");
+  const projection = Object.fromEntries(categoryOrder.map(category => [
+    `review-${category}`,
+    {
+      tasks: visibleItems
+        .filter(item => item.category === category)
+        .flatMap(item => {
+          const task = taskById.get(item.entityId);
+          return task ? [{ ...task, children: [] }] : [];
+        }),
+      readSettled:
+        !review.loading && !review.refreshing && !review.error && !review.refreshError &&
+        !tasksQuery.loading && !tasksQuery.refreshing && !tasksQuery.error && !tasksQuery.refreshError,
+      readFailed: Boolean(review.error || review.refreshError || tasksQuery.error || tasksQuery.refreshError),
+    },
+  ]));
   return (
-    <TaskTransitionPresentationProvider identityKey={`review:${currentMemberId ?? "none"}`}>
-      <ReviewPageContent />
+    <TaskTransitionPresentationProvider
+      identityKey={`review:${currentMemberId ?? "none"}`}
+      projection={projection}
+    >
+      <ReviewPageContent
+        items={review.data}
+        itemsLoading={review.loading}
+        itemsRefreshing={review.refreshing}
+        itemsError={review.error}
+        itemsRefreshError={review.refreshError}
+        reloadItems={review.reload}
+        projects={projectsQuery.data}
+        projectsLoading={projectsQuery.loading}
+        projectsError={projectsQuery.error}
+        reloadProjects={projectsQuery.reload}
+        tasks={tasksQuery.data}
+        tasksLoading={tasksQuery.loading}
+        tasksRefreshing={tasksQuery.refreshing}
+        tasksError={tasksQuery.error}
+        tasksRefreshError={tasksQuery.refreshError}
+        reloadTasks={tasksQuery.reload}
+      />
     </TaskTransitionPresentationProvider>
   );
 }
@@ -102,7 +142,41 @@ function ReviewTransitionDeparture({
   );
 }
 
-function ReviewPageContent() {
+function ReviewPageContent({
+  items,
+  itemsLoading,
+  itemsRefreshing,
+  itemsError,
+  itemsRefreshError,
+  reloadItems,
+  projects,
+  projectsLoading,
+  projectsError,
+  reloadProjects,
+  tasks,
+  tasksLoading,
+  tasksRefreshing,
+  tasksError,
+  tasksRefreshError,
+  reloadTasks,
+}: {
+  items: ReviewItem[] | null | undefined;
+  itemsLoading: boolean;
+  itemsRefreshing: boolean;
+  itemsError: string | null;
+  itemsRefreshError: string | null;
+  reloadItems: () => void;
+  projects: Awaited<ReturnType<typeof api.getProjects>> | null | undefined;
+  projectsLoading: boolean;
+  projectsError: string | null;
+  reloadProjects: () => void;
+  tasks: Task[] | null | undefined;
+  tasksLoading: boolean;
+  tasksRefreshing: boolean;
+  tasksError: string | null;
+  tasksRefreshError: string | null;
+  reloadTasks: () => void;
+}) {
   const strings = useStrings();
   const navigate = useNavigate();
   const location = useLocation();
@@ -114,28 +188,6 @@ function ReviewPageContent() {
   const [workflowReturn, setWorkflowReturn] = useState<ReviewReturn | null>(null);
   const [workflowOpened, setWorkflowOpened] = useState(false);
   const [planningOpen, setPlanningOpen] = useState(false);
-  const {
-    data: items,
-    loading: itemsLoading,
-    refreshing: itemsRefreshing,
-    error: itemsError,
-    refreshError: itemsRefreshError,
-    reload: reloadItems,
-  } = useAsync(() => api.getReviewItems(), []);
-  const {
-    data: projects,
-    loading: projectsLoading,
-    error: projectsError,
-    reload: reloadProjects,
-  } = useAsync(() => api.getProjects(), []);
-  const {
-    data: tasks,
-    loading: tasksLoading,
-    refreshing: tasksRefreshing,
-    error: tasksError,
-    refreshError: tasksRefreshError,
-    reload: reloadTasks,
-  } = useAsync(() => api.searchTasks({}), []);
   const projectActions = useProjectActions();
   const taskActions = useTaskActions();
   const projectById = useMemo(
@@ -173,18 +225,6 @@ function ReviewPageContent() {
     !itemsLoading && !itemsRefreshing && !itemsError && !itemsRefreshError &&
     !tasksLoading && !tasksRefreshing && !tasksError && !tasksRefreshError;
   const transitionReadFailed = Boolean(itemsError || itemsRefreshError || tasksError || tasksRefreshError);
-
-  useLayoutEffect(() => {
-    if (!presentation) return;
-    for (const section of reviewTaskSections) {
-      presentation.registerSection(
-        section.sectionId,
-        section.tasks,
-        transitionReadSettled,
-        transitionReadFailed,
-      );
-    }
-  }, [presentation, reviewTaskSections, transitionReadFailed, transitionReadSettled]);
 
   const reviewTransitionOrigin = (item: ReviewItem, taskId = item.entityId) => {
     if (item.entityType !== "task" || taskId !== item.entityId) return undefined;

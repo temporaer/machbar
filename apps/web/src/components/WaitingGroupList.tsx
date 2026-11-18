@@ -15,31 +15,12 @@ function uniqueDisplayTasks(tasks: Task[]): Task[] {
 
 export function WaitingGroupList({
   entries,
-  readSettled = true,
-  readFailed = false,
 }: {
   entries: WaitingEntry[];
-  readSettled?: boolean;
-  readFailed?: boolean;
 }) {
   const strings = useStrings();
-  const externalCandidates = uniqueDisplayTasks(
-    entries
-      .filter((entry) =>
-        entry.reasons.some((reason) => reason.type === "external"),
-      )
-      .map((entry) => entry.task),
-  );
-  const externalIds = new Set(externalCandidates.map(task => task.id));
-  const contextCandidates = uniqueDisplayTasks(
-    entries
-      .filter((entry) =>
-        entry.reasons.some((reason) => reason.type === "context"),
-      )
-      .map((entry) => entry.task),
-  ).filter(task => !externalIds.has(task.id));
-  const externalTasks = externalCandidates;
-  const contextTasks = contextCandidates;
+  const { externalTasks, contextTasks } = waitingTaskSections(entries);
+
   const outline = (items: Task[], external: boolean, sectionId: string) => (
     <TaskOutline
       tasks={items}
@@ -49,8 +30,6 @@ export function WaitingGroupList({
       {...(external ? { showRevisitDate: true } : {})}
       showSwipeHint={false}
       transitionSectionId={sectionId}
-      transitionReadSettled={readSettled}
-      transitionReadFailed={readFailed}
     />
   );
 
@@ -74,4 +53,25 @@ export function WaitingGroupList({
         : null}
     </>
   );
+}
+
+export function waitingTaskSections(entries: WaitingEntry[]) {
+  const externalCandidates = uniqueDisplayTasks(
+    entries
+      .filter((entry) =>
+        entry.reasons.some((reason) => reason.type === "external"),
+      )
+      .map((entry) => entry.task),
+  );
+  const externalIds = new Set(externalCandidates.map(task => task.id));
+  const contextCandidates = uniqueDisplayTasks(
+    entries
+      .filter((entry) =>
+        entry.reasons.some((reason) => reason.type === "context"),
+      )
+      .map((entry) => entry.task),
+  ).filter(task => !externalIds.has(task.id));
+  const externalTasks = externalCandidates;
+  const contextTasks = contextCandidates;
+  return { externalTasks, contextTasks };
 }

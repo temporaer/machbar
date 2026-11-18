@@ -42,9 +42,19 @@ export function InboxPage() {
   const tasks = loadedTasks;
   const { openQueue } = useTaskDetail();
   const location = useLocation();
+  const transitionProjection = {
+    "inbox-tasks": {
+      tasks: tasks ?? [],
+      readSettled: !loading && !refreshing && !error && !refreshError,
+      readFailed: Boolean(error || refreshError),
+    },
+  };
 
   return (
-    <TaskTransitionPresentationProvider identityKey={`inbox:${scope}:${currentMemberId ?? "none"}`}>
+    <TaskTransitionPresentationProvider
+      identityKey={`inbox:${scope}:${currentMemberId ?? "none"}`}
+      projection={transitionProjection}
+    >
     <InteractionScopeProvider>
       <InboxFocusRail tasks={tasks} focusId={new URLSearchParams(location.search).get("focus")} />
       <WorkItemKeyboardNavMount />
@@ -111,8 +121,6 @@ export function InboxPage() {
               preserveRootOrder
               showSwipeHint={false}
               transitionSectionId="inbox-tasks"
-              transitionReadSettled={!loading && !refreshing && !error && !refreshError}
-              transitionReadFailed={Boolean(error || refreshError)}
             />
           </TaskTransitionSection>
         ) : null}

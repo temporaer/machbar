@@ -51,19 +51,27 @@ let nextViewId = 1;
 
 export function TaskTransitionPresentationProvider({
   identityKey,
+  projection,
   children,
 }: {
   identityKey: string;
+  projection: Record<string, TaskTransitionSectionProjection>;
   children: ReactNode;
 }) {
-  return <TaskTransitionPresentationOwner identityKey={identityKey}>{children}</TaskTransitionPresentationOwner>;
+  return (
+    <TaskTransitionPresentationOwner identityKey={identityKey} projection={projection}>
+      {children}
+    </TaskTransitionPresentationOwner>
+  );
 }
 
 function TaskTransitionPresentationOwner({
   identityKey,
+  projection: nextProjection,
   children,
 }: {
   identityKey: string;
+  projection: Record<string, TaskTransitionSectionProjection>;
   children: ReactNode;
 }) {
   const [viewId, setViewId] = useState(() => `task-view:${nextViewId++}`);
@@ -73,6 +81,7 @@ function TaskTransitionPresentationOwner({
   const generation = useRef(0);
   const retired = useRef(false);
   const projection = useRef<Record<string, TaskTransitionSectionProjection>>({});
+  const appliedProjectionSignature = useRef<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   if (identityRef.current !== identityKey) {
@@ -80,6 +89,7 @@ function TaskTransitionPresentationOwner({
     for (const timer of timers.current.values()) clearTimeout(timer);
     timers.current.clear();
     projection.current = {};
+    appliedProjectionSignature.current = null;
     generation.current += 1;
     identityRef.current = identityKey;
     retired.current = false;
@@ -107,6 +117,18 @@ function TaskTransitionPresentationOwner({
     projection.current = nextProjection;
     updateLayout(current => reconcileTaskSections(current, nextProjection));
   }, [ownerGeneration, updateLayout]);
+  const settleLayout = useCallback((
+    update: (current: TaskTransitionLayout) => TaskTransitionLayout,
+  ) => {
+    updateLayout(current => reconcileTaskSections(update(current), projection.current));
+  }, [updateLayout]);
+
+  const nextProjectionSignature = projectionSignature(nextProjection);
+  useLayoutEffect(() => {
+    if (appliedProjectionSignature.current === nextProjectionSignature) return;
+    appliedProjectionSignature.current = nextProjectionSignature;
+    replaceProjection(nextProjection);
+  }, [nextProjection, nextProjectionSignature, replaceProjection]);
 
   const isBlocked = useCallback((taskId: number, revision?: number) => {
     const guard = layoutRef.current.staleGuards[taskId];
@@ -150,7 +172,7 @@ function TaskTransitionPresentationOwner({
         updateLayout(() => next);
         return "started";
       },
-      reject: token => updateLayout(value => rejectTaskTransition(value, token)),
+      reject: token => settleLayout(value => rejectTaskTransition(value, token)),
       commit: (token, revision, status) => updateLayout(value =>
         commitTaskTransition(value, token, revision, status)),
       settled: token => {
@@ -161,12 +183,12 @@ function TaskTransitionPresentationOwner({
         timers.current.set(token, setTimeout(() => {
           if (!isCurrentOwner()) return;
           timers.current.delete(token);
-          updateLayout(value => releaseTaskTransition(value, token));
+          settleLayout(value => releaseTaskTransition(value, token));
         }, TASK_TRANSITION_CONFIRMATION_MS));
       },
     };
     return originRef;
-  }, [isBlocked, ownerGeneration, updateLayout, viewId]);
+  }, [isBlocked, ownerGeneration, settleLayout, updateLayout, viewId]);
 
   const items = useCallback((sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[] => {
     const current = layoutRef.current;
@@ -226,24 +248,6 @@ function TaskTransitionPresentationOwner({
 
 export function useTaskTransitionPresentation(): TaskTransitionPresentationValue | null {
   return useContext(PresentationContext);
-}
-
-export function TaskTransitionProjection({
-  sections,
-  children,
-}: {
-  sections: Record<string, TaskTransitionSectionProjection>;
-  children: ReactNode;
-}) {
-  const presentation = useTaskTransitionPresentation();
-  const signature = projectionSignature(sections);
-  const appliedSignature = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (!presentation || appliedSignature.current === signature) return;
-    appliedSignature.current = signature;
-    presentation.replaceProjection(sections);
-  }, [presentation, sections, signature]);
-  return children;
 }
 
 function projectionSignature(sections: Record<string, TaskTransitionSectionProjection>): string {

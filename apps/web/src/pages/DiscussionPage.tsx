@@ -22,9 +22,19 @@ export function DiscussionPage() {
   const tasks = data?.tasks ?? [];
   const projects = data?.projects ?? [];
   const empty = data !== null && tasks.length === 0 && projects.length === 0;
+  const transitionProjection = {
+    "discussion-tasks": {
+      tasks,
+      readSettled: !loading && !refreshing && !readError,
+      readFailed: Boolean(readError),
+    },
+  };
 
   return (
-    <TaskTransitionPresentationProvider identityKey={`discussion:${currentMemberId ?? "none"}`}>
+    <TaskTransitionPresentationProvider
+      identityKey={`discussion:${currentMemberId ?? "none"}`}
+      projection={transitionProjection}
+    >
     <InteractionScopeProvider>
     <div className="discussion-page">
       <PageHeader title={strings.discussionTitle} />
@@ -52,8 +62,6 @@ export function DiscussionPage() {
             preserveRootOrder
             showSwipeHint={false}
             transitionSectionId="discussion-tasks"
-            transitionReadSettled={!loading && !refreshing && !readError}
-            transitionReadFailed={Boolean(readError)}
           />
         </section>
       </TaskTransitionSection>

@@ -102,6 +102,32 @@ export function TodayPage() {
     dueToday: taskBuckets.dueToday,
     dueSoon: taskBuckets.dueSoon,
   };
+  const transitionReadSettled =
+    !loading && !refreshing && !error && !refreshError && agenda !== null;
+  const transitionReadFailed = Boolean(error || refreshError);
+  const transitionProjection = {
+    ...Object.fromEntries(
+      Object.entries(visibleSectionTasks).map(([key, tasks]) => [
+        `today-${key}`,
+        { tasks, readSettled: transitionReadSettled, readFailed: transitionReadFailed },
+      ]),
+    ),
+    "today-revisit": {
+      tasks: revisitTasks,
+      readSettled: transitionReadSettled,
+      readFailed: transitionReadFailed,
+    },
+    "today-additional": {
+      tasks: additionalTasks,
+      readSettled: transitionReadSettled,
+      readFailed: transitionReadFailed,
+    },
+    "today-completed": {
+      tasks: completedTodayTasks,
+      readSettled: transitionReadSettled,
+      readFailed: transitionReadFailed,
+    },
+  };
   const resolveProjectOwner = (ownerMemberId: number | null) =>
     scope === "all" && ownerMemberId !== null
       ? (members.find((member) => member.id === ownerMemberId) ?? null)
@@ -139,8 +165,6 @@ export function TodayPage() {
           compactDescendants
           attentionTone={toneBySection[section.key]}
           transitionSectionId={`today-${section.key}`}
-          transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
-          transitionReadFailed={Boolean(error || refreshError)}
         />
       </TaskTransitionSection>
       {projectsByBucket[section.key].length > 0 ? (
@@ -166,7 +190,10 @@ export function TodayPage() {
   );
 
   return (
-    <TaskTransitionPresentationProvider identityKey={`today:${agendaSelectionKey}`}>
+    <TaskTransitionPresentationProvider
+      identityKey={`today:${agendaSelectionKey}`}
+      projection={transitionProjection}
+    >
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div className="today-page">
@@ -271,8 +298,6 @@ export function TodayPage() {
                         compactDescendants
                         attentionTone="revisit"
                         transitionSectionId="today-revisit"
-                        transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
-                        transitionReadFailed={Boolean(error || refreshError)}
                       />
                     </div>
                   </TaskTransitionSection>
@@ -290,8 +315,6 @@ export function TodayPage() {
                         compactDescendants
                         attentionTone="available"
                         transitionSectionId="today-additional"
-                        transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
-                        transitionReadFailed={Boolean(error || refreshError)}
                       />
                     </details>
                   </TaskTransitionSection>
@@ -308,8 +331,6 @@ export function TodayPage() {
                         showSwipeHint={false}
                         compactDescendants
                         transitionSectionId="today-completed"
-                        transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
-                        transitionReadFailed={Boolean(error || refreshError)}
                       />
                     </details>
                   </TaskTransitionSection>

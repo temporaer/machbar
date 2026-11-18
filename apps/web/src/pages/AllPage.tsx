@@ -104,9 +104,19 @@ export function AllPage() {
   const filteredProjects = materialOnly ? [] : projectCandidates;
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
+  const transitionProjection = {
+    "all-tasks": {
+      tasks: materialOnly ? [] : visibleTasks,
+      readSettled: !tasksLoading && !tasksRefreshing && !tasksError && !tasksRefreshError,
+      readFailed: Boolean(tasksError || tasksRefreshError),
+    },
+  };
 
   return (
-    <TaskTransitionPresentationProvider identityKey={`all:${filtersKey}:${currentMemberId ?? "none"}`}>
+    <TaskTransitionPresentationProvider
+      identityKey={`all:${filtersKey}:${currentMemberId ?? "none"}`}
+      projection={transitionProjection}
+    >
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div>
@@ -171,10 +181,6 @@ export function AllPage() {
                       emptyMessage={strings.allEmpty}
                       preserveRootOrder
                       transitionSectionId="all-tasks"
-                      transitionReadSettled={
-                        !tasksLoading && !tasksRefreshing && !tasksError && !tasksRefreshError
-                      }
-                      transitionReadFailed={Boolean(tasksError || tasksRefreshError)}
                     />
                 </section>
                 </TaskTransitionSection>

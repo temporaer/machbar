@@ -3,7 +3,7 @@ import { api, type AgendaScope } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
-import { WaitingGroupList } from "../components/WaitingGroupList";
+import { WaitingGroupList, waitingTaskSections } from "../components/WaitingGroupList";
 import { PageHeader } from "../components/PageHeader";
 import { useIdentity } from "../lib/identity";
 import { InteractionScopeProvider } from "../lib/interactionScope";
@@ -31,8 +31,24 @@ export function WaitingPage() {
     () => api.getWaiting(currentMemberId, scope),
     [currentMemberId, scope],
   );
+  const { externalTasks, contextTasks } = waitingTaskSections(entries ?? []);
+  const transitionProjection = {
+    "waiting-external": {
+      tasks: externalTasks,
+      readSettled: !loading && !refreshing && !error && !refreshError,
+      readFailed: Boolean(error || refreshError),
+    },
+    "waiting-context": {
+      tasks: contextTasks,
+      readSettled: !loading && !refreshing && !error && !refreshError,
+      readFailed: Boolean(error || refreshError),
+    },
+  };
   return (
-    <TaskTransitionPresentationProvider identityKey={`waiting:${scope}:${currentMemberId ?? "none"}`}>
+    <TaskTransitionPresentationProvider
+      identityKey={`waiting:${scope}:${currentMemberId ?? "none"}`}
+      projection={transitionProjection}
+    >
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div className="waiting-page">
@@ -70,8 +86,6 @@ export function WaitingPage() {
         {entries ? (
           <WaitingGroupList
             entries={entries}
-            readSettled={!loading && !refreshing && !error && !refreshError}
-            readFailed={Boolean(error || refreshError)}
           />
         ) : null}
       </div>
