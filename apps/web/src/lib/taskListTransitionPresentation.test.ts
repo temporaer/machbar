@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeTask } from "../test/fixtures";
 import {
   composeTaskListRows,
+  composeTaskListPresentation,
   findTaskListPosition,
   suppressedTransitionTaskIds,
   type TaskListTransitionEntry,
@@ -43,7 +44,7 @@ describe("task list transition presentation", () => {
 
     const rows = composeTaskListRows([first, last], transitions, "origin");
 
-    expect(rows.map(row => row.kind === "task" ? row.task.title : row.transition.task.title))
+    expect(rows.map(row => row.kind === "task" ? row.task.title : row.kind === "ancestor" ? row.title : row.transition.task.title))
       .toEqual(["First", "Second", "Third", "Last"]);
   });
 
@@ -75,7 +76,7 @@ describe("task list transition presentation", () => {
       "origin",
     );
 
-    expect(rows.map(row => row.kind === "task" ? row.task.title : row.transition.task.title))
+    expect(rows.map(row => row.kind === "task" ? row.task.title : row.kind === "ancestor" ? row.title : row.transition.task.title))
       .toEqual(["First", "Third", "Last"]);
     expect(secondPath?.[0]?.siblingIds).toEqual([21, 22, 23, 24]);
   });
@@ -107,14 +108,63 @@ describe("task list transition presentation", () => {
       .toBe("Nested completion");
   });
 
-  it("suppresses a transferred destination copy only while its source confirmation is active", () => {
+  it("renders a nested completion under inert missing ancestors when its root leaves", () => {
+    const target = makeTask({ id: 53, title: "Nested completion", parentTaskId: 52, status: "done" });
+    const intermediate = makeTask({
+      id: 52,
+      title: "Missing intermediate",
+      parentTaskId: 51,
+      children: [makeTask({ ...target, status: "actionable" })],
+    });
+    const parent = makeTask({
+      id: 51,
+      title: "Missing parent",
+      children: [intermediate],
+    });
+    const path = findTaskListPosition([parent], target.id);
+    const entry = transition(target, path);
+
+    const result = composeTaskListPresentation([], [entry], "origin", new Set(["origin"]));
+    const root = result.rows[0];
+
+    expect(root).toMatchObject({
+      kind: "ancestor",
+      title: parent.title,
+      children: [{
+        kind: "ancestor",
+        title: intermediate.title,
+        children: [{ kind: "transition", transition: { task: { title: target.title } } }],
+      }],
+    });
+    expect(composeTaskListPresentation([], [entry], "destination", new Set(["origin"])).rows).toMatchObject([]);
+  });
+
+  it("anchors missing ancestors among remaining source rows and reveals destination if source is unavailable", () => {
+    const parent = makeTask({ id: 55, title: "Omitted parent", children: [
+      makeTask({ id: 56, title: "Omitted child", parentTaskId: 55, status: "actionable" }),
+    ] });
+    const child = makeTask({ id: 56, title: "Omitted child", parentTaskId: 55, status: "done" });
+    const after = makeTask({ id: 57, title: "Remaining source" });
+    const entry = transition(child, findTaskListPosition([parent, after], child.id));
+    const retained = composeTaskListPresentation([after], [entry], "origin", new Set(["origin"]));
+
+    expect(retained.rows.map(row => row.kind === "task" ? row.task.title : row.kind === "ancestor" ? row.title : row.transition.task.title))
+      .toEqual([parent.title, after.title]);
+    expect(composeTaskListPresentation([child], [entry], "destination", new Set()).rows)
+      .toMatchObject([{ kind: "task", task: { title: child.title } }]);
+  });
+
+  it("does not suppress the only destination row when the origin is unrenderable and restores it after expiry", () => {
     const task = makeTask({ id: 41, title: "Transferred", status: "done" });
     const sourcePath = findTaskListPosition([makeTask({ ...task, status: "actionable" })], task.id);
     const active = transition(task, sourcePath);
     const transitions = [active];
-    const suppressed = suppressedTransitionTaskIds(transitions, "destination");
+    const suppressed = suppressedTransitionTaskIds(transitions, "destination", new Set());
 
-    expect(composeTaskListRows([task], transitions, "destination", null, suppressed)).toEqual([]);
+    expect(composeTaskListRows([task], transitions, "destination", null, suppressed)).toMatchObject([
+      { kind: "task", task: { id: task.id } },
+    ]);
+    expect(composeTaskListPresentation([task], transitions, "destination", new Set(["origin"])).rows).toEqual([]);
     expect(composeTaskListRows([task], [], "destination")).toMatchObject([
       { kind: "task", task: { id: task.id } },
     ]);

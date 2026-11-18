@@ -113,9 +113,10 @@ data. A Today section with an active transition stays mounted through an empty
 result. During that interval the originating slot renders the confirmation and
 other sections suppress only that transitioning task; expiry restores its
 latest query result there. Nested confirmations remain under their original
-parent. Refreshes cannot
-resurrect a departed row, and newer revisions, navigation/unmount, or identity
-retirement or a read-access denial release the presentation immediately. This
+parent, with inert ancestor placeholders when those ancestors have also left the
+current projection. Refreshes cannot resurrect a departed row, and newer
+revisions, navigation/unmount, member/scope changes, or a read-access denial
+release the presentation immediately. This
 confirmation remains in its originating outline's prior tree slot while that
 outline is mounted. The confirmation interval begins after the successful
 write's refresh settles. Each view explicitly owns one provider: a standalone

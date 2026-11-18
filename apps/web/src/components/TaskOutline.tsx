@@ -9,8 +9,7 @@ import {
   useRequiredTaskListTransitionFeedback,
 } from "../lib/taskListTransitionFeedback";
 import {
-  composeTaskListRows,
-  suppressedTransitionTaskIds,
+  composeTaskListPresentation,
 } from "../lib/taskListTransitionPresentation";
 import { useTaskActions } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
@@ -99,8 +98,12 @@ function TaskOutlineContent({
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
   useRegisterTaskOutline(outlineId, organize.tasks, roots);
   const transitions = feedback.transitions();
-  const suppressedIds = suppressedTransitionTaskIds(transitions, outlineId);
-  const rows = composeTaskListRows(roots, transitions, outlineId, null, suppressedIds);
+  const { rows, suppressedTaskIds: suppressedIds } = composeTaskListPresentation(
+    roots,
+    transitions,
+    outlineId,
+    feedback.renderableOutlineIds(),
+  );
   if (rows.length === 0) return <EmptyState message={emptyMessage} />;
 
   const content = (
@@ -114,10 +117,10 @@ function TaskOutlineContent({
         </div>
       ) : null}
       <ul className="list" style={{ padding: 0, margin: 0 }}>
-        {rows.map(row => row.kind === "transition" ? (
+        {rows.map(row => row.kind === "transition" || row.kind === "ancestor" ? (
           <TaskTransitionRow
-            key={`transition-${row.transition.event.taskId}`}
-            transition={row.transition}
+            key={row.kind === "transition" ? `transition-${row.transition.event.taskId}` : `ancestor-${row.taskId}`}
+            {...(row.kind === "transition" ? { transition: row.transition } : { ancestor: row })}
             {...(attentionTone ? { attentionTone } : {})}
           />
         ) : (

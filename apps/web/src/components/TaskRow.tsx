@@ -674,10 +674,10 @@ export function TaskRow({
 
       {!collapsed && (childRows.length > 0 || hiddenTerminalChildren.length > 0) ? (
         <ul className="task-row-children">
-          {childRows.map(row => row.kind === "transition" ? (
+          {childRows.map(row => row.kind === "transition" || row.kind === "ancestor" ? (
             <TaskTransitionRow
-              key={`transition-${row.transition.event.taskId}`}
-              transition={row.transition}
+              key={row.kind === "transition" ? `transition-${row.transition.event.taskId}` : `ancestor-${row.taskId}`}
+              {...(row.kind === "transition" ? { transition: row.transition } : { ancestor: row })}
               compact={compactDescendants}
               {...(attentionTone ? { attentionTone } : {})}
             />

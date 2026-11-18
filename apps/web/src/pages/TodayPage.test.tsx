@@ -352,6 +352,62 @@ describe("TodayPage", () => {
     );
   });
 
+  it("retires a completed root transition immediately when Today scope changes", async () => {
+    const task = makeTask({ id: 9201, title: "Root task from old scope" });
+    const done = makeTask({ ...task, status: "done", revision: 2 });
+    const otherScopeTask = makeTask({ id: 9202, title: "Replacement scope task" });
+    let completed = false;
+    let releaseRead!: (agenda: Agenda) => void;
+    mockedApi.getAgenda.mockImplementation(async (_member, scope) => {
+      if (scope === "all") {
+        return new Promise<Agenda>(resolve => { releaseRead = resolve; });
+      }
+      return {
+        ...makeEmptyAgenda(),
+        planned: completed ? [] : [task],
+        completedToday: completed ? [done] : [],
+      };
+    });
+    mockedApi.completeTask.mockImplementation(async () => { completed = true; return done; });
+    renderWithProviders(<TodayPage />);
+    const row = (await screen.findByText(task.title)).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(screen.getByText(task.title).closest("li")).toHaveAttribute("aria-disabled", "true"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben aller Personen anzeigen" }));
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+    await act(async () => releaseRead({
+      ...makeEmptyAgenda(),
+      dueToday: [otherScopeTask],
+    }));
+    expect(await screen.findByText(otherScopeTask.title)).toBeInTheDocument();
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+  });
+
+  it("does not restore a pending root transition when its write succeeds after a scope switch", async () => {
+    const task = makeTask({ id: 9211, title: "Pending root from old scope" });
+    const done = makeTask({ ...task, status: "done", revision: 2 });
+    const otherScopeTask = makeTask({ id: 9212, title: "Other scope after pending write" });
+    let releaseWrite!: (task: typeof done) => void;
+    mockedApi.getAgenda.mockImplementation(async (_member, scope) => ({
+      ...makeEmptyAgenda(),
+      ...(scope === "all" ? { dueToday: [otherScopeTask] } : { planned: [task] }),
+    }));
+    mockedApi.completeTask.mockImplementation(() => new Promise(resolve => { releaseWrite = resolve; }));
+    renderWithProviders(<TodayPage />);
+    const row = (await screen.findByText(task.title)).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    expect(await within(row).findByRole("status")).toHaveTextContent("Wird erledigt");
+
+    await userEvent.click(screen.getByRole("button", { name: "Aufgaben aller Personen anzeigen" }));
+    expect(await screen.findByText(otherScopeTask.title)).toBeInTheDocument();
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+    const readsBeforeCompletion = mockedApi.getAgenda.mock.calls.length;
+    await act(async () => releaseWrite(done));
+    await waitFor(() => expect(mockedApi.getAgenda.mock.calls.length).toBeGreaterThan(readsBeforeCompletion));
+    expect(screen.queryByText(task.title)).not.toBeInTheDocument();
+  });
+
   it("keeps completion confirmation at its source slot and suppresses completed history temporarily", async () => {
     const task = makeTask({ id: 9001, title: "Bleibt kurz in Today", status: "actionable" });
     const done = makeTask({ ...task, status: "done", revision: 2 });

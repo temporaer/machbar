@@ -1414,8 +1414,10 @@ values, alter server membership/order, or retain an actionable copy. Recurring
 completion labels the handled occurrence while leaving the continuing task's
 status actionable. The confirmation window starts after the mutation refresh
 settles, and a detached confirmation remains in its originating tree slot while
-that outline is mounted. Today keeps the source section mounted while its owner
-has an active transition, even if its refreshed task array is empty. A transferred
+that outline is mounted. Missing ancestors render as inert path placeholders.
+Today keeps the source section mounted while its owner has an active transition,
+even if its refreshed task array is empty; changing its member or scope retires
+all transitions, including late success from an in-flight write. A transferred
 task is suppressed only in another section for the same confirmation interval;
 its latest server result appears there after expiry. Nested task confirmations
 remain below their original parent. Failure removes the
@@ -2122,8 +2124,9 @@ parent IDs remain intact, and full outlines still sort actual sibling groups.
 
 `TaskOutline` renders current server membership, including nested rows.
 Completion-triggered removal and regrouping take effect on the next read.
-Today keys every outline by member/scope selection so local fold/interaction
-state cannot survive a logical selection change. No removed-row ownership or
+Today keys every outline by member/scope selection and keys its transition owner
+by the same selection, so neither local fold/interaction state nor confirmation
+feedback can survive a logical selection change. No removed-row ownership or
 retention timer participates in eligibility.
 
 ### Intervention-generated task privacy

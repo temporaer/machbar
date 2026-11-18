@@ -1,18 +1,55 @@
-import type { TaskListTransitionEntry } from "../lib/taskListTransitionPresentation";
+import type { TaskListRow, TaskListTransitionEntry } from "../lib/taskListTransitionPresentation";
 import { useStrings } from "../lib/strings";
 import type { AttentionTone } from "../lib/attentionTone";
 import { TaskCardTags } from "./TaskCardTags";
 
 export function TaskTransitionRow({
   transition,
+  ancestor,
   attentionTone,
   compact = false,
 }: {
-  transition: TaskListTransitionEntry;
+  transition?: TaskListTransitionEntry;
+  ancestor?: Extract<TaskListRow, { kind: "ancestor" }>;
   attentionTone?: AttentionTone;
   compact?: boolean;
 }) {
   const strings = useStrings();
+  if (ancestor) {
+    return (
+      <li
+        className={`task-row task-row-transition-ancestor${attentionTone ? ` task-row-attention-${attentionTone}` : ""}`}
+        style={{ listStyle: "none" }}
+        aria-disabled="true"
+      >
+        <div className={`task-row-content has-owner${compact ? " compact" : ""}`}>
+          <div className="task-row-leading-controls" aria-hidden="true">
+            <span className="task-row-checkbox" />
+          </div>
+          <div className="task-row-main-wrap">
+            <div className="task-row-main">
+              <div className="task-row-header">
+                <div className="task-row-title">{ancestor.title}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {ancestor.children.length ? (
+          <ul className="task-row-children">
+            {ancestor.children.map(row => row.kind === "transition" || row.kind === "ancestor" ? (
+              <TaskTransitionRow
+                key={row.kind === "transition" ? `transition-${row.transition.event.taskId}` : `ancestor-${row.taskId}`}
+                {...(row.kind === "transition" ? { transition: row.transition } : { ancestor: row })}
+                compact={compact}
+                {...(attentionTone ? { attentionTone } : {})}
+              />
+            ) : null)}
+          </ul>
+        ) : null}
+      </li>
+    );
+  }
+  if (!transition) return null;
   const { task, event } = transition;
   const pending = event.phase === "pending";
   const status = event.occurrence

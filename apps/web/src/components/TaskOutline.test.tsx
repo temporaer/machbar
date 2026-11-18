@@ -356,6 +356,38 @@ describe("TaskOutline", () => {
       expect(screen.getByText("Other ready work")).toBeInTheDocument();
     });
 
+    it("keeps a nested confirmation under inert ancestors after its source tree leaves", async () => {
+      const target = makeTask({ id: 173, title: "Nested completion", status: "actionable" });
+      const intermediate = makeTask({
+        id: 172,
+        title: "Missing intermediate",
+        children: [target],
+      });
+      const parent = makeTask({
+        id: 171,
+        title: "Missing parent",
+        children: [intermediate],
+      });
+      mockedApi.completeTask.mockResolvedValue(makeTask({ ...target, status: "done", revision: 2 }));
+      const { rerender } = renderWithProviders(
+        <TaskOutline tasks={[parent]} emptyMessage="Empty" compactDescendants />,
+      );
+
+      const taskRow = (await screen.findByText(target.title)).closest("li")!;
+      await userEvent.click(within(taskRow).getByRole("button", { name: "Erledigt" }));
+      await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
+      rerender(<TaskOutline tasks={[]} emptyMessage="Empty" compactDescendants />);
+
+      const parentPlaceholder = screen.getByText(parent.title).closest("li")!;
+      const intermediatePlaceholder = screen.getByText(intermediate.title).closest("li")!;
+      const confirmation = screen.getByText(target.title).closest("li")!;
+      expect(parentPlaceholder).toHaveAttribute("aria-disabled", "true");
+      expect(intermediatePlaceholder).toHaveAttribute("aria-disabled", "true");
+      expect(confirmation).toHaveAttribute("aria-disabled", "true");
+      expect(within(confirmation).getByRole("status")).toHaveTextContent("Erledigt");
+      expect(screen.queryAllByRole("button")).toHaveLength(0);
+    });
+
     it("does not change a descendant's domain state before its server prop changes", async () => {
       const child = makeTask({ id: 151, title: "Frisch erledigt", status: "actionable" });
       const parent = makeTask({

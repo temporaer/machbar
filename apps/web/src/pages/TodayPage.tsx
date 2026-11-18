@@ -79,22 +79,32 @@ function CompletedTodaySection({
 
 export function TodayPage() {
   const { authEnabled, authenticated, currentMemberId } = useIdentity();
-  const identityKey = `${authEnabled}:${authenticated}:${currentMemberId}`;
+  const [scope, setScope] = useState<AgendaScope>(readTodayScope);
+  const identityKey = `${authEnabled}:${authenticated}:${currentMemberId}:${scope}`;
+  const selectScope = (nextScope: AgendaScope) => {
+    setScope(nextScope);
+    writeTodayScope(nextScope);
+  };
   return (
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <TaskListTransitionFeedbackProvider identityKey={identityKey}>
-        <TodayContent />
+        <TodayContent scope={scope} selectScope={selectScope} />
       </TaskListTransitionFeedbackProvider>
     </InteractionScopeProvider>
   );
 }
 
-function TodayContent() {
+function TodayContent({
+  scope,
+  selectScope,
+}: {
+  scope: AgendaScope;
+  selectScope: (scope: AgendaScope) => void;
+}) {
   const strings = useStrings();
   const feedback = useRequiredTaskListTransitionFeedback();
   const { data: homeAssistant } = useHomeAssistantStatus();
-  const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const sections: Array<{
     key: "planned" | "overdue" | "dueToday" | "dueSoon";
     label: string;
@@ -130,10 +140,6 @@ function TodayContent() {
     loadedAgenda?.selectionKey === agendaSelectionKey
       ? loadedAgenda.agenda
       : null;
-  const selectScope = (nextScope: AgendaScope) => {
-    setScope(nextScope);
-    writeTodayScope(nextScope);
-  };
   const taskBuckets = {
     planned: agenda?.planned ?? [], overdue: agenda?.overdue ?? [],
     dueToday: agenda?.dueToday ?? [], dueSoon: agenda?.dueSoon ?? [],
