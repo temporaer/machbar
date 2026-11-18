@@ -113,10 +113,6 @@ export function TaskRow({
     (value: boolean) => scope.setCollapsed(taskProp.id, value),
     [scope, taskProp.id],
   );
-  const displayedChildren = presentation && transitionSectionId
-    ? presentation.items(transitionSectionId, task.id, visibleChildren)
-    : visibleChildren.map(child => ({ kind: "live" as const, task: child, transition: null }));
-  const hasDisplayedChildren = displayedChildren.length > 0 || hiddenTerminalChildren.length > 0;
   const chipsOpen = scope.openRailId === taskProp.id;
   const kebabButtonRef = useRef<HTMLButtonElement>(null);
   const mainButtonRef = useRef<HTMLButtonElement>(null);
@@ -205,6 +201,10 @@ export function TaskRow({
   const hiddenTerminalChildren = compactDescendants
     ? children.filter(isEntirelyTerminal)
     : [];
+  const displayedChildren = presentation && transitionSectionId
+    ? presentation.items(transitionSectionId, task.id, visibleChildren)
+    : visibleChildren.map(child => ({ kind: "live" as const, task: child, transition: null }));
+  const hasDisplayedChildren = displayedChildren.length > 0 || hiddenTerminalChildren.length > 0;
   const [showHiddenTerminal, setShowHiddenTerminal] = useState(false);
   const isDone = task.status === "done" ||
     (transition?.intent === "complete" && !transition.recurringOccurrence);
@@ -325,7 +325,7 @@ export function TaskRow({
   return (
     <>
     <li
-      className={`task-row task-row-surface-${task.status}${attentionTone ? ` task-row-attention-${attentionTone}` : ""}`}
+      className={`task-row task-row-surface-${task.status}${transition ? ` task-row-transition-${transition.intent}` : ""}${attentionTone ? ` task-row-attention-${attentionTone}` : ""}`}
       style={{ listStyle: "none" }}
       data-workitem-id={taskProp.id}
       data-workitem-role="task"
@@ -663,7 +663,7 @@ export function TaskRow({
               parentTask={task}
               depth={depth + 1}
               compactDescendants={compactDescendants}
-              transitionSectionId={transitionSectionId}
+              {...(transitionSectionId ? { transitionSectionId } : {})}
               {...(attentionTone ? { attentionTone } : {})}
             />
           ))}

@@ -109,7 +109,7 @@ export function TaskOutline({
           const task = item.task;
           const row = <TaskRow task={task} parentTask={null} depth={0}
             showRevisitDate={showRevisitDate} compactDescendants={compactDescendants}
-            transitionSectionId={transitionSectionId}
+            {...(transitionSectionId ? { transitionSectionId } : {})}
             {...(attentionTone ? { attentionTone } : {})} />;
           return <OutlineOrganizeProvider key={task.id} value={actualIds.has(task.id) ? organize.value : null}>{row}</OutlineOrganizeProvider>;
         })}

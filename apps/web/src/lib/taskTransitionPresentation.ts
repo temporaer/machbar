@@ -281,9 +281,15 @@ export function rejectTaskTransition(layout: TaskTransitionLayout, token: string
   const stillActive = Object.values(operations).some(candidate => candidate.nodeKey === operation.nodeKey);
   const nodes = { ...layout.nodes };
   if (!stillActive && nodes[operation.nodeKey]) {
-    nodes[operation.nodeKey] = { ...nodes[operation.nodeKey]!, snapshot: undefined };
+    const nodeWithoutSnapshot = { ...nodes[operation.nodeKey]! };
+    delete nodeWithoutSnapshot.snapshot;
+    nodes[operation.nodeKey] = nodeWithoutSnapshot;
     for (const node of Object.values(nodes)) {
-      if (node.sectionId === nodes[operation.nodeKey]!.sectionId) node.shellTitle = undefined;
+      if (node.sectionId === nodes[operation.nodeKey]!.sectionId && node.shellTitle !== undefined) {
+        const nodeWithoutShellTitle = { ...node };
+        delete nodeWithoutShellTitle.shellTitle;
+        nodes[node.key] = nodeWithoutShellTitle;
+      }
     }
   }
   return { ...layout, nodes, operations };

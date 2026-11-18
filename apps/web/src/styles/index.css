@@ -3383,6 +3383,24 @@ details[open] > .disclosure-summary::after {
   transition: box-shadow 140ms ease, translate 140ms ease;
 }
 
+.task-row-transition-status {
+  grid-column: 1;
+  margin: 0;
+  padding: 2px 14px 10px 49px;
+  color: var(--color-success);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.task-row-transition-cancel .task-row-transition-status {
+  color: var(--color-danger);
+}
+
+.task-row-transition-departure {
+  box-shadow: inset 3px 0 var(--color-success), var(--shadow-card);
+}
+
 .task-row-surface-waiting {
   --task-row-accent: var(--color-warning);
   --task-row-border: color-mix(in srgb, var(--color-warning) 18%, var(--color-border));

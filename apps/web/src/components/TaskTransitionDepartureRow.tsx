@@ -27,7 +27,6 @@ export function TaskTransitionDepartureRow({
         className={`task-row task-row-transition-departure${snapshot ? ` task-row-surface-${snapshot.status}` : " task-row-transition-shell"}`}
         style={{ listStyle: "none" }}
         aria-disabled="true"
-        inert
       >
         <div className="task-row-content">
           {snapshot ? (

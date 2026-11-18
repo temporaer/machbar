@@ -174,6 +174,13 @@ function TaskTransitionPresentationOwner({ children }: { children: ReactNode }) 
 
   const items = useCallback((sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[] => {
     const current = layoutRef.current;
+    if (!current.sections[sectionId]) {
+      return tasks.map(task => ({
+        kind: "live",
+        task,
+        transition: taskTransitionForNode(current, taskTransitionNodeKey(task.id)),
+      }));
+    }
     const parentKey = parentId === null ? null : taskTransitionNodeKey(parentId);
     const project = (parent: string | null, fresh: Task[]): DisplayItem[] =>
       taskTransitionDisplayChildren(current, sectionId, parent, fresh).map(item => {
