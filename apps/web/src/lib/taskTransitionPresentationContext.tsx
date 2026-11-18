@@ -14,7 +14,7 @@ import {
   commitTaskTransition,
   confirmTaskTransition,
   emptyTaskTransitionLayout,
-  reconcileTaskSection,
+  reconcileTaskSections,
   rejectTaskTransition,
   releaseTaskTransition,
   taskTransitionDisplayChildren,
@@ -27,6 +27,7 @@ import {
   type TaskTransitionLayout,
   type TaskTransitionOperation,
   type TaskTransitionOrigin,
+  type TaskTransitionSectionProjection,
   type TaskTransitionVisualContext,
 } from "./taskTransitionPresentation";
 
@@ -37,13 +38,14 @@ type DisplayItem =
 interface SectionInput {
   tasks: Task[];
   readSettled: boolean;
+  readFailed: boolean;
   signature: string;
 }
 
 interface TaskTransitionPresentationValue {
   viewId: string;
   layout: TaskTransitionLayout;
-  registerSection(sectionId: string, tasks: Task[], readSettled: boolean): void;
+  registerSection(sectionId: string, tasks: Task[], readSettled: boolean, readFailed: boolean): void;
   items(sectionId: string, parentId: number | null, tasks: Task[]): DisplayItem[];
   origin(sectionId: string, task: Task, visualContext?: TaskTransitionVisualContext): TaskTransitionOrigin | undefined;
   isBlocked(taskId: number, revision?: number): boolean;
@@ -80,6 +82,7 @@ function TaskTransitionPresentationOwner({
   const sections = useRef(new Map<string, SectionInput>());
   const tasksBySection = useRef(new Map<string, Map<number, Task>>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const refreshQueued = useRef(false);
 
   if (identityRef.current !== identityKey) {
     retired.current = true;
@@ -109,15 +112,33 @@ function TaskTransitionPresentationOwner({
 
   const refreshSections = useCallback(() => {
     updateLayout(current => {
-      let next = current;
+      const projection: Record<string, TaskTransitionSectionProjection> = {};
       for (const [sectionId, input] of sections.current) {
-        next = reconcileTaskSection(next, sectionId, input.tasks, input.readSettled);
+        projection[sectionId] = {
+          tasks: input.tasks,
+          readSettled: input.readSettled,
+          readFailed: input.readFailed,
+        };
       }
-      return next;
+      return reconcileTaskSections(current, projection);
     });
   }, [updateLayout]);
 
-  const registerSection = useCallback((sectionId: string, tasks: Task[], readSettled: boolean) => {
+  const queueRefreshSections = useCallback(() => {
+    if (refreshQueued.current) return;
+    refreshQueued.current = true;
+    queueMicrotask(() => {
+      refreshQueued.current = false;
+      refreshSections();
+    });
+  }, [refreshSections]);
+
+  const registerSection = useCallback((
+    sectionId: string,
+    tasks: Task[],
+    readSettled: boolean,
+    readFailed: boolean,
+  ) => {
     if (!isCurrentOwner()) return;
     const previous = sections.current.get(sectionId);
     const signatureOf = (items: Task[]): string => items.map(task =>
@@ -130,13 +151,17 @@ function TaskTransitionPresentationOwner({
     };
     tasks.forEach(visit);
     tasksBySection.current.set(sectionId, taskMap);
-    if (previous?.signature === signature && previous.readSettled === readSettled) {
-      sections.current.set(sectionId, { tasks, readSettled, signature });
+    if (
+      previous?.signature === signature &&
+      previous.readSettled === readSettled &&
+      previous.readFailed === readFailed
+    ) {
+      sections.current.set(sectionId, { tasks, readSettled, readFailed, signature });
       return;
     }
-    sections.current.set(sectionId, { tasks, readSettled, signature });
-    refreshSections();
-  }, [ownerGeneration, refreshSections]);
+    sections.current.set(sectionId, { tasks, readSettled, readFailed, signature });
+    queueRefreshSections();
+  }, [ownerGeneration, queueRefreshSections]);
 
   const isBlocked = useCallback((taskId: number, revision?: number) => {
     const guard = layoutRef.current.staleGuards[taskId];
@@ -169,9 +194,11 @@ function TaskTransitionPresentationOwner({
           for (const [id, value] of byId) titles.set(id, value.title);
         }
         const ancestors = taskTransitionOriginAncestors(current, nodeKey, titles);
-        updateLayout(value => beginTaskTransition(
-          value, token, nodeKey, sourceTask, intent, ancestors, visualContext,
-        ));
+        const next = beginTaskTransition(
+          current, token, nodeKey, sourceTask, intent, ancestors, visualContext,
+        );
+        if (next === current) return "unavailable";
+        updateLayout(() => next);
         return "started";
       },
       reject: token => updateLayout(value => rejectTaskTransition(value, token)),
@@ -258,11 +285,12 @@ export function useTaskTransitionSection(
   sectionId: string | undefined,
   tasks: Task[],
   readSettled = true,
+  readFailed = false,
 ) {
   const presentation = useTaskTransitionPresentation();
   useLayoutEffect(() => {
-    if (presentation && sectionId) presentation.registerSection(sectionId, tasks, readSettled);
-  }, [presentation, readSettled, sectionId, tasks]);
+    if (presentation && sectionId) presentation.registerSection(sectionId, tasks, readSettled, readFailed);
+  }, [presentation, readFailed, readSettled, sectionId, tasks]);
   return presentation;
 }
 

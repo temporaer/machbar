@@ -117,7 +117,9 @@ function ReviewPageContent() {
   const {
     data: items,
     loading: itemsLoading,
+    refreshing: itemsRefreshing,
     error: itemsError,
+    refreshError: itemsRefreshError,
     reload: reloadItems,
   } = useAsync(() => api.getReviewItems(), []);
   const {
@@ -129,7 +131,9 @@ function ReviewPageContent() {
   const {
     data: tasks,
     loading: tasksLoading,
+    refreshing: tasksRefreshing,
     error: tasksError,
+    refreshError: tasksRefreshError,
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks({}), []);
   const projectActions = useProjectActions();
@@ -166,14 +170,21 @@ function ReviewPageContent() {
     };
   }), [taskById, visibleItems]);
   const transitionReadSettled =
-    !itemsLoading && !itemsError && !tasksLoading && !tasksError;
+    !itemsLoading && !itemsRefreshing && !itemsError && !itemsRefreshError &&
+    !tasksLoading && !tasksRefreshing && !tasksError && !tasksRefreshError;
+  const transitionReadFailed = Boolean(itemsError || itemsRefreshError || tasksError || tasksRefreshError);
 
   useLayoutEffect(() => {
     if (!presentation) return;
     for (const section of reviewTaskSections) {
-      presentation.registerSection(section.sectionId, section.tasks, transitionReadSettled);
+      presentation.registerSection(
+        section.sectionId,
+        section.tasks,
+        transitionReadSettled,
+        transitionReadFailed,
+      );
     }
-  }, [presentation, reviewTaskSections, transitionReadSettled]);
+  }, [presentation, reviewTaskSections, transitionReadFailed, transitionReadSettled]);
 
   const reviewTransitionOrigin = (item: ReviewItem, taskId = item.entityId) => {
     if (item.entityType !== "task" || taskId !== item.entityId) return undefined;

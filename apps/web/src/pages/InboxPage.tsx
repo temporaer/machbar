@@ -31,7 +31,9 @@ export function InboxPage() {
   const {
     data: loadedTasks,
     loading,
+    refreshing,
     error,
+    refreshError,
     reload,
   } = useAsync(
     () => api.getInbox(currentMemberId, scope),
@@ -109,7 +111,8 @@ export function InboxPage() {
               preserveRootOrder
               showSwipeHint={false}
               transitionSectionId="inbox-tasks"
-              transitionReadSettled={!loading && !error}
+              transitionReadSettled={!loading && !refreshing && !error && !refreshError}
+              transitionReadFailed={Boolean(error || refreshError)}
             />
           </TaskTransitionSection>
         ) : null}

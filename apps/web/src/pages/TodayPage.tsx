@@ -55,7 +55,9 @@ export function TodayPage() {
   const {
     data: loadedAgenda,
     loading,
+    refreshing,
     error,
+    refreshError,
     reload,
   } = useAsync(
     async () => ({
@@ -137,7 +139,8 @@ export function TodayPage() {
           compactDescendants
           attentionTone={toneBySection[section.key]}
           transitionSectionId={`today-${section.key}`}
-          transitionReadSettled={!loading && !error && agenda !== null}
+          transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
+          transitionReadFailed={Boolean(error || refreshError)}
         />
       </TaskTransitionSection>
       {projectsByBucket[section.key].length > 0 ? (
@@ -268,7 +271,8 @@ export function TodayPage() {
                         compactDescendants
                         attentionTone="revisit"
                         transitionSectionId="today-revisit"
-                        transitionReadSettled={!loading && !error && agenda !== null}
+                        transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
+                        transitionReadFailed={Boolean(error || refreshError)}
                       />
                     </div>
                   </TaskTransitionSection>
@@ -286,7 +290,8 @@ export function TodayPage() {
                         compactDescendants
                         attentionTone="available"
                         transitionSectionId="today-additional"
-                        transitionReadSettled={!loading && !error && agenda !== null}
+                        transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
+                        transitionReadFailed={Boolean(error || refreshError)}
                       />
                     </details>
                   </TaskTransitionSection>
@@ -303,7 +308,8 @@ export function TodayPage() {
                         showSwipeHint={false}
                         compactDescendants
                         transitionSectionId="today-completed"
-                        transitionReadSettled={!loading && !error && agenda !== null}
+                        transitionReadSettled={!loading && !refreshing && !error && !refreshError && agenda !== null}
+                        transitionReadFailed={Boolean(error || refreshError)}
                       />
                     </details>
                   </TaskTransitionSection>

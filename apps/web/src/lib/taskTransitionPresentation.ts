@@ -72,6 +72,12 @@ export interface TaskTransitionLayout {
   staleGuards: Record<number, number>;
 }
 
+export interface TaskTransitionSectionProjection {
+  tasks: Task[];
+  readSettled: boolean;
+  readFailed: boolean;
+}
+
 export function emptyTaskTransitionLayout(): TaskTransitionLayout {
   return { nodes: {}, sections: {}, operations: {}, staleGuards: {} };
 }
@@ -153,6 +159,7 @@ export function reconcileTaskSection(
   sectionId: string,
   tasks: Task[],
   readSettled: boolean,
+  processOperations = true,
 ): TaskTransitionLayout {
   const { specs, roots } = sectionSpecs(sectionId, tasks);
   const nodes = { ...layout.nodes };
@@ -161,7 +168,7 @@ export function reconcileTaskSection(
   const staleGuards = { ...layout.staleGuards };
   const active = activeNodeKeys(layout);
 
-  for (const operation of Object.values(operations)) {
+  if (processOperations) for (const operation of Object.values(operations)) {
     const latest = [...specs.values()].find(spec => spec.task.id === nodes[operation.nodeKey]?.taskId);
     const superseded =
       latest &&
@@ -245,6 +252,131 @@ export function reconcileTaskSection(
   return { nodes, sections, operations, staleGuards };
 }
 
+export function reconcileTaskSections(
+  layout: TaskTransitionLayout,
+  projections: Record<string, TaskTransitionSectionProjection>,
+): TaskTransitionLayout {
+  const sectionSpecs = new Map<string, ReturnType<typeof sectionSpecsForTaskList>>();
+  const observations = new Map<number, Array<{
+    sectionId: string;
+    task: Task;
+    readSettled: boolean;
+    readFailed: boolean;
+  }>>();
+  for (const [sectionId, projection] of Object.entries(projections)) {
+    const spec = sectionSpecsForTaskList(projection.tasks);
+    sectionSpecs.set(sectionId, spec);
+    for (const value of spec.specs.values()) {
+      const current = observations.get(value.task.id) ?? [];
+      current.push({
+        sectionId,
+        task: value.task,
+        readSettled: projection.readSettled,
+        readFailed: projection.readFailed,
+      });
+      observations.set(value.task.id, current);
+    }
+  }
+
+  const operations = { ...layout.operations };
+  const staleGuards = { ...layout.staleGuards };
+  const allReadsSettled = Object.values(projections).every(
+    projection => projection.readSettled && !projection.readFailed,
+  );
+  for (const [token, operation] of Object.entries(operations)) {
+    const taskId = layout.nodes[operation.nodeKey]?.taskId;
+    if (taskId === undefined) {
+      delete operations[token];
+      continue;
+    }
+    const currentRevision = observations.get(taskId)?.filter(
+      current => current.readSettled && !current.readFailed,
+    ).reduce(
+      (latest, current) => Math.max(latest, current.task.revision),
+      -1,
+    ) ?? -1;
+    if (
+      currentRevision > (operation.resultRevision ?? operation.baseRevision)
+    ) {
+      delete operations[token];
+    }
+  }
+
+  for (const [taskIdText, watermark] of Object.entries(staleGuards)) {
+    const taskId = Number(taskIdText);
+    const currentRevision = observations.get(taskId)?.filter(
+      current => current.readSettled && !current.readFailed,
+    ).reduce(
+      (latest, current) => Math.max(latest, current.task.revision),
+      -1,
+    ) ?? -1;
+    if (currentRevision >= watermark || (currentRevision < 0 && allReadsSettled)) {
+      delete staleGuards[taskId];
+    }
+  }
+
+  const activeLayout = { ...layout, operations, staleGuards };
+  const owners = new Map<number, string>();
+  for (const [taskId, values] of observations) {
+    const activeNode = taskTransitionForTask(activeLayout, taskId);
+    const heldSection = activeNode ? layout.nodes[activeNode.nodeKey]?.sectionId : undefined;
+    if (heldSection && values.some(value => value.sectionId === heldSection)) {
+      owners.set(taskId, heldSection);
+      continue;
+    }
+    values.sort((left, right) =>
+      right.task.revision - left.task.revision ||
+      left.sectionId.localeCompare(right.sectionId),
+    );
+    owners.set(taskId, values[0]!.sectionId);
+  }
+
+  const result = { ...activeLayout };
+  for (const sectionId of Object.keys(projections).sort()) {
+    const projection = projections[sectionId]!;
+    const filteredTasks = filterTasksForSection(projection.tasks, sectionId, owners);
+    Object.assign(
+      result,
+      reconcileTaskSection(
+        result,
+        sectionId,
+        filteredTasks,
+        projection.readSettled && !projection.readFailed,
+        false,
+      ),
+    );
+  }
+  return result;
+}
+
+function sectionSpecsForTaskList(tasks: Task[]) {
+  return sectionSpecs("", tasks);
+}
+
+function filterTasksForSection(
+  tasks: Task[],
+  sectionId: string,
+  owners: Map<number, string>,
+): Task[] {
+  return tasks.flatMap(task => {
+    const children = filterTasksForSection(task.children, sectionId, owners);
+    if (owners.get(task.id) !== sectionId) return children;
+    return [{
+      ...task,
+      children,
+    }];
+  });
+}
+
+function taskTransitionForTask(
+  layout: TaskTransitionLayout,
+  taskId: number,
+): TaskTransitionOperation | undefined {
+  return Object.values(layout.operations).find(operation =>
+    layout.nodes[operation.nodeKey]?.taskId === taskId,
+  );
+}
+
 export function beginTaskTransition(
   layout: TaskTransitionLayout,
   token: string,
@@ -255,7 +387,8 @@ export function beginTaskTransition(
   visualContext?: TaskTransitionVisualContext,
 ): TaskTransitionLayout {
   const node = layout.nodes[nodeKey];
-  if (!node || layout.staleGuards[task.id] !== undefined || layout.operations[token]) return layout;
+  const watermark = layout.staleGuards[task.id];
+  if (!node || (watermark !== undefined && task.revision < watermark) || layout.operations[token]) return layout;
   const nodes = {
     ...layout.nodes,
     [nodeKey]: {
@@ -273,6 +406,9 @@ export function beginTaskTransition(
   return {
     ...layout,
     nodes,
+    staleGuards: watermark !== undefined
+      ? Object.fromEntries(Object.entries(layout.staleGuards).filter(([id]) => Number(id) !== task.id))
+      : layout.staleGuards,
     operations: {
       ...layout.operations,
       [token]: {

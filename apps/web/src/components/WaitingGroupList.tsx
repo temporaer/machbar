@@ -16,9 +16,11 @@ function uniqueDisplayTasks(tasks: Task[]): Task[] {
 export function WaitingGroupList({
   entries,
   readSettled = true,
+  readFailed = false,
 }: {
   entries: WaitingEntry[];
   readSettled?: boolean;
+  readFailed?: boolean;
 }) {
   const strings = useStrings();
   const externalCandidates = uniqueDisplayTasks(
@@ -48,6 +50,7 @@ export function WaitingGroupList({
       showSwipeHint={false}
       transitionSectionId={sectionId}
       transitionReadSettled={readSettled}
+      transitionReadFailed={readFailed}
     />
   );
 

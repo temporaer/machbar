@@ -2,18 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "./errorMessage";
 import { useRefresh } from "./refresh";
 import { useStrings } from "./strings";
-import type { Task } from "@machbar/shared";
-import type { TaskTransitionIntent, TaskTransitionOrigin } from "./taskTransitionPresentation";
+
+export interface ItemMutationLifecycle<TResult> {
+  validate?(): Error | undefined;
+  acceptedStart?(token: string): void;
+  writeCommitted?(result: TResult, token: string): void;
+  writeRejected?(error: unknown, token: string): void;
+  refreshSettled?(outcome: { failed: boolean }, token: string): void;
+}
 
 interface ItemMutation<TResult> {
   id: number;
   mutate: () => Promise<TResult>;
   throwOnError?: boolean;
-  presentation?: {
-    origin: TaskTransitionOrigin;
-    task: Task;
-    intent: TaskTransitionIntent;
-  };
+  lifecycle?: ItemMutationLifecycle<TResult>;
 }
 
 /** Pending/error feedback only: server reads own every domain value and row. */
@@ -39,7 +41,7 @@ export function useItemMutations() {
   }, []);
 
   const run = useCallback(async <TResult,>({
-    id, mutate, throwOnError = false, presentation,
+    id, mutate, throwOnError = false, lifecycle,
   }: ItemMutation<TResult>): Promise<TResult | undefined> => {
     if (!mounted.current) return undefined;
     if (inFlight.current.has(id)) {
@@ -49,39 +51,30 @@ export function useItemMutations() {
       return undefined;
     }
     const token = `task-transition:${++operationSequence.current}`;
-    const originState = presentation?.origin.begin(token, presentation.task, presentation.intent);
-    if (originState === "blocked") {
-      const error = Object.assign(new Error("The task revision is stale."), {
-        name: "ApiError",
-        code: "stale_write_conflict",
-      });
+    const validationError = lifecycle?.validate?.();
+    if (validationError) {
+      const error = validationError;
       setErrors(current => ({ ...current, [id]: localizedErrorMessage(error, strings) }));
-      void bump().catch(() => undefined);
+      if (isReadAccessError(error) || isStaleWriteConflict(error)) void bump().catch(() => undefined);
       if (throwOnError) throw error;
       return undefined;
     }
     inFlight.current.add(id);
     setPendingIds(current => new Set(current).add(id));
     clearError(id);
+    try { lifecycle?.acceptedStart?.(token); } catch { /* Presentation cannot reject an accepted command. */ }
     try {
       const result = await mutate();
-      if (presentation && originState === "started" && result && typeof result === "object" &&
-        "revision" in result && "status" in result) {
-        presentation.origin.commit(
-          token,
-          Number((result as { revision: unknown }).revision),
-          (result as { status: Task["status"] }).status,
-        );
-      }
+      try { lifecycle?.writeCommitted?.(result, token); } catch { /* The write is already committed. */ }
       // The captured refresh owner outlives a sheet, but cannot target a replacement identity.
       // Query errors remain read errors; the write has already committed.
       let refreshFailed = false;
       try { await Promise.resolve(bump()); }
       catch { refreshFailed = true; }
-      if (presentation && originState === "started") presentation.origin.settled(token, refreshFailed);
+      try { lifecycle?.refreshSettled?.({ failed: refreshFailed }, token); } catch { /* Keep the committed result. */ }
       return result;
     } catch (error) {
-      if (presentation && originState === "started") presentation.origin.reject(token);
+      try { lifecycle?.writeRejected?.(error, token); } catch { /* Preserve the original write rejection. */ }
       if (mounted.current) {
         setErrors(current => ({ ...current, [id]: localizedErrorMessage(error, strings) }));
         if (isReadAccessError(error) || isStaleWriteConflict(error)) bump();

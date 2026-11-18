@@ -60,6 +60,38 @@ describe("server-confirmed item commands", () => {
     expect(result.current.isPending(1)).toBe(false);
   });
 
+  it("isolates lifecycle callback failures while preserving the committed result and invalidation", async () => {
+    bump.mockClear();
+    const { result } = renderHook(() => useItemMutations());
+    const write = vi.fn(async () => ({ revision: 4, status: "done" }));
+    const lifecycle = {
+      acceptedStart: vi.fn(() => { throw new Error("presentation start failed"); }),
+      writeCommitted: vi.fn(() => { throw new Error("presentation commit failed"); }),
+      refreshSettled: vi.fn(() => { throw new Error("presentation settlement failed"); }),
+    };
+
+    await act(async () => {
+      expect(await result.current.run({
+        id: 4,
+        mutate: write,
+        throwOnError: true,
+        lifecycle,
+      })).toEqual({ revision: 4, status: "done" });
+    });
+
+    expect(write).toHaveBeenCalledOnce();
+    expect(lifecycle.acceptedStart).toHaveBeenCalledOnce();
+    expect(lifecycle.writeCommitted).toHaveBeenCalledWith(
+      { revision: 4, status: "done" },
+      expect.any(String),
+    );
+    expect(lifecycle.refreshSettled).toHaveBeenCalledWith(
+      { failed: false },
+      expect.any(String),
+    );
+    expect(bump).toHaveBeenCalledOnce();
+  });
+
   it("publishes explicit errors and preserves the actual rejection for throwing callers", async () => {
     bump.mockClear();
     const failure = new Error("server rejected");

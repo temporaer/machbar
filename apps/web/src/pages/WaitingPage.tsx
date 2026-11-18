@@ -23,7 +23,9 @@ export function WaitingPage() {
   const {
     data: entries,
     loading,
+    refreshing,
     error,
+    refreshError,
     reload,
   } = useAsync(
     () => api.getWaiting(currentMemberId, scope),
@@ -65,7 +67,13 @@ export function WaitingPage() {
         />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
-        {entries ? <WaitingGroupList entries={entries} readSettled={!loading && !error} /> : null}
+        {entries ? (
+          <WaitingGroupList
+            entries={entries}
+            readSettled={!loading && !refreshing && !error && !refreshError}
+            readFailed={Boolean(error || refreshError)}
+          />
+        ) : null}
       </div>
     </InteractionScopeProvider>
     </TaskTransitionPresentationProvider>

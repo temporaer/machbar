@@ -17,7 +17,7 @@ import {
 export function DiscussionPage() {
   const strings = useStrings();
   const { currentMemberId } = useIdentity();
-  const { data, loading, error, refreshError, reload } = useAsync(() => api.getDiscussion(), []);
+  const { data, loading, refreshing, error, refreshError, reload } = useAsync(() => api.getDiscussion(), []);
   const readError = error ?? refreshError;
   const tasks = data?.tasks ?? [];
   const projects = data?.projects ?? [];
@@ -46,7 +46,15 @@ export function DiscussionPage() {
       ) : null}
       <TaskTransitionSection sectionId="discussion-tasks" tasks={tasks}>
         <section className="section" aria-label={strings.inbox}>
-          <TaskOutline tasks={tasks} emptyMessage={strings.discussionEmpty} preserveRootOrder showSwipeHint={false} transitionSectionId="discussion-tasks" transitionReadSettled={!loading && !readError} />
+          <TaskOutline
+            tasks={tasks}
+            emptyMessage={strings.discussionEmpty}
+            preserveRootOrder
+            showSwipeHint={false}
+            transitionSectionId="discussion-tasks"
+            transitionReadSettled={!loading && !refreshing && !readError}
+            transitionReadFailed={Boolean(readError)}
+          />
         </section>
       </TaskTransitionSection>
     </div>

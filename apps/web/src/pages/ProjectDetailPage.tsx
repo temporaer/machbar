@@ -160,6 +160,7 @@ export function ProjectDetailPage() {
   const {
     data: loadedProject,
     loading: projectLoading,
+    refreshing: projectRefreshing,
     error: projectError,
     refreshError: projectRefreshError,
     reload: reloadProject,
@@ -805,7 +806,10 @@ export function ProjectDetailPage() {
                     ),
                   }}
                   transitionSectionId="project-outline"
-                  transitionReadSettled={!projectLoading && !projectError}
+                  transitionReadSettled={
+                    !projectLoading && !projectRefreshing && !projectError && !projectRefreshError
+                  }
+                  transitionReadFailed={Boolean(projectError || projectRefreshError)}
                 />
               </TaskTransitionSection>
             </WorkItemDetailDisclosure>

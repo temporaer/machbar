@@ -5,7 +5,9 @@ import {
   commitTaskTransition,
   emptyTaskTransitionLayout,
   reconcileTaskSection,
+  reconcileTaskSections,
   rejectTaskTransition,
+  releaseTaskTransition,
   taskTransitionDisplayChildren,
   taskTransitionNodeKey,
 } from "./taskTransitionPresentation";
@@ -79,6 +81,33 @@ describe("task transition display layout", () => {
     expect(taskTransitionDisplayChildren(layout, "destination", null, [task])).toHaveLength(0);
   });
 
+  it("reconciles a complete transfer projection independently of section registration order", () => {
+    const task = makeTask({ id: 525, title: "Transferred" });
+    const initial = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [task], readSettled: true, readFailed: false },
+      destination: { tasks: [], readSettled: true, readFailed: false },
+    });
+    const active = beginTaskTransition(
+      initial,
+      "move",
+      taskTransitionNodeKey(task.id),
+      task,
+      "actionable",
+      [],
+    );
+    const source = { tasks: [], readSettled: true, readFailed: false };
+    const destination = { tasks: [task], readSettled: true, readFailed: false };
+    const sourceFirst = reconcileTaskSections(active, { source, destination });
+    const destinationFirst = reconcileTaskSections(active, { destination, source });
+
+    expect(sourceFirst).toEqual(destinationFirst);
+    expect(active.sections.source?.rootKeys).toEqual([taskTransitionNodeKey(task.id)]);
+    expect(taskTransitionDisplayChildren(sourceFirst, "source", null, [])).toHaveLength(1);
+    expect(taskTransitionDisplayChildren(sourceFirst, "destination", null, [task])).toHaveLength(0);
+    expect(source.tasks).toEqual([]);
+    expect(destination.tasks).toEqual([task]);
+  });
+
   it("keeps a revision watermark so later stale section data remains blocked", () => {
     const task = makeTask({ id: 531 });
     let layout = reconcileTaskSection(emptyTaskTransitionLayout(), "source", [task], true);
@@ -93,5 +122,58 @@ describe("task transition display layout", () => {
     layout = reconcileTaskSection(layout, "source", [{ ...task, revision: 1 }], false);
 
     expect(layout.staleGuards[task.id]).toBe(2);
+  });
+
+  it("allows a second transition after the fresh projection revalidates the committed revision", () => {
+    const task = makeTask({ id: 541 });
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [task], readSettled: true, readFailed: false },
+    });
+    layout = beginTaskTransition(layout, "first", taskTransitionNodeKey(task.id), task, "complete", []);
+    layout = commitTaskTransition(layout, "first", 2, "done");
+    layout = reconcileTaskSections(layout, {
+      source: {
+        tasks: [{ ...task, revision: 2, status: "done" }],
+        readSettled: true,
+        readFailed: false,
+      },
+    });
+    layout = releaseTaskTransition(layout, "first");
+    const second = beginTaskTransition(
+      layout,
+      "second",
+      taskTransitionNodeKey(task.id),
+      { ...task, revision: 2, status: "done" },
+      "reopen",
+      [],
+    );
+
+    expect(layout.staleGuards[task.id]).toBeUndefined();
+    expect(second.operations.second).toBeDefined();
+  });
+
+  it("keeps the watermark after a failed read and rejects stale presentation start", () => {
+    const task = makeTask({ id: 542 });
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [task], readSettled: true, readFailed: false },
+    });
+    layout = beginTaskTransition(layout, "first", taskTransitionNodeKey(task.id), task, "complete", []);
+    layout = commitTaskTransition(layout, "first", 2, "done");
+    layout = reconcileTaskSections(layout, {
+      source: { tasks: [task], readSettled: false, readFailed: true },
+    });
+    layout = releaseTaskTransition(layout, "first");
+    const stale = beginTaskTransition(
+      layout,
+      "stale",
+      taskTransitionNodeKey(task.id),
+      task,
+      "complete",
+      [],
+    );
+
+    expect(layout.staleGuards[task.id]).toBe(2);
+    expect(stale).toBe(layout);
+    expect(stale.operations.stale).toBeUndefined();
   });
 });

@@ -54,6 +54,8 @@ export interface TaskOutlineProps {
   transitionSectionId?: string;
   /** True when this section's latest read settled without an access/read error. */
   transitionReadSettled?: boolean;
+  /** True when the query for this section failed, rather than remaining pending. */
+  transitionReadFailed?: boolean;
 }
 
 export function TaskOutline({
@@ -68,6 +70,7 @@ export function TaskOutline({
   attentionTone,
   transitionSectionId,
   transitionReadSettled = true,
+  transitionReadFailed = false,
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
@@ -75,7 +78,12 @@ export function TaskOutline({
 
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
   const roots = sorted;
-  const presentation = useTaskTransitionSection(transitionSectionId, roots, transitionReadSettled);
+  const presentation = useTaskTransitionSection(
+    transitionSectionId,
+    roots,
+    transitionReadSettled,
+    transitionReadFailed,
+  );
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
   const displayItems = presentation && transitionSectionId
     ? presentation.items(transitionSectionId, null, roots)

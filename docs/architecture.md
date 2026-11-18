@@ -1393,16 +1393,19 @@ action contract.
 ### Server-confirmed interactions
 
 Commands remain server-confirmed: no optimistic task DTOs or confirmed-value
-overlays are introduced. The canonical mutation controller owns operation
-identity, pending/errors, duplicate-write protection, result revision/status
-and captured refresh settlement. Query continues to supply task values,
-hierarchy, membership and ordering.
+overlays are introduced. `useItemMutations` owns generic pending/errors,
+duplicate-write protection and captured invalidation, and exposes typed
+accepted-start, committed-result, rejection and refresh-settlement callbacks.
+`useTaskActions` adapts task result revision/status and originating-view
+callbacks. Query continues to supply task values, hierarchy, membership and
+ordering.
 
 An accepted local lifecycle command may keep a brief visual result at its
 initiating position, including when a filtered result removes or relocates the
 task. This presentation is owned by one `TaskTransitionPresentationProvider`
 per logical view, with one displayed tree, shared stable task nodes,
-source-order preservation and independent confirmation deadlines. Only nodes
+atomic reconciliation of its complete section projection, source-order
+preservation and independent confirmation deadlines. Only nodes
 affected by active feedback retain minimum visual fields; retained ancestors
 are inert identity/title shells. A transfer is suppressed at its destination
 only while its source node can be drawn. Stale rows below the command's result

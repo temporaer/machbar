@@ -71,7 +71,9 @@ export function AllPage() {
   const {
     data: tasks,
     loading: tasksLoading,
+    refreshing: tasksRefreshing,
     error: tasksError,
+    refreshError: tasksRefreshError,
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks({ ...filters, includeTerminal: true }), [filtersKey]);
   const projectCandidates = useMemo(
@@ -169,7 +171,10 @@ export function AllPage() {
                       emptyMessage={strings.allEmpty}
                       preserveRootOrder
                       transitionSectionId="all-tasks"
-                      transitionReadSettled={!loading && !error}
+                      transitionReadSettled={
+                        !tasksLoading && !tasksRefreshing && !tasksError && !tasksRefreshError
+                      }
+                      transitionReadFailed={Boolean(tasksError || tasksRefreshError)}
                     />
                 </section>
                 </TaskTransitionSection>

@@ -25,14 +25,37 @@ function useTaskActionsState() {
     throwOnError = false,
     origin?: TaskTransitionOrigin,
     intent?: TaskTransitionIntent,
-  ) => run({
-    id: task.id,
-    mutate,
-    throwOnError,
-    ...(origin && intent && "revision" in task
-      ? { presentation: { origin, task: task as Task, intent } }
-      : {}),
-  }), [run]);
+  ) => {
+    const sourceTask = "revision" in task ? task as Task : undefined;
+    let presentationStarted = false;
+    return run<Task>({
+      id: task.id,
+      mutate,
+      throwOnError,
+      ...(origin && intent && sourceTask ? {
+        lifecycle: {
+          validate: () => origin.isBlocked(sourceTask.revision)
+            ? Object.assign(new Error("The task revision is stale."), {
+                name: "ApiError",
+                code: "stale_write_conflict",
+              })
+            : undefined,
+          acceptedStart: token => {
+            presentationStarted = origin.begin(token, sourceTask, intent) === "started";
+          },
+          writeCommitted: (result, token) => {
+            if (presentationStarted) origin.commit(token, result.revision, result.status);
+          },
+          writeRejected: (_error, token) => {
+            if (presentationStarted) origin.reject(token);
+          },
+          refreshSettled: (_outcome, token) => {
+            if (presentationStarted) origin.settled(token, _outcome.failed);
+          },
+        },
+      } : {}),
+    });
+  }, [run]);
 
   const complete = useCallback((task: Task, policy?: ChildPolicy, criteriaToCheck?: number[], throwOnError = false, origin?: TaskTransitionOrigin) =>
     runTransition(task, () => api.completeTask(
