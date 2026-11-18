@@ -416,14 +416,16 @@ test("Today confirms task completion accessibly with reduced motion", async ({ p
   await expect(pending).toHaveAttribute("aria-live", "polite");
   expect(await pending.evaluate(node => getComputedStyle(node).animationName)).toBe("none");
   releaseWrite();
-  const departure = page.locator("li.task-row[aria-disabled='true']").filter({ hasText: item.title });
-  await expect(departure).toBeVisible();
-  await expect(departure.getByRole("status")).toHaveText("Erledigt");
-  await expect(departure).toBeInViewport();
+  const confirmation = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation).not.toHaveAttribute("aria-disabled", "true");
+  await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
+  await confirmation.scrollIntoViewIfNeeded();
+  await expect(confirmation).toBeInViewport();
   await page.waitForTimeout(1_000);
-  await expect(departure).toBeInViewport();
-  await expect(departure.getByRole("status")).toHaveText("Erledigt");
-  await expect(departure).toHaveCount(0, { timeout: 5_000 });
+  await expect(confirmation).toBeInViewport();
+  await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
+  await expect(confirmation.getByRole("status")).toHaveCount(0, { timeout: 5_000 });
 });
 
 for (const action of ["completion", "cancellation", "classification"] as const) {
@@ -479,7 +481,7 @@ for (const action of ["completion", "cancellation", "classification"] as const) 
   });
 }
 
-test("Today keeps completion confirmation at its original row in a long list", async ({ page }, testInfo) => {
+test("Today confirms completion on the authoritative row in a long list", async ({ page }, testInfo) => {
   const scheduledDate = calendarDateForInstant(new Date().toISOString(), "UTC")!;
   for (let index = 0; index < 12; index += 1) {
     await task(page, { scheduledDate });
@@ -492,9 +494,11 @@ test("Today keeps completion confirmation at its original row in a long list", a
   await row.scrollIntoViewIfNeeded();
   await swipeRight(page, row, testInfo);
 
-  const departure = page.locator("li.task-row[aria-disabled='true']").filter({ hasText: item.title });
-  await expect(departure.getByRole("status")).toHaveText("Erledigt");
-  await expect(departure).toBeInViewport();
+  const confirmation = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
+  await expect(confirmation).not.toHaveAttribute("aria-disabled", "true");
+  await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
+  await confirmation.scrollIntoViewIfNeeded();
+  await expect(confirmation).toBeInViewport();
 });
 
 test("detail status control is visible on touch and desktop", async ({ page }) => {
