@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Task } from "@machbar/shared";
 import { makeTask } from "../test/fixtures";
 import {
   beginTaskTransition,
@@ -96,13 +97,13 @@ describe("task transition display layout", () => {
     expect(taskTransitionDisplayChildren(layout, "destination", null, [task])).toHaveLength(0);
   });
 
-  it("reconciles a complete transfer projection independently of section registration order", () => {
+  it("keeps a unique source occurrence through either ordered transfer-read sequence", () => {
     const task = makeTask({ id: 525, title: "Transferred" });
     const initial = reconcileTaskSections(emptyTaskTransitionLayout(), {
       source: { tasks: [task], readSettled: true, readFailed: false },
       destination: { tasks: [], readSettled: true, readFailed: false },
     });
-    const active = beginTaskTransition(
+    let active = beginTaskTransition(
       initial,
       "move",
       taskTransitionNodeKey(task.id),
@@ -110,17 +111,55 @@ describe("task transition display layout", () => {
       "actionable",
       [],
     );
-    const source = { tasks: [], readSettled: true, readFailed: false };
-    const destination = { tasks: [task], readSettled: true, readFailed: false };
-    const sourceFirst = reconcileTaskSections(active, { source, destination });
-    const destinationFirst = reconcileTaskSections(active, { destination, source });
+    active = commitTaskTransition(active, "move", 2, "actionable");
+    const destinationTask = { ...task, revision: 2, status: "actionable" as const };
+    const sourceTask = Object.freeze({ ...task });
+    const source = (tasks: Task[]) => ({
+      tasks,
+      readSettled: true,
+      readFailed: false,
+    });
+    const visibleIds = (layout: ReturnType<typeof reconcileTaskSections>, sourceTasks: Task[], destinationTasks: Task[]) =>
+      [
+        ...taskTransitionDisplayChildren(layout, "source", null, sourceTasks),
+        ...taskTransitionDisplayChildren(layout, "destination", null, destinationTasks),
+      ].map(item => "task" in item ? item.task.id : item.node.taskId);
 
-    expect(sourceFirst).toEqual(destinationFirst);
-    expect(active.sections.source?.rootKeys).toEqual([taskTransitionNodeKey(task.id)]);
-    expect(taskTransitionDisplayChildren(sourceFirst, "source", null, [])).toHaveLength(1);
-    expect(taskTransitionDisplayChildren(sourceFirst, "destination", null, [task])).toHaveLength(0);
-    expect(source.tasks).toEqual([]);
-    expect(destination.tasks).toEqual([task]);
+    for (const order of ["source-first", "destination-first"] as const) {
+      let layout = active;
+      if (order === "source-first") {
+        layout = reconcileTaskSections(layout, {
+          source: source([]),
+          destination: source([]),
+        });
+        expect(visibleIds(layout, [], [])).toEqual([task.id]);
+        layout = reconcileTaskSections(layout, {
+          source: source([]),
+          destination: source([destinationTask]),
+        });
+      } else {
+        layout = reconcileTaskSections(layout, {
+          source: source([sourceTask]),
+          destination: source([destinationTask]),
+        });
+        expect(visibleIds(layout, [sourceTask], [destinationTask])).toEqual([task.id]);
+        layout = reconcileTaskSections(layout, {
+          source: source([]),
+          destination: source([destinationTask]),
+        });
+      }
+
+      expect(layout.sections.source?.rootKeys).toEqual([taskTransitionNodeKey(task.id)]);
+      expect(visibleIds(layout, [], [destinationTask])).toEqual([task.id]);
+      layout = reconcileTaskSections(releaseTaskTransition(layout, "move"), {
+        source: source([]),
+        destination: source([destinationTask]),
+      });
+      expect(taskTransitionDisplayChildren(layout, "source", null, [])).toHaveLength(0);
+      expect(taskTransitionDisplayChildren(layout, "destination", null, [destinationTask])).toHaveLength(1);
+    }
+    expect(sourceTask).toEqual(task);
+    expect(destinationTask).toEqual({ ...task, revision: 2, status: "actionable" });
   });
 
   it("keeps a revision watermark so later stale section data remains blocked", () => {
@@ -189,5 +228,91 @@ describe("task transition display layout", () => {
     expect(layout.staleGuards[task.id]).toBe(2);
     expect(stale).toBe(layout);
     expect(stale.operations.stale).toBeUndefined();
+  });
+
+  it("blocks a stale action after failed revalidation, then accepts it after the fresh read", () => {
+    const task = makeTask({ id: 543 });
+    let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+      source: { tasks: [task], readSettled: true, readFailed: false },
+    });
+    layout = beginTaskTransition(layout, "first", taskTransitionNodeKey(task.id), task, "complete", []);
+    layout = commitTaskTransition(layout, "first", 2, "done");
+    layout = reconcileTaskSections(layout, {
+      source: { tasks: [task], readSettled: false, readFailed: true },
+    });
+    layout = releaseTaskTransition(layout, "first");
+    const stale = beginTaskTransition(
+      layout,
+      "stale-second",
+      taskTransitionNodeKey(task.id),
+      task,
+      "complete",
+      [],
+    );
+    expect(stale).toBe(layout);
+    expect(layout.staleGuards[task.id]).toBe(2);
+
+    layout = reconcileTaskSections(layout, {
+      source: {
+        tasks: [{ ...task, revision: 2, status: "done" }],
+        readSettled: true,
+        readFailed: false,
+      },
+    });
+    const valid = beginTaskTransition(
+      layout,
+      "valid-second",
+      taskTransitionNodeKey(task.id),
+      { ...task, revision: 2, status: "done" },
+      "reopen",
+      [],
+    );
+    expect(layout.staleGuards[task.id]).toBeUndefined();
+    expect(valid.operations["valid-second"]).toBeDefined();
+  });
+
+  it("retains pending and recurring operations across section transfers", () => {
+    for (const task of [
+      makeTask({ id: 551, status: "captured" }),
+      makeTask({ id: 552, repeatAfterDays: 7 }),
+    ]) {
+      let layout = reconcileTaskSections(emptyTaskTransitionLayout(), {
+        source: { tasks: [task], readSettled: true, readFailed: false },
+        destination: { tasks: [], readSettled: true, readFailed: false },
+      });
+      const intent = task.repeatAfterDays === null ? "actionable" : "complete";
+      layout = beginTaskTransition(layout, `move-${task.id}`, taskTransitionNodeKey(task.id), task, intent, []);
+      expect(layout.operations[`move-${task.id}`]?.phase).toBe("pending");
+      expect(layout.operations[`move-${task.id}`]?.recurringOccurrence).toBe(
+        task.repeatAfterDays !== null,
+      );
+      layout = commitTaskTransition(layout, `move-${task.id}`, 2, "actionable");
+      layout = reconcileTaskSections(layout, {
+        source: { tasks: [], readSettled: true, readFailed: false },
+        destination: {
+          tasks: [{ ...task, revision: 2, status: "actionable" }],
+          readSettled: true,
+          readFailed: false,
+        },
+      });
+
+      expect(taskTransitionDisplayChildren(layout, "source", null, [])).toHaveLength(1);
+      expect(taskTransitionDisplayChildren(layout, "destination", null, [
+        { ...task, revision: 2, status: "actionable" },
+      ])).toHaveLength(0);
+      expect(taskTransitionDisplayChildren(
+        reconcileTaskSections(releaseTaskTransition(layout, `move-${task.id}`), {
+          source: { tasks: [], readSettled: true, readFailed: false },
+          destination: {
+            tasks: [{ ...task, revision: 2, status: "actionable" }],
+            readSettled: true,
+            readFailed: false,
+          },
+        }),
+        "destination",
+        null,
+        [{ ...task, revision: 2, status: "actionable" }],
+      )).toHaveLength(1);
+    }
   });
 });

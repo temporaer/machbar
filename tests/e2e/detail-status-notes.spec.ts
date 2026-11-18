@@ -148,6 +148,68 @@ for (const role of ["task", "project"] as const) {
   }
 }
 
+test("task transition confirmation stays visible at its source position without scrolling", async ({ page }) => {
+  const title = `Inbox transition ${randomUUID()}`;
+  const response = await page.request.post("/api/tasks", {
+    data: { title, status: "captured" },
+  });
+  expect(response.status()).toBe(201);
+  const task = await response.json();
+  let writeStarted = false;
+  let writeStatus: number | undefined;
+  await page.route("**/api/**", async route => {
+    if (route.request().method() === "GET" && writeStatus !== undefined) {
+      await route.fulfill({
+        status: 503,
+        json: { error: { code: "internal_error", message: "Refresh unavailable" } },
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await page.route(`**/api/tasks/${task.id}/complete`, async route => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    writeStarted = true;
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const result = await route.fetch();
+    writeStatus = result.status();
+    await route.fulfill({ response: result });
+  });
+
+  await page.goto("/#/inbox");
+  const row = page.locator(`[data-workitem-id="${task.id}"]`);
+  await expect(row).toBeVisible();
+  await row.scrollIntoViewIfNeeded();
+  const initialScrollY = await page.evaluate(() => window.scrollY);
+  const initialBox = await row.boundingBox();
+  expect(initialBox).not.toBeNull();
+  const startX = Math.min(initialBox!.x + 24, page.viewportSize()!.width - 164);
+  const y = initialBox!.y + initialBox!.height / 2;
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(startX + 140, y, { steps: 4 });
+  await page.mouse.up();
+
+  const statusGroup = row.getByRole("group", { name: "Status", exact: true });
+  await expect(statusGroup).toBeVisible();
+  await statusGroup.getByRole("button", { name: "Erledigt", exact: true }).click();
+  await expect.poll(() => writeStarted).toBe(true);
+  const feedback = row.getByRole("status");
+  await expect(feedback).toHaveText("Wird erledigt …");
+  await expect(feedback).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
+  expect(Math.abs((await row.boundingBox())!.y - initialBox!.y)).toBeLessThanOrEqual(2);
+
+  await expect.poll(() => writeStatus).toBe(200);
+  await expect(feedback).toHaveText("Erledigt");
+  await expect(feedback).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
+  expect(Math.abs((await row.boundingBox())!.y - initialBox!.y)).toBeLessThanOrEqual(2);
+});
+
 test("task descendant confirmation hands saving feedback back to details", async ({ page }) => {
   const { item } = await create(page, "task");
   expect((await page.request.post("/api/tasks", { data: { title: "Child to retain", status: "actionable", parentTaskId: item.id } })).status()).toBe(201);
