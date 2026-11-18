@@ -3,7 +3,6 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { useEffect, useState } from "react";
 import { renderWithProviders } from "../test/testUtils";
 import {
-  TaskListTransitionDepartures,
   TaskOutline,
   TaskOutlineInTransitionView,
 } from "./TaskOutline";
@@ -38,27 +37,27 @@ function ExternalDepartureSection() {
   const { data } = useAsync(() => api.searchTasks({}), []);
   return (
     <TaskListTransitionFeedbackProvider identityKey="test">
-      <TaskOutlineInTransitionView tasks={data ?? []} emptyMessage="Empty server view" />
-      <TaskListTransitionDepartures />
+      <TaskOutlineInTransitionView
+        transitionOutlineId="test"
+        tasks={data ?? []}
+        emptyMessage="Empty server view"
+      />
     </TaskListTransitionFeedbackProvider>
   );
 }
 function RelocatedTransitionSection({ task }: { task: ReturnType<typeof makeTask> }) {
-  const [inSource, setInSource] = useState(true);
-  const [inDestination, setInDestination] = useState(false);
+  const [inSource, setInSource] = useState([task]);
+  const [inDestination, setInDestination] = useState<typeof inSource>([]);
   return (
     <TaskListTransitionFeedbackProvider identityKey="test">
       <button type="button" onClick={() => {
-        setInSource(false);
-        setInDestination(true);
+        setInSource([]);
+        setInDestination([{ ...task, status: "done", revision: task.revision + 1 }]);
       }}>
         Move to completed outline
       </button>
-      {inSource ? <TaskOutlineInTransitionView tasks={[task]} emptyMessage="Empty source" /> : null}
-      {inDestination ? (
-        <TaskOutlineInTransitionView tasks={[{ ...task, status: "done", revision: task.revision + 1 }]} emptyMessage="Empty destination" />
-      ) : null}
-      <TaskListTransitionDepartures />
+      <TaskOutlineInTransitionView transitionOutlineId="source" tasks={inSource} emptyMessage="Empty source" />
+      <TaskOutlineInTransitionView transitionOutlineId="destination" tasks={inDestination} emptyMessage="Empty destination" />
     </TaskListTransitionFeedbackProvider>
   );
 }
@@ -73,9 +72,8 @@ function SiblingTransitionSection({ task }: { task: ReturnType<typeof makeTask> 
       }}>
         Transfer task
       </button>
-      <TaskOutlineInTransitionView tasks={sourceTasks} emptyMessage="Empty source" />
-      <TaskOutlineInTransitionView tasks={destinationTasks} emptyMessage="Empty destination" />
-      <TaskListTransitionDepartures />
+      <TaskOutlineInTransitionView transitionOutlineId="source" tasks={sourceTasks} emptyMessage="Empty source" />
+      <TaskOutlineInTransitionView transitionOutlineId="destination" tasks={destinationTasks} emptyMessage="Empty destination" />
     </TaskListTransitionFeedbackProvider>
   );
 }
@@ -140,7 +138,7 @@ describe("server-confirmed compiled task rows", () => {
     await waitFor(() => expect(within(departure).getByRole("status")).toHaveTextContent("Erledigt"));
     expect(departure).toHaveAttribute("aria-disabled", "true");
   });
-  it("does not render a detached task in both local and external departure lists", async () => {
+  it("renders a source confirmation once while the refreshed task is in a sibling outline", async () => {
     const task = makeTask({ title: "Cancelled Today row" });
     mockedApi.searchTasks.mockResolvedValueOnce([task]).mockResolvedValue([]);
     mockedApi.cancelTask.mockResolvedValue({ ...task, status: "cancelled", revision: 2 });
@@ -159,23 +157,22 @@ describe("server-confirmed compiled task rows", () => {
     const row = screen.getByText(task.title).closest("li")!;
     expect(within(row).getByRole("status")).toHaveTextContent("Verworfen");
   });
-  it("moves confirmation to a visible authoritative row when its source outline unmounts", async () => {
+  it("keeps the confirmation in its empty source outline and suppresses the destination copy", async () => {
     const task = makeTask({ title: "Completed in another section" });
     mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: task.revision + 1 });
     renderWithProviders(<RelocatedTransitionSection task={task} />);
     await screen.findByText(task.title);
-    const sourceRow = screen.getByText(task.title).closest("li")!;
-    fireEvent.click(within(sourceRow).getByRole("button", { name: "Erledigt" }));
-    await waitFor(() => expect(within(sourceRow).getByRole("status")).toHaveTextContent("Erledigt"));
+    fireEvent.click(within(screen.getByText(task.title).closest("li")!).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(within(screen.getByText(task.title).closest("li")!).getByRole("status")).toHaveTextContent("Erledigt"));
     fireEvent.click(screen.getByRole("button", { name: "Move to completed outline" }));
 
     await waitFor(() => expect(screen.getAllByText(task.title)).toHaveLength(1));
     const row = screen.getByText(task.title).closest("li")!;
-    expect(row).not.toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveAttribute("aria-disabled", "true");
     expect(within(row).getByRole("status")).toHaveTextContent("Erledigt");
     expect(screen.getAllByRole("status").filter(status => status.textContent === "Erledigt")).toHaveLength(1);
   });
-  it("moves confirmation to a sibling outline without duplicating a departure", async () => {
+  it("keeps the source confirmation and suppresses a populated destination outline", async () => {
     const task = makeTask({ title: "Transferred while source remains" });
     mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: task.revision + 1 });
     renderWithProviders(<SiblingTransitionSection task={task} />);
@@ -189,7 +186,7 @@ describe("server-confirmed compiled task rows", () => {
 
     await waitFor(() => expect(screen.getAllByText(task.title)).toHaveLength(1));
     const row = screen.getByText(task.title).closest("li")!;
-    expect(row).not.toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveAttribute("aria-disabled", "true");
     expect(within(row).getByRole("status")).toHaveTextContent("Erledigt");
     expect(screen.getAllByRole("status").filter(status => status.textContent === "Erledigt")).toHaveLength(1);
   });

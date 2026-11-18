@@ -10,10 +10,16 @@ export interface TaskTransitionFeedbackEvent {
   resultRevision?: number;
 }
 
+export interface TaskListPositionStep {
+  taskId: number;
+  parentTaskId: number | null;
+  siblingIds: number[];
+}
+
 export interface TaskListTransition {
   task: Task;
   event: TaskTransitionFeedbackEvent;
-  sourceIndex?: number | null;
+  sourcePath: readonly TaskListPositionStep[] | null;
 }
 
 export type TaskListTransitionEntry = TaskListTransition & {
@@ -21,101 +27,115 @@ export type TaskListTransitionEntry = TaskListTransition & {
 };
 
 export type TaskListRow =
-  | { kind: "task"; task: Task }
-  | { kind: "transition"; transition: TaskListTransition };
+  | {
+      kind: "task";
+      task: Task;
+      childTransitions: TaskListTransitionEntry[];
+    }
+  | { kind: "transition"; transition: TaskListTransitionEntry };
 
-export function transitionSourceIndex(
-  rootTaskIds: readonly number[],
+export function findTaskListPosition(
+  roots: readonly Task[],
   taskId: number,
-  outlineId: string | undefined,
-  entries: Iterable<TaskListTransitionEntry>,
-  currentTaskIds: ReadonlySet<number>,
-): number | null {
-  const index = rootTaskIds.indexOf(taskId);
-  if (index < 0 || !outlineId) return null;
-  let sourceIndex = index;
-  const precedingDepartures = [...entries]
-    .filter(entry =>
-      entry.sourceOutlineId === outlineId &&
-      entry.sourceIndex !== null &&
-      entry.sourceIndex !== undefined &&
-      !currentTaskIds.has(entry.event.taskId),
-    )
-    .map(entry => entry.sourceIndex!)
-    .sort((left, right) => left - right);
-  for (const departureIndex of precedingDepartures) {
-    if (departureIndex <= sourceIndex) sourceIndex += 1;
-  }
-  return sourceIndex;
+): TaskListPositionStep[] | null {
+  return findTaskListPositions(roots).get(taskId) ?? null;
 }
 
-export function removeTransitionAndRebase<T extends TaskListTransitionEntry>(
-  entries: ReadonlyMap<number, T>,
-  taskId: number,
-  currentTaskIds: ReadonlySet<number>,
-): Map<number, T> {
-  const current = entries.get(taskId);
-  const next = new Map(entries);
-  next.delete(taskId);
-  if (
-    current?.sourceIndex === null ||
-    current?.sourceIndex === undefined ||
-    currentTaskIds.has(taskId)
-  ) {
-    return next;
-  }
-  for (const [id, entry] of next) {
-    if (
-      entry.sourceOutlineId === current.sourceOutlineId &&
-      entry.sourceIndex !== null &&
-      entry.sourceIndex !== undefined &&
-      entry.sourceIndex > current.sourceIndex
-    ) {
-      next.set(id, { ...entry, sourceIndex: entry.sourceIndex - 1 });
+export function findTaskListPositions(
+  roots: readonly Task[],
+): Map<number, TaskListPositionStep[]> {
+  const positions = new Map<number, TaskListPositionStep[]>();
+  const visit = (
+    siblings: readonly Task[],
+    parentTaskId: number | null,
+    ancestors: readonly TaskListPositionStep[],
+  ) => {
+    const siblingIds = siblings.map(sibling => sibling.id);
+    for (const task of siblings) {
+      const step = {
+        taskId: task.id,
+        parentTaskId,
+        siblingIds,
+      };
+      const path = [...ancestors, step];
+      positions.set(task.id, path);
+      visit(task.children, task.id, path);
     }
-  }
-  return next;
+  };
+  visit(roots, null, []);
+  return positions;
+}
+
+function isDetachedConfirmation(entry: TaskListTransitionEntry) {
+  return entry.event.phase === "success" && !entry.event.occurrence;
 }
 
 export function composeTaskListRows(
   roots: readonly Task[],
-  departures: readonly TaskListTransition[],
+  transitions: readonly TaskListTransitionEntry[],
+  outlineId: string,
+  parentTaskId: number | null = null,
+  suppressedTaskIds: ReadonlySet<number> = new Set(),
 ): TaskListRow[] {
-  const departuresByIndex = new Map<number, TaskListTransition[]>();
-  const trailing: TaskListTransition[] = [];
-  const orderedDepartures = [...departures].sort((left, right) =>
-    (left.sourceIndex ?? Number.POSITIVE_INFINITY) -
-      (right.sourceIndex ?? Number.POSITIVE_INFINITY) ||
-    left.event.taskId - right.event.taskId,
+  const originTransitions = transitions.filter(entry =>
+    entry.sourceOutlineId === outlineId &&
+    entry.sourcePath?.[0]?.parentTaskId === parentTaskId &&
+    entry.sourcePath.length === 1 &&
+    !roots.some(task => task.id === entry.event.taskId),
   );
-  for (const transition of orderedDepartures) {
-    if (transition.sourceIndex === undefined || transition.sourceIndex === null) {
+  const replacementIds = new Set(
+    originTransitions.filter(isDetachedConfirmation).map(entry => entry.event.taskId),
+  );
+  const visibleRoots = roots.filter(task =>
+    !suppressedTaskIds.has(task.id) && !replacementIds.has(task.id),
+  );
+  const placements = new Map<number, TaskListTransitionEntry[]>();
+  const trailing: TaskListTransitionEntry[] = [];
+
+  for (const transition of originTransitions) {
+    const step = transition.sourcePath?.[0];
+    if (!step) continue;
+    const anchor = step.siblingIds
+      .slice(step.siblingIds.indexOf(step.taskId) + 1)
+      .find(id => visibleRoots.some(task => task.id === id));
+    if (anchor === undefined) {
       trailing.push(transition);
       continue;
     }
-    const precedingCount = orderedDepartures.filter(entry =>
-      entry.sourceIndex !== undefined &&
-      entry.sourceIndex !== null &&
-      entry.sourceIndex < transition.sourceIndex!,
-    ).length;
-    const index = Math.max(0, Math.min(roots.length, transition.sourceIndex - precedingCount));
-    if (index === roots.length) {
-      trailing.push(transition);
-      continue;
-    }
-    const entries = departuresByIndex.get(index) ?? [];
-    entries.push(transition);
-    departuresByIndex.set(index, entries);
+    const group = placements.get(anchor) ?? [];
+    group.push(transition);
+    placements.set(anchor, group);
   }
 
-  return [
-    ...roots.flatMap((task, index): TaskListRow[] => [
-      ...(departuresByIndex.get(index) ?? []).map(transition => ({
-        kind: "transition" as const,
-        transition,
-      })),
-      { kind: "task" as const, task },
-    ]),
-    ...trailing.map(transition => ({ kind: "transition" as const, transition })),
-  ];
+  const rank = (entry: TaskListTransitionEntry) => {
+    const step = entry.sourcePath?.[0];
+    return step ? step.siblingIds.indexOf(step.taskId) : Number.MAX_SAFE_INTEGER;
+  };
+  const result: TaskListRow[] = [];
+  for (const task of visibleRoots) {
+    result.push(...(placements.get(task.id) ?? [])
+      .sort((left, right) => rank(left) - rank(right) || left.event.taskId - right.event.taskId)
+      .map(transition => ({ kind: "transition" as const, transition })));
+    const childTransitions = transitions
+      .filter(entry =>
+        entry.sourceOutlineId === outlineId &&
+        entry.sourcePath?.[0]?.taskId === task.id &&
+        entry.sourcePath.length > 1,
+      )
+      .map(entry => ({ ...entry, sourcePath: entry.sourcePath!.slice(1) }));
+    result.push({ kind: "task", task, childTransitions });
+  }
+  result.push(...trailing
+    .sort((left, right) => rank(left) - rank(right) || left.event.taskId - right.event.taskId)
+    .map(transition => ({ kind: "transition" as const, transition })));
+  return result;
+}
+
+export function suppressedTransitionTaskIds(
+  transitions: readonly TaskListTransitionEntry[],
+  outlineId: string,
+): Set<number> {
+  return new Set(transitions
+    .filter(entry => entry.sourceOutlineId !== outlineId && isDetachedConfirmation(entry))
+    .map(entry => entry.event.taskId));
 }

@@ -98,6 +98,7 @@ export function InboxPage() {
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
         {tasks ? (
           <TaskOutlineInTransitionView
+            transitionOutlineId="inbox"
             tasks={tasks}
             emptyMessage={strings.clarifyEmpty}
             preserveRootOrder

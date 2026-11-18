@@ -367,25 +367,46 @@ test("Today keeps a future recurring plan out despite its reached revisit", asyn
 
 test("Today confirms task completion accessibly with reduced motion", async ({ page }, testInfo) => {
   const scheduledDate = calendarDateForInstant(new Date().toISOString(), "UTC")!;
-  for (let index = 0; index < 12; index += 1) {
-    await task(page, { scheduledDate });
-  }
-  const item = await task(page, { scheduledDate });
+  const items = [];
+  for (let index = 0; index < 13; index += 1) items.push(await task(page, { scheduledDate }));
   let releaseWrite!: () => void;
   const write = new Promise<void>(resolve => { releaseWrite = resolve; });
   let writeStarted = false;
-  await page.route(`**/api/tasks/${item.id}/complete`, async route => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/#/today");
+
+  await expect(page.locator(`.today-page li.task-row[data-workitem-id="${items[0].id}"]`).first()).toBeVisible();
+  const itemIds = items.map(item => String(item.id));
+  const visibleRows: Array<{ id: string; y: number }> = [];
+  for (const id of itemIds) {
+    const candidate = page.locator(`.today-page li.task-row[data-workitem-id="${id}"]:visible`).first();
+    const bounds = await candidate.boundingBox();
+    if (bounds) {
+      visibleRows.push({ id, y: bounds.y });
+    }
+  }
+  visibleRows.sort((left, right) => left.y - right.y);
+  const target = visibleRows[Math.floor(visibleRows.length / 2)]?.id;
+  expect(target).toBeTruthy();
+  const itemId = target!;
+  const row = page.locator(`.today-page li.task-row[data-workitem-id="${itemId}"]:visible`).first();
+  const title = await row.locator(".task-row-title").innerText();
+  await page.route(`**/api/tasks/${itemId}/complete`, async route => {
     writeStarted = true;
     await write;
     await route.continue();
   });
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/#/today");
-
-  const row = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
-  await expect(row).toHaveCount(1);
+  const sourceRows = row.locator("xpath=ancestor::div[contains(concat(' ',normalize-space(@class),' '),' section ')][1]")
+    .locator("li.task-row[data-workitem-id]");
+  const sourceIndex = await sourceRows.evaluateAll((elements, id) =>
+    elements.findIndex(element => element.getAttribute("data-workitem-id") === id),
+    itemId,
+  );
+  expect(sourceIndex).toBeGreaterThan(0);
+  expect(sourceIndex).toBeLessThan(await sourceRows.count() - 1);
   expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true);
   await row.scrollIntoViewIfNeeded();
+  const sourceY = (await row.boundingBox())!.y;
   if (testInfo.project.name === "mobile-chrome") {
     const surface = row.locator(".task-row-content");
     const bounds = await surface.boundingBox();
@@ -416,13 +437,17 @@ test("Today confirms task completion accessibly with reduced motion", async ({ p
   await expect(pending).toHaveAttribute("aria-live", "polite");
   expect(await pending.evaluate(node => getComputedStyle(node).animationName)).toBe("none");
   releaseWrite();
-  const confirmation = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
+  const confirmation = page.locator("li.task-row-transition-row").filter({ hasText: title });
+  await expect(confirmation).toHaveCount(1);
   await expect(confirmation).toBeVisible();
-  await expect(confirmation).not.toHaveAttribute("aria-disabled", "true");
+  await expect(confirmation).toHaveAttribute("aria-disabled", "true");
   await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
-  await confirmation.scrollIntoViewIfNeeded();
   await expect(confirmation).toBeInViewport();
+  expect(Math.abs((await confirmation.boundingBox())!.y - sourceY)).toBeLessThan(3);
   await page.waitForTimeout(1_000);
+  await expect(confirmation).toBeInViewport();
+  await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
+  await page.waitForTimeout(1_500);
   await expect(confirmation).toBeInViewport();
   await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
   await expect(confirmation.getByRole("status")).toHaveCount(0, { timeout: 5_000 });
@@ -483,22 +508,50 @@ for (const action of ["completion", "cancellation", "classification"] as const) 
 
 test("Today confirms completion on the authoritative row in a long list", async ({ page }, testInfo) => {
   const scheduledDate = calendarDateForInstant(new Date().toISOString(), "UTC")!;
-  for (let index = 0; index < 12; index += 1) {
-    await task(page, { scheduledDate });
-  }
-  const item = await task(page, { scheduledDate });
+  const items = [];
+  for (let index = 0; index < 13; index += 1) items.push(await task(page, { scheduledDate }));
   await page.goto("/#/today");
-  const row = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
+  await expect(page.locator(`.today-page li.task-row[data-workitem-id="${items[0].id}"]`).first()).toBeVisible();
+  const itemIds = items.map(item => String(item.id));
+  const visibleRows: Array<{ id: string; y: number }> = [];
+  for (const id of itemIds) {
+    const candidate = page.locator(`.today-page li.task-row[data-workitem-id="${id}"]:visible`).first();
+    const bounds = await candidate.boundingBox();
+    if (bounds) {
+      visibleRows.push({ id, y: bounds.y });
+    }
+  }
+  visibleRows.sort((left, right) => left.y - right.y);
+  const target = visibleRows[Math.floor(visibleRows.length / 2)]?.id;
+  expect(target).toBeTruthy();
+  const itemId = target!;
+  const row = page.locator(`.today-page li.task-row[data-workitem-id="${itemId}"]:visible`).first();
+  const title = await row.locator(".task-row-title").innerText();
   await expect(row).toBeVisible();
+  const sourceRows = row.locator("xpath=ancestor::div[contains(concat(' ',normalize-space(@class),' '),' section ')][1]")
+    .locator("li.task-row[data-workitem-id]");
+  const sourceIndex = await sourceRows.evaluateAll((elements, id) =>
+    elements.findIndex(element => element.getAttribute("data-workitem-id") === id),
+    itemId,
+  );
+  expect(sourceIndex).toBeGreaterThan(0);
+  expect(sourceIndex).toBeLessThan(await sourceRows.count() - 1);
   expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true);
   await row.scrollIntoViewIfNeeded();
+  const sourceY = (await row.boundingBox())!.y;
   await swipeRight(page, row, testInfo);
 
-  const confirmation = page.locator(`li.task-row[data-workitem-id="${item.id}"]`);
-  await expect(confirmation).not.toHaveAttribute("aria-disabled", "true");
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${itemId}`)).json()).status)
+    .toBe("done");
+  const confirmation = page.getByText(title, { exact: true }).first()
+    .locator("xpath=ancestor::li[contains(concat(' ',normalize-space(@class),' '),' task-row ')][1]");
   await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
-  await confirmation.scrollIntoViewIfNeeded();
   await expect(confirmation).toBeInViewport();
+  expect(Math.abs((await confirmation.boundingBox())!.y - sourceY)).toBeLessThan(3);
+  await page.waitForTimeout(2_500);
+  await expect(confirmation).toBeInViewport();
+  await expect(confirmation.getByRole("status")).toHaveText("Erledigt");
+  await expect(confirmation.getByRole("status")).toHaveCount(0, { timeout: 2_000 });
 });
 
 test("detail status control is visible on touch and desktop", async ({ page }) => {

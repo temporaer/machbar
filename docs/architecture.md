@@ -1408,22 +1408,28 @@ result's values, membership and ordering. The one bounded task-row exception is
 `TaskListTransitionFeedbackProvider`: it announces pending and successful
 completion, cancellation, and Inbox-to-actionable transitions. If a successful
 task leaves all lists registered to that view, it may retain a non-actionable
-display snapshot and its root-list index for three seconds so fast responses
+display snapshot and identity-anchored tree path for three seconds so fast responses
 remain perceivable in the originating slot. This does not delay fresh query
 values, alter server membership/order, or retain an actionable copy. Recurring
 completion labels the handled occurrence while leaving the continuing task's
 status actionable. The confirmation window starts after the mutation refresh
-settles, and a detached confirmation remains in its
-originating root slot while that outline is mounted. Failure removes the
+settles, and a detached confirmation remains in its originating tree slot while
+that outline is mounted. Today keeps the source section mounted while its owner
+has an active transition, even if its refreshed task array is empty. A transferred
+task is suppressed only in another section for the same confirmation interval;
+its latest server result appears there after expiry. Nested task confirmations
+remain below their original parent. Failure removes the
 transient presentation and keeps the authoritative row. Newer revisions and view,
 navigation, identity retirement, or a read-access denial dispose it; ordinary
 refreshes cannot reintroduce a detached row.
 Each view explicitly owns the presentation provider: standalone `TaskOutline`
 instances own one, while Today and Inbox mount keyed owners at their view
 boundaries and render `TaskOutlineInTransitionView` consumers. The pure
-`taskListTransitionPresentation.ts` module owns source-index capture, expiry
-rebasing, and row composition; detached snapshots render through
+`taskListTransitionPresentation.ts` module owns identity-path capture, transfer
+suppression, and pure tree-row composition; detached snapshots render through
 `TaskTransitionRow`, which has no task controls or keyboard registration.
+Completed history remains user-controlled and transitions are not appended to a
+page-bottom fallback list.
 Focused editors live in the canonical workflow/detail hosts rather than in the
 row they were opened from. Ordinary refreshes/network errors preserve drafts;
 access revocation deliberately ends the workflow and discards its choices.

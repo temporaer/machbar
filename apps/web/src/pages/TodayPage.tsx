@@ -11,7 +11,6 @@ import {
   EmptyState,
 } from "../components/AsyncStates";
 import {
-  TaskListTransitionDepartures,
   TaskOutlineInTransitionView,
 } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
@@ -29,40 +28,36 @@ import type { AttentionTone } from "../lib/attentionTone";
 import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
 import {
   TaskListTransitionFeedbackProvider,
-  useTaskListTransitionFeedback,
+  useRequiredTaskListTransitionFeedback,
 } from "../lib/taskListTransitionFeedback";
-import { flattenTasks } from "../lib/taskHelpers";
 
 function CompletedTodaySection({
   tasks,
   agendaSelectionKey,
+  transitionOutlineId,
   title,
   hint,
   emptyMessage,
 }: {
   tasks: Task[];
   agendaSelectionKey: string;
+  transitionOutlineId: string;
   title: string;
   hint: string;
   emptyMessage: string;
 }) {
-  const feedback = useTaskListTransitionFeedback();
-  const hasTransition = flattenTasks(tasks).some(task => feedback?.get(task.id)?.event.phase === "success");
   const [manuallyOpen, setManuallyOpen] = useState(false);
 
   return (
     <details
       className="section"
       key="completedToday"
-      open={hasTransition || manuallyOpen}
+      open={manuallyOpen}
     >
       <summary
         className="section-title disclosure-summary"
         onClick={event => {
           event.preventDefault();
-          if (hasTransition) {
-            return;
-          }
           setManuallyOpen(open => !open);
         }}
       >
@@ -71,6 +66,7 @@ function CompletedTodaySection({
       <p className="page-subtitle">{hint}</p>
       <TaskOutlineInTransitionView
         key={agendaSelectionKey}
+        transitionOutlineId={transitionOutlineId}
         tasks={tasks}
         emptyMessage={emptyMessage}
         preserveRootOrder
@@ -82,7 +78,21 @@ function CompletedTodaySection({
 }
 
 export function TodayPage() {
+  const { authEnabled, authenticated, currentMemberId } = useIdentity();
+  const identityKey = `${authEnabled}:${authenticated}:${currentMemberId}`;
+  return (
+    <InteractionScopeProvider>
+      <WorkItemKeyboardNavMount />
+      <TaskListTransitionFeedbackProvider identityKey={identityKey}>
+        <TodayContent />
+      </TaskListTransitionFeedbackProvider>
+    </InteractionScopeProvider>
+  );
+}
+
+function TodayContent() {
   const strings = useStrings();
+  const feedback = useRequiredTaskListTransitionFeedback();
   const { data: homeAssistant } = useHomeAssistantStatus();
   const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const sections: Array<{
@@ -101,7 +111,7 @@ export function TodayPage() {
   // page never throws and never ends up requesting -- or rendering --
   // another member's tasks. Re-fetching whenever `currentMemberId` changes
   // ensures switching identities always shows that member's own agenda.
-  const { authEnabled, authenticated, currentMemberId, members } = useIdentity();
+  const { currentMemberId, members } = useIdentity();
   const agendaSelectionKey = `${scope}:${currentMemberId ?? "none"}`;
   const {
     data: loadedAgenda,
@@ -170,13 +180,22 @@ export function TodayPage() {
         visibleSectionTasks[section.key].length > 0 ||
         projectsByBucket[section.key].length > 0,
     ) || revisitTasks.length > 0;
-  const renderAgendaSection = (section: (typeof sections)[number]) => (
+  const renderAgendaSection = (section: (typeof sections)[number]) => {
+    const transitionOutlineId = `today:${section.key}`;
+    const tasks = visibleSectionTasks[section.key];
+    if (
+      tasks.length === 0 &&
+      projectsByBucket[section.key].length === 0 &&
+      !feedback.hasTransitions(transitionOutlineId)
+    ) return null;
+    return (
     <div className="section" key={section.key}>
       <div className="section-title">{section.label}</div>
-      {visibleSectionTasks[section.key].length > 0 ? (
+      {tasks.length > 0 || feedback.hasTransitions(transitionOutlineId) ? (
         <TaskOutlineInTransitionView
-          key={agendaSelectionKey}
-          tasks={visibleSectionTasks[section.key]}
+          key={`${agendaSelectionKey}:${transitionOutlineId}`}
+          transitionOutlineId={transitionOutlineId}
+          tasks={tasks}
           emptyMessage={strings.noItems}
           preserveRootOrder
           showSwipeHint={false}
@@ -204,11 +223,9 @@ export function TodayPage() {
       ) : null}
     </div>
   );
+  };
 
   return (
-    <InteractionScopeProvider>
-      <WorkItemKeyboardNavMount />
-      <TaskListTransitionFeedbackProvider identityKey={`${authEnabled}:${authenticated}:${agendaSelectionKey}`}>
       <div className="today-page">
         <PageHeader
           title={strings.today}
@@ -288,7 +305,13 @@ export function TodayPage() {
                 agenda.interventions.running.length +
                 agenda.interventions.review.length +
                 (agenda.interventions.reports?.length ?? 0);
-              if (total + interventionContent === 0)
+              const hasTransitions = [
+                ...sections.map(section => `today:${section.key}`),
+                "today:revisit",
+                "today:additional",
+                "today:completedToday",
+              ].some(id => feedback.hasTransitions(id));
+              if (total + interventionContent === 0 && !hasTransitions)
                 return <EmptyState message={strings.todayEmpty} />;
               return (
                 <>
@@ -297,14 +320,16 @@ export function TodayPage() {
                       (section) =>
                         section.key !== "dueSoon" &&
                         (visibleSectionTasks[section.key].length > 0 ||
-                          projectsByBucket[section.key].length > 0),
+                          projectsByBucket[section.key].length > 0 ||
+                          feedback.hasTransitions(`today:${section.key}`)),
                     )
                     .map(renderAgendaSection)}
-                  {revisitTasks.length > 0 ? (
+                  {revisitTasks.length > 0 || feedback.hasTransitions("today:revisit") ? (
                     <div className="section" key="revisit">
                       <div className="section-title">{strings.revisit}</div>
                       <TaskOutlineInTransitionView
-                        key={agendaSelectionKey}
+                        key={`${agendaSelectionKey}:today:revisit`}
+                        transitionOutlineId="today:revisit"
                         tasks={revisitTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
@@ -320,16 +345,21 @@ export function TodayPage() {
                       (section) =>
                         section.key === "dueSoon" &&
                         (visibleSectionTasks[section.key].length > 0 ||
-                          projectsByBucket[section.key].length > 0),
+                          projectsByBucket[section.key].length > 0 ||
+                          feedback.hasTransitions(`today:${section.key}`)),
                     )
                     .map(renderAgendaSection)}
-                  {additionalTasks.length > 0 ? (
-                    <details className="section" open={!hasForegroundAttention}>
+                  {additionalTasks.length > 0 || feedback.hasTransitions("today:additional") ? (
+                    <details
+                      className="section"
+                      open={feedback.hasTransitions("today:additional") || !hasForegroundAttention}
+                    >
                       <summary className="section-title disclosure-summary">
                         {strings.unscheduled} ({additionalTasks.length})
                       </summary>
                       <TaskOutlineInTransitionView
-                        key={agendaSelectionKey}
+                        key={`${agendaSelectionKey}:today:additional`}
+                        transitionOutlineId="today:additional"
                         tasks={additionalTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
@@ -339,10 +369,11 @@ export function TodayPage() {
                       />
                     </details>
                   ) : null}
-                  {completedTodayTasks.length > 0 ? (
+                  {completedTodayTasks.length > 0 || feedback.hasTransitions("today:completedToday") ? (
                     <CompletedTodaySection
                       tasks={completedTodayTasks}
                       agendaSelectionKey={agendaSelectionKey}
+                      transitionOutlineId="today:completedToday"
                       title={strings.completedToday}
                       hint={strings.completedTodayHint}
                       emptyMessage={strings.noItems}
@@ -352,10 +383,7 @@ export function TodayPage() {
               );
             })()
           : null}
-        <TaskListTransitionDepartures />
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
-      </TaskListTransitionFeedbackProvider>
-    </InteractionScopeProvider>
   );
 }

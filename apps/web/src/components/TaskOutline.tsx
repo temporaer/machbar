@@ -10,7 +10,7 @@ import {
 } from "../lib/taskListTransitionFeedback";
 import {
   composeTaskListRows,
-  type TaskListTransition,
+  suppressedTransitionTaskIds,
 } from "../lib/taskListTransitionPresentation";
 import { useTaskActions } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
@@ -58,6 +58,8 @@ export interface TaskOutlineProps {
   compactDescendants?: boolean;
   /** Optional Today-only emphasis shared by every row in this compiled list. */
   attentionTone?: AttentionTone;
+  /** Stable identity for a section-owned transition presentation. */
+  transitionOutlineId?: string;
 }
 
 export function TaskOutline(props: TaskOutlineProps) {
@@ -83,21 +85,23 @@ function TaskOutlineContent({
   nextActionInfo,
   compactDescendants = false,
   attentionTone,
+  transitionOutlineId,
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
   const feedback = useRequiredTaskListTransitionFeedback();
-  const outlineId = useId();
+  const generatedOutlineId = useId();
+  const outlineId = transitionOutlineId ?? generatedOutlineId;
   const organize = useOutlineOrganize(tasks, organizable);
 
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
   const roots = sorted;
   const actualIds = new Set(flattenTasks(organize.tasks).map(task => task.id));
-  const rootTaskIds = useMemo(() => roots.map(task => task.id), [roots]);
-  useRegisterTaskOutline(outlineId, organize.tasks, rootTaskIds);
-  const departures = feedback.departures(outlineId, actualIds);
-  if (roots.length === 0 && departures.length === 0) return <EmptyState message={emptyMessage} />;
-  const rows = composeTaskListRows(roots, departures);
+  useRegisterTaskOutline(outlineId, organize.tasks, roots);
+  const transitions = feedback.transitions();
+  const suppressedIds = suppressedTransitionTaskIds(transitions, outlineId);
+  const rows = composeTaskListRows(roots, transitions, outlineId, null, suppressedIds);
+  if (rows.length === 0) return <EmptyState message={emptyMessage} />;
 
   const content = (
     <div className="task-outline" ref={organize.containerRef}>
@@ -123,6 +127,8 @@ function TaskOutlineContent({
               parentTask={null}
               depth={0}
               feedbackOutlineId={outlineId}
+              transitionChildren={row.childTransitions}
+              suppressedTransitionTaskIds={suppressedIds}
               showRevisitDate={showRevisitDate}
               compactDescendants={compactDescendants}
               {...(attentionTone ? { attentionTone } : {})}
@@ -161,22 +167,5 @@ function TaskOutlineContent({
     <NextActionBadgeProvider value={nextActionInfo}>{content}</NextActionBadgeProvider>
   ) : (
     content
-  );
-}
-
-export function TaskListTransitionDepartures() {
-  const feedback = useRequiredTaskListTransitionFeedback();
-  const strings = useStrings();
-  const departures = feedback.orphanedDepartures();
-  if (departures.length === 0) return null;
-  return (
-    <ul className="list task-transition-departures" aria-label={strings.recentlyChangedTasks}>
-      {departures.map((transition: TaskListTransition) => (
-        <TaskTransitionRow
-          key={`departing-${transition.event.taskId}`}
-          transition={transition}
-        />
-      ))}
-    </ul>
   );
 }

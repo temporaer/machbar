@@ -3,7 +3,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline, TaskOutlineInTransitionView } from "./TaskOutline";
-import { TaskListTransitionDepartures } from "./TaskOutline";
 import { TaskListTransitionFeedbackProvider } from "../lib/taskListTransitionFeedback";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
@@ -304,24 +303,20 @@ describe("TaskOutline", () => {
       mockedApi.completeTask.mockResolvedValue(makeTask({ ...moving, status: "done" }));
       const outlines = (inA: boolean, inB: boolean) => (
         <TaskListTransitionFeedbackProvider identityKey="test">
-          <TaskOutlineInTransitionView tasks={inA ? [moving] : []} emptyMessage="Empty A" compactDescendants />
-          <TaskOutlineInTransitionView tasks={inB ? [moving] : []} emptyMessage="Empty B" compactDescendants />
-          <TaskListTransitionDepartures />
+          <TaskOutlineInTransitionView transitionOutlineId="A" tasks={inA ? [moving] : []} emptyMessage="Empty A" compactDescendants />
+          <TaskOutlineInTransitionView transitionOutlineId="B" tasks={inB ? [moving] : []} emptyMessage="Empty B" compactDescendants />
         </TaskListTransitionFeedbackProvider>
       );
       const { rerender } = renderWithProviders(outlines(true, false));
       expect(await screen.findAllByText("Moving action")).toHaveLength(1);
-      rerender(outlines(false, true));
-      expect(screen.getAllByText("Moving action")).toHaveLength(1);
       const row = screen.getByText("Moving action").closest("li")!;
       await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
       await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalled());
-      expect(screen.getAllByText("Moving action")).toHaveLength(1);
-      rerender(outlines(false, false));
+      rerender(outlines(false, true));
       const departure = screen.getByText("Moving action").closest("li")!;
       expect(departure).toHaveAttribute("aria-disabled", "true");
       expect(screen.getAllByText("Moving action")).toHaveLength(1);
-      expect(screen.getByText("Empty A")).toBeInTheDocument();
+      expect(screen.queryByText("Empty A")).not.toBeInTheDocument();
     });
 
     it.each(["member", "scope"])("releases the departure on a logical %s selection change", async selection => {

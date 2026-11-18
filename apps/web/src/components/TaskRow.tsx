@@ -9,6 +9,10 @@ import { useTaskActions } from "../lib/useTaskActions";
 import {
   useTaskListTransitionFeedback,
 } from "../lib/taskListTransitionFeedback";
+import {
+  composeTaskListRows,
+  type TaskListTransitionEntry,
+} from "../lib/taskListTransitionPresentation";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useInteractionScope } from "../lib/interactionScope";
 import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
@@ -25,6 +29,7 @@ import {
 } from "../lib/relativeDate";
 import { TaskCardTags } from "./TaskCardTags";
 import { MemberAvatar } from "./MemberAvatar";
+import { TaskTransitionRow } from "./TaskTransitionRow";
 import { useLocale } from "../lib/locale";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useSwipeCoach } from "../lib/swipeCoach";
@@ -71,6 +76,8 @@ export interface TaskRowProps {
   attentionTone?: AttentionTone;
   /** Outline that owns the row, used to keep confirmations at their origin. */
   feedbackOutlineId?: string;
+  transitionChildren?: TaskListTransitionEntry[];
+  suppressedTransitionTaskIds?: ReadonlySet<number>;
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
@@ -101,6 +108,8 @@ export function TaskRow({
   compactDescendants = false,
   attentionTone,
   feedbackOutlineId,
+  transitionChildren = [],
+  suppressedTransitionTaskIds = new Set(),
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -190,12 +199,24 @@ export function TaskRow({
   // Compact presentation applies to every row below the outline's own
   // root; the root itself (depth 0) always stays full-featured.
   const isCompact = compactDescendants && depth > 0;
+  const transitioningChildIds = new Set(
+    transitionChildren
+      .filter(transition => transition.event.phase === "success" && !transition.event.occurrence)
+      .map(transition => transition.event.taskId),
+  );
   const visibleChildren = compactDescendants
-    ? children.filter((child) => !isEntirelyTerminal(child))
+    ? children.filter((child) => !isEntirelyTerminal(child) || transitioningChildIds.has(child.id))
     : children;
   const hiddenTerminalChildren = compactDescendants
-    ? children.filter(isEntirelyTerminal)
+    ? children.filter(child => isEntirelyTerminal(child) && !transitioningChildIds.has(child.id))
     : [];
+  const childRows = composeTaskListRows(
+    visibleChildren,
+    transitionChildren,
+    feedbackOutlineId ?? "",
+    task.id,
+    suppressedTransitionTaskIds,
+  );
   const [showHiddenTerminal, setShowHiddenTerminal] = useState(false);
   const displayedStatus = transition
     ? transition.event.occurrence
@@ -651,15 +672,24 @@ export function TaskRow({
         />
       ) : null}
 
-      {!collapsed && (visibleChildren.length > 0 || hiddenTerminalChildren.length > 0) ? (
+      {!collapsed && (childRows.length > 0 || hiddenTerminalChildren.length > 0) ? (
         <ul className="task-row-children">
-          {visibleChildren.map((child) => (
+          {childRows.map(row => row.kind === "transition" ? (
+            <TaskTransitionRow
+              key={`transition-${row.transition.event.taskId}`}
+              transition={row.transition}
+              compact={compactDescendants}
+              {...(attentionTone ? { attentionTone } : {})}
+            />
+          ) : (
             <TaskRow
-              key={child.id}
-              task={child}
+              key={row.task.id}
+              task={row.task}
               parentTask={task}
               depth={depth + 1}
               {...(feedbackOutlineId === undefined ? {} : { feedbackOutlineId })}
+              transitionChildren={row.childTransitions}
+              suppressedTransitionTaskIds={suppressedTransitionTaskIds}
               compactDescendants={compactDescendants}
               {...(attentionTone ? { attentionTone } : {})}
             />

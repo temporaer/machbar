@@ -1,4 +1,4 @@
-import type { TaskListTransition } from "../lib/taskListTransitionPresentation";
+import type { TaskListTransitionEntry } from "../lib/taskListTransitionPresentation";
 import { useStrings } from "../lib/strings";
 import type { AttentionTone } from "../lib/attentionTone";
 import { TaskCardTags } from "./TaskCardTags";
@@ -6,9 +6,11 @@ import { TaskCardTags } from "./TaskCardTags";
 export function TaskTransitionRow({
   transition,
   attentionTone,
+  compact = false,
 }: {
-  transition: TaskListTransition;
+  transition: TaskListTransitionEntry;
   attentionTone?: AttentionTone;
+  compact?: boolean;
 }) {
   const strings = useStrings();
   const { task, event } = transition;
@@ -32,7 +34,7 @@ export function TaskTransitionRow({
       style={{ listStyle: "none" }}
       aria-disabled="true"
     >
-      <div className="task-row-content has-owner" aria-busy={pending || undefined}>
+      <div className={`task-row-content has-owner${compact ? " compact" : ""}`} aria-busy={pending || undefined}>
         <div className="task-row-leading-controls" aria-hidden="true">
           <span className={`task-row-checkbox${done ? " done" : ""}${cancelled ? " cancelled" : ""}${event.occurrence ? " occurrence" : ""}`}>
             {done || event.occurrence ? "✓" : cancelled ? "×" : ""}

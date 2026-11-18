@@ -106,20 +106,26 @@ snapshots, or interaction leases. A bounded presentation exception is allowed
 for task lifecycle feedback: the view-local `TaskListTransitionFeedbackProvider`
 may show a pending status, then a short (3-second) inert departure row after a
 successful completion, cancellation, or Inbox classification. It stores the
-departing row's display snapshot and its root-list index solely to place that
-inert confirmation in its prior slot, never to predict query values or
-membership; current rows always render fresh query data. Refreshes cannot
+departing row's display snapshot and identity-anchored ancestor/sibling path
+solely to place that inert confirmation in its prior tree slot, never to
+predict query values or membership; current rows always render fresh query
+data. A Today section with an active transition stays mounted through an empty
+result. During that interval the originating slot renders the confirmation and
+other sections suppress only that transitioning task; expiry restores its
+latest query result there. Nested confirmations remain under their original
+parent. Refreshes cannot
 resurrect a departed row, and newer revisions, navigation/unmount, or identity
 retirement or a read-access denial release the presentation immediately. This
-confirmation remains in its originating outline's prior root slot while that
+confirmation remains in its originating outline's prior tree slot while that
 outline is mounted. The confirmation interval begins after the successful
 write's refresh settles. Each view explicitly owns one provider: a standalone
 `TaskOutline` owns its presentation lifetime, while multi-outline views such as
 Today and Inbox mount a keyed provider at the view boundary and render
 `TaskOutlineInTransitionView` consumers. `taskListTransitionPresentation.ts`
-owns source-index capture, expiry rebasing, and pure row composition; detached
-rows render through `TaskTransitionRow`, which has no task controls or keyboard
-registration.
+owns identity-path capture, transfer suppression, and pure tree-row composition;
+detached rows render through `TaskTransitionRow`, which has no task controls or
+keyboard registration. Today does not open completed history or append a
+page-bottom fallback to present these confirmations.
 This exception is not a general-purpose retention or reconciliation mechanism.
 
 ### Read invalidation
@@ -257,7 +263,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 
 | Need | Canonical primitive or path |
 |------|-----------------------------|
-| Mutation feedback and list placement | `useItemMutations` owns per-item pending/errors and duplicate-in-flight protection; canonical actions await successful-write invalidation/read settlement (following superseding invalidations) before releasing their pending gate. Refresh errors remain query errors, not failed writes. Query results supply values, membership and ordering. No optimistic or confirmed DTO overlays or interaction leases. The task-only `taskListTransitionFeedback.tsx` exception presents command status and a successful transition's row for up to 3 seconds after it leaves mounted lists. `TaskOutline` owns a standalone provider; Today and Inbox own keyed providers at their view boundaries and use `TaskOutlineInTransitionView`. `taskListTransitionPresentation.ts` centralizes source-index capture/rebasing and pure row composition; `TaskTransitionRow` renders inert confirmations without controls or keyboard registration. |
+| Mutation feedback and list placement | `useItemMutations` owns per-item pending/errors and duplicate-in-flight protection; canonical actions await successful-write invalidation/read settlement (following superseding invalidations) before releasing their pending gate. Refresh errors remain query errors, not failed writes. Query results supply values, membership and ordering. No optimistic or confirmed DTO overlays or interaction leases. The task-only `taskListTransitionFeedback.tsx` exception presents command status and a successful transition's row for up to 3 seconds after it leaves mounted lists. `TaskOutline` owns a standalone provider; Today and Inbox own keyed providers at their view boundaries and use `TaskOutlineInTransitionView`. `taskListTransitionPresentation.ts` captures identity-anchored tree paths, composes inert confirmations at their origin, and suppresses a transferred destination copy only while that transition is active; `TaskTransitionRow` has no controls or keyboard registration. |
 | AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakeCanonicalPlanning`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus boundary normalization in `packages/shared/src/inputNormalization.ts` and Zod structural schemas in `apps/api/src/schemas.ts` |
 | AI intake execution (jobs, prompt, apply) | `apps/api/src/intake/` (`jobs.ts`, `prompt.ts`, `apply.ts`, `storage.ts`, `cleanup.ts`), `apps/api/src/routes/intake.ts`, `apps/web/src/pages/IntakeReviewPage.tsx`, and `apps/web/src/lib/useStartIntake.ts`; Apply uses the domain create primitives |
 | Ordinary intake existing-project destinations | `apps/api/src/intake/existingProjects.ts` filters the same-scope visible active/backlog index (complete serialized UTF-8 envelope ≤16 KiB, otherwise explicitly incomplete and empty), and validates review-bound revisions for all pending targets before effects and inside the work transaction. Only action roots carry `existingProjectId`; proposal descendants inherit it. Review reuses `DestinationPicker`; existing-destination creation uses canonical transactional task creation without activating backlog projects. Breakdown/refinement remain separate. |

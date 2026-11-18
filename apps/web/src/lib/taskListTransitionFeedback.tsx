@@ -15,9 +15,9 @@ import { isReadAccessError } from "./errorMessage";
 import { flattenTasks } from "./taskHelpers";
 import { useTaskActions } from "./useTaskActions";
 import {
-  removeTransitionAndRebase,
-  transitionSourceIndex,
+  findTaskListPositions,
   type TaskListTransition,
+  type TaskListTransitionEntry,
 } from "./taskListTransitionPresentation";
 
 export const TASK_TRANSITION_CONFIRMATION_MS = 3_000;
@@ -27,16 +27,14 @@ interface TaskListTransitionFeedbackValue {
   registerOutline: (
     outlineId: string,
     tasks: ReadonlyMap<number, Task>,
-    rootTaskIds: readonly number[],
+    roots: readonly Task[],
   ) => () => void;
-  departures: (outlineId: string, taskIds: ReadonlySet<number>) => TaskListTransition[];
-  orphanedDepartures: () => TaskListTransition[];
+  transitions: () => TaskListTransitionEntry[];
+  hasTransitions: (outlineId: string) => boolean;
 }
 
-interface StoredTransition extends TaskListTransition {
+interface StoredTransition extends TaskListTransitionEntry {
   token: number;
-  sourceOutlineId: string | null;
-  sourceIndex: number | null;
 }
 
 const TaskListTransitionFeedbackContext =
@@ -44,7 +42,7 @@ const TaskListTransitionFeedbackContext =
 
 interface RegisteredOutline {
   tasks: ReadonlyMap<number, Task>;
-  rootTaskIds: readonly number[];
+  positions: ReadonlyMap<number, NonNullable<TaskListTransition["sourcePath"]>>;
 }
 
 function currentTasks(outlines: Map<string, RegisteredOutline>) {
@@ -71,7 +69,6 @@ export function TaskListTransitionFeedbackProvider({
   const retiredTransitions = useRef(new Set<number>());
   const identityRef = useRef(identityKey);
   const [entries, setEntries] = useState(entriesRef.current);
-  const [, setRegistryVersion] = useState(0);
 
   const replaceEntries = useCallback((next: Map<number, StoredTransition>) => {
     entriesRef.current = next;
@@ -94,22 +91,14 @@ export function TaskListTransitionFeedbackProvider({
       clearTimeout(timer);
       timers.current.delete(taskId);
     }
-    const sourceOutline = current.sourceOutlineId
-      ? outlines.current.get(current.sourceOutlineId)
-      : undefined;
-    const next = sourceOutline
-      ? removeTransitionAndRebase(
-          entriesRef.current,
-          taskId,
-          new Set(sourceOutline.tasks.keys()),
-        )
-      : new Map(entriesRef.current);
+    const next = new Map(entriesRef.current);
     next.delete(taskId);
     replaceEntries(next);
   }, [replaceEntries]);
 
-  const registerOutline = useCallback((outlineId: string, tasks: ReadonlyMap<number, Task>, rootTaskIds: readonly number[]) => {
-    outlines.current.set(outlineId, { tasks, rootTaskIds });
+  const registerOutline = useCallback((outlineId: string, tasks: ReadonlyMap<number, Task>, roots: readonly Task[]) => {
+    const positions = findTaskListPositions(roots);
+    outlines.current.set(outlineId, { tasks, positions });
     const available = currentTasks(outlines.current);
     const next = new Map(entriesRef.current);
     let entriesChanged = false;
@@ -130,16 +119,14 @@ export function TaskListTransitionFeedbackProvider({
         timers.current.delete(id);
         next.delete(id);
         entriesChanged = true;
-      } else if (fresh.revision >= entry.task.revision) {
+      } else if (fresh.revision > entry.task.revision) {
         next.set(id, { ...entry, task: { ...fresh, children: [] } });
         entriesChanged = true;
       }
     }
     if (entriesChanged) replaceEntries(next);
-    setRegistryVersion(version => version + 1);
     return () => {
       outlines.current.delete(outlineId);
-      setRegistryVersion(version => version + 1);
     };
   }, [replaceEntries]);
 
@@ -169,20 +156,15 @@ export function TaskListTransitionFeedbackProvider({
     if (event.phase === "success" && !previous) return;
     if (!task && !previous) return;
     const token = event.phase === "pending" ? ++nextToken.current : previous!.token;
-    const sourceIndex = previous?.sourceIndex ?? transitionSourceIndex(
-      sourceOutline?.[1].rootTaskIds ?? [],
-      event.taskId,
-      sourceOutline?.[0],
-      entriesRef.current.values(),
-      new Set(currentTasks(outlines.current).keys()),
-    );
+    const sourcePath = previous?.sourcePath ??
+      sourceOutline?.[1].positions.get(event.taskId) ?? null;
     const next = new Map(entriesRef.current);
     next.set(event.taskId, {
       task: { ...((task && task.revision >= (previous?.task.revision ?? 0) ? task : previous!.task)), children: [] },
       event,
       token,
       sourceOutlineId: previous ? previous.sourceOutlineId : sourceOutline?.[0] ?? null,
-      sourceIndex,
+      sourcePath,
     });
     replaceEntries(next);
     if (event.phase === "success") {
@@ -210,32 +192,17 @@ export function TaskListTransitionFeedbackProvider({
       ? entry
       : undefined;
   }, [entries]);
-  const departures = useCallback((outlineId: string, taskIds: ReadonlySet<number>) => {
-    const visibleElsewhere = new Set<number>();
-    for (const [id, outline] of outlines.current) {
-      if (id === outlineId) continue;
-      for (const taskId of outline.tasks.keys()) visibleElsewhere.add(taskId);
-    }
-    return [...entries.values()].filter(entry =>
-      !taskIds.has(entry.event.taskId) &&
-      !visibleElsewhere.has(entry.event.taskId) &&
-      (entry.sourceOutlineId === outlineId || !entry.sourceOutlineId),
-    );
-  }, [entries]);
-  const orphanedDepartures = useCallback(() => {
-    const visible = new Set(currentTasks(outlines.current).keys());
-    return [...entries.values()].filter(entry =>
-      !visible.has(entry.event.taskId) &&
-      (entry.sourceOutlineId === null || !outlines.current.has(entry.sourceOutlineId)),
-    );
-  }, [entries]);
+  const transitions = useCallback(() => [...entries.values()], [entries]);
+  const hasTransitions = useCallback((outlineId: string) =>
+    [...entries.values()].some(entry => entry.sourceOutlineId === outlineId),
+  [entries]);
 
   const value: TaskListTransitionFeedbackValue = {
-      get,
-      registerOutline,
-      departures,
-      orphanedDepartures,
-    };
+    get,
+    registerOutline,
+    transitions,
+    hasTransitions,
+  };
   return (
     <TaskListTransitionFeedbackContext.Provider value={value}>
       {children}
@@ -256,9 +223,9 @@ export function useRequiredTaskListTransitionFeedback() {
 export function useRegisterTaskOutline(
   outlineId: string,
   tasks: Task[],
-  rootTaskIds: readonly number[],
+  roots: readonly Task[],
 ) {
   const feedback = useRequiredTaskListTransitionFeedback();
   const taskMap = useMemo(() => new Map(flattenTasks(tasks).map(task => [task.id, task])), [tasks]);
-  useLayoutEffect(() => feedback.registerOutline(outlineId, taskMap, rootTaskIds), [feedback.registerOutline, outlineId, taskMap, rootTaskIds]);
+  useLayoutEffect(() => feedback.registerOutline(outlineId, taskMap, roots), [feedback.registerOutline, outlineId, taskMap, roots]);
 }
