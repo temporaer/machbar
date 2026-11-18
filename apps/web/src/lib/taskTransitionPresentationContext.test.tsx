@@ -15,6 +15,7 @@ import {
 } from "./taskTransitionPresentation";
 
 const task = makeTask({ id: 601, title: "Origin task" });
+const transferTask = makeTask({ id: 605, title: "Transferred task" });
 
 function OriginProbe({ origins }: { origins: Map<string, TaskTransitionOrigin> }) {
   const presentation = useTaskTransitionPresentation();
@@ -92,7 +93,72 @@ function TimedTransitions({
       <button onClick={() => run(child, "complete")}>Complete child</button>
       <button onClick={() => run(sibling, "complete")}>Complete sibling</button>
       <button onClick={() => run(parent, "cancel")}>Cancel parent</button>
-      <button onClick={removeProjection}>Remove projected rows</button>
+      <button onClick={removeProjection}>Remove authoritative rows</button>
+    </>
+  );
+}
+
+function PendingTransfer({
+  origins,
+  write,
+  readLayout,
+}: {
+  origins: MutableRefObject<Record<number, TaskTransitionOrigin>>;
+  write: Promise<{ revision: number; status: Task["status"] }>;
+  readLayout(layout: TaskTransitionLayout): void;
+}) {
+  const [sections, setSections] = useState({
+    source: { tasks: [transferTask], readSettled: true, readFailed: false },
+    destination: { tasks: [] as Task[], readSettled: true, readFailed: false },
+  });
+  const presentation = useTaskTransitionPresentation();
+  useLayoutEffect(() => {
+    const origin = presentation?.origin("source", transferTask);
+    if (origin) origins.current[transferTask.id] = origin;
+  }, [origins, presentation]);
+  if (presentation) readLayout(presentation.layout);
+  const replaceSections = (next: typeof sections) => {
+    setSections(next);
+    presentation?.replaceProjection(next);
+  };
+  const visible = (sectionId: string, tasks: Task[]) =>
+    presentation?.items(sectionId, null, tasks).map(item => (
+      <span
+        key={`${sectionId}-${"task" in item ? item.task.id : item.node.taskId}`}
+        data-testid={`${sectionId}-task`}
+      >
+        {"task" in item ? item.task.title : item.node.snapshot?.title ?? item.node.shellTitle}
+      </span>
+    ));
+  const start = () => {
+    const origin = origins.current[transferTask.id];
+    if (origin?.begin("pending-transfer", transferTask, "actionable") !== "started") return;
+    void write.then(({ revision, status }) => {
+      origin.commit("pending-transfer", revision, status);
+      replaceSections({
+        source: { tasks: [], readSettled: true, readFailed: false },
+        destination: {
+          tasks: [{ ...transferTask, revision, status }],
+          readSettled: true,
+          readFailed: false,
+        },
+      });
+      origin.settled("pending-transfer", false);
+    });
+  };
+  return (
+    <>
+      <button onClick={start}>Start pending transfer</button>
+      <button onClick={() => replaceSections({
+        source: { tasks: [], readSettled: true, readFailed: false },
+        destination: {
+          tasks: [transferTask],
+          readSettled: true,
+          readFailed: false,
+        },
+      })}>Move query projection</button>
+      <div data-testid="source">{visible("source", sections.source.tasks)}</div>
+      <div data-testid="destination">{visible("destination", sections.destination.tasks)}</div>
     </>
   );
 }
@@ -163,7 +229,7 @@ describe("task transition presentation owner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Complete sibling" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     fireEvent.click(screen.getByRole("button", { name: "Cancel parent" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove projected rows" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove authoritative rows" }));
     expect(layout?.sections.source?.rootKeys).toEqual([
       "task:603",
       "task:604",
@@ -192,6 +258,61 @@ describe("task transition presentation owner", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     expect(layout?.operations).toEqual({});
     expect(taskTransitionDisplayChildren(layout!, "source", null, [])).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it("keeps one occurrence through a pending section transfer and releases it after refresh", async () => {
+    vi.useFakeTimers();
+    const origins = { current: {} as Record<number, TaskTransitionOrigin> };
+    let layout: TaskTransitionLayout | undefined;
+    let resolveWrite!: (result: { revision: number; status: Task["status"] }) => void;
+    const write = new Promise<{ revision: number; status: Task["status"] }>(resolve => {
+      resolveWrite = resolve;
+    });
+    render(
+      <TaskTransitionPresentationProvider
+        identityKey="today:mine:1"
+        projection={{
+          source: { tasks: [transferTask], readSettled: true, readFailed: false },
+          destination: { tasks: [], readSettled: true, readFailed: false },
+        }}
+      >
+        <PendingTransfer
+          origins={origins}
+          write={write}
+          readLayout={next => { layout = next; }}
+        />
+      </TaskTransitionPresentationProvider>,
+    );
+
+    await act(async () => {});
+    expect(origins.current[transferTask.id]).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Start pending transfer" }));
+    expect(layout?.operations["pending-transfer"]?.phase).toBe("pending");
+    fireEvent.click(screen.getByRole("button", { name: "Move query projection" }));
+
+    expect(layout?.operations["pending-transfer"]?.phase).toBe("pending");
+    expect(screen.getByTestId("source-task")).toHaveTextContent(transferTask.title);
+    expect(screen.queryByTestId("destination-task")).toBeNull();
+    expect(screen.getAllByText(transferTask.title)).toHaveLength(1);
+
+    await act(async () => {
+      resolveWrite({ revision: transferTask.revision + 1, status: "actionable" });
+      await write;
+      await Promise.resolve();
+    });
+    expect(layout?.operations["pending-transfer"]?.phase).toBe("confirmed");
+    expect(screen.getByTestId("source-task")).toHaveTextContent(transferTask.title);
+    expect(screen.queryByTestId("destination-task")).toBeNull();
+    expect(screen.getAllByText(transferTask.title)).toHaveLength(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TASK_TRANSITION_CONFIRMATION_MS);
+    });
+    expect(layout?.operations).toEqual({});
+    expect(screen.queryByTestId("source-task")).toBeNull();
+    expect(screen.getByTestId("destination-task")).toHaveTextContent(transferTask.title);
+    expect(screen.getAllByText(transferTask.title)).toHaveLength(1);
     vi.useRealTimers();
   });
 });
