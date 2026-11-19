@@ -98,8 +98,12 @@ test("slow write decorates the live row, then confirms commit before the held re
 
 test("fast commit leaves a visible accessible confirmation for three seconds without destination scrolling", async ({ page, isMobile }) => {
   const task = await waitingTask(page);
+  const now = Date.now();
+  await page.clock.install({ time: now });
   await page.goto("/#/waiting");
   await expect(row(page, task)).toBeVisible();
+  // Refresh and assertion latency must not consume the notice's three-second lifetime.
+  await page.clock.pauseAt(now + 60_000);
   await row(page, task).scrollIntoViewIfNeeded();
   const scroll = await page.evaluate(() => window.scrollY);
   await completeRow(page, task, isMobile);
@@ -114,8 +118,9 @@ test("fast commit leaves a visible accessible confirmation for three seconds wit
     maximum: Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
   }));
   expect(Math.abs(after.scroll - Math.min(scroll, after.maximum))).toBeLessThanOrEqual(1);
-  await page.waitForTimeout(2_500);
+  await page.clock.runFor(2_999);
   await expect(notice).toBeVisible();
+  await page.clock.runFor(1);
   await expect(notice).toHaveCount(0);
 });
 
