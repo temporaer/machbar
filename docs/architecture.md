@@ -743,6 +743,44 @@ cannot retire those earlier side effects.
 Changing actor/authentication remounts the read/action/editor scope with a fresh
 Query client. Bootstrap identity and independent explicit polling remain
 outside this read facade.
+
+The #332 Phase 1 POC adds completion feedback only in Waiting. The existing
+`useItemMutations` pending map optionally carries operation text while the write
+is in flight; this text ends at commit/rejection, independently of the gate
+which still covers read settlement. Its typed `onCommitted` callback runs after
+the successful write and captured invalidation starts, before awaiting reads.
+Only write rejection enters mutation error handling.
+
+Waiting registers one completion observer with `useTaskActions`. A command
+captures that registration, not a mutable "latest callback"; unregistration or
+replacement makes its later notification inert, without stopping invalidation.
+`WaitingCompletionFeedback` owns one latest notice and its three-second timer.
+The notice identifies the submitted task and completion (or recurring
+occurrence), never a task DTO, ancestor, sibling, section or destination.
+It is a noninteractive body portal, so an open detail modal does not hide its
+accessible live region with the page root. A newer completion replaces the
+notice and restarts its timer; no notification backlog is stored.
+View unmount, scope/member replacement and loss of the Waiting read's accessible
+data unmount the observer and notice. Identity/authentication retirement already
+remounts the entire action/query scope. A denial from an independently open
+detail/workflow read also clears the notice and unregisters the observer through
+the existing native Query cache subscription, even if the Waiting read succeeds.
+This conservatively retires feedback for that opening; navigating away/back
+creates a fresh observer. It stores no query results or access decisions.
+
+Waiting now exposes background read errors through the existing `ErrorState`
+and explicit read retry. Its stale list is inert and its row keyboard handler
+is unmounted until a read succeeds. This is not a new domain cache or a claim
+that every independently open workflow's failed read is gated; those hosts keep
+their existing recovery/revision handling. Broader lifecycle feedback and
+focused-workflow recovery remain outside this POC.
+
+Issue #332 explicitly relaxes exact source-position confirmation: fresh reads
+may immediately remove or relocate rows, including emptied ancestor branches.
+There is no departure tree, destination suppression, delayed layout or
+destination scrolling. The narrow POC is a human-review gate, not approval to
+roll feedback out to other views or merge the superseded #331/#333 designs.
+
 Remote SSE, focus, visibility, online, and disconnected-poll invalidations use
 a leading/trailing one-second cadence, including a final refresh after a burst.
 Explicit mutation refreshes remain immediate; hidden-tab polling and visible

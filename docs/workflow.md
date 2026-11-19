@@ -81,6 +81,14 @@ command is pending, conflicting actions for that item are disabled. After
 success, views reload and rows may move to another group or disappear from the
 current view immediately; there is no timed keep-in-place window.
 
+The Waiting-view proof of concept shows **Wird erledigt …** on the live row
+while completion is pending. A committed completion gets a short accessible
+confirmation even when the row disappears; confirmation does not wait for
+refresh. A rejected write never shows success. If refreshing fails, the separate
+read error offers Retry and stale Waiting rows cannot be operated on until the
+read recovers. Leaving the view or changing its scope/member clears its notices.
+This POC does not yet extend completion notices to other views.
+
 Ordinary refreshes and network failures preserve authored editor drafts.
 Losing access ends the focused editor and discards its choices; reopening
 starts fresh. If a compound decision is stale, review the refreshed

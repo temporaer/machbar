@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "./locale";
@@ -16,6 +16,30 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("mutation settlement with the real refresh/query provider", () => {
+  it("refreshes surviving reads after a mutation-owning surface unmounts without its local success callback", async () => {
+    const write = deferred<string>();
+    let stored = "before";
+    const onCommitted = vi.fn();
+    const fetcher = vi.fn(async () => stored);
+    function Surface() {
+      const { run } = useItemMutations();
+      return <button onClick={() => { void run({ id: 1, mutate: () => write.promise, onCommitted }); }}>Complete</button>;
+    }
+    function Read({ open }: { open: boolean }) {
+      const { data } = useAsync(fetcher);
+      return <><output>{data}</output>{open ? <Surface /> : null}</>;
+    }
+    const { rerender } = render(<Read open />, { wrapper });
+    await screen.findByText("before");
+    fireEvent.click(screen.getByText("Complete"));
+    rerender(<Read open={false} />);
+    stored = "after";
+    await act(async () => { write.resolve("committed"); });
+    await screen.findByText("after");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(onCommitted).not.toHaveBeenCalled();
+  });
+
   it.each(["success", "failure"])("follows a superseding write's held read until %s", async outcome => {
     const initial = deferred<string>(), superseded = deferred<string>(), replacement = deferred<string>();
     const fetcher = vi.fn<(signal: AbortSignal) => Promise<string>>()

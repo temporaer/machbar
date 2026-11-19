@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "./errorMessage";
 import { useRefresh } from "./refresh";
 import { useStrings } from "./strings";
@@ -7,13 +7,16 @@ interface ItemMutation<TResult> {
   id: number;
   mutate: () => Promise<TResult>;
   throwOnError?: boolean;
+  pendingMessage?: string | undefined;
+  onCommitted?: (result: TResult) => void;
 }
 
 /** Pending/error feedback only: server reads own every domain value and row. */
 export function useItemMutations() {
   const strings = useStrings();
   const { bump } = useRefresh();
-  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [pendingMessages, setPendingMessages] = useState(new Map<number, string | undefined>());
+  const pendingIds = useMemo(() => new Set(pendingMessages.keys()), [pendingMessages]);
   const [errors, setErrors] = useState<Record<number, string>>({});
   const inFlight = useRef(new Set<number>());
   const mounted = useRef(false);
@@ -31,7 +34,7 @@ export function useItemMutations() {
   }, []);
 
   const run = useCallback(async <TResult,>({
-    id, mutate, throwOnError = false,
+    id, mutate, throwOnError = false, pendingMessage, onCommitted,
   }: ItemMutation<TResult>): Promise<TResult | undefined> => {
     if (!mounted.current) return undefined;
     if (inFlight.current.has(id)) {
@@ -41,25 +44,37 @@ export function useItemMutations() {
       return undefined;
     }
     inFlight.current.add(id);
-    setPendingIds(current => new Set(current).add(id));
+    setPendingMessages(current => new Map(current).set(id, pendingMessage));
     clearError(id);
     try {
-      const result = await mutate();
+      let result: TResult;
+      try {
+        result = await mutate();
+      } catch (error) {
+        if (mounted.current) {
+          setErrors(current => ({ ...current, [id]: localizedErrorMessage(error, strings) }));
+          if (isReadAccessError(error) || isStaleWriteConflict(error)) bump();
+        }
+        if (throwOnError) throw error;
+        return undefined;
+      }
       // The captured refresh owner outlives a sheet, but cannot target a replacement identity.
       // Query errors remain read errors; the write has already committed.
-      await Promise.resolve(bump()).catch(() => undefined);
-      return result;
-    } catch (error) {
+      const refresh = Promise.resolve(bump()).catch(() => undefined);
       if (mounted.current) {
-        setErrors(current => ({ ...current, [id]: localizedErrorMessage(error, strings) }));
-        if (isReadAccessError(error) || isStaleWriteConflict(error)) bump();
+        setPendingMessages(current => new Map(current).set(id, undefined));
+        try {
+          onCommitted?.(result);
+        } catch {
+          // Presentation feedback must not change the outcome of a committed write.
+        }
       }
-      if (throwOnError) throw error;
-      return undefined;
+      await refresh;
+      return result;
     } finally {
       inFlight.current.delete(id);
-      if (mounted.current) setPendingIds(current => {
-        const next = new Set(current);
+      if (mounted.current) setPendingMessages(current => {
+        const next = new Map(current);
         next.delete(id);
         return next;
       });
@@ -67,5 +82,5 @@ export function useItemMutations() {
   }, [bump, clearError, strings]);
 
   const isPending = useCallback((id: number) => pendingIds.has(id), [pendingIds]);
-  return { run, pendingIds, isPending, errors, clearError };
+  return { run, pendingIds, pendingMessages, isPending, errors, clearError };
 }

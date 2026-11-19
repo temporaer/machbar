@@ -1,6 +1,6 @@
 {
   "name": "@machbar/web",
-  "version": "0.40.2",
+  "version": "0.40.4",
   "private": true,
   "type": "module",
   "scripts": {

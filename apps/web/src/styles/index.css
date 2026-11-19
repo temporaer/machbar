@@ -849,6 +849,31 @@ a {
   background: var(--color-surface-alt);
 }
 
+.task-row-pending {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--color-text-muted);
+}
+
+.waiting-completion-feedback {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 12px);
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(92vw, 560px);
+  margin: 0;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.waiting-completion-feedback span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
 .capture-token-list,
 .capture-suggestions {
   display: flex;
