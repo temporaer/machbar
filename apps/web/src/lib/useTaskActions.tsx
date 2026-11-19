@@ -13,7 +13,7 @@ type WithoutExpectedRevision<T> = T extends unknown ? Omit<T, "expectedRevision"
 
 interface CompletionFeedback {
   pendingMessage: string;
-  onCommitted: (task: Task) => void;
+  onCommitted: (completion: { taskId: number; title: string; recurring: boolean }) => void;
 }
 
 function useTaskActionsState() {
@@ -40,7 +40,9 @@ function useTaskActionsState() {
         task.revision, ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
       ),
       onCommitted: () => {
-        if (observer && completionFeedback.current === observer) observer.onCommitted(task);
+        if (observer && completionFeedback.current === observer) {
+          observer.onCommitted({ taskId: task.id, title: task.title, recurring: task.repeatAfterDays !== null });
+        }
       },
     });
   }, [run]);
