@@ -64,7 +64,27 @@ describe("server-confirmed task sequence contract", () => {
     expect(observer.onCommitted).not.toHaveBeenCalled();
     mockedApi.completeTask.mockResolvedValue(task);
     await act(async () => { await result.current.complete(task); });
-    expect(observer.onCommitted).toHaveBeenCalledExactlyOnceWith(task);
+    expect(observer.onCommitted).toHaveBeenCalledExactlyOnceWith({
+      taskId: task.id, title: task.title, recurring: false,
+    });
+  });
+
+  it("isolates a throwing feedback callback from committed invalidation and write outcome", async () => {
+    const task = makeTask({ id: 8, repeatAfterDays: 7 });
+    mockedApi.completeTask.mockResolvedValue({ ...task, revision: 2 });
+    const fetcher = vi.fn(async () => task.revision);
+    const { result } = renderHook(() => ({ actions: useTaskActions(), read: useAsync(fetcher) }), { wrapper });
+    await waitFor(() => expect(result.current.read.data).toBe(task.revision));
+    result.current.actions.registerCompletionFeedback({
+      pendingMessage: "Completing",
+      onCommitted: () => { throw new Error("Presentation failed"); },
+    });
+    await act(async () => {
+      await expect(result.current.actions.complete(task, undefined, undefined, true))
+        .resolves.toEqual({ ...task, revision: 2 });
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.current.actions.errors[task.id]).toBeUndefined();
   });
 
   it("invalidates only the captured identity after its action provider is replaced", async () => {

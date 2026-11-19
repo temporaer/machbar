@@ -855,7 +855,7 @@ a {
   color: var(--color-text-muted);
 }
 
-.waiting-completion-feedback {
+.view-completion-notice {
   position: fixed;
   left: 50%;
   bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 12px);
@@ -867,7 +867,7 @@ a {
   pointer-events: none;
 }
 
-.waiting-completion-feedback span {
+.view-completion-notice span {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;

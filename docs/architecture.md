@@ -744,19 +744,20 @@ Changing actor/authentication remounts the read/action/editor scope with a fresh
 Query client. Bootstrap identity and independent explicit polling remain
 outside this read facade.
 
-The #332 Phase 1 POC adds completion feedback only in Waiting. The existing
+The #336 extraction keeps completion feedback only in Waiting. The existing
 `useItemMutations` pending map optionally carries operation text while the write
 is in flight; this text ends at commit/rejection, independently of the gate
 which still covers read settlement. Its typed `onCommitted` callback runs after
 the successful write and captured invalidation starts, before awaiting reads.
 Only write rejection enters mutation error handling.
 
-Waiting registers one completion observer with `useTaskActions`. A command
+`ViewCompletionNotice` registers one completion observer with `useTaskActions`
+while Waiting has accessible data. A command
 captures that registration, not a mutable "latest callback"; unregistration or
 replacement makes its later notification inert, without stopping invalidation.
-`WaitingCompletionFeedback` owns one latest notice and its three-second timer.
-The notice identifies the submitted task and completion (or recurring
-occurrence), never a task DTO, ancestor, sibling, section or destination.
+The component owns one latest notice and its three-second expiry timer.
+Its callback receives only the submitted task ID/title and completion kind;
+the notice adds an expiry, never a task DTO, ancestor, sibling, section or destination.
 It is a noninteractive body portal, so an open detail modal does not hide its
 accessible live region with the page root. A newer completion replaces the
 notice and restarts its timer; no notification backlog is stored.
@@ -767,6 +768,7 @@ detail/workflow read also clears the notice and unregisters the observer through
 the existing native Query cache subscription, even if the Waiting read succeeds.
 This conservatively retires feedback for that opening; navigating away/back
 creates a fresh observer. It stores no query results or access decisions.
+Waiting remains the only consumer of this view-scoped primitive.
 
 Waiting now exposes background read errors through the existing `ErrorState`
 and explicit read retry. Its stale list is inert and its row keyboard handler
