@@ -177,6 +177,59 @@ allocation reads and sorts all direct siblings. This is not a claim that the
 recursive next-action CTE has an optimal plan; its full `EXPLAIN QUERY PLAN`
 is a follow-up measurement.
 
+## #346 child-batch follow-up
+
+The canonical child-batch path now reuses its parent snapshot and batch-scoped
+child/position facts. The route also projects the response from one viewer-aware
+post-commit graph. The exact same audit harness was run on the PR branch with
+three measured repetitions and one warm-up for each case:
+
+```bash
+AUDIT_SIZES=100,1000,5000 AUDIT_REPEATS=3 \
+AUDIT_OPERATIONS=create-1-children,create-5-children,create-20-children,create-30-children \
+npx tsx apps/api/scripts/graph-scaling-audit.ts
+```
+
+The run is [GitHub Actions run 44826483350](https://github.com/temporaer/machbar/actions/runs/44826483350).
+Values are median / p95. The pre-change values below come from the #345
+measurement table above; the post-change run used a GitHub-hosted runner, while
+the baseline ran on the machine documented in that table. Wall and elapsed-time
+comparisons are therefore indicative rather than a controlled same-machine
+comparison. Graph-load counts, SQL statement counts, and response sizes are
+directly comparable.
+
+| Fixture tasks | Batch | Wall ms before → after | SQL ms before → after | SQL statements before → after | Graph loads before → after | Graph ms before → after | Response bytes |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 1 | 73.70 / 75.21 → 38.77 / 41.72 | 50.11 / 50.30 → 20.12 / 22.13 | 47 → 12 / 12 | 9 → 2 / 2 | 67.05 / 68.39 → 25.41 / 26.40 | 9,557 |
+| 100 | 5 | 260.01 / 275.40 → 37.49 / 37.91 | 180.49 / 184.92 → 21.07 / 21.40 | 175 → 16 / 16 | 33 → 2 / 2 | 233.17 / 248.05 → 20.31 / 20.39 | 25,377 |
+| 100 | 20 | 1,105.34 / 1,116.29 → 66.86 / 67.53 | 799.81 / 800.44 → 35.75 / 35.86 | 655 → 31 / 31 | 123 → 2 / 2 | 988.11 / 994.17 → 21.84 / 23.67 | 84,742 |
+| 100 | 30 | 1,687.66 / 1,716.02 → 86.87 / 92.79 | 1,231.67 / 1,262.91 → 47.61 / 49.95 | 975 → 41 / 42 | 183 → 2 / 2 | 1,504.80 / 1,529.87 → 24.12 / 25.91 | 124,332 |
+| 1,000 | 1 | 3,790.99 / 3,824.78 → 1,389.88 / 1,395.09 | 3,662.86 / 3,690.56 → 1,344.18 / 1,353.25 | 47 → 12 / 12 | 9 → 2 / 2 | 3,494.68 / 3,510.32 → 1,008.74 / 1,014.75 | 11,501 |
+| 1,000 | 5 | 14,471.68 / 14,589.87 → 1,580.50 / 1,584.78 | 14,066.97 / 14,124.68 → 1,528.59 / 1,538.06 | 175 → 16 / 16 | 33 → 2 / 2 | 13,007.14 / 13,130.39 → 983.50 / 985.11 | 27,357 |
+| 1,000 | 20 | 54,200.55 / 54,818.04 → 2,470.49 / 2,476.03 | 52,696.09 / 53,273.64 → 2,395.41 / 2,402.14 | 655 → 31 / 31 | 123 → 2 / 2 | 48,287.53 / 48,854.36 → 999.98 / 1,012.05 | 86,858 |
+| 1,000 | 30 | 79,305.61 / 80,456.86 → 3,063.60 / 3,088.54 | 77,480.93 / 78,529.12 → 2,965.23 / 2,996.61 | 975 → 41 / 41 | 183 → 2 / 2 | 70,662.12 / 71,750.60 → 1,005.15 / 1,024.60 | 126,538 |
+
+For 30 children, both fixture sizes now use two graph loads regardless of batch
+size. On the 1,000-task fixture, SQL statements fell from 975 to 41 and the
+response stayed at 126,538 bytes. The benchmark's measured median wall time
+fell from 79.3 s to 3.06 s; that timing comparison includes the runner
+difference noted above.
+
+A 5,000-task fixture was feasible on the updated path and is recorded
+separately; the pre-change 5,000-task child batch was not measured, so no
+baseline is inferred:
+
+| Fixture tasks | Batch | Wall ms median / p95 | SQL ms median / p95 | SQL statements median / p95 | Graph loads median / p95 | Graph ms median / p95 | Response bytes median / p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 5,000 | 1 | 31,852.00 / 31,905.71 | 31,577.73 / 31,604.21 | 12 / 12 | 2 / 2 | 23,074.33 / 23,084.72 | 15,308 / 15,308 |
+| 5,000 | 5 | 37,195.15 / 37,247.01 | 36,893.63 / 36,960.01 | 16 / 16 | 2 / 2 | 23,140.65 / 23,190.82 | 31,164 / 31,164 |
+| 5,000 | 20 | 57,123.40 / 57,125.97 | 56,769.16 / 56,771.20 | 31 / 31 | 2 / 2 | 23,118.61 / 23,124.67 | 90,664 / 90,664 |
+| 5,000 | 30 | 70,771.60 / 70,942.68 | 70,336.69 / 70,527.21 | 41 / 42 | 2 / 2 | 23,290.79 / 23,321.05 | 130,344 / 130,344 |
+
+At 5,000 tasks, the repeated batch amplification is gone, but the two full
+graph projections still dominate much of the request. That cost remains within
+the separate profiling scope of #347.
+
 ## Scaling diagnosis
 
 **Repeated reconstruction (observed):** measured child batches grow from 9 to
