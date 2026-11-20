@@ -350,15 +350,22 @@ test(`a ${from} to ${to} detail transition confirms in its initiating view`, asy
 });
 }
 
-test("keyboard reopening of a completed row announces reopening, not an undo", async ({ page }) => {
+test("reopening a completed row announces reopening, not an undo", async ({ page, isMobile }) => {
   const task = await createTask(page, `Reopen ${randomUUID()}`);
   const response = await page.request.post(`/api/tasks/${task.id}/complete`, { data: { expectedRevision: task.revision } });
   expect(response.ok()).toBe(true);
   await page.goto("/#/more/all");
   const row = page.locator(`[data-workitem-id="${task.id}"]`).first();
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: "Wieder öffnen", exact: true }).focus();
-  await page.keyboard.press("Space");
+  if (isMobile) {
+    await row.getByRole("button", { name: task.title, exact: true }).click();
+    const detail = page.getByRole("dialog", { name: "Details", exact: true });
+    await detail.getByRole("button", { name: /^Status / }).click();
+    await detail.getByRole("button", { name: "Machbar", exact: true }).click();
+  } else {
+    await row.getByRole("button", { name: "Wieder öffnen", exact: true }).focus();
+    await page.keyboard.press("Space");
+  }
   await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ wieder geöffnet.`);
   expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("actionable");
 });
