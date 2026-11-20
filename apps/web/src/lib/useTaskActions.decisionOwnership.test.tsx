@@ -309,6 +309,38 @@ describe("child-policy command eligibility", () => {
     expect(actionsByScope.get(scope.id)?.pendingTask).toBeNull();
   });
 
+  it("confirms a child-policy cancellation only to the initiating view owner", async () => {
+    const first = { id: Symbol("initiating-view"), active: true };
+    const second = { id: Symbol("other-view"), active: true };
+    const firstOwner = Symbol("initiating-feedback");
+    const secondOwner = Symbol("other-feedback");
+    renderScopes([
+      { scope: first, owner: firstOwner, request: "cancel" },
+      { scope: second, owner: secondOwner, request: "cancel" },
+    ]);
+    const initiating = { pendingMessage: vi.fn(() => "Wird verworfen …"), onCommitted: vi.fn() };
+    const other = { pendingMessage: vi.fn(() => "Other pending"), onCommitted: vi.fn() };
+    actionsByScope.get(first.id)?.registerCompletionFeedback(firstOwner, initiating);
+    actionsByScope.get(second.id)?.registerCompletionFeedback(secondOwner, other);
+    mockedApi.cancelTask.mockResolvedValue({ ...parent, status: "cancelled" });
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Request cancel" })[0]!);
+    expect(await screen.findByRole("dialog", { name: "Diese Aufgabe hat offene Teilaufgaben." })).toBeVisible();
+    expect(mockedApi.cancelTask).not.toHaveBeenCalled();
+    expect(initiating.pendingMessage).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: /Teilaufgaben verwerfen/ }));
+
+    await waitFor(() => expect(mockedApi.cancelTask).toHaveBeenCalledExactlyOnceWith(
+      parent.id, "cancel_children", parent.revision,
+    ));
+    expect(initiating.pendingMessage).toHaveBeenCalledExactlyOnceWith("cancel");
+    expect(initiating.onCommitted).toHaveBeenCalledExactlyOnceWith({
+      taskId: parent.id, title: parent.title, recurring: false, action: "cancel",
+    });
+    expect(other.pendingMessage).not.toHaveBeenCalled();
+    expect(other.onCommitted).not.toHaveBeenCalled();
+  });
+
   it("does not let one view retire or resolve another view's decision", async () => {
     const first = { id: Symbol("first-view"), active: true };
     const second = { id: Symbol("second-view"), active: true };

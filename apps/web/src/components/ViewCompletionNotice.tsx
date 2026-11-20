@@ -6,6 +6,7 @@ import {
   TaskCommandEligibilityProvider,
   useTaskActions,
   type CompletionFeedbackOwner,
+  type TaskFeedbackAction,
 } from "../lib/useTaskActions";
 import { useStrings } from "../lib/strings";
 import { isReadAccessError } from "../lib/errorMessage";
@@ -16,6 +17,7 @@ interface CompletionNotice {
   taskId: number;
   title: string;
   recurring: boolean;
+  action: TaskFeedbackAction;
   expiresAt: number;
   sequence: number;
 }
@@ -72,7 +74,14 @@ export function ViewCompletionNotice({
       return;
     }
     return registerCompletionFeedback(owner, {
-      pendingMessage: strings.taskCompleting,
+      pendingMessage: action => ({
+        complete: strings.taskCompleting,
+        cancel: strings.taskCancelling,
+        reopen: strings.taskReopening,
+        captured: strings.taskCapturing,
+        actionable: strings.taskMakingActionable,
+        someday: strings.taskMovingToSomeday,
+      })[action],
       onCommitted: completion => {
         if (!availableRef.current || deniedTaskIds.current.has(completion.taskId)) return;
         const next = {
@@ -90,7 +99,7 @@ export function ViewCompletionNotice({
     available,
     owner,
     registerCompletionFeedback,
-    strings.taskCompleting,
+    strings,
   ]);
   useLayoutEffect(() => {
     const unsubscribe = client.getQueryCache().subscribe(event => {
@@ -127,9 +136,17 @@ export function ViewCompletionNotice({
         <div role="status" aria-live="polite" aria-atomic="true"
           className={notice ? "view-completion-notice card" : "visually-hidden"}>
           {notice ? <span key={notice.sequence}>
-            {notice.recurring
-              ? strings.taskOccurrenceConfirmed(notice.title)
-              : strings.taskCompletionConfirmed(notice.title)}
+            {notice.action === "complete"
+              ? notice.recurring
+                ? strings.taskOccurrenceConfirmed(notice.title)
+                : strings.taskCompletionConfirmed(notice.title)
+              : ({
+                cancel: strings.taskCancellationConfirmed,
+                reopen: strings.taskReopeningConfirmed,
+                captured: strings.taskCaptureConfirmed,
+                actionable: strings.taskActionableConfirmed,
+                someday: strings.taskSomedayConfirmed,
+              } as const)[notice.action](notice.title)}
           </span> : null}
         </div>,
         document.body,

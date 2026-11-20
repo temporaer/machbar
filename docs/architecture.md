@@ -745,7 +745,10 @@ Query client. Bootstrap identity and independent explicit polling remain
 outside this read facade.
 
 The #336 extraction established a small view-owned completion notice; #337
-reuses it across task-completion surfaces without changing `useItemMutations`
+reuses it across task-completion surfaces, and #338 extends its typed commit
+payload to cancellation, reopening and direct captured/actionable/someday status
+transitions. Clarification/deferral and ordinary edits retain their focused
+feedback. Neither rollout changes `useItemMutations`
 or adding row retention. Its pending operation text ends at write
 commit/rejection, independently of the gate that still covers read settlement.
 The typed `onCommitted` callback runs after a successful write and captured
@@ -778,9 +781,9 @@ never whichever view registered most recently. Owner replacement/unregistration
 makes a delayed notification inert without cancelling captured invalidation.
 Today, Inbox, All, Discussion, Review, Waiting and project outlines use one
 notice each; nested split outlines inherit their initiating view. The notice
-contains only task ID/title, occurrence kind and expiry, never a task DTO,
+contains only task ID/title, action, occurrence kind and expiry, never a task DTO,
 ancestor, sibling, section or destination. Its noninteractive body portal stays
-outside inert page/modal roots. A newer completion replaces the notice and
+outside inert page/modal roots. A newer lifecycle confirmation replaces the notice and
 restarts its three-second timer; no notification backlog is stored.
 
 Identity, route, filter, member/scope, and access retirement clears the

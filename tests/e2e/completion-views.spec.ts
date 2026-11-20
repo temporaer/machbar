@@ -313,3 +313,108 @@ test("Review detail completion confirms in its initiating view", async ({ page }
   await expect.poll(async () => (await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("done");
   await expect(card).toHaveCount(0);
 });
+
+test("Review cancellation confirms its own action after the card disappears", async ({ page }) => {
+  const task = await createTask(page, `Cancel ${randomUUID()}`, { size: "XL" });
+  await page.goto("/#/more/review");
+  const card = page.locator(".review-item").filter({ hasText: task.title });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Verwerfen", exact: true }).click();
+  await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ verworfen.`);
+  await expect(card).toHaveCount(0);
+  expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("cancelled");
+});
+
+for (const { from, to, button, message } of [
+  { from: "actionable", to: "someday", button: "Irgendwann", message: "auf Irgendwann gesetzt." },
+  { from: "someday", to: "actionable", button: "Machbar", message: "als machbar markiert." },
+] as const) {
+test(`a ${from} to ${to} detail transition confirms in its initiating view`, async ({ page }) => {
+  let task = await createTask(page, `Status ${randomUUID()}`);
+  if (from !== "actionable") {
+    const response = await page.request.patch(`/api/tasks/${task.id}`, {
+      data: { status: from, expectedRevision: task.revision },
+    });
+    expect(response.ok()).toBe(true);
+    task = await response.json() as Task;
+  }
+  await page.goto("/#/more/all");
+  const row = page.locator(`[data-workitem-id="${task.id}"]`).first();
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: task.title, exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "Details", exact: true });
+  await detail.getByRole("button", { name: /^Status / }).click();
+  await detail.getByRole("button", { name: button, exact: true }).click();
+  await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ ${message}`);
+  expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe(to);
+});
+}
+
+test("reopening a completed row announces reopening, not an undo", async ({ page, isMobile }) => {
+  const task = await createTask(page, `Reopen ${randomUUID()}`);
+  const response = await page.request.post(`/api/tasks/${task.id}/complete`, { data: { expectedRevision: task.revision } });
+  expect(response.ok()).toBe(true);
+  await page.goto("/#/more/all");
+  const row = page.locator(`[data-workitem-id="${task.id}"]`).first();
+  await expect(row).toBeVisible();
+  if (isMobile) {
+    await row.getByRole("button", { name: task.title, exact: true }).click();
+    const detail = page.getByRole("dialog", { name: "Details", exact: true });
+    await detail.getByRole("button", { name: /^Status / }).click();
+    await detail.getByRole("button", { name: "Machbar", exact: true }).click();
+  } else {
+    await row.getByRole("button", { name: "Wieder öffnen", exact: true }).focus();
+    await page.keyboard.press("Space");
+  }
+  await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ wieder geöffnet.`);
+  expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("actionable");
+});
+
+test("a rejected status write never confirms, and a committed status survives failed refresh", async ({ page }) => {
+  const task = await createTask(page, `Status retry ${randomUUID()}`, { size: "XL" });
+  let reject = true;
+  let committed = false;
+  await page.route(`**/api/tasks/${task.id}`, async route => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    if (reject) return route.fulfill({ status: 503, json: { error: { code: "internal_error", message: "Unavailable" } } });
+    const response = await route.fetch();
+    committed = response.ok();
+    await route.fulfill({ response });
+  });
+  await page.route("**/api/review", route => committed ? route.abort("failed") : route.continue());
+  await page.goto("/#/more/review");
+  const card = page.locator(".review-item").filter({ hasText: task.title });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Irgendwann lassen", exact: true }).click();
+  await expect(card.getByRole("alert")).toBeVisible();
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+  reject = false;
+  await card.getByRole("button", { name: "Irgendwann lassen", exact: true }).click();
+  await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ auf Irgendwann gesetzt.`);
+  await expect(page.locator(".error-state")).toBeVisible();
+});
+
+test("a Review status write cannot announce in a replacement view", async ({ page }) => {
+  const task = await createTask(page, `Retired status ${randomUUID()}`, { size: "XL" });
+  let release!: () => void;
+  const write = new Promise<void>(resolve => { release = resolve; });
+  let writing = false;
+  await page.route(`**/api/tasks/${task.id}`, async route => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    writing = true;
+    await write;
+    await route.continue();
+  });
+  await page.goto("/#/more/review");
+  const card = page.locator(".review-item").filter({ hasText: task.title });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Irgendwann lassen", exact: true }).click();
+  await expect.poll(() => writing).toBe(true);
+  await page.goto("/#/more/all");
+  await expect(page.locator(`[data-workitem-id="${task.id}"]`).first()).toBeVisible();
+  release();
+  await expect.poll(async () =>
+    (await (await page.request.get(`/api/tasks/${task.id}`)).json()).status,
+  ).toBe("someday");
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+});
