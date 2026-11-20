@@ -1,5 +1,13 @@
 # Graph and task-mutation scaling audit
 
+**Baseline and status:** These measurements were collected against the pre-#343 base
+revision `3cf78725cbdfafee9b9620c25f08daeaf6f9a1fe`. PR #343 remains open and
+changes task-create projection costs, so the task-create numbers below are a
+pre-#343 baseline and must be remeasured after #343 lands before comparing them
+with the resulting behavior. This is a bounded audit report, not completion of
+all investigation requested by #344; the follow-up tracks are [#346](https://github.com/temporaer/machbar/issues/346)
+and [#347](https://github.com/temporaer/machbar/issues/347).
+
 ## Scope and conclusion
 
 This is a measurement-only audit. No production mutation, graph, response, or
@@ -178,36 +186,39 @@ Separately, every child repeats project-level next-action checks. This
 establishes a write-boundary amplification problem independently of whether a
 single graph read is acceptable.
 
-**Intrinsic query/assembly cost (observed):**
-the next-action query recursively materializes task descendants and uses them
-for descendant blockers and project-container state
-([`nextActionRepo.ts`](../apps/api/src/repo/nextActionRepo.ts#L49-L132)).
-For a chain of height `H`, ancestor/descendant rows may grow with `N×H` and
-quadratically in a worst-case deep chain. Effective owner/tag/context CTEs
-walk the hierarchy over every task. Graph assembly also uses repeated
-`Array.some()` membership scans while mapping raw task parents and filtering
-relations ([`domain/graph.ts`](../apps/api/src/domain/graph.ts#L373-L381),
-[`domain/graph.ts`](../apps/api/src/domain/graph.ts#L425-L467),
-[`domain/graph.ts`](../apps/api/src/domain/graph.ts#L511-L529)); those are
-potentially quadratic in row counts. The scale results show that a single
-`Graph.load()` grows from roughly 7 ms of SQL at 100 tasks to 380 ms at 1,000
+**Single-load scaling (observed; cause not isolated):** a single
+\`Graph.load()\` grows from roughly 7 ms of SQL at 100 tasks to 380 ms at 1,000
 and 8.7–17.9 seconds at 5,000, depending on the operation. The non-SQL portion
 of a graph load remains much smaller than its SQL portion in these fixtures.
-The benchmark does not attribute SQL time to individual CTEs; the next-action
-descendant projection and three inheritance CTEs need isolated query profiling
-before assigning blame among them. The hierarchy fixture is bounded-depth, so
-its results do not establish worst-case deep-chain behavior.
+This establishes poor single-load scaling in these synthetic fixtures, but it
+does not identify which query, CTE, or assembly operation causes that growth.
+
+The next-action query recursively materializes task descendants and uses them
+for descendant blockers and project-container state
+([\`nextActionRepo.ts\`](../apps/api/src/repo/nextActionRepo.ts#L49-L132)).
+Effective owner/tag/context CTEs walk the hierarchy over every task. Graph
+assembly also contains repeated \`Array.some()\` membership scans
+([\`domain/graph.ts\`](../apps/api/src/domain/graph.ts#L373-L381),
+[\`domain/graph.ts\`](../apps/api/src/domain/graph.ts#L425-L467),
+[\`domain/graph.ts\`](../apps/api/src/domain/graph.ts#L511-L529)). These
+are profiling hypotheses only: this audit does not measure their individual
+contribution, nor establish that any one of them explains the observed SQL
+time. Attribute the cost with per-query/CTE profiling and query plans before
+changing the read model. The hierarchy fixture is bounded-depth, so these
+results do not establish worst-case deep-chain behavior.
 
 **Not established:** these synthetic household fixtures do not prove
 production latency, memory behavior, or worst-case hierarchy scaling. The
 observed child lookup index does not explain the recursive CTE's full plan.
-Request-stage timing beyond API wall/SQL/graph, activation-preview latency,
-receipt-replay latency, 5,000-task lifecycle/move operations, background batch
-behavior, and browser invalidation/refetch remain unmeasured.
+Request-stage timing beyond API wall/SQL/graph, a 5,000-task child batch,
+5,000-task lifecycle/move operations, activation-preview branch breakdown,
+idempotency/receipt-replay latency, background batch behavior, and end-to-end
+browser invalidation/refetch remain unmeasured.
 
 ## Prioritized follow-up proposals
 
-1. **Child-batch transaction amplification (highest priority).** In a separate,
+1. **Child-batch transaction amplification (highest priority; implementation
+   tracked in [#346](https://github.com/temporaer/machbar/issues/346)).** In a separate,
    narrowly scoped implementation issue, let the canonical batch operation
    reuse the validated parent/project snapshot and batch-scoped first-child,
    open-child, and position facts. Return only transactional facts needed by
@@ -224,7 +235,8 @@ behavior, and browser invalidation/refetch remain unmeasured.
    due-plan/next-action transitions, stale parent/project revisions, invalid
    last child rollback, and serialized response versus GET.
 
-2. **Repeated project-wide next-action checks.** Measure and consider a
+2. **Repeated project-wide next-action checks (also tracked in
+   [#346](https://github.com/temporaer/machbar/issues/346)).** Measure and consider a
    project-scoped targeted query or batch transition check for
    `projectHasNextAction()`. Preserve the exact point where the first newly
    eligible child changes the contribution reason; a final-state-only check
@@ -232,7 +244,7 @@ behavior, and browser invalidation/refetch remain unmeasured.
    **Risk:** dependencies, waits, nested/reference descendants, status and
    revisit dates, terminal projects, and multiple project ancestors.
 
-3. **Single-graph assembly cost.** Use the scale table and full CTE query plan
+3. **Single-graph cost attribution (profiling tracked in [#347](https://github.com/temporaer/machbar/issues/347)).** Use per-query/CTE timing and query plans
    to determine whether `Graph.load()` itself needs a separately scoped
    optimization. Replace repeated in-memory `Array.some()` membership tests
    with maps/sets only if profiling confirms their contribution. Preserve one
