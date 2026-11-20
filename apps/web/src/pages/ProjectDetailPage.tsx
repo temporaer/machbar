@@ -1,6 +1,6 @@
 import { ProjectTaskEntrySheet } from "../components/ProjectTaskEntrySheet";
 import { NotesAppend } from "../components/NotesAppend";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   useParams,
   Link,
@@ -64,6 +64,7 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet";
 import { projectMaterialItems } from "../lib/projectMaterials";
 import { ProjectAiPromptSheet } from "../components/ProjectAiPromptSheet";
+import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
 
 function ProjectAiPromptButton({
   projectTitle,
@@ -117,7 +118,11 @@ export function ProjectDetailPage() {
   const projectId = Number(params.id);
   const [searchParams, setSearchParams] = useSearchParams();
   const focus = searchParams.get("focus");
-  const { members } = useIdentity();
+  const { members, currentMemberId } = useIdentity();
+  const accessResource = useMemo(
+    () => ({ type: "view" as const, key: `project:${currentMemberId}:${projectId}` }),
+    [currentMemberId, projectId],
+  );
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -162,7 +167,7 @@ export function ProjectDetailPage() {
     error: projectError,
     refreshError: projectRefreshError,
     reload: reloadProject,
-  } = useAsync(() => api.getProject(projectId), [projectId]);
+  } = useAsync(() => api.getProject(projectId), [projectId, currentMemberId], accessResource);
   // Recency is a soft ranking boost for search/pickers, not domain state —
   // record it once per genuine open, not on every re-render/reload.
   useEffect(() => {
@@ -420,6 +425,11 @@ export function ProjectDetailPage() {
   }, [storyFocusCommand, projectId]);
 
   return (
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={project !== null}
+      readUnavailable={projectError !== null || projectRefreshError !== null}
+    >
     <InteractionScopeProvider
       captureTarget={{ kind: "story", storyId: projectId }}
     >
@@ -789,7 +799,7 @@ export function ProjectDetailPage() {
                   ))}
                 </ul>
               ) : null}
-              {project.tasks.length > 0 ? <TaskOutline
+              {project.tasks.length > 0 ? <div {...(projectRefreshError ? { inert: "" } : {})}><TaskOutline
                 key={project.id}
                 tasks={project.tasks}
                 emptyMessage={strings.noTasks}
@@ -801,7 +811,7 @@ export function ProjectDetailPage() {
                     (project.additionalNextActions ?? []).map((t) => t.id),
                   ),
                 }}
-              /> : null}
+              /></div> : null}
             </WorkItemDetailDisclosure>
             <RecentActivity
               key={`project-activity-${project.id}`}
@@ -854,5 +864,6 @@ export function ProjectDetailPage() {
         ) : null}
       </div>
     </InteractionScopeProvider>
+    </ViewCompletionNotice>
   );
 }

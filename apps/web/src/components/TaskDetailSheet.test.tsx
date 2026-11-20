@@ -8,13 +8,18 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-rou
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider, useRefresh } from "../lib/refresh";
 import { useAsync } from "../lib/useAsync";
-import { TaskActionsProvider } from "../lib/useTaskActions";
+import {
+  CompletionFeedbackOwnerProvider,
+  TaskActionsProvider,
+  TaskCommandEligibilityProvider,
+} from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import {
   TaskDetailProvider,
   useTaskDetail,
   type TaskDetailFocusField,
 } from "../lib/taskDetailContext";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { renderWithProviders } from "../test/testUtils";
@@ -178,6 +183,59 @@ async function waitForTaskTitle(title: string) {
 }
 
 describe("TaskDetailSheet", () => {
+  it("carries the initiating completion owner into child navigation only", async () => {
+    const owner = Symbol("completion-owner");
+    const commandEligibility = { id: Symbol("view-command"), active: true };
+    const child = makeTask({ id: 43, title: "Child task" });
+    mockedApi.getTask.mockImplementation(async id => id === 42 ? makeTask({ id: 42, title: "Parent task", children: [child] }) : child);
+    let readHandoff!: () => { completionFeedbackOwner?: symbol; commandEligibility?: typeof commandEligibility } | null;
+    let readWorkflow!: () => ReturnType<typeof useTaskWorkflow>["current"];
+    function OwnerHarness() {
+      const { open, getHandoff } = useTaskDetail();
+      readHandoff = getHandoff;
+      return <button onClick={() => open(42)}>open parent in source view</button>;
+    }
+    function CriteriaWorkflowHarness() {
+      const detail = useTaskDetail();
+      const workflow = useTaskWorkflow();
+      readWorkflow = () => workflow.current;
+      return (
+        <button onClick={() => workflow.open("completeWithCriteria", 43, undefined, detail.getHandoff())}>
+          Open child criteria
+        </button>
+      );
+    }
+    function UnrelatedOpener() {
+      const { open } = useTaskDetail();
+      return <button onClick={() => open(43)}>open unrelated child</button>;
+    }
+    renderWithProviders(
+      <>
+        <CompletionFeedbackOwnerProvider owner={owner}>
+          <TaskCommandEligibilityProvider scope={commandEligibility}>
+            <OwnerHarness />
+          </TaskCommandEligibilityProvider>
+        </CompletionFeedbackOwnerProvider>
+        <UnrelatedOpener />
+        <TaskDetailSheet />
+        <CriteriaWorkflowHarness />
+      </>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "open parent in source view" }));
+    await waitForTaskTitle("Parent task");
+    await userEvent.click(await screen.findByRole("button", { name: "Child task" }));
+    await waitForTaskTitle("Child task");
+    expect(readHandoff()?.completionFeedbackOwner).toBe(owner);
+    expect(readHandoff()?.commandEligibility).toBe(commandEligibility);
+    await userEvent.click(screen.getByRole("button", { name: "Open child criteria" }));
+    expect(readWorkflow()?.completionFeedbackOwner).toBe(owner);
+    expect(readWorkflow()?.commandEligibility).toBe(commandEligibility);
+    await userEvent.click(screen.getByRole("button", { name: "open unrelated child" }));
+    await waitForTaskTitle("Child task");
+    expect(readHandoff()?.completionFeedbackOwner).toBeUndefined();
+    expect(readHandoff()?.commandEligibility).toBeUndefined();
+  });
+
   it("displays task and project siblings together in their committed order", async () => {
     mockedApi.getTask.mockResolvedValue({
       ...makeTask({ id: 42, title: "Mixed parent", children: [

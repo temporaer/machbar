@@ -744,38 +744,56 @@ Changing actor/authentication remounts the read/action/editor scope with a fresh
 Query client. Bootstrap identity and independent explicit polling remain
 outside this read facade.
 
-The #336 extraction keeps completion feedback only in Waiting. The existing
-`useItemMutations` pending map optionally carries operation text while the write
-is in flight; this text ends at commit/rejection, independently of the gate
-which still covers read settlement. Its typed `onCommitted` callback runs after
-the successful write and captured invalidation starts, before awaiting reads.
-Only write rejection enters mutation error handling.
+The #336 extraction established a small view-owned completion notice; #337
+reuses it across task-completion surfaces without changing `useItemMutations`
+or adding row retention. Its pending operation text ends at write
+commit/rejection, independently of the gate that still covers read settlement.
+The typed `onCommitted` callback runs after a successful write and captured
+invalidation starts, before awaiting reads. Only write rejection enters
+mutation error handling.
 
-`ViewCompletionNotice` registers one completion observer with `useTaskActions`
-while Waiting has accessible data. A command
-captures that registration, not a mutable "latest callback"; unregistration or
-replacement makes its later notification inert, without stopping invalidation.
-The component owns one latest notice and its three-second expiry timer.
-Its callback receives only the submitted task ID/title and completion kind;
-the notice adds an expiry, never a task DTO, ancestor, sibling, section or destination.
-It is a noninteractive body portal, so an open detail modal does not hide its
-accessible live region with the page root. A newer completion replaces the
-notice and restarts its timer; no notification backlog is stored.
-View unmount, scope/member replacement and loss of the Waiting read's accessible
-data unmount the observer and notice. Identity/authentication retirement already
-remounts the entire action/query scope. A denial from an independently open
-detail/workflow read also clears the notice and unregisters the observer through
-the existing native Query cache subscription, even if the Waiting read succeeds.
-This conservatively retires feedback for that opening; navigating away/back
-creates a fresh observer. It stores no query results or access decisions.
-Waiting remains the only consumer of this view-scoped primitive.
+Each accessible view has two independent owners: `useViewTaskCommandEligibility`
+owns the read/access-scoped command capability, while `ViewCompletionNotice`
+owns feedback registration and notice lifetime. The capability stays inactive
+until the view has authoritative data. Action hooks capture both tokens from
+ambient context; opening task detail stores them in its explicit handoff, and
+task workflows inherit them. This removes owner/scope parameters from row,
+keyboard, detail, and workflow callers. `useTaskActions` validates the
+capability at the canonical mutation boundary and again when resolving
+child-policy decisions, so a stale portalled prompt cannot bypass view read
+failure. A null capability is allowed only for actions with no read-bound
+originating view; independent task-detail entry points must load their own task
+before rendering commands and close on access denial. Actions opened from a
+guarded view retain its capability through detail/workflow handoffs, and a
+pending decision captured with a capability cannot be resolved from a null or
+different scope. Failed reads retire pending decisions and disable commands
+for that view; the same view capability can reactivate after recovery, but
+retired decisions cannot. A rejected criteria completion stays in the workflow
+and reports a localized refresh-required error instead of closing with its
+local checks discarded. Ordinary refresh errors do not suppress a committed
+notice when cached access remains valid.
 
-Waiting now exposes background read errors through the existing `ErrorState`
-and explicit read retry. Its stale list is inert and its row keyboard handler
-is unmounted until a read succeeds. This is not a new domain cache or a claim
-that every independently open workflow's failed read is gated; those hosts keep
-their existing recovery/revision handling. Broader lifecycle feedback and
-focused-workflow recovery remain outside this POC.
+`useTaskActions` routes commit feedback only to the captured registration,
+never whichever view registered most recently. Owner replacement/unregistration
+makes a delayed notification inert without cancelling captured invalidation.
+Today, Inbox, All, Discussion, Review, Waiting and project outlines use one
+notice each; nested split outlines inherit their initiating view. The notice
+contains only task ID/title, occurrence kind and expiry, never a task DTO,
+ancestor, sibling, section or destination. Its noninteractive body portal stays
+outside inert page/modal roots. A newer completion replaces the notice and
+restarts its three-second timer; no notification backlog is stored.
+
+Identity, route, filter, member/scope, and access retirement clears the
+originating notice and retires the corresponding capability. A matching access
+denial from an independently open task/detail/workflow read also retires the
+view owner through the native Query cache subscription, even if the view read
+still succeeds. After a successful reread, the view establishes fresh owner and
+eligibility tokens; delayed work from the retired scope cannot target the new
+registration. The existing authoritative queries continue to control status,
+hierarchy and membership; no snapshot or destination suppression is used. Each
+task-completion view exposes failed refresh through Retry and makes stale task
+rows inert until a fresh read succeeds. Waiting retains the same behavior; no
+other lifecycle action is included.
 
 Issue #332 explicitly relaxes exact source-position confirmation: fresh reads
 may immediately remove or relocate rows, including emptied ancestor branches.

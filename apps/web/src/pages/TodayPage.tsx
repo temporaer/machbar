@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type AgendaScope } from "../lib/api";
 import type { Task } from "@machbar/shared";
@@ -24,6 +24,7 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { useVisibleRefreshInterval } from "../lib/refresh";
 import type { AttentionTone } from "../lib/attentionTone";
 import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
+import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -47,10 +48,15 @@ export function TodayPage() {
   // ensures switching identities always shows that member's own agenda.
   const { currentMemberId, members } = useIdentity();
   const agendaSelectionKey = `${scope}:${currentMemberId ?? "none"}`;
+  const accessResource = useMemo(
+    () => ({ type: "view" as const, key: `today:${agendaSelectionKey}` }),
+    [agendaSelectionKey],
+  );
   const {
     data: loadedAgenda,
     loading,
     error,
+    refreshError,
     reload,
   } = useAsync(
     async () => ({
@@ -58,6 +64,7 @@ export function TodayPage() {
       agenda: await api.getAgenda(currentMemberId, scope),
     }),
     [currentMemberId, scope],
+    accessResource,
   );
   useVisibleRefreshInterval(reload);
   const agenda =
@@ -150,6 +157,11 @@ export function TodayPage() {
   );
 
   return (
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={agenda !== null}
+      readUnavailable={error !== null || refreshError !== null}
+    >
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div className="today-page">
@@ -216,9 +228,11 @@ export function TodayPage() {
         <ContributionPulse />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        {refreshError ? <ErrorState message={refreshError} onRetry={reload} /> : null}
         {agenda ? (
           <InterventionFocusStrip focus={agenda.interventions} />
         ) : null}
+        <div {...(refreshError ? { inert: "" } : {})}>
         {agenda
           ? (() => {
               const total =
@@ -302,8 +316,10 @@ export function TodayPage() {
               );
             })()
           : null}
+        </div>
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
     </InteractionScopeProvider>
+    </ViewCompletionNotice>
   );
 }

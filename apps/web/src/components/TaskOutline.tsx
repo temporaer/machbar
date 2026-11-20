@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { flattenTasks, orderTaskTree } from "../lib/taskHelpers";
-import { useTaskActions } from "../lib/useTaskActions";
+import { useTaskActions, useTaskCommandEligibility } from "../lib/useTaskActions";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
 import { TaskRow } from "./TaskRow";
@@ -62,6 +62,7 @@ export function TaskOutline({
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
+  const commandEligibility = useTaskCommandEligibility();
   const organize = useOutlineOrganize(tasks, organizable);
 
   const sorted = useMemo(() => orderTaskTree(organize.tasks, preserveRootOrder, compactDescendants), [organize.tasks, preserveRootOrder, compactDescendants]);
@@ -103,7 +104,8 @@ export function TaskOutline({
       <p className="visually-hidden" role="status" aria-live="polite">
         {organize.announcement}
       </p>
-      {taskActions.pendingTask ? (
+      {taskActions.pendingTask &&
+      taskActions.pendingCommandEligibilityId === (commandEligibility?.id ?? null) ? (
         <ChildPolicyPrompt
           taskTitle={taskActions.pendingTask.title}
           action={taskActions.pendingAction ?? "complete"}

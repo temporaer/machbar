@@ -7,14 +7,15 @@ import type {
   Task,
 } from "@machbar/shared";
 import { useLocation, useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
-import { useAsync } from "../lib/useAsync";
+import { api, type ProjectWithActions } from "../lib/api";
+import { useAsync, type AsyncState } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
 import type { WorkItemCommand } from "../lib/commands";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
-import { useTaskActions } from "../lib/useTaskActions";
+import { useTaskActions, useTaskCommandEligibility } from "../lib/useTaskActions";
+import { useIdentity } from "../lib/identity";
 import {
   useTaskDetail,
   type TaskDetailFocusField,
@@ -22,6 +23,7 @@ import {
 import { useStrings } from "../lib/strings";
 import { ErrorState, EmptyState, LoadingState } from "../components/AsyncStates";
 import { PageHeader } from "../components/PageHeader";
+import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
 import { RefinementTools } from "../components/RefinementTools";
 import { ChildPolicyPrompt } from "../components/ChildPolicyPrompt";
 import "./ReviewPage.css";
@@ -53,10 +55,53 @@ function ReviewCard({ cardRef, children }: {
 }
 
 export function ReviewPage() {
+  const { currentMemberId } = useIdentity();
+  const accessResource = useMemo(
+    () => ({ type: "view" as const, key: `review:${currentMemberId}` }),
+    [currentMemberId],
+  );
+  const itemsRead = useAsync(() => api.getReviewItems(), [currentMemberId], accessResource);
+  const projectsRead = useAsync(() => api.getProjects(), [], accessResource);
+  const tasksRead = useAsync(() => api.searchTasks({}), [], accessResource);
+  const cachedReadsAvailable = [itemsRead, projectsRead, tasksRead].every(read => read.data !== null);
+  const readUnavailable = [itemsRead, projectsRead, tasksRead].some(
+    read => read.error !== null || read.refreshError !== null,
+  );
+  return (
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={cachedReadsAvailable}
+      readUnavailable={readUnavailable}
+    >
+      <ReviewPageContent
+        accessResource={accessResource}
+        itemsRead={itemsRead}
+        projectsRead={projectsRead}
+        tasksRead={tasksRead}
+        readUnavailable={readUnavailable}
+      />
+    </ViewCompletionNotice>
+  );
+}
+
+function ReviewPageContent({
+  accessResource,
+  itemsRead,
+  projectsRead,
+  tasksRead,
+  readUnavailable,
+}: {
+  accessResource: { type: "view"; key: string };
+  itemsRead: AsyncState<ReviewItem[]>;
+  projectsRead: AsyncState<ProjectWithActions[]>;
+  tasksRead: AsyncState<Task[]>;
+  readUnavailable: boolean;
+}) {
   const strings = useStrings();
   const navigate = useNavigate();
   const location = useLocation();
   const taskDetail = useTaskDetail();
+  const { currentMemberId } = useIdentity();
   const taskWorkflow = useTaskWorkflow();
   const projectWorkflow = useProjectWorkflow();
   const dispatch = useWorkItemCommands();
@@ -68,22 +113,26 @@ export function ReviewPage() {
     data: items,
     loading: itemsLoading,
     error: itemsError,
+    refreshError: itemsRefreshError,
     reload: reloadItems,
-  } = useAsync(() => api.getReviewItems(), []);
+  } = itemsRead;
   const {
     data: projects,
     loading: projectsLoading,
     error: projectsError,
+    refreshError: projectsRefreshError,
     reload: reloadProjects,
-  } = useAsync(() => api.getProjects(), []);
+  } = projectsRead;
   const {
     data: tasks,
     loading: tasksLoading,
     error: tasksError,
+    refreshError: tasksRefreshError,
     reload: reloadTasks,
-  } = useAsync(() => api.searchTasks({}), []);
+  } = tasksRead;
   const projectActions = useProjectActions();
   const taskActions = useTaskActions();
+  const commandEligibility = useTaskCommandEligibility();
   const projectById = useMemo(
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
@@ -476,7 +525,7 @@ export function ReviewPage() {
 
   const loading = itemsLoading || projectsLoading || tasksLoading;
   const error = itemsError ?? projectsError ?? tasksError;
-
+  const refreshError = itemsRefreshError ?? projectsRefreshError ?? tasksRefreshError;
   return (
     <div>
       <PageHeader title={strings.reviewTitle} />
@@ -491,8 +540,22 @@ export function ReviewPage() {
           }}
         />
       ) : null}
+      {refreshError ? (
+        <ErrorState
+          message={refreshError}
+          onRetry={() => {
+            if (itemsRefreshError) reloadItems();
+            if (projectsRefreshError) reloadProjects();
+            if (tasksRefreshError) reloadTasks();
+          }}
+        />
+      ) : null}
       {items ? (
-        <section className="section" aria-labelledby="review-queue-heading">
+        <section
+          className="section"
+          aria-labelledby="review-queue-heading"
+          {...(readUnavailable ? { inert: "" } : {})}
+        >
           <h2 id="review-queue-heading" className="section-title">
             {strings.reviewPrimaryQueue}
           </h2>
@@ -526,7 +589,7 @@ export function ReviewPage() {
                       ) : null}
                     </div>
                     <p>{reasonText(item.reason)}</p>
-                    <fieldset className="review-item-actions" disabled={pending} aria-busy={pending}
+                    <fieldset className="review-item-actions" disabled={pending || readUnavailable} aria-busy={pending}
                       style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
                       {!equivalentInspection ? (
                         <button
@@ -576,7 +639,8 @@ export function ReviewPage() {
           </>
         ) : null}
       </details>
-      {taskActions.pendingTask && taskActions.pendingAction ? (
+      {!readUnavailable && taskActions.pendingTask && taskActions.pendingAction &&
+      taskActions.pendingCommandEligibilityId === (commandEligibility?.id ?? null) ? (
         <ChildPolicyPrompt
           taskTitle={taskActions.pendingTask.title}
           action={taskActions.pendingAction}

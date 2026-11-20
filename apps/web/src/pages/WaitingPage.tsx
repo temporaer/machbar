@@ -36,9 +36,13 @@ export function WaitingPage() {
     accessResource,
   );
   return (
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={entries !== null}
+      readUnavailable={error !== null || refreshError !== null}
+    >
     <InteractionScopeProvider>
       {!refreshError ? <WorkItemKeyboardNavMount /> : null}
-      {entries ? <ViewCompletionNotice key={`${scope}:${currentMemberId}`} accessResource={accessResource} /> : null}
       <div className="waiting-page">
         <PageHeader
           title={strings.waiting}
@@ -77,5 +81,6 @@ export function WaitingPage() {
         </div>
       </div>
     </InteractionScopeProvider>
+    </ViewCompletionNotice>
   );
 }

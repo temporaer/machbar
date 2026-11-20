@@ -1372,7 +1372,7 @@ test("Discussion retains focused rows through an outage and retries without writ
   await expect(discussion.getByRole("alert")).toBeVisible();
   await expect(row).toBeVisible();
   await expect(projectRow).toBeVisible();
-  await expect(row).toBeFocused();
+  await expect(discussion.getByRole("button", { name: "Erneut versuchen", exact: true })).toBeFocused();
   const writes: string[] = [];
   page.on("request", request => {
     if (new URL(request.url()).pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method())) {
@@ -1386,6 +1386,7 @@ test("Discussion retains focused rows through an outage and retries without writ
   await expect(discussion.getByRole("alert")).toHaveCount(0);
   await expect(row).toBeVisible();
   await expect(projectRow).toBeVisible();
+  await expect(row).toBeFocused();
   expect(writes).toEqual([]);
   expect(await (await page.request.get(`/api/tasks/${item.id}`)).json()).toMatchObject({
     revision: item.revision, discussionRequested: true,

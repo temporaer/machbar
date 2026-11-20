@@ -5,7 +5,6 @@ import { WaitingPage } from "./WaitingPage";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { makeMember, makeTask } from "../test/fixtures";
-import { useTaskActions } from "../lib/useTaskActions";
 import { useRefresh } from "../lib/refresh";
 import { useAsync } from "../lib/useAsync";
 
@@ -51,15 +50,17 @@ function CompletionHarness({
   taskAccessDenied?: boolean;
   unrelatedAccessDenied?: boolean;
 }) {
-  const actions = useTaskActions();
   const { bump } = useRefresh();
   return <>
-    <button onClick={() => { void actions.complete(task); }}>Complete fixture</button>
     <button onClick={() => { void bump(); }}>Refresh fixture</button>
     <TaskAccessProbe taskId={task.id} denied={taskAccessDenied} />
     <UnrelatedAccessProbe denied={unrelatedAccessDenied} />
     {visible ? <WaitingPage /> : null}
   </>;
+}
+
+function completeTaskRow() {
+  fireEvent.click(screen.getByRole("button", { name: /^Erledigt$/ }));
 }
 
 describe("WaitingPage", () => {
@@ -78,7 +79,7 @@ describe("WaitingPage", () => {
     renderWithProviders(<CompletionHarness task={task} />);
     await screen.findByText(task.title, { exact: true });
     vi.mocked(api.getWaiting).mockResolvedValue([{ task: fresh, reasons: [{ type: "context", contexts: [] }] }]);
-    fireEvent.click(screen.getByText("Complete fixture"));
+    completeTaskRow();
     expect(await screen.findByText(`Durchgang von „${task.title}“ erledigt.`)).toBeInTheDocument();
     expect(await screen.findByText("Fresh authoritative notes")).toBeInTheDocument();
     expect(screen.getByText(task.title, { exact: true })).toBeInTheDocument();
@@ -92,7 +93,7 @@ describe("WaitingPage", () => {
     const { rerender } = renderWithProviders(<CompletionHarness task={task} />);
     await screen.findByText(task.title, { exact: true });
     vi.mocked(api.getWaiting).mockResolvedValue([]);
-    fireEvent.click(screen.getByText("Complete fixture"));
+    completeTaskRow();
     const message = `„${task.title}“ erledigt.`;
     await screen.findByText(message);
     if (retirement === "view") {
@@ -114,7 +115,7 @@ describe("WaitingPage", () => {
     rerender(<CompletionHarness task={task} unrelatedAccessDenied />);
     fireEvent.click(screen.getByText("Refresh unrelated data"));
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByText("Complete fixture"));
+    completeTaskRow();
     expect(await screen.findByText(`„${task.title}“ erledigt.`)).toBeInTheDocument();
   });
 
@@ -127,10 +128,10 @@ describe("WaitingPage", () => {
       .mockImplementationOnce(() => new Promise(resolve => { confirmSecond = resolve; }));
     const { rerender } = renderWithProviders(<CompletionHarness task={task} />);
     await screen.findByText(task.title, { exact: true });
-    fireEvent.click(screen.getByText("Complete fixture"));
+    completeTaskRow();
     const message = `„${task.title}“ erledigt.`;
     await screen.findByText(message);
-    fireEvent.click(screen.getByText("Complete fixture"));
+    completeTaskRow();
     await waitFor(() => expect(api.completeTask).toHaveBeenCalledTimes(2));
     rerender(<CompletionHarness task={task} taskAccessDenied />);
     fireEvent.click(screen.getByText("Refresh task access"));

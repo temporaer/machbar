@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Task } from "@machbar/shared";
 import { api, type AgendaScope } from "../lib/api";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -18,11 +18,30 @@ import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount
 import { useIdentity } from "../lib/identity";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
+import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
+
+function InboxQueueButton({ tasks }: { tasks: Task[] }) {
+  const strings = useStrings();
+  const { openQueue } = useTaskDetail();
+  return (
+    <button
+      type="button"
+      className="btn btn-sm btn-primary"
+      onClick={() => openQueue(tasks.map(task => task.id))}
+    >
+      {strings.clarifyNow}
+    </button>
+  );
+}
 
 export function InboxPage() {
   const strings = useStrings();
   const { currentMemberId } = useIdentity();
   const [scope, setScope] = useState<AgendaScope>(readTodayScope);
+  const accessResource = useMemo(
+    () => ({ type: "view" as const, key: `inbox:${currentMemberId}:${scope}` }),
+    [currentMemberId, scope],
+  );
   const selectScope = (nextScope: AgendaScope) => {
     setScope(nextScope);
     writeTodayScope(nextScope);
@@ -31,16 +50,22 @@ export function InboxPage() {
     data: loadedTasks,
     loading,
     error,
+    refreshError,
     reload,
   } = useAsync(
     () => api.getInbox(currentMemberId, scope),
     [currentMemberId, scope],
+    accessResource,
   );
   const tasks = loadedTasks;
-  const { openQueue } = useTaskDetail();
   const location = useLocation();
 
   return (
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={tasks !== null}
+      readUnavailable={error !== null || refreshError !== null}
+    >
     <InteractionScopeProvider>
       <InboxFocusRail tasks={tasks} focusId={new URLSearchParams(location.search).get("focus")} />
       <WorkItemKeyboardNavMount />
@@ -74,13 +99,7 @@ export function InboxPage() {
                 />
               </button>
               {tasks && tasks.length > 0 ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  onClick={() => openQueue(tasks.map((t) => t.id))}
-                >
-                  {strings.clarifyNow}
-                </button>
+                <InboxQueueButton tasks={tasks} />
               ) : null}
             </>
           }
@@ -95,10 +114,12 @@ export function InboxPage() {
         </Link>
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        {refreshError ? <ErrorState message={refreshError} onRetry={reload} /> : null}
         {tasks ? (
           tasks.length === 0 ? (
             <EmptyState message={strings.clarifyEmpty} />
           ) : (
+            <div {...(refreshError ? { inert: "" } : {})}>
             <TaskOutline
               key={`${scope}:${currentMemberId}`}
               tasks={tasks}
@@ -106,11 +127,13 @@ export function InboxPage() {
               preserveRootOrder
               showSwipeHint={false}
             />
+            </div>
           )
         ) : null}
         <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
     </InteractionScopeProvider>
+    </ViewCompletionNotice>
   );
 }
 

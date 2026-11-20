@@ -232,11 +232,12 @@ export function useWorkItemCommands() {
       return;
     }
     if (task.acceptanceCriteria.some((criterion) => !criterion.checked)) {
-      taskWorkflow.open("completeWithCriteria", task.id);
+      const originDetail = taskDetail.openTaskId === task.id ? taskDetail.getHandoff() : null;
+      taskWorkflow.open("completeWithCriteria", task.id, undefined, originDetail);
       return;
     }
     taskActions.requestToggle(task);
-  }, [taskActions, taskWorkflow]);
+  }, [taskActions, taskDetail, taskWorkflow]);
 
   const dispatch = useCallback(
     (command: WorkItemCommand) => {
