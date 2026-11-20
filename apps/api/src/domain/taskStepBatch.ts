@@ -83,7 +83,7 @@ function assertProjectChainRevisions(
   }
 }
 
-function commitmentSubject(task: ReturnType<typeof getTaskOrThrow>) {
+function commitmentSubject(task: TaskCreationFacts) {
   return {
     type: "task" as const,
     id: task.id,
@@ -189,7 +189,7 @@ function createSteps(
     return destinationTaskId !== null && convertedProjectId === null
       ? createChildTaskInTransaction(txDb, destinationTaskId, taskInput, context, {
           activateCommitment: false,
-          batchState: childBatchState,
+          batchState: childBatchState!,
         })
       : createTaskInTransaction(txDb, {
           ...taskInput,
