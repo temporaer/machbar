@@ -1,0 +1,69 @@
+name: Graph load profile
+
+on:
+  push:
+    branches:
+      - codex/347-graph-load-profile
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Preserve profiler from current revision
+        run: cp apps/api/scripts/graph-load-profile.ts /tmp/graph-load-profile.ts
+      - name: Profile baseline, #343, and current revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/graph-load-profiles
+          profile_revision() {
+            local label="$1"
+            local revision="$2"
+            git checkout --detach "$revision"
+            mkdir -p apps/api/scripts
+            cp /tmp/graph-load-profile.ts apps/api/scripts/graph-load-profile.ts
+            npm ci
+            npm run build -w @machbar/shared
+            local output="/tmp/graph-load-profiles/${label}.json"
+            AUDIT_SIZES=100,1000,5000 AUDIT_REPEATS=3 AUDIT_SHAPES=balanced,deep-chain \
+              npx tsx apps/api/scripts/graph-load-profile.ts > "$output"
+            node -e '
+              const fs = require("node:fs");
+              const label = process.argv[1];
+              const data = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+              const rows = data.results.map((item) => ({
+                shape: item.result.shape,
+                tasks: item.result.taskCount,
+                wallMs: item.result.totals.wallMs,
+                sqlMs: item.result.totals.sqlMs,
+                nonSqlMs: item.result.totals.nonSqlMs,
+                topStatements: item.result.statements.slice(0, 5).map((query) => ({
+                  elapsedMs: query.elapsedMs,
+                  executions: query.executions,
+                  rows: query.rowsReturnedOrChanged,
+                  sql: query.sql.slice(0, 220),
+                  ctes: query.ctes
+                })),
+                errors: item.result.errors
+              }));
+              console.log("PROFILE_RESULT " + label + " " + JSON.stringify(rows));
+            ' "$label" "$output"
+          }
+          profile_revision current "$GITHUB_SHA"
+          profile_revision pre343 3cf78725cbdfafee9b9620c25f08daeaf6f9a1fe
+          profile_revision pr343 1986c355c78b40cf18ef1a29449aa73d1a46b64d
+      - uses: actions/upload-artifact@v4
+        with:
+          name: graph-load-profiles
+          path: /tmp/graph-load-profiles/
+          retention-days: 7
