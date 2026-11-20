@@ -4,6 +4,7 @@ import { performance } from "node:perf_hooks";
 import type Database from "better-sqlite3";
 import { openDb } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
+import type { Db } from "../src/db/client.js";
 import { Graph } from "../src/domain/graph.js";
 
 type QuerySample = { ms: number; executions: number; rows: number; args: unknown[] };
@@ -156,6 +157,7 @@ function seedFixture(sqlite: Database.Database, taskCount: number, shape: "balan
   }
 
   const taskIds: number[] = [];
+  const tasksByProject: number[][] = Array.from({ length: projectCount }, () => []);
   const transaction = sqlite.transaction(() => {
     for (let index = 0; index < taskCount; index += 1) {
       let projectIndex: number;
@@ -167,7 +169,7 @@ function seedFixture(sqlite: Database.Database, taskCount: number, shape: "balan
         parentId = index === 0 ? projects[0]! : taskIds[index - 1]!;
       } else {
         projectIndex = index % projectCount;
-        const previousInProject = taskIds.filter((id, candidateIndex) => candidateIndex % projectCount === projectIndex);
+        const previousInProject = tasksByProject[projectIndex]!;
         localIndex = previousInProject.length;
         parentId = localIndex % 4 === 0
           ? projects[projectIndex]!
@@ -197,6 +199,7 @@ function seedFixture(sqlite: Database.Database, taskCount: number, shape: "balan
       );
       const taskId = Number(inserted.lastInsertRowid);
       taskIds.push(taskId);
+      tasksByProject[projectIndex]!.push(taskId);
       addRelations(sqlite, taskId, index);
     }
   });
@@ -224,7 +227,7 @@ function percentile(values: number[]) {
 
 function cteNames(sql: string): string[] {
   const names: string[] = [];
-  const head = sql.match(/^\s*WITH\s+RECURSIVE?\s*([\w]+)\s+AS\s*\(/i);
+  const head = sql.match(/^\\s*WITH\\s+(?:RECURSIVE\\s+)?([\\w]+)\\s+AS\\s*\\(/i);
   if (head?.[1]) names.push(head[1]);
   for (const match of sql.matchAll(/,\s*([\w]+)\s+AS\s*\(/gi)) {
     names.push(match[1]!);
@@ -298,14 +301,14 @@ function summarize(taskCount: number, shape: "balanced" | "deep-chain", repeats:
   };
 }
 
-function oneLoad(sqlite: Database.Database): LoadSample {
+function oneLoad(db: Db, sqlite: Database.Database): LoadSample {
   const queries = new Map<string, QuerySample>();
   activeQueries = queries;
   const startedAt = performance.now();
   let graph: Graph | undefined;
   let error: string | undefined;
   try {
-    graph = Graph.load((sqlite as unknown) as Parameters<typeof Graph.load>[0]);
+    graph = Graph.load(db);
   } catch (caught) {
     error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   } finally {
@@ -330,8 +333,8 @@ function runShape(taskCount: number, shape: "balanced" | "deep-chain", repeats: 
   installStatementProfiler(handle.sqlite);
 
   try {
-    oneLoad(handle.sqlite);
-    const samples = Array.from({ length: repeats }, () => oneLoad(handle.sqlite));
+    oneLoad(handle.db, handle.sqlite);
+    const samples = Array.from({ length: repeats }, () => oneLoad(handle.db, handle.sqlite));
     return { fixture, result: summarize(taskCount, shape, repeats, samples, handle.sqlite) };
   } finally {
     handle.close();
