@@ -601,7 +601,7 @@ describe("ReviewPage", () => {
     expect(document.querySelector(".view-completion-notice")).toHaveTextContent(task.title);
   });
 
-  it("does not own task completion feedback until all Review reads are available", async () => {
+  it("keeps commands disabled during initial reads and preserves the view owner after loading", async () => {
     let releaseProjects!: (value: typeof project[]) => void;
     mockedApi.getProjects.mockReturnValueOnce(new Promise(resolve => {
       releaseProjects = resolve;
@@ -632,11 +632,7 @@ describe("ReviewPage", () => {
     const detail = await screen.findByRole("dialog", { name: "Details" });
     await userEvent.click(within(detail).getByRole("button", { name: /^Status / }));
     await userEvent.click(within(detail).getByRole("button", { name: /^Aufgabe abschließen$/ }));
-    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledOnce());
-
-    await act(async () => {
-      commitCompletion({ ...task, status: "done", revision: 2 });
-    });
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(document.querySelector(".view-completion-notice")).not.toBeInTheDocument();
 
     await act(async () => {
@@ -644,6 +640,13 @@ describe("ReviewPage", () => {
     });
     await waitFor(() => expect(within(card).getByRole("button", { name: "Machbar" })).toBeEnabled());
     expect(document.querySelector(".view-completion-notice")).not.toBeInTheDocument();
+    await userEvent.click(within(detail).getByRole("button", { name: /^Status / }));
+    await userEvent.click(within(detail).getByRole("button", { name: /^Aufgabe abschließen$/ }));
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledOnce());
+    await act(async () => {
+      commitCompletion({ ...task, status: "done", revision: 2 });
+    });
+    await waitFor(() => expect(document.querySelector(".view-completion-notice")).toHaveTextContent(task.title));
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Details" })).not.toBeInTheDocument());
 

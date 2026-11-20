@@ -36,8 +36,30 @@ const recoverableTask = makeTask({
   children: [],
 });
 const accessResource = { type: "view" as const, key: "completion-recovery" };
+const initialEligibilityResource = { type: "view" as const, key: "initial-command-loading" };
 
 let actionsByScope = new Map<symbol, ReturnType<typeof useTaskActions>>();
+const unscopedActions = { current: null as ReturnType<typeof useTaskActions> | null };
+const accessRecoveryScopes: {
+  initial: TaskCommandEligibility | null;
+  latest: TaskCommandEligibility | null;
+} = { initial: null, latest: null };
+function getAccessRecoveryScope(which: "initial" | "latest") {
+  return accessRecoveryScopes[which] as TaskCommandEligibility | null;
+}
+function getUnscopedActions() {
+  return unscopedActions.current as ReturnType<typeof useTaskActions> | null;
+}
+
+function TestWrapper({ children }: { children: ReactNode }) {
+  return (
+    <LocaleProvider initialLocale="de">
+      <RefreshProvider>
+        <TaskActionsProvider>{children}</TaskActionsProvider>
+      </RefreshProvider>
+    </LocaleProvider>
+  );
+}
 
 function DecisionHarness({
   scope,
@@ -92,20 +114,11 @@ function renderScopes(scopes: Array<{
   owner: symbol;
   request?: "complete" | "cancel";
 }>) {
-  function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <LocaleProvider initialLocale="de">
-        <RefreshProvider>
-          <TaskActionsProvider>{children}</TaskActionsProvider>
-        </RefreshProvider>
-      </LocaleProvider>
-    );
-  }
   actionsByScope = new Map();
   return render(scopes.map(({ scope, owner, request }, index) => (
     <Scope key={index} scope={scope} owner={owner} {...(request ? { request } : {})} />
   )), {
-    wrapper: Wrapper,
+    wrapper: TestWrapper,
   });
 }
 
@@ -120,6 +133,10 @@ function AccessRecoveryControls({
 }) {
   const actions = useTaskActions();
   const commandEligibility = useTaskCommandEligibility();
+  if (commandEligibility) {
+    accessRecoveryScopes.initial ??= commandEligibility;
+    accessRecoveryScopes.latest = commandEligibility;
+  }
   return (
     <>
       <output>{readState}</output>
@@ -163,10 +180,61 @@ function AccessRecoveryHarness() {
     </ViewCompletionNotice>
   );
 }
+
+function EligibilityControls() {
+  const actions = useTaskActions();
+  const commandEligibility = useTaskCommandEligibility();
+  return (
+    <>
+      <output>{commandEligibility?.active ? "commands-enabled" : "commands-disabled"}</output>
+      <button type="button" onClick={() => actions.requestToggle(recoverableTask)}>
+        Request initial completion
+      </button>
+    </>
+  );
+}
+
+function EligibilityHarness({ enabled }: { enabled: boolean }) {
+  return (
+    <ViewCompletionNotice
+      accessResource={initialEligibilityResource}
+      enabled={enabled}
+      readUnavailable={false}
+    >
+      <EligibilityControls />
+    </ViewCompletionNotice>
+  );
+}
+
+function UnscopedResolver() {
+  const actions = useTaskActions();
+  unscopedActions.current = actions;
+  return (
+    <button type="button" onClick={() => actions.resolvePolicy("complete_children")}>
+      Resolve without view capability
+    </button>
+  );
+}
 describe("child-policy command eligibility", () => {
   afterEach(() => vi.clearAllMocks());
 
+  it("keeps commands ineligible until the view has authoritative data", async () => {
+    mockedApi.completeTask.mockResolvedValue(recoverableTask);
+    const rendered = render(<EligibilityHarness enabled={false} />, { wrapper: TestWrapper });
+
+    expect(await screen.findByText("commands-disabled")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Request initial completion" }));
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+
+    rendered.rerender(<EligibilityHarness enabled />);
+    expect(await screen.findByText("commands-enabled")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Request initial completion" }));
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledOnce());
+  });
+
   it("retires the old owner and registers fresh feedback after view access recovers", async () => {
+    accessRecoveryScopes.initial = null;
+    accessRecoveryScopes.latest = null;
     let commitFirstCompletion!: (task: typeof recoverableTask) => void;
     mockedApi.completeTask
       .mockImplementationOnce(() => new Promise(resolve => {
@@ -204,6 +272,22 @@ describe("child-policy command eligibility", () => {
 
     expect(mockedApi.completeTask).toHaveBeenCalledTimes(2);
     expect(await screen.findByText("„Recovered task“ erledigt.")).toBeVisible();
+    expect(getAccessRecoveryScope("initial")?.active).toBe(false);
+    expect(getAccessRecoveryScope("latest")?.id).not.toBe(getAccessRecoveryScope("initial")?.id);
+    expect(getAccessRecoveryScope("latest")?.active).toBe(true);
+  });
+
+  it("clears committed feedback when the originating view loses access", async () => {
+    mockedApi.completeTask.mockResolvedValue(recoverableTask);
+    render(<AccessRecoveryHarness />, { wrapper: TestWrapper });
+
+    await screen.findByText("available");
+    await userEvent.click(screen.getByRole("button", { name: "Complete recovered task" }));
+    expect(await screen.findByText("„Recovered task“ erledigt.")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Deny access" }));
+    await screen.findByText("unavailable");
+    expect(screen.queryByText("„Recovered task“ erledigt.")).not.toBeInTheDocument();
   });
 
   it.each([
@@ -245,6 +329,29 @@ describe("child-policy command eligibility", () => {
     await act(async () => actionsByScope.get(first.id)?.resolvePolicy("complete_children"));
     expect(mockedApi.completeTask).toHaveBeenCalledTimes(1);
     expect(actionsByScope.get(first.id)?.pendingTask).toBeNull();
+  });
+
+  it("does not resolve a scoped pending decision through a null capability", async () => {
+    const scope = { id: Symbol("origin-view"), active: true };
+    actionsByScope = new Map();
+    unscopedActions.current = null;
+    render(
+      <>
+        <Scope scope={scope} owner={Symbol("origin-feedback")} />
+        <UnscopedResolver />
+      </>,
+      { wrapper: TestWrapper },
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Request complete" }));
+    await userEvent.click(screen.getByRole("button", { name: "Resolve without view capability" }));
+
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(actionsByScope.get(scope.id)?.pendingTask).toBe(parent);
+
+    await act(async () => actionsByScope.get(scope.id)?.resolvePolicy("complete_children"));
+    expect(mockedApi.completeTask).toHaveBeenCalledOnce();
+    expect(getUnscopedActions()?.pendingTask).toBeNull();
   });
 
   it("rejects completion requests made after the originating view becomes unavailable", async () => {

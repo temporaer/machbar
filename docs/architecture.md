@@ -752,19 +752,26 @@ The typed `onCommitted` callback runs after a successful write and captured
 invalidation starts, before awaiting reads. Only write rejection enters
 mutation error handling.
 
-Each accessible view registers two independent tokens: a feedback owner and a
-mutable command-eligibility capability. Action hooks capture both from ambient
-context; opening task detail stores them in its explicit handoff, and task
-workflows inherit them. This removes owner/scope parameters from row, keyboard,
-detail, and workflow callers. `useTaskActions` validates the capability at the
-canonical mutation boundary and again when resolving child-policy decisions,
-so a stale portalled prompt cannot bypass view read failure. Failed reads retire
-pending decisions and disable commands for that view. A rejected criteria
-completion stays in the workflow and reports a localized refresh-required error
-instead of closing with its local checks discarded. Eligibility is not tied to
-feedback registration: initial supporting reads may still be loading, and
-ordinary refresh errors do not suppress a committed notice when cached access
-remains valid.
+Each accessible view has two independent owners: `useViewTaskCommandEligibility`
+owns the read/access-scoped command capability, while `ViewCompletionNotice`
+owns feedback registration and notice lifetime. The capability stays inactive
+until the view has authoritative data. Action hooks capture both tokens from
+ambient context; opening task detail stores them in its explicit handoff, and
+task workflows inherit them. This removes owner/scope parameters from row,
+keyboard, detail, and workflow callers. `useTaskActions` validates the
+capability at the canonical mutation boundary and again when resolving
+child-policy decisions, so a stale portalled prompt cannot bypass view read
+failure. A null capability is allowed only for actions with no read-bound
+originating view; independent task-detail entry points must load their own task
+before rendering commands and close on access denial. Actions opened from a
+guarded view retain its capability through detail/workflow handoffs, and a
+pending decision captured with a capability cannot be resolved from a null or
+different scope. Failed reads retire pending decisions and disable commands
+for that view; the same view capability can reactivate after recovery, but
+retired decisions cannot. A rejected criteria completion stays in the workflow
+and reports a localized refresh-required error instead of closing with its
+local checks discarded. Ordinary refresh errors do not suppress a committed
+notice when cached access remains valid.
 
 `useTaskActions` routes commit feedback only to the captured registration,
 never whichever view registered most recently. Owner replacement/unregistration
