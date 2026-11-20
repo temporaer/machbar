@@ -327,7 +327,7 @@ test("Review cancellation confirms its own action after the card disappears", as
 
 for (const { from, to, button, message } of [
   { from: "actionable", to: "someday", button: "Irgendwann", message: "auf Irgendwann gesetzt." },
-  { from: "someday", to: "actionable", button: "Machbar", message: "als nächste Aufgabe eingeordnet." },
+  { from: "someday", to: "actionable", button: "Machbar", message: "als machbar markiert." },
 ] as const) {
 test(`a ${from} to ${to} detail transition confirms in its initiating view`, async ({ page }) => {
   let task = await createTask(page, `Status ${randomUUID()}`);
