@@ -542,6 +542,169 @@ describe("atomic task step batches", () => {
     }));
   });
 
+  it("matches the due-plan transition when the project already has a next action", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+
+    async function setup() {
+      const project = await createProject({ title: "Kellerboden", status: "backlog" });
+      const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
+      const parent = await createTask({ title: "Späteres Vorhaben", projectId: project.id, status: "someday" });
+      return { project, existingAction, parent };
+    }
+    function resolution(blocked: { json(): any }) {
+      const requirements = blocked.json().error.details;
+      return {
+        expectedProjects: requirements.expectedProjects,
+        drivers: requirements.projects
+          .filter((entry: { required: string[] }) => entry.required.includes("driver"))
+          .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
+        ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
+          ? { nextActionTitle: "Laufende Aufgabe" }
+          : {}),
+      };
+    }
+
+    const single = await setup();
+    const firstSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: { title: "Notizen sammeln" },
+    });
+    expect(firstSingle.statusCode).toBe(201);
+    const scheduledPayload = { title: "Termin vormerken", scheduledDate: "2027-02-20" };
+    const blockedSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: scheduledPayload,
+    });
+    expect(blockedSingle.statusCode).toBe(409);
+    const scheduledSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: { ...scheduledPayload, activationResolution: resolution(blockedSingle) },
+    });
+    expect(scheduledSingle.statusCode).toBe(201);
+
+    const batch = await setup();
+    const projectBefore = (await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${batch.project.id}`,
+      headers,
+    })).json();
+    const batchPayload = {
+      expectedRevision: batch.parent.revision,
+      expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
+      steps: [{ title: "Notizen sammeln" }, { title: "Termin vormerken", scheduledDate: "2027-02-20" }],
+    };
+    const blockedBatch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batch.parent.id}/children/batch`,
+      headers,
+      payload: batchPayload,
+    });
+    expect(blockedBatch.statusCode).toBe(409);
+    const scheduledBatch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batch.parent.id}/children/batch`,
+      headers,
+      payload: { ...batchPayload, activationResolution: resolution(blockedBatch) },
+    });
+    expect(scheduledBatch.statusCode).toBe(201);
+
+    const batchRecords = mutationRecords([
+      batch.project.id,
+      batch.existingAction.id,
+      batch.parent.id,
+      ...scheduledBatch.json().tasks.map((task: { id: number }) => task.id),
+    ]);
+    const singleRecords = mutationRecords([
+      single.project.id,
+      single.existingAction.id,
+      single.parent.id,
+      firstSingle.json().id,
+      scheduledSingle.json().id,
+    ]);
+    expect(batchRecords).toEqual(singleRecords);
+    expect(batchRecords.contributions).toContainEqual(expect.objectContaining({
+      category: "planning",
+      reason: "project_due_plan_added",
+      entityType: "project",
+    }));
+    expect(batchRecords.contributions).not.toContainEqual(expect.objectContaining({
+      reason: "project_next_action_added",
+    }));
+  });
+
+  it("gives XL breakdown credit to the first eligible child before project planning credit", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const project = await createProject({ title: "Dachfenster", status: "backlog" });
+    const parent = await createTask({
+      title: "Dachfenster renovieren",
+      projectId: project.id,
+      status: "someday",
+      size: "XL",
+    });
+    const reference = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children`,
+      headers,
+      payload: { title: "Montageanleitung", kind: "reference" },
+    });
+    expect(reference.statusCode).toBe(201);
+
+    const projectBefore = (await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}`,
+      headers,
+    })).json();
+    const payload = {
+      expectedRevision: parent.revision,
+      expectedProjectRevisions: [{ projectId: project.id, revision: projectBefore.revision }],
+      steps: [
+        { title: "Termin vereinbaren", scheduledDate: "2027-03-12" },
+        { title: "Werkzeug bereitlegen" },
+      ],
+    };
+    const blocked = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children/batch`,
+      headers,
+      payload,
+    });
+    expect(blocked.statusCode).toBe(409);
+    const requirements = blocked.json().error.details;
+    const activationResolution = {
+      expectedProjects: requirements.expectedProjects,
+      drivers: requirements.projects
+        .filter((entry: { required: string[] }) => entry.required.includes("driver"))
+        .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
+      ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
+        ? { nextActionTitle: "Termin vereinbaren" }
+        : {}),
+    };
+    const applied = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children/batch`,
+      headers,
+      payload: { ...payload, activationResolution },
+    });
+    expect(applied.statusCode).toBe(201);
+
+    const contributions = ctx.handle.sqlite.prepare(`
+      SELECT activity.entity_title AS title, contribution.reason AS reason
+      FROM contribution_events contribution
+      JOIN activity_events activity ON activity.id = contribution.activity_event_id
+      WHERE contribution.entity_id = ? AND contribution.entity_type = 'task'
+      ORDER BY contribution.id
+    `).all(parent.id);
+    expect(contributions).toEqual([{ title: "Termin vereinbaren", reason: "task_broken_down" }]);
+  });
+
   it("leaves a Someday parent parked when the batch has no execution commitment", async () => {
     const parent = await createTask({ title: "Irgendwann Dachboden", status: "someday" });
     const response = await ctx.app.inject({
