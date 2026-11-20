@@ -393,3 +393,28 @@ test("a rejected status write never confirms, and a committed status survives fa
   await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ auf Irgendwann gesetzt.`);
   await expect(page.locator(".error-state")).toBeVisible();
 });
+
+test("a Review status write cannot announce in a replacement view", async ({ page }) => {
+  const task = await createTask(page, `Retired status ${randomUUID()}`, { size: "XL" });
+  let release!: () => void;
+  const write = new Promise<void>(resolve => { release = resolve; });
+  let writing = false;
+  await page.route(`**/api/tasks/${task.id}`, async route => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    writing = true;
+    await write;
+    await route.continue();
+  });
+  await page.goto("/#/more/review");
+  const card = page.locator(".review-item").filter({ hasText: task.title });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Irgendwann lassen", exact: true }).click();
+  await expect.poll(() => writing).toBe(true);
+  await page.goto("/#/more/all");
+  await expect(page.locator(`[data-workitem-id="${task.id}"]`).first()).toBeVisible();
+  release();
+  await expect.poll(async () =>
+    (await (await page.request.get(`/api/tasks/${task.id}`)).json()).status,
+  ).toBe("someday");
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+});
