@@ -441,7 +441,11 @@ describe("atomic task step batches", () => {
         ownerMemberId: member.id,
       });
       const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
-      const parent = await createTask({ title: "Späteres Vorhaben", projectId: project.id, status: "someday" });
+      const parent = await createTask({
+        title: "Späteres Vorhaben",
+        projectId: project.id,
+        status: "actionable",
+      });
       const activated = await ctx.app.inject({
         method: "POST",
         url: `/api/projects/${project.id}/activate`,
@@ -458,19 +462,6 @@ describe("atomic task step batches", () => {
       expect(planned.statusCode, planned.body).toBe(200);
       return { project, existingAction, parent };
     }
-    function resolution(blocked: { json(): any }) {
-      const requirements = blocked.json().error.details;
-      return {
-        expectedProjects: requirements.expectedProjects,
-        drivers: requirements.projects
-          .filter((entry: { required: string[] }) => entry.required.includes("driver"))
-          .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
-        ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
-          ? { nextActionTitle: "Laufende Aufgabe" }
-          : {}),
-      };
-    }
-
     const single = await setup();
     const firstSingle = await ctx.app.inject({
       method: "POST",
@@ -478,22 +469,14 @@ describe("atomic task step batches", () => {
       headers,
       payload: { title: "Notizen sammeln" },
     });
-    expect(firstSingle.statusCode).toBe(201);
-    const scheduledPayload = { title: "Termin vormerken", scheduledDate: "2027-02-20" };
-    const blockedSingle = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${single.parent.id}/children`,
-      headers,
-      payload: scheduledPayload,
-    });
-    expect(blockedSingle.statusCode).toBe(409);
+    expect(firstSingle.statusCode, firstSingle.body).toBe(201);
     const scheduledSingle = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${single.parent.id}/children`,
       headers,
-      payload: { ...scheduledPayload, activationResolution: resolution(blockedSingle) },
+      payload: { title: "Termin vormerken", scheduledDate: "2027-02-20" },
     });
-    expect(scheduledSingle.statusCode).toBe(201);
+    expect(scheduledSingle.statusCode, scheduledSingle.body).toBe(201);
 
     const batch = await setup();
     const projectBefore = (await ctx.app.inject({
@@ -506,20 +489,13 @@ describe("atomic task step batches", () => {
       expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
       steps: [{ title: "Notizen sammeln" }, { title: "Termin vormerken", scheduledDate: "2027-02-20" }],
     };
-    const blockedBatch = await ctx.app.inject({
+    const scheduledBatch = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${batch.parent.id}/children/batch`,
       headers,
       payload: batchPayload,
     });
-    expect(blockedBatch.statusCode).toBe(409);
-    const scheduledBatch = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${batch.parent.id}/children/batch`,
-      headers,
-      payload: { ...batchPayload, activationResolution: resolution(blockedBatch) },
-    });
-    expect(scheduledBatch.statusCode).toBe(201);
+    expect(scheduledBatch.statusCode, scheduledBatch.body).toBe(201);
 
     async function outcome(projectId: number, parentId: number, existingId: number, childIds: number[]) {
       const parent = (await ctx.app.inject({
@@ -568,25 +544,30 @@ describe("atomic task step batches", () => {
       const project = await createProject({
         title: "Kellerboden",
         status: "backlog",
-        dueDate: "2027-12-31",
+        ownerMemberId: member.id,
       });
       const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
-      const parent = await createTask({ title: "Späteres Vorhaben", projectId: project.id, status: "someday" });
+      const parent = await createTask({
+        title: "Späteres Vorhaben",
+        projectId: project.id,
+        status: "actionable",
+      });
+      const activated = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/activate`,
+        headers,
+        payload: { expectedRevision: project.revision },
+      });
+      expect(activated.statusCode, activated.body).toBe(200);
+      const planned = await ctx.app.inject({
+        method: "PATCH",
+        url: `/api/projects/${project.id}`,
+        headers,
+        payload: { dueDate: "2027-12-31", expectedRevision: activated.json().revision },
+      });
+      expect(planned.statusCode, planned.body).toBe(200);
       return { project, existingAction, parent };
     }
-    function resolution(blocked: { json(): any }) {
-      const requirements = blocked.json().error.details;
-      return {
-        expectedProjects: requirements.expectedProjects,
-        drivers: requirements.projects
-          .filter((entry: { required: string[] }) => entry.required.includes("driver"))
-          .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
-        ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
-          ? { nextActionTitle: "Laufende Aufgabe" }
-          : {}),
-      };
-    }
-
     const single = await setup();
     const firstSingle = await ctx.app.inject({
       method: "POST",
@@ -594,22 +575,14 @@ describe("atomic task step batches", () => {
       headers,
       payload: { title: "Notizen sammeln" },
     });
-    expect(firstSingle.statusCode).toBe(201);
-    const scheduledPayload = { title: "Termin vormerken", scheduledDate: "2027-02-20" };
-    const blockedSingle = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${single.parent.id}/children`,
-      headers,
-      payload: scheduledPayload,
-    });
-    expect(blockedSingle.statusCode).toBe(409);
+    expect(firstSingle.statusCode, firstSingle.body).toBe(201);
     const scheduledSingle = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${single.parent.id}/children`,
       headers,
-      payload: { ...scheduledPayload, activationResolution: resolution(blockedSingle) },
+      payload: { title: "Termin vormerken", scheduledDate: "2027-02-20" },
     });
-    expect(scheduledSingle.statusCode).toBe(201);
+    expect(scheduledSingle.statusCode, scheduledSingle.body).toBe(201);
 
     const batch = await setup();
     const projectBefore = (await ctx.app.inject({
@@ -622,20 +595,13 @@ describe("atomic task step batches", () => {
       expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
       steps: [{ title: "Notizen sammeln" }, { title: "Termin vormerken", scheduledDate: "2027-02-20" }],
     };
-    const blockedBatch = await ctx.app.inject({
+    const scheduledBatch = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${batch.parent.id}/children/batch`,
       headers,
       payload: batchPayload,
     });
-    expect(blockedBatch.statusCode).toBe(409);
-    const scheduledBatch = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${batch.parent.id}/children/batch`,
-      headers,
-      payload: { ...batchPayload, activationResolution: resolution(blockedBatch) },
-    });
-    expect(scheduledBatch.statusCode).toBe(201);
+    expect(scheduledBatch.statusCode, scheduledBatch.body).toBe(201);
 
     const batchRecords = mutationRecords([
       batch.project.id,
