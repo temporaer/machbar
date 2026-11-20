@@ -2,10 +2,14 @@ import { Navigate, Route, Routes, RouterProvider, createHashRouter, useLocation 
 import { useState, type ReactNode } from "react";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
-import { TaskDetailProvider } from "./lib/taskDetailContext";
+import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
 import { TaskWorkflowProvider } from "./lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "./lib/projectWorkflowContext";
-import { TaskActionsProvider } from "./lib/useTaskActions";
+import {
+  CompletionFeedbackOwnerProvider,
+  TaskActionsProvider,
+  TaskCommandEligibilityProvider,
+} from "./lib/useTaskActions";
 import { ProjectActionsProvider } from "./lib/useProjectActions";
 import { useGlobalNavigationKeys } from "./lib/useGlobalNavigationKeys";
 import { IdentityGate } from "./components/IdentityGate";
@@ -44,7 +48,15 @@ import { HouseholdTimezoneProvider } from "./lib/householdTimezone";
 import { useStrings } from "./lib/strings";
 
 function TaskDetailHost() {
-  return <TaskDetailSheet />;
+  const { getHandoff } = useTaskDetail();
+  const handoff = getHandoff();
+  return (
+    <CompletionFeedbackOwnerProvider owner={handoff?.completionFeedbackOwner ?? null}>
+      <TaskCommandEligibilityProvider scope={handoff?.commandEligibility ?? null}>
+        <TaskDetailSheet />
+      </TaskCommandEligibilityProvider>
+    </CompletionFeedbackOwnerProvider>
+  );
 }
 
 export function DeveloperModeRoute({ children }: { children: ReactNode }) {

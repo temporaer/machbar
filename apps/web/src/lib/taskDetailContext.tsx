@@ -1,6 +1,11 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
-import type { CompletionFeedbackOwner } from "./useTaskActions";
+import {
+  useCompletionFeedbackOwner,
+  useTaskCommandEligibility,
+  type CompletionFeedbackOwner,
+  type TaskCommandEligibility,
+} from "./useTaskActions";
 import {
   TaskWorkflowProvider,
   useOptionalTaskWorkflow,
@@ -25,6 +30,7 @@ export type TaskDetailHandoff = {
   queueTaskIds: number[];
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
+  commandEligibility?: TaskCommandEligibility;
   completionFeedbackOwner?: CompletionFeedbackOwner;
   openingId?: number;
 };
@@ -48,21 +54,33 @@ export function parseWorkRefinementOrigin(value: unknown): WorkRefinementOrigin 
   return candidate as WorkRefinementOrigin;
 }
 
+interface TaskDetailOrigin {
+  commandEligibility?: TaskCommandEligibility;
+  completionFeedbackOwner?: CompletionFeedbackOwner;
+}
+
 interface TaskDetailContextValue {
   openTaskId: number | null;
   /** True while stepping through a "Klären" queue (Inbox clarify-all flow). */
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
-  open: (taskId: number, focusField?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => void;
-  inspect: (taskId: number, focusField?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => void;
+  open: (taskId: number, focusField?: TaskDetailFocusField, origin?: TaskDetailOrigin) => void;
+  inspect: (taskId: number, focusField?: TaskDetailFocusField, origin?: TaskDetailOrigin) => void;
   /** Opens the first id and remembers the rest so `advanceQueue` can step through them. */
-  openQueue: (taskIds: number[], focusField?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => void;
+  openQueue: (taskIds: number[], focusField?: TaskDetailFocusField, origin?: TaskDetailOrigin) => void;
+  openRelated: (taskId: number) => void;
   advanceQueue: () => void;
   close: () => void;
   getHandoff: () => TaskDetailHandoff | null;
   /** Consumed by the sheet once it has applied the requested focus. */
   clearFocusField: () => void;
 }
+
+type TaskDetailActions = Omit<TaskDetailContextValue, "open" | "inspect" | "openQueue"> & {
+  open: (taskId: number, focusField?: TaskDetailFocusField) => void;
+  inspect: (taskId: number, focusField?: TaskDetailFocusField) => void;
+  openQueue: (taskIds: number[], focusField?: TaskDetailFocusField) => void;
+};
 
 const TaskDetailContext = createContext<TaskDetailContextValue | null>(null);
 
@@ -81,23 +99,23 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
 function TaskDetailFacade({ children }: { children: ReactNode }) {
   const workflow = useTaskWorkflow();
   const detail = workflow.detail;
-  const open = (taskId: number, field?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) =>
+  const open = (taskId: number, field?: TaskDetailFocusField, origin?: TaskDetailOrigin) =>
     workflow.openDetail({
       taskId,
       queueTaskIds: [],
       queueActive: false,
       focusField: field ?? null,
-      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+      ...origin,
     });
-  const inspect = (taskId: number, field?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) =>
+  const inspect = (taskId: number, field?: TaskDetailFocusField, origin?: TaskDetailOrigin) =>
     workflow.inspectDetail({
       taskId,
       queueTaskIds: [],
       queueActive: false,
       focusField: field ?? null,
-      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+      ...origin,
     });
-  const openQueue = (taskIds: number[], field?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => {
+  const openQueue = (taskIds: number[], field?: TaskDetailFocusField, origin?: TaskDetailOrigin) => {
     const [first, ...rest] = taskIds;
     if (first === undefined) return;
     workflow.openDetail({
@@ -105,8 +123,21 @@ function TaskDetailFacade({ children }: { children: ReactNode }) {
       queueTaskIds: rest,
       queueActive: true,
       focusField: field ?? null,
-      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+      ...origin,
     });
+  };
+  const openRelated = (taskId: number) => {
+    const handoff = workflow.getDetailHandoff();
+    if (!handoff) return;
+    const next = {
+      ...handoff,
+      taskId,
+      queueTaskIds: [],
+      queueActive: false,
+      focusField: null,
+    };
+    if (workflow.detailMode === "prerequisite") workflow.inspectDetail(next);
+    else workflow.openDetail(next);
   };
   const close = () => workflow.closeDetailDirectly();
   const getHandoff = (): TaskDetailHandoff | null => workflow.getDetailHandoff();
@@ -120,6 +151,7 @@ function TaskDetailFacade({ children }: { children: ReactNode }) {
       open,
       inspect,
       openQueue,
+      openRelated,
       advanceQueue: workflow.advanceDetailQueue,
       close,
       getHandoff,
@@ -130,8 +162,24 @@ function TaskDetailFacade({ children }: { children: ReactNode }) {
   return <TaskDetailContext.Provider value={value}>{children}</TaskDetailContext.Provider>;
 }
 
-export function useTaskDetail(): TaskDetailContextValue {
+export function useTaskDetail(): TaskDetailActions {
   const ctx = useContext(TaskDetailContext);
   if (!ctx) throw new Error("useTaskDetail must be used within a TaskDetailProvider");
-  return ctx;
+  const completionFeedbackOwner = useCompletionFeedbackOwner();
+  const commandEligibility = useTaskCommandEligibility();
+  return useMemo<TaskDetailActions>(() => ({
+    ...ctx,
+    open: (taskId: number, field?: TaskDetailFocusField) => ctx.open(taskId, field, {
+      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+      ...(commandEligibility ? { commandEligibility } : {}),
+    }),
+    inspect: (taskId: number, field?: TaskDetailFocusField) => ctx.inspect(taskId, field, {
+      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+      ...(commandEligibility ? { commandEligibility } : {}),
+    }),
+    openQueue: (taskIds: number[], field?: TaskDetailFocusField) => ctx.openQueue(taskIds, field, {
+      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+      ...(commandEligibility ? { commandEligibility } : {}),
+    }),
+  }), [commandEligibility, completionFeedbackOwner, ctx]);
 }

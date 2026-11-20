@@ -2,7 +2,12 @@ import { createContext, useContext, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TaskDetailHandoff } from "./taskDetailContext";
 import type { TaskPlanningTarget } from "./commands";
-import type { CompletionFeedbackOwner } from "./useTaskActions";
+import {
+  useCompletionFeedbackOwner,
+  useTaskCommandEligibility,
+  type CompletionFeedbackOwner,
+  type TaskCommandEligibility,
+} from "./useTaskActions";
 
 export type TaskWorkflowKind =
   | "plan"
@@ -26,6 +31,12 @@ export interface TaskWorkflowState {
   planningTarget?: TaskPlanningTarget;
   originDetail?: TaskDetailHandoff | null;
   completionFeedbackOwner?: CompletionFeedbackOwner;
+  commandEligibility?: TaskCommandEligibility;
+}
+
+interface TaskWorkflowOrigin {
+  completionFeedbackOwner?: CompletionFeedbackOwner;
+  commandEligibility?: TaskCommandEligibility;
 }
 
 type WorkflowState = {
@@ -127,7 +138,7 @@ interface TaskWorkflowContextValue {
     taskId: number,
     planningTarget?: TaskPlanningTarget,
     originDetail?: TaskDetailHandoff | null,
-    completionFeedbackOwner?: CompletionFeedbackOwner,
+    origin?: TaskWorkflowOrigin,
   ) => void;
   close: () => void;
   closeDetail: () => void;
@@ -145,6 +156,15 @@ interface TaskWorkflowContextValue {
   historyChanged: () => void;
 }
 
+type TaskWorkflowActions = Omit<TaskWorkflowContextValue, "open"> & {
+  open: (
+    kind: TaskWorkflowKind,
+    taskId: number,
+    planningTarget?: TaskPlanningTarget,
+    originDetail?: TaskDetailHandoff | null,
+  ) => void;
+};
+
 const TaskWorkflowContext = createContext<TaskWorkflowContextValue | null>(null);
 
 export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
@@ -158,18 +178,19 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       detailOpeningId: state.detailOpeningId,
       detailMode: state.detailMode,
       detailVisible,
-      open: (kind, taskId, planningTarget, originDetail, completionFeedbackOwner) => dispatch({
+      open: (kind, taskId, planningTarget, originDetail, origin) => dispatch({
         type: "OPEN",
         workflow: {
           kind,
           taskId,
           ...(planningTarget ? { planningTarget } : {}),
           ...(originDetail !== undefined ? { originDetail } : {}),
-          ...(completionFeedbackOwner
-            ? { completionFeedbackOwner }
-            : originDetail?.completionFeedbackOwner
-              ? { completionFeedbackOwner: originDetail.completionFeedbackOwner }
-              : {}),
+          ...(origin?.completionFeedbackOwner
+            ? { completionFeedbackOwner: origin.completionFeedbackOwner }
+            : {}),
+          ...(origin?.commandEligibility
+            ? { commandEligibility: origin.commandEligibility }
+            : {}),
         },
       }),
       close: () => dispatch({ type: "CLOSE" }),
@@ -188,10 +209,35 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   return <TaskWorkflowContext.Provider value={value}>{children}</TaskWorkflowContext.Provider>;
 }
 
-export function useTaskWorkflow(): TaskWorkflowContextValue {
+export function useTaskWorkflow(): TaskWorkflowActions {
   const ctx = useContext(TaskWorkflowContext);
   if (!ctx) throw new Error("useTaskWorkflow must be used within a TaskWorkflowProvider");
-  return ctx;
+  const completionFeedbackOwner = useCompletionFeedbackOwner();
+  const commandEligibility = useTaskCommandEligibility();
+  return useMemo<TaskWorkflowActions>(() => ({
+    ...ctx,
+    open: (
+      kind: TaskWorkflowKind,
+      taskId: number,
+      planningTarget?: TaskPlanningTarget,
+      originDetail?: TaskDetailHandoff | null,
+    ) => {
+      const origin = commandEligibility || completionFeedbackOwner
+        ? {
+            ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+            ...(commandEligibility ? { commandEligibility } : {}),
+          }
+        : {
+            ...(originDetail?.completionFeedbackOwner
+              ? { completionFeedbackOwner: originDetail.completionFeedbackOwner }
+              : {}),
+            ...(originDetail?.commandEligibility
+              ? { commandEligibility: originDetail.commandEligibility }
+              : {}),
+          };
+      ctx.open(kind, taskId, planningTarget, originDetail, origin);
+    },
+  }), [commandEligibility, completionFeedbackOwner, ctx]);
 }
 
 export function useOptionalTaskWorkflow(): TaskWorkflowContextValue | null {

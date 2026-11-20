@@ -10,6 +10,11 @@ import { makeProject, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { ReviewPage } from "./ReviewPage";
 import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
+import { useTaskDetail } from "../lib/taskDetailContext";
+import {
+  CompletionFeedbackOwnerProvider,
+  TaskCommandEligibilityProvider,
+} from "../lib/useTaskActions";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -44,6 +49,18 @@ vi.mock("../lib/api", () => ({
 }));
 
 const mockedApi = vi.mocked(api, true);
+
+function TestTaskDetailHost() {
+  const { getHandoff } = useTaskDetail();
+  const handoff = getHandoff();
+  return (
+    <CompletionFeedbackOwnerProvider owner={handoff?.completionFeedbackOwner ?? null}>
+      <TaskCommandEligibilityProvider scope={handoff?.commandEligibility ?? null}>
+        <TaskDetailSheet />
+      </TaskCommandEligibilityProvider>
+    </CompletionFeedbackOwnerProvider>
+  );
+}
 
 function ReviewProjectDestination() {
   const location = useLocation();
@@ -506,6 +523,84 @@ describe("ReviewPage", () => {
     expect(screen.queryByRole("dialog", { name: "Diese Aufgabe hat offene Teilaufgaben." })).not.toBeInTheDocument();
   });
 
+  it("rejects detail completion after a supporting Review read fails", async () => {
+    let refreshFailed = false;
+    mockedApi.getProjects.mockImplementation(async () => {
+      if (refreshFailed) throw new Error("Projects refresh failed");
+      return [project, staleProject];
+    });
+    mockedApi.getReviewItems.mockResolvedValue(reviewItems);
+    mockedApi.searchTasks.mockResolvedValue([task]);
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: 2 });
+    function FailSupportingRefresh() {
+      const { bump } = useRefresh();
+      return (
+        <button type="button" onClick={() => {
+          refreshFailed = true;
+          void bump().catch(() => {});
+        }}>
+          Fail Projects refresh
+        </button>
+      );
+    }
+
+    renderWithProviders(<><ReviewPage /><TestTaskDetailHost /><FailSupportingRefresh /></>);
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "Details öffnen" }));
+    const detail = await screen.findByRole("dialog", { name: "Details" });
+    await userEvent.click(screen.getByRole("button", { name: "Fail Projects refresh" }));
+    await screen.findByText(/Projects refresh failed/);
+    await userEvent.click(within(detail).getByRole("button", { name: /^Status / }));
+    await userEvent.click(within(detail).getByRole("button", { name: /^Aufgabe abschließen$/ }));
+
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+
+    refreshFailed = false;
+    await userEvent.click(screen.getByRole("button", { name: /^Erneut versuchen$/ }));
+    await waitFor(() => expect(screen.queryByText(/Projects refresh failed/)).not.toBeInTheDocument());
+    await userEvent.click(within(detail).getByRole("button", { name: /^Status / }));
+    await userEvent.click(within(detail).getByRole("button", { name: /^Aufgabe abschließen$/ }));
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledOnce());
+  });
+
+  it("keeps the completion notice when a supporting refresh fails after the commit", async () => {
+    let refreshFailed = false;
+    mockedApi.getProjects.mockImplementation(async () => {
+      if (refreshFailed) throw new Error("Projects refresh failed");
+      return [project, staleProject];
+    });
+    mockedApi.searchTasks.mockResolvedValue([task]);
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done", revision: 2 });
+    mockedApi.getTask.mockImplementation(async () => task);
+    function FailSupportingRefresh() {
+      const { bump } = useRefresh();
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            refreshFailed = true;
+            void bump().catch(() => {});
+          }}
+        >
+          Fail Projects refresh
+        </button>
+      );
+    }
+    renderWithProviders(<><ReviewPage /><TestTaskDetailHost /><FailSupportingRefresh /></>);
+
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "Details öffnen" }));
+    const detail = await screen.findByRole("dialog", { name: "Details" });
+    await userEvent.click(within(detail).getByRole("button", { name: /^Status / }));
+    await userEvent.click(within(detail).getByRole("button", { name: /^Aufgabe abschließen$/ }));
+    await waitFor(() => expect(document.querySelector(".view-completion-notice")).toHaveTextContent(task.title));
+
+    await userEvent.click(screen.getByRole("button", { name: "Fail Projects refresh" }));
+    await screen.findByText(/Projects refresh failed/);
+    expect(document.querySelector(".view-completion-notice")).toHaveTextContent(task.title);
+  });
+
   it("does not own task completion feedback until all Review reads are available", async () => {
     let releaseProjects!: (value: typeof project[]) => void;
     mockedApi.getProjects.mockReturnValueOnce(new Promise(resolve => {
@@ -530,7 +625,7 @@ describe("ReviewPage", () => {
     mockedApi.completeTask.mockImplementation(() => new Promise(resolve => {
       commitCompletion = resolve;
     }));
-    renderWithProviders(<><ReviewPage /><TaskDetailSheet /></>);
+    renderWithProviders(<><ReviewPage /><TestTaskDetailHost /></>);
 
     const card = (await screen.findByText(task.title)).closest("article")!;
     await userEvent.click(within(card).getByRole("button", { name: "Details öffnen" }));

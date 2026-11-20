@@ -11,7 +11,7 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { useTaskActions } from "../lib/useTaskActions";
+import { useTaskActions, useTaskCommandEligibility } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
@@ -95,7 +95,7 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
-  const { openTaskId, queueActive, focusField, clearFocusField, open, inspect, advanceQueue, close } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, clearFocusField, advanceQueue, close, openRelated } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const dispatch = useWorkItemCommands();
@@ -145,6 +145,7 @@ export function TaskDetailSheet() {
     openTaskId !== null ? { type: "task", taskId: openTaskId } : undefined,
   );
   const taskActions = useTaskActions();
+  const commandEligibility = useTaskCommandEligibility();
   const task = loadedTask;
   const currentTaskRef = useRef(task);
   currentTaskRef.current = task;
@@ -1007,7 +1008,7 @@ export function TaskDetailSheet() {
                           {child.status === "done" ? "✓" : child.status === "cancelled" ? "×" : ""}
                         </button>
                       )}
-                      <button type="button" className="link-plain" onClick={() => (readOnlyInspection ? inspect(child.id) : open(child.id))}>
+                      <button type="button" className="link-plain" onClick={() => openRelated(child.id)}>
                         {child.title}
                       </button>
                     </span>
@@ -1190,7 +1191,8 @@ export function TaskDetailSheet() {
         />
       ) : null}
 
-      {taskActions.pendingTask ? (
+      {taskActions.pendingTask &&
+      taskActions.pendingCommandEligibilityId === (commandEligibility?.id ?? null) ? (
         <ChildPolicyPrompt
           taskTitle={taskActions.pendingTask.title}
           action={taskActions.pendingAction ?? "complete"}

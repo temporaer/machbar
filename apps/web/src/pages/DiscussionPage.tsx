@@ -29,33 +29,64 @@ export function DiscussionPage() {
   const empty = data !== null && tasks.length === 0 && projects.length === 0;
   const pageRef = useRef<HTMLDivElement>(null);
   const focusedTaskElement = useRef<HTMLElement | null>(null);
+  const retryFocusElement = useRef<HTMLButtonElement | null>(null);
   const restoreTaskFocus = useRef(false);
 
   useLayoutEffect(() => {
     const page = pageRef.current;
     if (!page) return;
     if (refreshError) {
-      if (!focusedTaskElement.current) return;
+      const focusedTask = focusedTaskElement.current;
+      if (!focusedTask || document.activeElement !== focusedTask) return;
       restoreTaskFocus.current = true;
-      page.querySelector<HTMLButtonElement>(".error-state button")?.focus();
+      const retryButton = page.querySelector<HTMLButtonElement>(".error-state button");
+      retryFocusElement.current = retryButton ?? null;
+      retryButton?.focus();
       return;
     }
     if (!restoreTaskFocus.current) return;
+    const activeElement = document.activeElement;
+    if (
+      activeElement !== retryFocusElement.current &&
+      activeElement !== document.body &&
+      activeElement !== document.documentElement
+    ) {
+      restoreTaskFocus.current = false;
+      focusedTaskElement.current = null;
+      retryFocusElement.current = null;
+      return;
+    }
     restoreTaskFocus.current = false;
+    retryFocusElement.current = null;
     const target = focusedTaskElement.current;
     focusedTaskElement.current = null;
     if (target?.isConnected) target.focus();
   }, [data, refreshError]);
 
   return (
-    <ViewCompletionNotice accessResource={accessResource} enabled={data !== null}>
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={data !== null}
+      readUnavailable={error !== null || refreshError !== null}
+    >
     <InteractionScopeProvider>
     <div
       className="discussion-page"
       ref={pageRef}
       onFocusCapture={event => {
-        const row = (event.target as HTMLElement).closest("[data-workitem-id][data-workitem-role='task']");
-        if (row) focusedTaskElement.current = event.target as HTMLElement;
+        const target = event.target as HTMLElement;
+        if (target.closest(".error-state")) {
+          if (target !== retryFocusElement.current) {
+            restoreTaskFocus.current = false;
+            focusedTaskElement.current = null;
+            retryFocusElement.current = null;
+          }
+          return;
+        }
+        restoreTaskFocus.current = false;
+        retryFocusElement.current = null;
+        const row = target.closest("[data-workitem-id][data-workitem-role='task']");
+        focusedTaskElement.current = row ? target : null;
       }}
     >
       <PageHeader title={strings.discussionTitle} />

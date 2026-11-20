@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { CompletionFeedbackOwnerProvider, useTaskActions } from "../lib/useTaskActions";
+import {
+  CompletionFeedbackOwnerProvider,
+  TaskCommandEligibilityProvider,
+  useTaskActions,
+} from "../lib/useTaskActions";
 import { useTaskWorkflow, type TaskWorkflowState } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
@@ -56,11 +60,17 @@ export function TaskWorkflowHost() {
     workflow,
   ]);
   if (!workflow.current || workflow.currentOpeningId === null) return null;
-  return <TaskWorkflowContent
-    key={`${currentMemberId}:${workflow.currentOpeningId}`}
-    state={workflow.current}
-    openingId={workflow.currentOpeningId}
-  />;
+  return (
+    <CompletionFeedbackOwnerProvider owner={workflow.current.completionFeedbackOwner ?? null}>
+      <TaskCommandEligibilityProvider scope={workflow.current.commandEligibility ?? null}>
+        <TaskWorkflowContent
+          key={`${currentMemberId}:${workflow.currentOpeningId}`}
+          state={workflow.current}
+          openingId={workflow.currentOpeningId}
+        />
+      </TaskCommandEligibilityProvider>
+    </CompletionFeedbackOwnerProvider>
+  );
 }
 
 function TaskWorkflowContent({ state, openingId }: {
@@ -160,20 +170,18 @@ function TaskWorkflowContent({ state, openingId }: {
       return <TaskPlanningSheet key={task.id} task={task} onClose={close} onFailure={endOnDenied} initialTarget="waiting" />;
     case "split":
       return (
-        <CompletionFeedbackOwnerProvider owner={state.completionFeedbackOwner ?? null}>
-          <TaskSplitSheet
-            key={task.id}
-            parentId={task.id}
-            parentTitle={task.title}
-            parentRevision={task.revision}
-            parentStatus={task.status}
-            projectId={task.projectId}
-            existingChildren={task.children}
-            onClose={close}
-            onFailure={endOnDenied}
-            isCurrent={() => isCurrent() && !ended.current}
-          />
-        </CompletionFeedbackOwnerProvider>
+        <TaskSplitSheet
+          key={task.id}
+          parentId={task.id}
+          parentTitle={task.title}
+          parentRevision={task.revision}
+          parentStatus={task.status}
+          projectId={task.projectId}
+          existingChildren={task.children}
+          onClose={close}
+          onFailure={endOnDenied}
+          isCurrent={() => isCurrent() && !ended.current}
+        />
       );
     case "refinement":
       return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onFailure={endOnDenied} onStarted={(intakeId) => {
@@ -232,12 +240,11 @@ function TaskWorkflowContent({ state, openingId }: {
           onRefresh={reload}
           onComplete={async (criteriaToCheck, childPolicy) => {
             await run(() => taskActions.complete(
-              task,
-              childPolicy,
-              criteriaToCheck,
-              true,
-              state.completionFeedbackOwner,
-            ));
+                task,
+                childPolicy,
+                criteriaToCheck,
+                true,
+              ));
           }}
         />
       );

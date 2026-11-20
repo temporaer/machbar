@@ -157,7 +157,11 @@ export function TodayPage() {
   );
 
   return (
-    <ViewCompletionNotice accessResource={accessResource} enabled={agenda !== null}>
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={agenda !== null}
+      readUnavailable={error !== null || refreshError !== null}
+    >
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div className="today-page">

@@ -1300,6 +1300,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   completeWithCriteriaHint: "All criteria must be checked before the project can be completed.",
   completeProjectAction: "Complete project",
   completeTaskAction: "Complete task",
+  taskCommandUnavailable: "Refresh this view before completing the task.",
   taskCompleting: "Completing …",
   taskCompletionConfirmed: (title: string) => `Completed “${title}”.`,
   taskOccurrenceConfirmed: (title: string) => `Completed this occurrence of “${title}”.`,

@@ -19,17 +19,15 @@ import { useIdentity } from "../lib/identity";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
 import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
-import { useCompletionFeedbackOwner } from "../lib/useTaskActions";
 
 function InboxQueueButton({ tasks }: { tasks: Task[] }) {
   const strings = useStrings();
   const { openQueue } = useTaskDetail();
-  const completionFeedbackOwner = useCompletionFeedbackOwner();
   return (
     <button
       type="button"
       className="btn btn-sm btn-primary"
-      onClick={() => openQueue(tasks.map(task => task.id), undefined, completionFeedbackOwner ?? undefined)}
+      onClick={() => openQueue(tasks.map(task => task.id))}
     >
       {strings.clarifyNow}
     </button>
@@ -63,7 +61,11 @@ export function InboxPage() {
   const location = useLocation();
 
   return (
-    <ViewCompletionNotice accessResource={accessResource} enabled={tasks !== null}>
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={tasks !== null}
+      readUnavailable={error !== null || refreshError !== null}
+    >
     <InteractionScopeProvider>
       <InboxFocusRail tasks={tasks} focusId={new URLSearchParams(location.search).get("focus")} />
       <WorkItemKeyboardNavMount />

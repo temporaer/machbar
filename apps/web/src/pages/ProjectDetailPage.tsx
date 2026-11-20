@@ -425,7 +425,11 @@ export function ProjectDetailPage() {
   }, [storyFocusCommand, projectId]);
 
   return (
-    <ViewCompletionNotice accessResource={accessResource} enabled={project !== null}>
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={project !== null}
+      readUnavailable={projectError !== null || projectRefreshError !== null}
+    >
     <InteractionScopeProvider
       captureTarget={{ kind: "story", storyId: projectId }}
     >

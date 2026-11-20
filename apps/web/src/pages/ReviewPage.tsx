@@ -14,7 +14,7 @@ import type { WorkItemCommand } from "../lib/commands";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
-import { useTaskActions } from "../lib/useTaskActions";
+import { useTaskActions, useTaskCommandEligibility } from "../lib/useTaskActions";
 import { useIdentity } from "../lib/identity";
 import {
   useTaskDetail,
@@ -61,18 +61,24 @@ export function ReviewPage() {
     [currentMemberId],
   );
   const itemsRead = useAsync(() => api.getReviewItems(), [currentMemberId], accessResource);
-  const projectsRead = useAsync(() => api.getProjects(), []);
-  const tasksRead = useAsync(() => api.searchTasks({}), []);
-  const readsAvailable = [itemsRead, projectsRead, tasksRead].every(
-    read => read.data !== null && read.error === null && read.refreshError === null,
+  const projectsRead = useAsync(() => api.getProjects(), [], accessResource);
+  const tasksRead = useAsync(() => api.searchTasks({}), [], accessResource);
+  const cachedReadsAvailable = [itemsRead, projectsRead, tasksRead].every(read => read.data !== null);
+  const readUnavailable = [itemsRead, projectsRead, tasksRead].some(
+    read => read.error !== null || read.refreshError !== null,
   );
   return (
-    <ViewCompletionNotice accessResource={accessResource} enabled={readsAvailable}>
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={cachedReadsAvailable}
+      readUnavailable={readUnavailable}
+    >
       <ReviewPageContent
         accessResource={accessResource}
         itemsRead={itemsRead}
         projectsRead={projectsRead}
         tasksRead={tasksRead}
+        readUnavailable={readUnavailable}
       />
     </ViewCompletionNotice>
   );
@@ -83,11 +89,13 @@ function ReviewPageContent({
   itemsRead,
   projectsRead,
   tasksRead,
+  readUnavailable,
 }: {
   accessResource: { type: "view"; key: string };
   itemsRead: AsyncState<ReviewItem[]>;
   projectsRead: AsyncState<ProjectWithActions[]>;
   tasksRead: AsyncState<Task[]>;
+  readUnavailable: boolean;
 }) {
   const strings = useStrings();
   const navigate = useNavigate();
@@ -124,6 +132,7 @@ function ReviewPageContent({
   } = tasksRead;
   const projectActions = useProjectActions();
   const taskActions = useTaskActions();
+  const commandEligibility = useTaskCommandEligibility();
   const projectById = useMemo(
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
@@ -517,12 +526,6 @@ function ReviewPageContent({
   const loading = itemsLoading || projectsLoading || tasksLoading;
   const error = itemsError ?? projectsError ?? tasksError;
   const refreshError = itemsRefreshError ?? projectsRefreshError ?? tasksRefreshError;
-  const readUnavailable = error !== null || refreshError !== null;
-
-  useEffect(() => {
-    if (readUnavailable) taskActions.cancelPrompt();
-  }, [readUnavailable, taskActions.cancelPrompt]);
-
   return (
     <div>
       <PageHeader title={strings.reviewTitle} />
@@ -636,7 +639,8 @@ function ReviewPageContent({
           </>
         ) : null}
       </details>
-      {!readUnavailable && taskActions.pendingTask && taskActions.pendingAction ? (
+      {!readUnavailable && taskActions.pendingTask && taskActions.pendingAction &&
+      taskActions.pendingCommandEligibilityId === (commandEligibility?.id ?? null) ? (
         <ChildPolicyPrompt
           taskTitle={taskActions.pendingTask.title}
           action={taskActions.pendingAction}

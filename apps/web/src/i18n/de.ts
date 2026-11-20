@@ -1243,6 +1243,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   completeWithCriteriaHint: "Alle Kriterien müssen abgehakt sein, bevor das Projekt abgeschlossen werden kann.",
   completeProjectAction: "Projekt abschließen",
   completeTaskAction: "Aufgabe abschließen",
+  taskCommandUnavailable: "Bitte aktualisiere die Ansicht, bevor du diese Aufgabe abschließt.",
   taskCompleting: "Wird erledigt …",
   taskCompletionConfirmed: (title: string) => `„${title}“ erledigt.`,
   taskOccurrenceConfirmed: (title: string) => `Durchgang von „${title}“ erledigt.`,

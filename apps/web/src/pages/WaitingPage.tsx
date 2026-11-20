@@ -36,7 +36,11 @@ export function WaitingPage() {
     accessResource,
   );
   return (
-    <ViewCompletionNotice accessResource={accessResource} enabled={entries !== null}>
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={entries !== null}
+      readUnavailable={error !== null || refreshError !== null}
+    >
     <InteractionScopeProvider>
       {!refreshError ? <WorkItemKeyboardNavMount /> : null}
       <div className="waiting-page">

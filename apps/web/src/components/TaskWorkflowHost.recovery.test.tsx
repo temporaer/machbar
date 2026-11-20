@@ -8,6 +8,7 @@ import { useRefresh } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { makeCriterion, makeMember, makeTask } from "../test/fixtures";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
+import { TaskCommandEligibilityProvider } from "../lib/useTaskActions";
 
 function Controls() {
   const workflow = useTaskWorkflow();
@@ -160,12 +161,36 @@ describe("TaskWorkflowHost opening recovery", () => {
     await user.click(screen.getByRole("button", { name: "Open completion" }));
     await user.click(await screen.findByRole("checkbox", { name: "Protected criterion" }));
     await user.click(screen.getByRole("button", { name: "Aufgabe abschließen" }));
+    expect(complete).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByRole("checkbox")).not.toBeInTheDocument());
     expect(complete).toHaveBeenCalledTimes(1);
     await act(async () => freshRead.resolve(detail(3)));
     expect(await screen.findByRole("checkbox", { name: "Protected criterion" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Aufgabe abschließen" })).toBeDisabled();
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps checked criteria when the originating view becomes unavailable", async () => {
+    const scope = { id: Symbol("review-view"), active: true };
+    vi.spyOn(api, "getTask").mockResolvedValue(detail());
+    const complete = vi.spyOn(api, "completeTask");
+    renderWithProviders(
+      <TaskCommandEligibilityProvider scope={scope}>
+        <Controls />
+      </TaskCommandEligibilityProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Open completion" }));
+    const checkbox = await screen.findByRole("checkbox", { name: "Protected criterion" });
+    await user.click(checkbox);
+    scope.active = false;
+    await user.click(screen.getByRole("button", { name: "Aufgabe abschließen" }));
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Protected criterion" })).toBeChecked();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Bitte aktualisiere die Ansicht, bevor du diese Aufgabe abschließt.",
+    );
   });
 
   it("does not let a delayed completion close a replacement opening of the same task", async () => {

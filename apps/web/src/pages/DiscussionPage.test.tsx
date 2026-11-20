@@ -83,6 +83,32 @@ describe("Discussion read recovery", () => {
     expect(api.getDiscussion).toHaveBeenCalledTimes(4);
   });
 
+  it("does not restore a task that focus left before a refresh failure", async () => {
+    vi.mocked(api.getDiscussion).mockResolvedValueOnce(nominated())
+      .mockRejectedValueOnce(new ApiError(503, "Unavailable"));
+    renderDiscussion();
+    await userEvent.click(await screen.findByRole("button", { name: "Discuss task" }));
+    await userEvent.click(screen.getByRole("button", { name: /Discuss project/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh discussion" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: /Discuss project/ })).toHaveFocus();
+    expect(screen.getByRole("button", { name: strings.retry })).not.toHaveFocus();
+  });
+
+  it("cancels task restoration when the user moves focus during recovery", async () => {
+    vi.mocked(api.getDiscussion).mockResolvedValueOnce(nominated())
+      .mockRejectedValueOnce(new ApiError(503, "Unavailable"))
+      .mockResolvedValueOnce(nominated());
+    renderDiscussion();
+    await userEvent.click(await screen.findByRole("button", { name: "Discuss task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh discussion" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: strings.retry })).toHaveFocus());
+    await userEvent.click(screen.getByRole("button", { name: "Refresh discussion" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Refresh discussion" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Discuss task" })).not.toHaveFocus();
+  });
+
   it.each([401, 403, 404])("removes retained protected rows after a live %s response", async status => {
     vi.mocked(api.getDiscussion).mockResolvedValueOnce(nominated())
       .mockRejectedValueOnce(new ApiError(status, "Access ended"));

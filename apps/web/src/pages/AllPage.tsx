@@ -113,7 +113,11 @@ export function AllPage() {
   const error = projectsError ?? tasksError;
 
   return (
-    <ViewCompletionNotice accessResource={accessResource} enabled={tasks !== null}>
+    <ViewCompletionNotice
+      accessResource={accessResource}
+      enabled={tasks !== null}
+      readUnavailable={tasksError !== null || tasksRefreshError !== null}
+    >
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div>

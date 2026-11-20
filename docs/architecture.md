@@ -752,10 +752,21 @@ The typed `onCommitted` callback runs after a successful write and captured
 invalidation starts, before awaiting reads. Only write rejection enters
 mutation error handling.
 
-Each accessible view registers its own opaque completion owner. `useWorkItemCommands`
-captures that owner for row and keyboard/native activation; opening task detail
-stores it in the explicit detail handoff, and task workflows inherit that same
-owner. `useTaskActions` routes commit feedback only to that captured registration,
+Each accessible view registers two independent tokens: a feedback owner and a
+mutable command-eligibility capability. Action hooks capture both from ambient
+context; opening task detail stores them in its explicit handoff, and task
+workflows inherit them. This removes owner/scope parameters from row, keyboard,
+detail, and workflow callers. `useTaskActions` validates the capability at the
+canonical mutation boundary and again when resolving child-policy decisions,
+so a stale portalled prompt cannot bypass view read failure. Failed reads retire
+pending decisions and disable commands for that view. A rejected criteria
+completion stays in the workflow and reports a localized refresh-required error
+instead of closing with its local checks discarded. Eligibility is not tied to
+feedback registration: initial supporting reads may still be loading, and
+ordinary refresh errors do not suppress a committed notice when cached access
+remains valid.
+
+`useTaskActions` routes commit feedback only to the captured registration,
 never whichever view registered most recently. Owner replacement/unregistration
 makes a delayed notification inert without cancelling captured invalidation.
 Today, Inbox, All, Discussion, Review, Waiting and project outlines use one
@@ -766,14 +777,16 @@ outside inert page/modal roots. A newer completion replaces the notice and
 restarts its three-second timer; no notification backlog is stored.
 
 Identity, route, filter, member/scope, and access retirement clears the
-originating notice. A matching access denial from an independently open
-task/detail/workflow read also clears it through the native Query cache
-subscription, even if the view read still succeeds. The existing authoritative
-queries continue to control status, hierarchy and membership; no snapshot or
-destination suppression is used. Each task-completion view exposes failed
-refresh through Retry and makes stale task rows inert until a fresh read
-succeeds. Waiting retains the same behavior; no other lifecycle action is
-included.
+originating notice and retires the corresponding capability. A matching access
+denial from an independently open task/detail/workflow read also retires the
+view owner through the native Query cache subscription, even if the view read
+still succeeds. After a successful reread, the view establishes fresh owner and
+eligibility tokens; delayed work from the retired scope cannot target the new
+registration. The existing authoritative queries continue to control status,
+hierarchy and membership; no snapshot or destination suppression is used. Each
+task-completion view exposes failed refresh through Retry and makes stale task
+rows inert until a fresh read succeeds. Waiting retains the same behavior; no
+other lifecycle action is included.
 
 Issue #332 explicitly relaxes exact source-position confirmation: fresh reads
 may immediately remove or relocate rows, including emptied ancestor branches.

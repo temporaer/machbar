@@ -4,7 +4,7 @@ import type { Task } from "@machbar/shared";
 import type { ProjectWithActions } from "./api";
 import type { WorkItemCommand } from "./commands";
 import { lifecyclePrerequisite } from "./projectWorkflow";
-import { useCompletionFeedbackOwner, useTaskActions } from "./useTaskActions";
+import { useTaskActions } from "./useTaskActions";
 import { useProjectActions } from "./useProjectActions";
 import { useTaskDetail } from "./taskDetailContext";
 import { useTaskWorkflow } from "./taskWorkflowContext";
@@ -174,13 +174,8 @@ export function useWorkItemCommands() {
   const navigate = useNavigate();
   const location = useLocation();
   const scope = useOptionalInteractionScope();
-  const viewCompletionOwner = useCompletionFeedbackOwner();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
-  const completionFeedbackOwner = viewCompletionOwner ??
-    (taskDetail.openTaskId !== null
-      ? taskDetail.getHandoff()?.completionFeedbackOwner
-      : undefined);
 
   /**
    * Opens whatever a lifecycle transition still needs before it can be
@@ -231,18 +226,18 @@ export function useWorkItemCommands() {
     [projectActions, projectWorkflow, resolveStoryPrerequisite],
   );
 
-  const requestTaskCompletion = useCallback((task: Task, owner = completionFeedbackOwner) => {
+  const requestTaskCompletion = useCallback((task: Task) => {
     if (task.status === "done" || task.status === "cancelled") {
-      taskActions.requestToggle(task, owner);
+      taskActions.requestToggle(task);
       return;
     }
     if (task.acceptanceCriteria.some((criterion) => !criterion.checked)) {
       const originDetail = taskDetail.openTaskId === task.id ? taskDetail.getHandoff() : null;
-      taskWorkflow.open("completeWithCriteria", task.id, undefined, originDetail, owner);
+      taskWorkflow.open("completeWithCriteria", task.id, undefined, originDetail);
       return;
     }
-    taskActions.requestToggle(task, owner);
-  }, [completionFeedbackOwner, taskActions, taskDetail, taskWorkflow]);
+    taskActions.requestToggle(task);
+  }, [taskActions, taskDetail, taskWorkflow]);
 
   const dispatch = useCallback(
     (command: WorkItemCommand) => {
@@ -270,12 +265,11 @@ export function useWorkItemCommands() {
             taskDetail.inspect(
               command.type === "task.open" ? command.taskId : command.workItem.id,
               command.type === "task.open" ? command.focusField : undefined,
-              viewCompletionOwner ?? undefined,
             );
             return;
           }
-          if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField, viewCompletionOwner ?? undefined);
-          else taskDetail.open(command.workItem.id, undefined, viewCompletionOwner ?? undefined);
+          if (command.type === "task.open") taskDetail.open(command.taskId, command.focusField);
+          else taskDetail.open(command.workItem.id);
           return;
         case "task.plan":
           if (taskWorkflow.detailMode === "prerequisite") return;
@@ -317,7 +311,7 @@ export function useWorkItemCommands() {
           taskWorkflow.open("refinement", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.split":
-          taskWorkflow.open("split", command.taskId, undefined, taskDetail.getHandoff(), completionFeedbackOwner);
+          taskWorkflow.open("split", command.taskId, undefined, taskDetail.getHandoff());
           return;
         case "task.assignOwner":
           taskWorkflow.open("assignOwner", command.taskId, undefined, taskDetail.getHandoff());
@@ -352,7 +346,7 @@ export function useWorkItemCommands() {
           if (current === next) return;
           if (current === "done" || current === "cancelled") {
             if (next === "actionable") {
-              taskActions.requestToggle(command.task, completionFeedbackOwner);
+              taskActions.requestToggle(command.task);
             } else {
               taskActions.transitionStatus(command.task, next);
             }
