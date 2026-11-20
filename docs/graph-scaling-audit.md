@@ -226,9 +226,13 @@ baseline is inferred:
 | 5,000 | 20 | 57,123.40 / 57,125.97 | 56,769.16 / 56,771.20 | 31 / 31 | 2 / 2 | 23,118.61 / 23,124.67 | 90,664 / 90,664 |
 | 5,000 | 30 | 70,771.60 / 70,942.68 | 70,336.69 / 70,527.21 | 41 / 42 | 2 / 2 | 23,290.79 / 23,321.05 | 130,344 / 130,344 |
 
-At 5,000 tasks, the repeated batch amplification is gone, but the two full
-graph projections still dominate much of the request. That cost remains within
-the separate profiling scope of #347.
+At 5,000 tasks, the two graph projections account for about 23.3 s of the
+70.3 s measured SQL time (roughly one third); about 47.0 s of SQL time is
+outside `Graph.load()`. The aggregate harness does not attribute that
+remainder to individual statements. It likely includes the project-wide
+next-action and task-plan invariant queries, but that is not established by
+these measurements. This residual request measurement is handed to #347 for
+per-statement/CTE attribution; #348 does not change those remaining queries.
 
 ## Scaling diagnosis
 
