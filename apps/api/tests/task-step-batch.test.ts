@@ -218,6 +218,80 @@ describe("atomic task step batches", () => {
     expect(after).toBe(1);
   });
 
+  it("recomputes next-action state after classifying a captured parent with a reference child", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+
+    async function setup() {
+      const project = await createProject({ title: "Keller", status: "backlog" });
+      const parent = await createTask({ title: "Werkbank aufbauen", projectId: project.id, status: "captured" });
+      const reference = await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${parent.id}/children`,
+        headers,
+        payload: { title: "Montageanleitung", kind: "reference" },
+      });
+      expect(reference.statusCode).toBe(201);
+      return { project, parent, reference: reference.json() };
+    }
+
+    const single = await setup();
+    const singleAction = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: { title: "Schrauben sortieren" },
+    });
+    expect(singleAction.statusCode).toBe(201);
+
+    const batch = await setup();
+    const projectBefore = (await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${batch.project.id}`,
+      headers,
+    })).json();
+    const batchAction = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batch.parent.id}/children/batch`,
+      headers,
+      payload: {
+        expectedRevision: batch.parent.revision,
+        expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
+        steps: [{ title: "Schrauben sortieren" }],
+      },
+    });
+    expect(batchAction.statusCode).toBe(201);
+    expect(batchAction.json().parent).toMatchObject({ status: "actionable", needsClarification: false });
+
+    async function outcome(projectId: number, parentId: number, referenceId: number, actionId: number) {
+      const parent = (await ctx.app.inject({
+        method: "GET",
+        url: `/api/tasks/${parentId}`,
+        headers,
+      })).json();
+      return {
+        project: (await ctx.app.inject({ method: "GET", url: `/api/projects/${projectId}`, headers })).json().status,
+        parent: { status: parent.status, needsClarification: parent.needsClarification },
+        children: parent.children.map((child: { title: string; kind: string; status: string; position: number }) => ({
+          title: child.title,
+          kind: child.kind,
+          status: child.status,
+          position: child.position,
+        })),
+        records: mutationRecords([projectId, parentId, referenceId, actionId]),
+      };
+    }
+    const singleOutcome = await outcome(single.project.id, single.parent.id, single.reference.id, singleAction.json().id);
+    const batchOutcome = await outcome(
+      batch.project.id,
+      batch.parent.id,
+      batch.reference.id,
+      batchAction.json().tasks[0].id,
+    );
+    expect(batchOutcome).toEqual(singleOutcome);
+    expect(batchOutcome.records.contributions).toEqual([]);
+  });
+
   it("matches canonical next-action and due-plan contribution transitions across a batch", async () => {
     const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
     const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
@@ -353,6 +427,118 @@ describe("atomic task step batches", () => {
     }));
     expect(batchOutcome.records.contributions).not.toContainEqual(expect.objectContaining({
       reason: "project_due_plan_added",
+    }));
+  });
+
+  it("matches the due-plan contribution when an existing task already supplies the next action", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+
+    async function setup() {
+      const project = await createProject({ title: "Kellerboden", status: "backlog" });
+      const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
+      const parent = await createTask({ title: "Späteres Vorhaben", projectId: project.id, status: "someday" });
+      return { project, existingAction, parent };
+    }
+    function resolution(blocked: { json(): any }) {
+      const requirements = blocked.json().error.details;
+      return {
+        expectedProjects: requirements.expectedProjects,
+        drivers: requirements.projects
+          .filter((entry: { required: string[] }) => entry.required.includes("driver"))
+          .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
+        ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
+          ? { nextActionTitle: "Laufende Aufgabe" }
+          : {}),
+      };
+    }
+
+    const single = await setup();
+    const firstSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: { title: "Notizen sammeln" },
+    });
+    expect(firstSingle.statusCode).toBe(201);
+    const scheduledPayload = { title: "Termin vormerken", scheduledDate: "2027-02-20" };
+    const blockedSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: scheduledPayload,
+    });
+    expect(blockedSingle.statusCode).toBe(409);
+    const scheduledSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: { ...scheduledPayload, activationResolution: resolution(blockedSingle) },
+    });
+    expect(scheduledSingle.statusCode).toBe(201);
+
+    const batch = await setup();
+    const projectBefore = (await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${batch.project.id}`,
+      headers,
+    })).json();
+    const batchPayload = {
+      expectedRevision: batch.parent.revision,
+      expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
+      steps: [{ title: "Notizen sammeln" }, { title: "Termin vormerken", scheduledDate: "2027-02-20" }],
+    };
+    const blockedBatch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batch.parent.id}/children/batch`,
+      headers,
+      payload: batchPayload,
+    });
+    expect(blockedBatch.statusCode).toBe(409);
+    const scheduledBatch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batch.parent.id}/children/batch`,
+      headers,
+      payload: { ...batchPayload, activationResolution: resolution(blockedBatch) },
+    });
+    expect(scheduledBatch.statusCode).toBe(201);
+
+    async function outcome(projectId: number, parentId: number, existingId: number, childIds: number[]) {
+      const parent = (await ctx.app.inject({
+        method: "GET",
+        url: `/api/tasks/${parentId}`,
+        headers,
+      })).json();
+      return {
+        project: (await ctx.app.inject({ method: "GET", url: `/api/projects/${projectId}`, headers })).json().status,
+        parentStatus: parent.status,
+        children: parent.children.map((child: { title: string; status: string; scheduledDate: string | null; position: number }) => ({
+          title: child.title,
+          status: child.status,
+          scheduledDate: child.scheduledDate,
+          position: child.position,
+        })),
+        records: mutationRecords([projectId, parentId, existingId, ...childIds]),
+      };
+    }
+    const singleOutcome = await outcome(single.project.id, single.parent.id, single.existingAction.id, [
+      firstSingle.json().id,
+      scheduledSingle.json().id,
+    ]);
+    const batchOutcome = await outcome(
+      batch.project.id,
+      batch.parent.id,
+      batch.existingAction.id,
+      scheduledBatch.json().tasks.map((task: { id: number }) => task.id),
+    );
+    expect(batchOutcome).toEqual(singleOutcome);
+    expect(batchOutcome.records.contributions).toContainEqual(expect.objectContaining({
+      category: "planning",
+      reason: "project_due_plan_added",
+      entityType: "project",
+    }));
+    expect(batchOutcome.records.contributions).not.toContainEqual(expect.objectContaining({
+      reason: "project_next_action_added",
     }));
   });
 
