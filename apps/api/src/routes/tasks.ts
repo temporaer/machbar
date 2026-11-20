@@ -93,12 +93,11 @@ function viewerMemberId(request: FastifyRequest): number | undefined {
   return request.authMember?.id ?? request.activityActor?.id ?? undefined;
 }
 
-function taskOrThrow(
+function taskFromGraph(
   db: Db,
+  graph: ReturnType<typeof Graph.load>,
   id: number,
-  viewerMemberId?: number,
 ): TaskDetailRecord {
-  const graph = Graph.load(db, undefined, viewerMemberId);
   const task = graph.tasksById.get(id);
   if (!task) {
     throw AppError.notFound(
@@ -108,6 +107,14 @@ function taskOrThrow(
     );
   }
   return { ...task, ancestors: graph.taskAncestorsFor(id), hierarchyRevisions: graph.hierarchyRevisionsFor(id), childStories: graph.childProjectsFor(id), externalRefs: listExternalWorkItemRefs(db, id) };
+}
+
+function taskOrThrow(
+  db: Db,
+  id: number,
+  viewerMemberId?: number,
+): TaskDetailRecord {
+  return taskFromGraph(db, Graph.load(db, undefined, viewerMemberId), id);
 }
 
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {
@@ -251,10 +258,10 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(201);
     const parent = result.convertedProjectId === null
-      ? taskOrThrow(db, parentId, viewerMemberId(request))
+      ? taskFromGraph(db, graph, parentId)
       : undefined;
     return {
-      tasks: result.tasks.map((task) => taskOrThrow(db, task.id, viewerMemberId(request))),
+      tasks: result.tasks.map((task) => taskFromGraph(db, graph, task.id)),
       ...(parent ? {
         parent,
         projectSnapshot: parent.projectId === null ? null : graph.projectWithComputed(parent.projectId),
