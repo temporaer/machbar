@@ -73,11 +73,16 @@ describe("atomic task step batches", () => {
   it("projects a child batch from one graph and matches authorized task reads", async () => {
     const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
     const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const project = await createProject({
+      title: "Umzug",
+      scope: "work",
+      ownerMemberId: member.id,
+    });
     const parentResponse = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
       headers,
-      payload: { title: "Wohnung vorbereiten", scope: "work", ownerMemberId: member.id },
+      payload: { title: "Wohnung vorbereiten", projectId: project.id },
     });
     expect(parentResponse.statusCode).toBe(201);
     const parent = parentResponse.json();
@@ -435,7 +440,11 @@ describe("atomic task step batches", () => {
     const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
 
     async function setup() {
-      const project = await createProject({ title: "Kellerboden", status: "backlog" });
+      const project = await createProject({
+        title: "Kellerboden",
+        status: "backlog",
+        dueDate: "2027-12-31",
+      });
       const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
       const parent = await createTask({ title: "Späteres Vorhaben", projectId: project.id, status: "someday" });
       return { project, existingAction, parent };
@@ -547,7 +556,11 @@ describe("atomic task step batches", () => {
     const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
 
     async function setup() {
-      const project = await createProject({ title: "Kellerboden", status: "backlog" });
+      const project = await createProject({
+        title: "Kellerboden",
+        status: "backlog",
+        dueDate: "2027-12-31",
+      });
       const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
       const parent = await createTask({ title: "Späteres Vorhaben", projectId: project.id, status: "someday" });
       return { project, existingAction, parent };
@@ -866,7 +879,11 @@ describe("atomic task step batches", () => {
         expectedProjectRevisions: [],
         steps: [
           { title: "Maße notieren" },
-          { title: "Termin planen", dueDate: "2027-02-10", scheduledDate: "2027-02-11" },
+          {
+            title: "Termin planen",
+            scheduledDate: "2027-02-11",
+            revisitAt: "2027-02-12T09:00:00.000Z",
+          },
         ],
       },
     });
