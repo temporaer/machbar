@@ -317,8 +317,12 @@ function assertRecurringLeaf(db: Db, taskId: number): void {
   }
 }
 
-export function assertParentAcceptsChildren(db: Db, parentTaskId: number): void {
-  const parent = getTaskOrThrow(db, parentTaskId);
+export function assertParentAcceptsChildren(
+  db: Db,
+  parentTaskId: number,
+  parentSnapshot?: ReturnType<typeof getTaskOrThrow>,
+): void {
+  const parent = parentSnapshot ?? getTaskOrThrow(db, parentTaskId);
   if (parent.repeatAfterDays !== null) {
     throw AppError.conflict(
       "recurring_parent_forbidden",
@@ -365,10 +369,29 @@ export function nextPositionForGroup(
   return nextTaskPosition(db, parentTaskId ?? projectId);
 }
 
+export type TaskCreationFacts = Pick<
+  ReturnType<typeof getTaskOrThrow>,
+  "id" | "title" | "kind" | "status" | "projectId" | "dueDate" |
+    "scheduledDate" | "revisitAt" | "repeatAfterDays" | "reminders"
+>;
+
 function insertTask(
   db: Db,
   input: CreateTaskInput,
   positionOverride?: number,
+  options?: { parentSnapshot?: ReturnType<typeof getTaskOrThrow>; deferProjection?: false },
+): ReturnType<typeof getTaskOrThrow>;
+function insertTask(
+  db: Db,
+  input: CreateTaskInput,
+  positionOverride: number | undefined,
+  options: { parentSnapshot: ReturnType<typeof getTaskOrThrow>; deferProjection: true },
+): TaskCreationFacts;
+function insertTask(
+  db: Db,
+  input: CreateTaskInput,
+  positionOverride?: number,
+  options: { parentSnapshot?: ReturnType<typeof getTaskOrThrow>; deferProjection?: boolean } = {},
 ) {
   if (!input.title || input.title.trim() === "") {
     throw AppError.badRequest(
@@ -385,8 +408,8 @@ function insertTask(
   let scope: WorkItemScope;
 
   if (parentTaskId !== null) {
-    const parent = getTaskOrThrow(db, parentTaskId);
-    assertParentAcceptsChildren(db, parentTaskId);
+    const parent = options.parentSnapshot ?? getTaskOrThrow(db, parentTaskId);
+    assertParentAcceptsChildren(db, parentTaskId, options.parentSnapshot);
     projectId = parent.projectId;
     scope = parent.scope;
   } else if (projectId !== null) {
@@ -501,6 +524,20 @@ function insertTask(
     db.insert(schema.workItemPhysicalContexts)
       .values({ workItemId: task.id, contextId })
       .run();
+  }
+  if (options.deferProjection === true) {
+    return {
+      id: task.id,
+      title: task.title,
+      kind,
+      status,
+      projectId,
+      dueDate: task.dueDate,
+      scheduledDate,
+      revisitAt,
+      repeatAfterDays,
+      reminders: input.reminders ?? [],
+    };
   }
   return getTaskOrThrow(db, task.id);
 }
@@ -627,22 +664,34 @@ export function createChildTask(
 /** Shared child-create implementation. Inbox parents are classified in the
  * same transaction as their first child so no partially clarified outline is
  * ever committed. */
+export interface ChildTaskBatchState {
+  parent: ReturnType<typeof getTaskOrThrow>;
+  nextPosition: number;
+  hasActionChild: boolean;
+  hasOpenActionChild: boolean;
+  hasNextAction: boolean;
+  hasTaskPlan: boolean;
+}
+
 export function createChildTaskInTransaction(
   txDb: Db,
   parentTaskId: number,
   input: CreateTaskInput,
   context?: MutationContext,
-  options: { activateCommitment?: boolean } = {},
+  options: { activateCommitment?: boolean; batchState?: ChildTaskBatchState } = {},
 ) {
-    const parent = getTaskOrThrow(txDb, parentTaskId);
-    assertParentAcceptsChildren(txDb, parentTaskId);
-    const actionChildAlreadyExists = txDb.select({ id: schema.workItems.id }).from(schema.workItems)
-      .where(and(
-        eq(schema.workItems.role, "task"),
-        eq(schema.workItems.parentId, parentTaskId),
-        eq(schema.workItems.taskKind, "action"),
-      ))
-      .get() !== undefined;
+    const batchState = options.batchState;
+    const parent = batchState?.parent ?? getTaskOrThrow(txDb, parentTaskId);
+    assertParentAcceptsChildren(txDb, parentTaskId, batchState ? parent : undefined);
+    const actionChildAlreadyExists = batchState
+      ? batchState.hasActionChild
+      : txDb.select({ id: schema.workItems.id }).from(schema.workItems)
+          .where(and(
+            eq(schema.workItems.role, "task"),
+            eq(schema.workItems.parentId, parentTaskId),
+            eq(schema.workItems.taskKind, "action"),
+          ))
+          .get() !== undefined;
     const createsFirstActionChild = input.kind !== "reference" && !actionChildAlreadyExists;
     const classifiesCapturedParent = parent.kind === "action" && parent.status === "captured" && createsFirstActionChild;
     if (classifiesCapturedParent) {
@@ -661,35 +710,72 @@ export function createChildTaskInTransaction(
         projectId: parent.projectId,
         metadata: { previousStatus: "captured", nextStatus: "actionable", changedFields: ["status", "needsClarification"] },
       });
+      // The canonical single-child path checks next-action state after this
+      // classification. Recompute once here, then share it across the batch.
+      if (batchState && parent.projectId !== null) {
+        batchState.hasNextAction = projectHasNextAction(txDb, parent.projectId);
+      }
     }
     const hadNextAction =
       parent.projectId === null
         ? true
-        : projectHasNextAction(txDb, parent.projectId);
+        : batchState
+          ? batchState.hasNextAction
+          : projectHasNextAction(txDb, parent.projectId);
     const hadTaskPlan =
       parent.projectId === null
         ? true
-        : projectHasTaskPlan(txDb, parent.projectId);
-    const hadOpenChild = txDb
-      .select({ status: schema.workItems.status })
-      .from(schema.workItems)
-      .where(
-        and(
-          eq(schema.workItems.role, "task"),
-          eq(schema.workItems.parentId, parentTaskId),
-          eq(schema.workItems.taskKind, "action"),
-        ),
-      )
-      .all()
-      .some((child) => child.status !== "done" && child.status !== "cancelled");
+        : batchState
+          ? batchState.hasTaskPlan
+          : projectHasTaskPlan(txDb, parent.projectId);
+    const hadOpenChild = batchState
+      ? batchState.hasOpenActionChild
+      : txDb
+          .select({ status: schema.workItems.status })
+          .from(schema.workItems)
+          .where(and(
+            eq(schema.workItems.role, "task"),
+            eq(schema.workItems.parentId, parentTaskId),
+            eq(schema.workItems.taskKind, "action"),
+          ))
+          .all()
+          .some((child) => child.status !== "done" && child.status !== "cancelled");
     const defaultChildStatus = parent.status === "someday" ? "someday" : "actionable";
-    const task = insertTask(txDb, input.kind === "reference"
+    const childInput = input.kind === "reference"
       ? { ...input, parentTaskId }
-      : {
-          ...input,
-          status: input.status ?? defaultChildStatus,
-          parentTaskId,
-        });
+      : { ...input, status: input.status ?? defaultChildStatus, parentTaskId };
+    const task = batchState
+      ? insertTask(txDb, childInput, batchState.nextPosition, { parentSnapshot: parent, deferProjection: true })
+      : insertTask(txDb, childInput);
+    if (batchState) {
+      batchState.nextPosition += 1;
+      if (task.kind === "action") {
+        batchState.hasActionChild = true;
+        if (task.status !== "done" && task.status !== "cancelled") {
+          batchState.hasOpenActionChild = true;
+        }
+      }
+      if (
+        task.projectId !== null &&
+        !batchState.hasNextAction &&
+        task.kind === "action" &&
+        task.status === "actionable"
+      ) {
+        // A newly inserted actionable child is a leaf with no dependencies
+        // or waits, so this is the only possible false-to-true transition.
+        batchState.hasNextAction = projectHasNextAction(txDb, task.projectId);
+      }
+      if (
+        task.projectId !== null &&
+        !batchState.hasTaskPlan &&
+        task.kind === "action" &&
+        task.status !== "done" &&
+        task.status !== "cancelled" &&
+        (task.dueDate !== null || task.scheduledDate !== null)
+      ) {
+        batchState.hasTaskPlan = true;
+      }
+    }
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_created",
@@ -718,7 +804,7 @@ export function createChildTaskInTransaction(
     } else if (
       task.projectId !== null &&
       !hadNextAction &&
-      projectHasNextAction(txDb, task.projectId)
+      (batchState ? batchState.hasNextAction : projectHasNextAction(txDb, task.projectId))
     ) {
       recordContribution(txDb, {
         activityEventId,
@@ -732,7 +818,7 @@ export function createChildTaskInTransaction(
     } else if (
       task.projectId !== null &&
       !hadTaskPlan &&
-      projectHasTaskPlan(txDb, task.projectId)
+      (batchState ? batchState.hasTaskPlan : projectHasTaskPlan(txDb, task.projectId))
     ) {
       recordContribution(txDb, {
         activityEventId,
