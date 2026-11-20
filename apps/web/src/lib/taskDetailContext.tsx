@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
+import type { CompletionFeedbackOwner } from "./useTaskActions";
 import {
   TaskWorkflowProvider,
   useOptionalTaskWorkflow,
@@ -24,6 +25,7 @@ export type TaskDetailHandoff = {
   queueTaskIds: number[];
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
+  completionFeedbackOwner?: CompletionFeedbackOwner;
   openingId?: number;
 };
 
@@ -51,10 +53,10 @@ interface TaskDetailContextValue {
   /** True while stepping through a "Klären" queue (Inbox clarify-all flow). */
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
-  open: (taskId: number, focusField?: TaskDetailFocusField) => void;
-  inspect: (taskId: number, focusField?: TaskDetailFocusField) => void;
+  open: (taskId: number, focusField?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => void;
+  inspect: (taskId: number, focusField?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => void;
   /** Opens the first id and remembers the rest so `advanceQueue` can step through them. */
-  openQueue: (taskIds: number[], focusField?: TaskDetailFocusField) => void;
+  openQueue: (taskIds: number[], focusField?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => void;
   advanceQueue: () => void;
   close: () => void;
   getHandoff: () => TaskDetailHandoff | null;
@@ -79,21 +81,23 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
 function TaskDetailFacade({ children }: { children: ReactNode }) {
   const workflow = useTaskWorkflow();
   const detail = workflow.detail;
-  const open = (taskId: number, field?: TaskDetailFocusField) =>
+  const open = (taskId: number, field?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) =>
     workflow.openDetail({
       taskId,
       queueTaskIds: [],
       queueActive: false,
       focusField: field ?? null,
+      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
     });
-  const inspect = (taskId: number, field?: TaskDetailFocusField) =>
+  const inspect = (taskId: number, field?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) =>
     workflow.inspectDetail({
       taskId,
       queueTaskIds: [],
       queueActive: false,
       focusField: field ?? null,
+      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
     });
-  const openQueue = (taskIds: number[], field?: TaskDetailFocusField) => {
+  const openQueue = (taskIds: number[], field?: TaskDetailFocusField, completionFeedbackOwner?: CompletionFeedbackOwner) => {
     const [first, ...rest] = taskIds;
     if (first === undefined) return;
     workflow.openDetail({
@@ -101,6 +105,7 @@ function TaskDetailFacade({ children }: { children: ReactNode }) {
       queueTaskIds: rest,
       queueActive: true,
       focusField: field ?? null,
+      ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
     });
   };
   const close = () => workflow.closeDetailDirectly();

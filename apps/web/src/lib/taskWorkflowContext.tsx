@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TaskDetailHandoff } from "./taskDetailContext";
 import type { TaskPlanningTarget } from "./commands";
+import type { CompletionFeedbackOwner } from "./useTaskActions";
 
 export type TaskWorkflowKind =
   | "plan"
@@ -24,6 +25,7 @@ export interface TaskWorkflowState {
   taskId: number;
   planningTarget?: TaskPlanningTarget;
   originDetail?: TaskDetailHandoff | null;
+  completionFeedbackOwner?: CompletionFeedbackOwner;
 }
 
 type WorkflowState = {
@@ -125,6 +127,7 @@ interface TaskWorkflowContextValue {
     taskId: number,
     planningTarget?: TaskPlanningTarget,
     originDetail?: TaskDetailHandoff | null,
+    completionFeedbackOwner?: CompletionFeedbackOwner,
   ) => void;
   close: () => void;
   closeDetail: () => void;
@@ -155,13 +158,18 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
       detailOpeningId: state.detailOpeningId,
       detailMode: state.detailMode,
       detailVisible,
-      open: (kind, taskId, planningTarget, originDetail) => dispatch({
+      open: (kind, taskId, planningTarget, originDetail, completionFeedbackOwner) => dispatch({
         type: "OPEN",
         workflow: {
           kind,
           taskId,
           ...(planningTarget ? { planningTarget } : {}),
           ...(originDetail !== undefined ? { originDetail } : {}),
+          ...(completionFeedbackOwner
+            ? { completionFeedbackOwner }
+            : originDetail?.completionFeedbackOwner
+              ? { completionFeedbackOwner: originDetail.completionFeedbackOwner }
+              : {}),
         },
       }),
       close: () => dispatch({ type: "CLOSE" }),

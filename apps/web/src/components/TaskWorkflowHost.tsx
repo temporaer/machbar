@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { useTaskActions } from "../lib/useTaskActions";
+import { CompletionFeedbackOwnerProvider, useTaskActions } from "../lib/useTaskActions";
 import { useTaskWorkflow, type TaskWorkflowState } from "../lib/taskWorkflowContext";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
@@ -160,18 +160,20 @@ function TaskWorkflowContent({ state, openingId }: {
       return <TaskPlanningSheet key={task.id} task={task} onClose={close} onFailure={endOnDenied} initialTarget="waiting" />;
     case "split":
       return (
-        <TaskSplitSheet
-          key={task.id}
-          parentId={task.id}
-          parentTitle={task.title}
-          parentRevision={task.revision}
-          parentStatus={task.status}
-          projectId={task.projectId}
-          existingChildren={task.children}
-          onClose={close}
-          onFailure={endOnDenied}
-          isCurrent={() => isCurrent() && !ended.current}
-        />
+        <CompletionFeedbackOwnerProvider owner={state.completionFeedbackOwner ?? null}>
+          <TaskSplitSheet
+            key={task.id}
+            parentId={task.id}
+            parentTitle={task.title}
+            parentRevision={task.revision}
+            parentStatus={task.status}
+            projectId={task.projectId}
+            existingChildren={task.children}
+            onClose={close}
+            onFailure={endOnDenied}
+            isCurrent={() => isCurrent() && !ended.current}
+          />
+        </CompletionFeedbackOwnerProvider>
       );
     case "refinement":
       return <WorkClarificationSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} task={task} onClose={close} onFailure={endOnDenied} onStarted={(intakeId) => {
@@ -229,7 +231,13 @@ function TaskWorkflowContent({ state, openingId }: {
           onClose={close}
           onRefresh={reload}
           onComplete={async (criteriaToCheck, childPolicy) => {
-            await run(() => taskActions.complete(task, childPolicy, criteriaToCheck, true));
+            await run(() => taskActions.complete(
+              task,
+              childPolicy,
+              criteriaToCheck,
+              true,
+              state.completionFeedbackOwner,
+            ));
           }}
         />
       );

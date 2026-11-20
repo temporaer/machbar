@@ -15,7 +15,8 @@ export interface AsyncState<T> {
 
 export type ReadAccessResource =
   | { type: "waiting"; memberId: number | null; scope: string }
-  | { type: "task"; taskId: number };
+  | { type: "task"; taskId: number }
+  | { type: "view"; key: string };
 
 export function useAsync<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,

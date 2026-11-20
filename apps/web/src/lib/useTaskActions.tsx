@@ -7,9 +7,29 @@ import { ownerAssignmentPatch, updateTask } from "./taskMutations";
 import { useItemMutations } from "./useItemMutations";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
+export type CompletionFeedbackOwner = symbol;
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
 export type PendingAction = "complete" | "cancel";
 type WithoutExpectedRevision<T> = T extends unknown ? Omit<T, "expectedRevision"> : never;
+const CompletionFeedbackOwnerContext = createContext<CompletionFeedbackOwner | null>(null);
+
+export function useCompletionFeedbackOwner() {
+  return useContext(CompletionFeedbackOwnerContext);
+}
+
+export function CompletionFeedbackOwnerProvider({
+  owner,
+  children,
+}: {
+  owner: CompletionFeedbackOwner | null;
+  children: ReactNode;
+}) {
+  return (
+    <CompletionFeedbackOwnerContext.Provider value={owner}>
+      {children}
+    </CompletionFeedbackOwnerContext.Provider>
+  );
+}
 
 interface CompletionFeedback {
   pendingMessage: string;
@@ -17,21 +37,33 @@ interface CompletionFeedback {
 }
 
 function useTaskActionsState() {
-  const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
+  const [pending, setPending] = useState<{
+    task: Task;
+    action: PendingAction;
+    completionFeedbackOwner?: CompletionFeedbackOwner;
+  } | null>(null);
   const { run, ...feedback } = useItemMutations();
-  const completionFeedback = useRef<CompletionFeedback | null>(null);
-  const registerCompletionFeedback = useCallback((observer: CompletionFeedback) => {
+  const completionFeedback = useRef(new Map<CompletionFeedbackOwner, CompletionFeedback>());
+  const registerCompletionFeedback = useCallback((owner: CompletionFeedbackOwner, observer: CompletionFeedback) => {
     const registration = { ...observer };
-    completionFeedback.current = registration;
+    completionFeedback.current.set(owner, registration);
     return () => {
-      if (completionFeedback.current === registration) completionFeedback.current = null;
+      if (completionFeedback.current.get(owner) === registration) completionFeedback.current.delete(owner);
     };
   }, []);
   const runTransition = useCallback((task: Pick<Task, "id">, mutate: () => Promise<Task>, throwOnError = false) =>
     run({ id: task.id, mutate, throwOnError }), [run]);
 
-  const complete = useCallback((task: Task, policy?: ChildPolicy, criteriaToCheck?: number[], throwOnError = false) => {
-    const observer = completionFeedback.current;
+  const complete = useCallback((
+    task: Task,
+    policy?: ChildPolicy,
+    criteriaToCheck?: number[],
+    throwOnError = false,
+    completionFeedbackOwner?: CompletionFeedbackOwner,
+  ) => {
+    const observer = completionFeedbackOwner
+      ? completionFeedback.current.get(completionFeedbackOwner)
+      : undefined;
     return run({
       id: task.id, throwOnError, pendingMessage: observer?.pendingMessage,
       mutate: () => api.completeTask(
@@ -40,7 +72,8 @@ function useTaskActionsState() {
         task.revision, ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
       ),
       onCommitted: () => {
-        if (observer && completionFeedback.current === observer) {
+        if (observer && completionFeedbackOwner &&
+          completionFeedback.current.get(completionFeedbackOwner) === observer) {
           observer.onCommitted({ taskId: task.id, title: task.title, recurring: task.repeatAfterDays !== null });
         }
       },
@@ -87,10 +120,17 @@ function useTaskActionsState() {
     task: Task, input: WithoutExpectedRevision<ExternalWaitFollowUpInput>, options: { throwOnError?: boolean } = {},
   ) => runTransition(task, () => api.followUpExternalWait(task.id, { ...input, expectedRevision: task.revision }), options.throwOnError), [runTransition]);
 
-  const requestToggle = useCallback((task: Task) => {
+  const requestToggle = useCallback((task: Task, completionFeedbackOwner?: CompletionFeedbackOwner) => {
     if (task.status === "done" || task.status === "cancelled") { void reopen(task); return; }
-    if (hasOpenDescendants(task)) { setPending({ task, action: "complete" }); return; }
-    void complete(task);
+    if (hasOpenDescendants(task)) {
+      setPending({
+        task,
+        action: "complete",
+        ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
+      });
+      return;
+    }
+    void complete(task, undefined, undefined, false, completionFeedbackOwner);
   }, [complete, reopen]);
   const requestCancel = useCallback((task: Task) => {
     if (task.status === "cancelled") return;
@@ -100,7 +140,9 @@ function useTaskActionsState() {
   const resolvePolicy = useCallback((policy: ChildPolicy) => {
     if (!pending) return;
     setPending(null);
-    if (pending.action === "complete") void complete(pending.task, policy);
+    if (pending.action === "complete") {
+      void complete(pending.task, policy, undefined, false, pending.completionFeedbackOwner);
+    }
     else void cancel(pending.task, policy);
   }, [pending, complete, cancel]);
   const cancelPrompt = useCallback(() => setPending(null), []);

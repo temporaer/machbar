@@ -25,6 +25,8 @@ import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { MaterialCard } from "../components/MaterialCard";
 import { parseReferenceContent } from "../lib/referenceContent";
+import { useIdentity } from "../lib/identity";
+import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
 
 function MaterialResults({ tasks }: { tasks: Task[] }) {
   const hasPaperlessAttachments = tasks.some(
@@ -56,8 +58,13 @@ function MaterialResults({ tasks }: { tasks: Task[] }) {
 export function AllPage() {
   const strings = useStrings();
   const { locale } = useLocale();
+  const { currentMemberId } = useIdentity();
   const [filters, setFilters] = useState<SearchFilters>({});
   const filtersKey = JSON.stringify(filters);
+  const accessResource = useMemo(
+    () => ({ type: "view" as const, key: `all:${currentMemberId}:${filtersKey}` }),
+    [currentMemberId, filtersKey],
+  );
   const {
     data: projects,
     loading: projectsLoading,
@@ -69,8 +76,13 @@ export function AllPage() {
     data: tasks,
     loading: tasksLoading,
     error: tasksError,
+    refreshError: tasksRefreshError,
     reload: reloadTasks,
-  } = useAsync(() => api.searchTasks({ ...filters, includeTerminal: true }), [filtersKey]);
+  } = useAsync(
+    () => api.searchTasks({ ...filters, includeTerminal: true }),
+    [filtersKey, currentMemberId],
+    accessResource,
+  );
   const projectCandidates = useMemo(
     () =>
       filterAndSortProjects(filterInventoryProjects(projects ?? [], filters), {
@@ -101,6 +113,7 @@ export function AllPage() {
   const error = projectsError ?? tasksError;
 
   return (
+    <ViewCompletionNotice accessResource={accessResource} enabled={tasks !== null}>
     <InteractionScopeProvider>
       <WorkItemKeyboardNavMount />
       <div>
@@ -123,6 +136,7 @@ export function AllPage() {
             }}
           />
         ) : null}
+        {tasksRefreshError ? <ErrorState message={tasksRefreshError} onRetry={reloadTasks} /> : null}
         {projects && tasks ? (
           filteredProjects.length === 0 && visibleTasks.length === 0 ? (
             <EmptyState message={materialOnly ? strings.allMaterialEmpty : strings.allEmpty} />
@@ -165,12 +179,14 @@ export function AllPage() {
                   {materialOnly ? (
                     <MaterialResults tasks={visibleTasks} />
                   ) : (
-                    <TaskOutline
-                      key={filtersKey}
-                      tasks={visibleTasks}
-                      emptyMessage={strings.allEmpty}
-                      preserveRootOrder
-                    />
+                    <div {...(tasksRefreshError ? { inert: "" } : {})}>
+                      <TaskOutline
+                        key={filtersKey}
+                        tasks={visibleTasks}
+                        emptyMessage={strings.allEmpty}
+                        preserveRootOrder
+                      />
+                    </div>
                   )}
                 </section>
               ) : null}
@@ -179,5 +195,6 @@ export function AllPage() {
         ) : null}
       </div>
     </InteractionScopeProvider>
+    </ViewCompletionNotice>
   );
 }

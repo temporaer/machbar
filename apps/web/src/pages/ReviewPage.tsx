@@ -15,6 +15,7 @@ import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useIdentity } from "../lib/identity";
 import {
   useTaskDetail,
   type TaskDetailFocusField,
@@ -22,6 +23,7 @@ import {
 import { useStrings } from "../lib/strings";
 import { ErrorState, EmptyState, LoadingState } from "../components/AsyncStates";
 import { PageHeader } from "../components/PageHeader";
+import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
 import { RefinementTools } from "../components/RefinementTools";
 import { ChildPolicyPrompt } from "../components/ChildPolicyPrompt";
 import "./ReviewPage.css";
@@ -53,10 +55,24 @@ function ReviewCard({ cardRef, children }: {
 }
 
 export function ReviewPage() {
+  const { currentMemberId } = useIdentity();
+  const accessResource = useMemo(
+    () => ({ type: "view" as const, key: `review:${currentMemberId}` }),
+    [currentMemberId],
+  );
+  return (
+    <ViewCompletionNotice accessResource={accessResource}>
+      <ReviewPageContent accessResource={accessResource} />
+    </ViewCompletionNotice>
+  );
+}
+
+function ReviewPageContent({ accessResource }: { accessResource: { type: "view"; key: string } }) {
   const strings = useStrings();
   const navigate = useNavigate();
   const location = useLocation();
   const taskDetail = useTaskDetail();
+  const { currentMemberId } = useIdentity();
   const taskWorkflow = useTaskWorkflow();
   const projectWorkflow = useProjectWorkflow();
   const dispatch = useWorkItemCommands();
@@ -68,8 +84,9 @@ export function ReviewPage() {
     data: items,
     loading: itemsLoading,
     error: itemsError,
+    refreshError: itemsRefreshError,
     reload: reloadItems,
-  } = useAsync(() => api.getReviewItems(), []);
+  } = useAsync(() => api.getReviewItems(), [currentMemberId], accessResource);
   const {
     data: projects,
     loading: projectsLoading,
@@ -491,6 +508,7 @@ export function ReviewPage() {
           }}
         />
       ) : null}
+      {itemsRefreshError ? <ErrorState message={itemsRefreshError} onRetry={reloadItems} /> : null}
       {items ? (
         <section className="section" aria-labelledby="review-queue-heading">
           <h2 id="review-queue-heading" className="section-title">

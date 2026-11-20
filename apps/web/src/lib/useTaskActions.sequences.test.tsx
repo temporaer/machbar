@@ -53,20 +53,40 @@ describe("server-confirmed task sequence contract", () => {
     let confirm!: (value: typeof task) => void;
     mockedApi.completeTask.mockReturnValue(new Promise(resolve => { confirm = resolve; }));
     const { result } = renderHook(() => useTaskActions(), { wrapper });
+    const owner = Symbol("waiting");
     const observer = { pendingMessage: "Completing", onCommitted: vi.fn() };
-    const retire = result.current.registerCompletionFeedback(observer);
+    const retire = result.current.registerCompletionFeedback(owner, observer);
     let command!: Promise<unknown>;
-    act(() => { command = result.current.complete(task); });
+    act(() => { command = result.current.complete(task, undefined, undefined, false, owner); });
     retire();
-    result.current.registerCompletionFeedback(observer);
+    result.current.registerCompletionFeedback(owner, observer);
     retire(); // Cleanup from the former registration must not retire its replacement.
     await act(async () => { confirm(task); await command; });
     expect(observer.onCommitted).not.toHaveBeenCalled();
     mockedApi.completeTask.mockResolvedValue(task);
-    await act(async () => { await result.current.complete(task); });
+    await act(async () => { await result.current.complete(task, undefined, undefined, false, owner); });
     expect(observer.onCommitted).toHaveBeenCalledExactlyOnceWith({
       taskId: task.id, title: task.title, recurring: false,
     });
+  });
+
+  it("does not route a completion to whichever view registered most recently", async () => {
+    const task = makeTask();
+    const { result } = renderHook(() => useTaskActions(), { wrapper });
+    const firstOwner = Symbol("first-view");
+    const secondOwner = Symbol("second-view");
+    const first = { pendingMessage: "First", onCommitted: vi.fn() };
+    const second = { pendingMessage: "Second", onCommitted: vi.fn() };
+    result.current.registerCompletionFeedback(firstOwner, first);
+    result.current.registerCompletionFeedback(secondOwner, second);
+    mockedApi.completeTask.mockResolvedValue(task);
+
+    await act(async () => {
+      await result.current.complete(task, undefined, undefined, false, firstOwner);
+    });
+
+    expect(first.onCommitted).toHaveBeenCalledOnce();
+    expect(second.onCommitted).not.toHaveBeenCalled();
   });
 
   it("isolates a throwing feedback callback from committed invalidation and write outcome", async () => {
@@ -75,12 +95,13 @@ describe("server-confirmed task sequence contract", () => {
     const fetcher = vi.fn(async () => task.revision);
     const { result } = renderHook(() => ({ actions: useTaskActions(), read: useAsync(fetcher) }), { wrapper });
     await waitFor(() => expect(result.current.read.data).toBe(task.revision));
-    result.current.actions.registerCompletionFeedback({
+    const owner = Symbol("view");
+    result.current.actions.registerCompletionFeedback(owner, {
       pendingMessage: "Completing",
       onCommitted: () => { throw new Error("Presentation failed"); },
     });
     await act(async () => {
-      await expect(result.current.actions.complete(task, undefined, undefined, true))
+      await expect(result.current.actions.complete(task, undefined, undefined, true, owner))
         .resolves.toEqual({ ...task, revision: 2 });
     });
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -99,9 +120,10 @@ describe("server-confirmed task sequence contract", () => {
     }
     const { result, rerender } = renderHook(() => ({ actions: useTaskActions(), read: useAsync(fetcher) }), { wrapper: identityWrapper });
     await waitFor(() => expect(result.current.read.data).toBe("identity 1"));
-    result.current.actions.registerCompletionFeedback(observer);
+    const owner = Symbol("old-identity");
+    result.current.actions.registerCompletionFeedback(owner, observer);
     let command!: Promise<unknown>;
-    act(() => { command = result.current.actions.complete(task); });
+    act(() => { command = result.current.actions.complete(task, undefined, undefined, false, owner); });
     identity = 2;
     rerender();
     await waitFor(() => expect(result.current.read.data).toBe("identity 2"));
