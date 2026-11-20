@@ -136,12 +136,12 @@ function seedFixture(sqlite: Database.Database, taskCount: number, shape: "balan
   const projectCount = shape === "deep-chain"
     ? 1
     : Math.max(5, Math.min(20, Math.ceil(taskCount / 100)));
-  const insertItem = sqlite.prepare(\`
+  const insertItem = sqlite.prepare(`
     INSERT INTO work_items
       (parent_id, role, title, status, owner_member_id, owner_inheritance_mode,
        task_kind, position, size, due_date, scheduled_date, needs_clarification)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  \`);
+  `);
   const projects: number[] = [];
   for (let index = 0; index < projectCount; index += 1) {
     const inserted = insertItem.run(
@@ -227,7 +227,7 @@ function percentile(values: number[]) {
 
 function cteNames(sql: string): string[] {
   const names: string[] = [];
-  const head = sql.match(/^\\s*WITH\\s+(?:RECURSIVE\\s+)?([\\w]+)\\s+AS\\s*\\(/i);
+  const head = sql.match(/^\s*WITH\s+(?:RECURSIVE\s+)?([\w]+)\s+AS\s*\(/i);
   if (head?.[1]) names.push(head[1]);
   for (const match of sql.matchAll(/,\s*([\w]+)\s+AS\s*\(/gi)) {
     names.push(match[1]!);
