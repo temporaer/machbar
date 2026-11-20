@@ -240,7 +240,7 @@ describe("atomic task step batches", () => {
       };
     }
 
-    const single = await setup("Einzelfall");
+    const single = await setup("Fensterprojekt");
     const firstSingle = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${single.parent.id}/children`,
@@ -277,7 +277,7 @@ describe("atomic task step batches", () => {
     });
     expect(lastSingle.statusCode).toBe(201);
 
-    const batch = await setup("Batchfall");
+    const batch = await setup("Fensterprojekt");
     const projectBeforeBatch = (await ctx.app.inject({
       method: "GET",
       url: `/api/projects/${batch.project.id}`,
