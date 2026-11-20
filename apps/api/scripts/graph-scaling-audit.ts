@@ -357,18 +357,26 @@ async function benchmarkSize(taskCount: number, repeats: number) {
       setup: () => ({ url: "/api/agenda/today?scope=all&date=2026-10-12" }),
     },
   ];
+  const selectedOperations = process.env.AUDIT_OPERATIONS
+    ? new Set(process.env.AUDIT_OPERATIONS.split(",").map((value) => value.trim()).filter(Boolean))
+    : undefined;
 
   try {
-    for (const scenario of scenarios) {
+    for (const scenario of scenarios.filter(({ operation }) =>
+      !selectedOperations || selectedOperations.has(operation),
+    )) {
       await runSample(app, handle.sqlite, scenario.operation, scenario.setup);
       const samples: Sample[] = [];
       for (let index = 0; index < repeats; index += 1) {
         samples.push(await runSample(app, handle.sqlite, scenario.operation, scenario.setup));
       }
       results.push(summarize(samples));
+      console.error(`Finished ${taskCount} tasks: ${scenario.operation}`);
     }
 
-    for (const batchSize of [1, 5, 20, 30]) {
+    for (const batchSize of [1, 5, 20, 30].filter((size) =>
+      !selectedOperations || selectedOperations.has(`create-${size}-children`),
+    )) {
       const operation = `create-${batchSize}-children`;
       await runSample(app, handle.sqlite, operation, () => {
         const parentId = insertAuditTask(handle.sqlite, fixture.projects[0]!);
@@ -398,6 +406,7 @@ async function benchmarkSize(taskCount: number, repeats: number) {
         }));
       }
       results.push(summarize(samples));
+      console.error(`Finished ${taskCount} tasks: ${operation}`);
     }
 
     const plans = {
@@ -428,8 +437,9 @@ async function main() {
     .map((value) => Number(value.trim()))
     .filter((value) => Number.isInteger(value) && value > 0);
   const repeats = Number(process.env.AUDIT_REPEATS ?? 3);
-  if (sizes.length === 0 || !Number.isInteger(repeats) || repeats < 1) {
-    throw new Error("AUDIT_SIZES must contain positive integers and AUDIT_REPEATS must be a positive integer.");
+  const selectedOperations = process.env.AUDIT_OPERATIONS?.split(",").map((value) => value.trim()).filter(Boolean);
+  if (sizes.length === 0 || !Number.isInteger(repeats) || repeats < 1 || selectedOperations?.length === 0) {
+    throw new Error("AUDIT_SIZES and AUDIT_OPERATIONS must contain values, and AUDIT_REPEATS must be a positive integer.");
   }
 
   const probe = openDb(":memory:");
@@ -447,6 +457,7 @@ async function main() {
     methodology: {
       warmupsPerScenario: 1,
       measuredRepeats: repeats,
+      selectedOperations: selectedOperations ?? "all",
       stages: "HTTP injection wall time; prepared-statement count/time; Graph.load count/inclusive time and its SQL subset; serialized response bytes",
       note: "No frontend, network, or browser invalidation/refetch is included.",
     },
