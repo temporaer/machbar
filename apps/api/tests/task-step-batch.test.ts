@@ -1,11 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Graph } from "../src/domain/graph.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 describe("atomic task step batches", () => {
   let ctx: TestContext;
 
   beforeEach(() => { ctx = createTestContext(); });
-  afterEach(async () => { await closeTestContext(ctx); });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await closeTestContext(ctx);
+  });
 
   async function createTask(payload: Record<string, unknown>) {
     const response = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload });
@@ -39,6 +43,32 @@ describe("atomic task step batches", () => {
     ]);
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json())
       .toMatchObject({ status: "actionable", needsClarification: false });
+  });
+
+  it("projects a child batch from one graph and matches subsequent task reads", async () => {
+    const parent = await createTask({ title: "Wohnung vorbereiten" });
+    const graphLoad = vi.spyOn(Graph, "load");
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children/batch`,
+      payload: {
+        expectedRevision: parent.revision,
+        expectedProjectRevisions: [],
+        steps: [{ title: "Kisten packen" }, { title: "Transporter buchen" }, { title: "Schlüssel übergeben" }],
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(graphLoad).toHaveBeenCalledTimes(2);
+    const result = response.json();
+    expect(result.parent).toEqual(
+      (await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json(),
+    );
+    for (const task of result.tasks) {
+      expect(task).toEqual(
+        (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json(),
+      );
+    }
   });
 
   it("leaves a Someday parent parked when the batch has no execution commitment", async () => {
