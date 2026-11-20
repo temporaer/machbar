@@ -218,6 +218,144 @@ describe("atomic task step batches", () => {
     expect(after).toBe(1);
   });
 
+  it("matches canonical next-action and due-plan contribution transitions across a batch", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+
+    async function setup(title: string) {
+      const project = await createProject({ title, status: "backlog" });
+      const parent = await createTask({ title: "Fenster austauschen", projectId: project.id, status: "someday" });
+      return { project, parent };
+    }
+    function activationResolution(blocked: { json(): any }, nextActionTitle: string) {
+      const requirements = blocked.json().error.details;
+      return {
+        expectedProjects: requirements.expectedProjects,
+        drivers: requirements.projects
+          .filter((entry: { required: string[] }) => entry.required.includes("driver"))
+          .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
+        ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
+          ? { nextActionTitle }
+          : {}),
+      };
+    }
+
+    const single = await setup("Einzelfall");
+    const firstSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: { title: "Material sichten" },
+    });
+    expect(firstSingle.statusCode).toBe(201);
+    expect(firstSingle.json().status).toBe("someday");
+
+    const committedSinglePayload = { title: "Termin setzen", scheduledDate: "2027-01-15" };
+    const blockedSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: committedSinglePayload,
+    });
+    expect(blockedSingle.statusCode).toBe(409);
+    expect(blockedSingle.json().error.code).toBe("project_commitment_resolution_required");
+    const committedSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: {
+        ...committedSinglePayload,
+        activationResolution: activationResolution(blockedSingle, "Termin setzen"),
+      },
+    });
+    expect(committedSingle.statusCode).toBe(201);
+    const lastSingle = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${single.parent.id}/children`,
+      headers,
+      payload: { title: "Angebote vergleichen", dueDate: "2027-01-16" },
+    });
+    expect(lastSingle.statusCode).toBe(201);
+
+    const batch = await setup("Batchfall");
+    const projectBeforeBatch = (await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${batch.project.id}`,
+      headers,
+    })).json();
+    const batchPayload = {
+      expectedRevision: batch.parent.revision,
+      expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBeforeBatch.revision }],
+      steps: [
+        { title: "Material sichten" },
+        { title: "Termin setzen", scheduledDate: "2027-01-15" },
+        { title: "Angebote vergleichen", dueDate: "2027-01-16" },
+      ],
+    };
+    const blockedBatch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batch.parent.id}/children/batch`,
+      headers,
+      payload: batchPayload,
+    });
+    expect(blockedBatch.statusCode).toBe(409);
+    expect(blockedBatch.json().error.code).toBe("project_commitment_resolution_required");
+    const committedBatch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batch.parent.id}/children/batch`,
+      headers,
+      payload: {
+        ...batchPayload,
+        activationResolution: activationResolution(blockedBatch, "Termin setzen"),
+      },
+    });
+    expect(committedBatch.statusCode).toBe(201);
+
+    async function outcome(projectId: number, parentId: number, childIds: number[]) {
+      const [projectResponse, parentResponse] = await Promise.all([
+        ctx.app.inject({ method: "GET", url: `/api/projects/${projectId}`, headers }),
+        ctx.app.inject({ method: "GET", url: `/api/tasks/${parentId}`, headers }),
+      ]);
+      const parent = parentResponse.json();
+      return {
+        projectStatus: projectResponse.json().status,
+        parentStatus: parent.status,
+        children: parent.children.map((child: {
+          title: string;
+          status: string;
+          dueDate: string | null;
+          scheduledDate: string | null;
+          position: number;
+        }) => ({
+          title: child.title,
+          status: child.status,
+          dueDate: child.dueDate,
+          scheduledDate: child.scheduledDate,
+          position: child.position,
+        })),
+        records: mutationRecords([projectId, parentId, ...childIds]),
+      };
+    }
+
+    const singleOutcome = await outcome(single.project.id, single.parent.id, [
+      firstSingle.json().id,
+      committedSingle.json().id,
+      lastSingle.json().id,
+    ]);
+    const batchOutcome = await outcome(batch.project.id, batch.parent.id, [
+      ...committedBatch.json().tasks.map((task: { id: number }) => task.id),
+    ]);
+    expect(batchOutcome).toEqual(singleOutcome);
+    expect(batchOutcome.records.contributions).toContainEqual(expect.objectContaining({
+      category: "planning",
+      reason: "project_next_action_added",
+      entityType: "project",
+    }));
+    expect(batchOutcome.records.contributions).not.toContainEqual(expect.objectContaining({
+      reason: "project_due_plan_added",
+    }));
+  });
+
   it("leaves a Someday parent parked when the batch has no execution commitment", async () => {
     const parent = await createTask({ title: "Irgendwann Dachboden", status: "someday" });
     const response = await ctx.app.inject({
