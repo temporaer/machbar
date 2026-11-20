@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import { Graph } from "../src/domain/graph.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -23,6 +24,30 @@ describe("atomic task step batches", () => {
     return response.json();
   }
 
+  function mutationRecords(ids: number[]) {
+    const placeholders = ids.map(() => "?").join(", ");
+    const activities = ctx.handle.sqlite.prepare(`
+      SELECT kind, entity_type AS entityType, entity_title AS entityTitle,
+        json_extract(metadata, '$.previousStatus') AS previousStatus,
+        json_extract(metadata, '$.nextStatus') AS nextStatus,
+        json_extract(metadata, '$.changedFields') AS changedFields
+      FROM activity_events
+      WHERE entity_id IN (${placeholders})
+      ORDER BY entity_title, kind, previousStatus, nextStatus
+    `).all(...ids);
+    const contributions = ctx.handle.sqlite.prepare(`
+      SELECT activity.entity_title AS activityTitle,
+        contribution.category,
+        contribution.reason,
+        contribution.entity_type AS entityType
+      FROM contribution_events contribution
+      JOIN activity_events activity ON activity.id = contribution.activity_event_id
+      WHERE activity.entity_id IN (${placeholders})
+      ORDER BY activity.entity_title, contribution.category, contribution.reason
+    `).all(...ids);
+    return { activities, contributions };
+  }
+
   it("classifies an Inbox parent together with its first child batch", async () => {
     const parent = await createTask({ title: "Kita-Formular" });
     const response = await ctx.app.inject({
@@ -45,12 +70,22 @@ describe("atomic task step batches", () => {
       .toMatchObject({ status: "actionable", needsClarification: false });
   });
 
-  it("projects a child batch from one graph and matches subsequent task reads", async () => {
-    const parent = await createTask({ title: "Wohnung vorbereiten" });
+  it("projects a child batch from one graph and matches authorized task reads", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const parentResponse = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      headers,
+      payload: { title: "Wohnung vorbereiten", scope: "work", ownerMemberId: member.id },
+    });
+    expect(parentResponse.statusCode).toBe(201);
+    const parent = parentResponse.json();
     const graphLoad = vi.spyOn(Graph, "load");
     const response = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${parent.id}/children/batch`,
+      headers,
       payload: {
         expectedRevision: parent.revision,
         expectedProjectRevisions: [],
@@ -62,13 +97,125 @@ describe("atomic task step batches", () => {
     expect(graphLoad).toHaveBeenCalledTimes(2);
     const result = response.json();
     expect(result.parent).toEqual(
-      (await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json(),
+      (await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}`, headers })).json(),
     );
     for (const task of result.tasks) {
       expect(task).toEqual(
-        (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json(),
+        (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}`, headers })).json(),
       );
     }
+  });
+
+  it("matches the canonical child path after a reference-first XL breakdown", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const singleParent = await createTask({ title: "Reise planen", size: "XL" });
+    const batchParent = await createTask({ title: "Reise planen", size: "XL" });
+
+    const singleReference = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${singleParent.id}/children`,
+      headers,
+      payload: { title: "Material", kind: "reference" },
+    });
+    const batchReference = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batchParent.id}/children`,
+      headers,
+      payload: { title: "Material", kind: "reference" },
+    });
+    expect(singleReference.statusCode).toBe(201);
+    expect(batchReference.statusCode).toBe(201);
+
+    const singleChildren = [];
+    for (const title of ["Zug buchen", "Hotel buchen"]) {
+      const child = await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${singleParent.id}/children`,
+        headers,
+        payload: { title },
+      });
+      expect(child.statusCode).toBe(201);
+      singleChildren.push(child.json());
+    }
+    const currentBatchParent = (await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${batchParent.id}`,
+      headers,
+    })).json();
+    const batch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${batchParent.id}/children/batch`,
+      headers,
+      payload: {
+        expectedRevision: currentBatchParent.revision,
+        expectedProjectRevisions: [],
+        steps: [{ title: "Zug buchen" }, { title: "Hotel buchen" }],
+      },
+    });
+    expect(batch.statusCode).toBe(201);
+
+    async function outcome(parentId: number, childIds: number[]) {
+      const parent = (await ctx.app.inject({
+        method: "GET",
+        url: `/api/tasks/${parentId}`,
+        headers,
+      })).json();
+      return {
+        parent: {
+          status: parent.status,
+          needsClarification: parent.needsClarification,
+          children: parent.children.map((child: { title: string; kind: string; status: string; position: number }) => ({
+            title: child.title,
+            kind: child.kind,
+            status: child.status,
+            position: child.position,
+          })),
+        },
+        records: mutationRecords([parentId, ...childIds]),
+      };
+    }
+
+    expect(await outcome(batchParent.id, [
+      batchReference.json().id,
+      ...batch.json().tasks.map((task: { id: number }) => task.id),
+    ])).toEqual(await outcome(singleParent.id, [
+      singleReference.json().id,
+      ...singleChildren.map((task: { id: number }) => task.id),
+    ]));
+  });
+
+  it("does not award a second XL breakdown contribution when the parent already has an open action child", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const parent = await createTask({ title: "Keller entrümpeln", status: "actionable", size: "XL" });
+    const firstChild = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children`,
+      headers,
+      payload: { title: "Regale sortieren" },
+    });
+    expect(firstChild.statusCode).toBe(201);
+    const before = (ctx.handle.sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM contribution_events WHERE reason = 'task_broken_down' AND entity_id = ?",
+    ).get(parent.id) as { count: number }).count;
+    expect(before).toBe(1);
+
+    const batch = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children/batch`,
+      headers,
+      payload: {
+        expectedRevision: parent.revision,
+        expectedProjectRevisions: [],
+        steps: [{ title: "Werkzeug inventarisieren" }, { title: "Spenden sortieren" }],
+      },
+    });
+    expect(batch.statusCode).toBe(201);
+    const after = (ctx.handle.sqlite.prepare(
+      "SELECT COUNT(*) AS count FROM contribution_events WHERE reason = 'task_broken_down' AND entity_id = ?",
+    ).get(parent.id) as { count: number }).count;
+    expect(after).toBe(1);
   });
 
   it("leaves a Someday parent parked when the batch has no execution commitment", async () => {
@@ -220,6 +367,27 @@ describe("atomic task step batches", () => {
     expect(retry.statusCode).toBe(201);
     expect(retry.json().tasks).toHaveLength(2);
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
+  });
+
+  it("rolls back earlier batch children when the final child violates a schedule invariant", async () => {
+    const parent = await createTask({ title: "Fenster vorbereiten" });
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/children/batch`,
+      payload: {
+        expectedRevision: parent.revision,
+        expectedProjectRevisions: [],
+        steps: [
+          { title: "Maße notieren" },
+          { title: "Termin planen", dueDate: "2027-02-10", scheduledDate: "2027-02-11" },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("task_schedule_before_available");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json())
+      .toMatchObject({ status: "captured", children: [] });
   });
 
   it("rejects an invalid child in the submitted batch without creating earlier entries", async () => {
