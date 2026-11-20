@@ -5,6 +5,7 @@ import { LocaleProvider } from "./locale";
 import { RefreshProvider } from "./refresh";
 import {
   CompletionFeedbackOwnerProvider,
+  TaskCommandEligibilityProvider,
   TaskActionsProvider,
   useTaskActions,
 } from "./useTaskActions";
@@ -12,7 +13,10 @@ import { api } from "./api";
 import { makeTask } from "../test/fixtures";
 import { useAsync } from "./useAsync";
 
-vi.mock("./api", () => ({ api: { updateTask: vi.fn(), completeTask: vi.fn(), moveTask: vi.fn() } }));
+vi.mock("./api", () => ({ api: {
+  updateTask: vi.fn(), completeTask: vi.fn(), cancelTask: vi.fn(), reopenTask: vi.fn(),
+  transitionTaskStatus: vi.fn(), moveTask: vi.fn(),
+} }));
 const mockedApi = vi.mocked(api, true);
 function wrapper({ children }: { children: ReactNode }) {
   return <LocaleProvider initialLocale="de"><RefreshProvider><TaskActionsProvider>{children}</TaskActionsProvider></RefreshProvider></LocaleProvider>;
@@ -83,7 +87,7 @@ describe("server-confirmed task sequence contract", () => {
     mockedApi.completeTask.mockResolvedValue(task);
     await act(async () => { await result.current.complete(task); });
     expect(observer.onCommitted).toHaveBeenCalledExactlyOnceWith({
-      taskId: task.id, title: task.title, recurring: false,
+      taskId: task.id, title: task.title, recurring: false, action: "complete",
     });
   });
 
@@ -101,9 +105,79 @@ describe("server-confirmed task sequence contract", () => {
     await act(async () => {
       await result.current.complete(task);
     });
-
     expect(first.onCommitted).toHaveBeenCalledOnce();
     expect(second.onCommitted).not.toHaveBeenCalled();
+  });
+
+  it.each([
+      ["cancel", "cancelTask", "cancel"],
+      ["reopen", "reopenTask", "reopen"],
+      ["captured", "transitionTaskStatus", "captured"],
+      ["actionable", "updateTask", "actionable"],
+      ["someday", "updateTask", "someday"],
+  ] as const)("reports a committed %s transition to its captured owner", async (operation, apiMethod, action) => {
+      const task = makeTask({ status: operation === "reopen" ? "done" : "actionable" });
+      const owner = Symbol("source-view");
+      const otherOwner = Symbol("other-view");
+      const { result } = renderHook(() => useTaskActions(), { wrapper: wrapperWithOwner(owner) });
+      const observer = { pendingMessage: vi.fn(() => "Pending"), onCommitted: vi.fn() };
+      const other = { pendingMessage: vi.fn(() => "Other"), onCommitted: vi.fn() };
+      result.current.registerCompletionFeedback(owner, observer);
+      result.current.registerCompletionFeedback(otherOwner, other);
+      mockedApi[apiMethod].mockResolvedValue({ ...task, revision: 2 });
+      await act(async () => {
+        if (operation === "cancel") await result.current.cancel(task);
+        else if (operation === "reopen") await result.current.reopen(task);
+        else if (operation === "captured") await result.current.transitionStatus(task, "captured");
+        else await result.current.setStatus(task, operation);
+      });
+      expect(observer.pendingMessage).toHaveBeenCalledWith(action);
+      expect(observer.onCommitted).toHaveBeenCalledExactlyOnceWith({
+        taskId: task.id, title: task.title, recurring: false, action,
+      });
+      expect(other.onCommitted).not.toHaveBeenCalled();
+  });
+
+  it("does not confirm a rejected cancellation or leak a late status commit to a retired owner", async () => {
+      const task = makeTask();
+      const owner = Symbol("source-view");
+      const { result } = renderHook(() => useTaskActions(), { wrapper: wrapperWithOwner(owner) });
+      const observer = { pendingMessage: vi.fn(() => "Pending"), onCommitted: vi.fn() };
+      const retire = result.current.registerCompletionFeedback(owner, observer);
+      mockedApi.cancelTask.mockRejectedValueOnce(new Error("Rejected"));
+      await act(async () => { await result.current.cancel(task); });
+      expect(observer.onCommitted).not.toHaveBeenCalled();
+      let confirm!: (value: typeof task) => void;
+      mockedApi.updateTask.mockReturnValue(new Promise(resolve => { confirm = resolve; }));
+      let command!: Promise<unknown>;
+      act(() => { command = result.current.setStatus(task, "someday"); });
+      retire();
+      await act(async () => { confirm(task); await command; });
+      expect(observer.onCommitted).not.toHaveBeenCalled();
+  });
+
+  it("rejects a retired view's direct status command without gating unrelated metadata", async () => {
+    const task = makeTask();
+    const eligibility = { id: Symbol("retired-view"), active: false };
+    function retiredWrapper({ children }: { children: ReactNode }) {
+      return <LocaleProvider initialLocale="de"><RefreshProvider><TaskActionsProvider>
+        <TaskCommandEligibilityProvider scope={eligibility}>{children}</TaskCommandEligibilityProvider>
+      </TaskActionsProvider></RefreshProvider></LocaleProvider>;
+    }
+    const { result } = renderHook(() => useTaskActions(), { wrapper: retiredWrapper });
+    await act(async () => {
+      await result.current.setStatus(task, "someday");
+      await result.current.transitionStatus(task, "captured");
+      await result.current.cancel(task);
+      await result.current.reopen(task);
+    });
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(mockedApi.transitionTaskStatus).not.toHaveBeenCalled();
+    expect(mockedApi.cancelTask).not.toHaveBeenCalled();
+    expect(mockedApi.reopenTask).not.toHaveBeenCalled();
+    mockedApi.updateTask.mockResolvedValue(task);
+    await act(async () => { await result.current.update(task, { title: "Independent edit" }); });
+    expect(mockedApi.updateTask).toHaveBeenCalledOnce();
   });
 
   it("isolates a throwing feedback callback from committed invalidation and write outcome", async () => {

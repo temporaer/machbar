@@ -9,6 +9,7 @@ import { useStrings } from "./strings";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
 export type CompletionFeedbackOwner = symbol;
+export type TaskFeedbackAction = "complete" | "cancel" | "reopen" | "captured" | "actionable" | "someday";
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
 export type PendingAction = "complete" | "cancel";
 export interface TaskCommandEligibility {
@@ -56,8 +57,8 @@ export function useTaskCommandEligibility() {
 }
 
 interface CompletionFeedback {
-  pendingMessage: string;
-  onCommitted: (completion: { taskId: number; title: string; recurring: boolean }) => void;
+  pendingMessage: string | ((action: TaskFeedbackAction) => string);
+  onCommitted: (completion: { taskId: number; title: string; recurring: boolean; action: TaskFeedbackAction }) => void;
 }
 
 function useTaskActionsState() {
@@ -79,6 +80,35 @@ function useTaskActionsState() {
   }, []);
   const runTransition = useCallback((task: Pick<Task, "id">, mutate: () => Promise<Task>, throwOnError = false) =>
     run({ id: task.id, mutate, throwOnError }), [run]);
+  const runLifecycle = useCallback((
+    task: Task, action: TaskFeedbackAction, mutate: () => Promise<Task>,
+    completionFeedbackOwner?: CompletionFeedbackOwner,
+    commandEligibility?: TaskCommandEligibility,
+    throwOnError = false,
+  ) => {
+    if (commandEligibility && !commandEligibility.active) {
+      if (throwOnError) throw new Error(strings.taskCommandUnavailable);
+      return Promise.resolve(undefined);
+    }
+    const observer = completionFeedbackOwner
+      ? completionFeedback.current.get(completionFeedbackOwner)
+      : undefined;
+    return run({
+      id: task.id, mutate, throwOnError,
+      pendingMessage: typeof observer?.pendingMessage === "function"
+        ? observer.pendingMessage(action) : observer?.pendingMessage,
+      onCommitted: () => {
+        if (observer && completionFeedbackOwner &&
+          completionFeedback.current.get(completionFeedbackOwner) === observer) {
+          observer.onCommitted({
+            taskId: task.id, title: task.title,
+            recurring: action === "complete" && task.repeatAfterDays !== null,
+            action,
+          });
+        }
+      },
+    });
+  }, [run, strings]);
 
   const complete = useCallback(async (
     task: Task,
@@ -88,40 +118,37 @@ function useTaskActionsState() {
     completionFeedbackOwner?: CompletionFeedbackOwner,
     commandEligibility?: TaskCommandEligibility,
   ) => {
-    if (commandEligibility && !commandEligibility.active) {
-      if (throwOnError) throw new Error(strings.taskCommandUnavailable);
-      return undefined;
-    }
-    const observer = completionFeedbackOwner
-      ? completionFeedback.current.get(completionFeedbackOwner)
-      : undefined;
-    return run({
-      id: task.id, throwOnError, pendingMessage: observer?.pendingMessage,
-      mutate: () => api.completeTask(
+    return runLifecycle(task, "complete", () => api.completeTask(
         task.id, policy ?? "leave_open",
         task.repeatAfterDays !== null ? toIsoCalendarDate(new Date()) : undefined,
         task.revision, ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
-      ),
-      onCommitted: () => {
-        if (observer && completionFeedbackOwner &&
-          completionFeedback.current.get(completionFeedbackOwner) === observer) {
-          observer.onCommitted({ taskId: task.id, title: task.title, recurring: task.repeatAfterDays !== null });
-        }
-      },
-    });
-  }, [run, strings]);
-  const cancel = useCallback(async (task: Task, policy?: ChildPolicy, commandEligibility?: TaskCommandEligibility) => {
-    if (commandEligibility && !commandEligibility.active) return undefined;
-    return runTransition(task, () => api.cancelTask(task.id, policy ?? "leave_open", task.revision));
-  }, [runTransition]);
-  const reopen = useCallback(async (task: Task, commandEligibility?: TaskCommandEligibility) => {
-    if (commandEligibility && !commandEligibility.active) return undefined;
-    return runTransition(task, () => api.reopenTask(task.id, task.revision));
-  }, [runTransition]);
-  const transitionStatus = useCallback((task: Task, status: TaskStatus) =>
-    runTransition(task, () => api.transitionTaskStatus(task.id, status, undefined, task.revision)), [runTransition]);
-  const setStatus = useCallback((task: Task, status: Extract<TaskStatus, "someday" | "actionable">) =>
-    runTransition(task, () => updateTask(task, { status })), [runTransition]);
+      ), completionFeedbackOwner, commandEligibility, throwOnError);
+  }, [runLifecycle]);
+  const cancel = useCallback((
+    task: Task, policy?: ChildPolicy,
+    completionFeedbackOwner?: CompletionFeedbackOwner,
+    commandEligibility?: TaskCommandEligibility,
+  ) => runLifecycle(task, "cancel", () =>
+    api.cancelTask(task.id, policy ?? "leave_open", task.revision),
+  completionFeedbackOwner, commandEligibility), [runLifecycle]);
+  const reopen = useCallback((
+    task: Task, completionFeedbackOwner?: CompletionFeedbackOwner,
+    commandEligibility?: TaskCommandEligibility,
+  ) => runLifecycle(task, "reopen", () => api.reopenTask(task.id, task.revision),
+    completionFeedbackOwner, commandEligibility), [runLifecycle]);
+  const transitionStatus = useCallback((
+    task: Task, status: TaskStatus,
+    completionFeedbackOwner?: CompletionFeedbackOwner,
+    commandEligibility?: TaskCommandEligibility,
+  ) => runLifecycle(task, status === "done" ? "complete" : status === "cancelled" ? "cancel" : status, () =>
+    api.transitionTaskStatus(task.id, status, undefined, task.revision),
+  completionFeedbackOwner, commandEligibility), [runLifecycle]);
+  const setStatus = useCallback((
+    task: Task, status: Extract<TaskStatus, "someday" | "actionable">,
+    completionFeedbackOwner?: CompletionFeedbackOwner,
+    commandEligibility?: TaskCommandEligibility,
+  ) => runLifecycle(task, status, () => updateTask(task, { status }),
+    completionFeedbackOwner, commandEligibility), [runLifecycle]);
   const clarify = useCallback((task: Task) =>
     runTransition(task, () => api.clarifyTask(task.id, task.revision)), [runTransition]);
   const deferClarification = useCallback((task: Task, date: string, throwOnError = false) =>
@@ -161,7 +188,9 @@ function useTaskActionsState() {
     commandEligibility?: TaskCommandEligibility,
   ) => {
     if (commandEligibility && !commandEligibility.active) return;
-    if (task.status === "done" || task.status === "cancelled") { void reopen(task, commandEligibility); return; }
+    if (task.status === "done" || task.status === "cancelled") {
+      void reopen(task, completionFeedbackOwner, commandEligibility); return;
+    }
     if (hasOpenDescendants(task)) {
       setPending({
         task,
@@ -189,7 +218,7 @@ function useTaskActionsState() {
       });
       return;
     }
-    void cancel(task, undefined, commandEligibility);
+    void cancel(task, undefined, completionFeedbackOwner, commandEligibility);
   }, [cancel]);
   const resolvePolicy = useCallback((policy: ChildPolicy, commandEligibility?: TaskCommandEligibility) => {
     if (!pending) return;
@@ -213,7 +242,7 @@ function useTaskActionsState() {
         pending.commandEligibility,
       );
     }
-    else void cancel(pending.task, policy, pending.commandEligibility);
+    else void cancel(pending.task, policy, pending.completionFeedbackOwner, pending.commandEligibility);
   }, [pending, complete, cancel]);
   const cancelPrompt = useCallback((commandEligibility?: TaskCommandEligibility) => {
     if (pending?.commandEligibility &&
@@ -275,12 +304,22 @@ export function useTaskActions(): TaskActionsValue {
     commandEligibility ?? undefined,
   ), [commandEligibility, completionFeedbackOwner, context]);
   const cancel = useCallback(
-    (task: Task, policy?: ChildPolicy) => context.cancel(task, policy, commandEligibility ?? undefined),
-    [commandEligibility, context],
+    (task: Task, policy?: ChildPolicy) => context.cancel(task, policy, completionFeedbackOwner ?? undefined, commandEligibility ?? undefined),
+    [commandEligibility, completionFeedbackOwner, context],
   );
   const reopen = useCallback(
-    (task: Task) => context.reopen(task, commandEligibility ?? undefined),
-    [commandEligibility, context],
+    (task: Task) => context.reopen(task, completionFeedbackOwner ?? undefined, commandEligibility ?? undefined),
+    [commandEligibility, completionFeedbackOwner, context],
+  );
+  const transitionStatus = useCallback(
+    (task: Task, status: TaskStatus) =>
+      context.transitionStatus(task, status, completionFeedbackOwner ?? undefined, commandEligibility ?? undefined),
+    [commandEligibility, completionFeedbackOwner, context],
+  );
+  const setStatus = useCallback(
+    (task: Task, status: Extract<TaskStatus, "someday" | "actionable">) =>
+      context.setStatus(task, status, completionFeedbackOwner ?? undefined, commandEligibility ?? undefined),
+    [commandEligibility, completionFeedbackOwner, context],
   );
   const resolvePolicy = useCallback(
     (policy: ChildPolicy) => context.resolvePolicy(policy, commandEligibility ?? undefined),
@@ -297,6 +336,8 @@ export function useTaskActions(): TaskActionsValue {
     complete,
     cancel,
     reopen,
+    transitionStatus,
+    setStatus,
     resolvePolicy,
     cancelPrompt,
   };
