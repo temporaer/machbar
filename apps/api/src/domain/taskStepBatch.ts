@@ -5,8 +5,15 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import { hasExecutionCommitment } from "./commitmentTransition.js";
-import { getTaskOrThrow, createChildTaskInTransaction, createTaskInTransaction } from "./taskCrud.js";
+import {
+  getTaskOrThrow,
+  createChildTaskInTransaction,
+  createTaskInTransaction,
+  type ChildTaskBatchState,
+  type TaskCreationFacts,
+} from "./taskCrud.js";
 import { convertTaskToStoryInTransaction } from "./roleConversion.js";
+import { projectHasNextAction, projectHasTaskPlan } from "./workItemShared.js";
 import type { MutationContext } from "./workItemShared.js";
 
 export interface StepBatchItem {
@@ -28,7 +35,7 @@ export interface StepBatchInput {
 }
 
 export interface StepBatchResult {
-  tasks: ReturnType<typeof getTaskOrThrow>[];
+  tasks: TaskCreationFacts[];
   convertedProjectId: number | null;
 }
 
@@ -76,7 +83,7 @@ function assertProjectChainRevisions(
   }
 }
 
-function commitmentSubject(task: ReturnType<typeof getTaskOrThrow>) {
+function commitmentSubject(task: TaskCreationFacts) {
   return {
     type: "task" as const,
     id: task.id,
@@ -112,6 +119,7 @@ function createSteps(
   let convertedProjectId: number | null = null;
   let destinationTaskId: number | null = null;
   let childStatus: TaskStatus = "actionable";
+  let childBatchState: ChildTaskBatchState | undefined;
 
   if (destination.type === "task") {
     const parent = getTaskOrThrow(txDb, destination.id);
@@ -133,6 +141,27 @@ function createSteps(
     } else {
       projectId = parent.projectId;
       assertProjectChainRevisions(txDb, projectId, input.expectedProjectRevisions);
+      const existingChildren = txDb.select({
+        role: schema.workItems.role,
+        taskKind: schema.workItems.taskKind,
+        status: schema.workItems.status,
+        position: schema.workItems.position,
+      }).from(schema.workItems)
+        .where(eq(schema.workItems.parentId, parent.id))
+        .all();
+      childBatchState = {
+        parent,
+        nextPosition: existingChildren.reduce((max, child) => Math.max(max, child.position), -1) + 1,
+        hasActionChild: existingChildren.some((child) => child.role === "task" && child.taskKind === "action"),
+        hasOpenActionChild: existingChildren.some((child) =>
+          child.role === "task" &&
+          child.taskKind === "action" &&
+          child.status !== "done" &&
+          child.status !== "cancelled"
+        ),
+        hasNextAction: projectId === null ? true : projectHasNextAction(txDb, projectId),
+        hasTaskPlan: projectId === null ? true : projectHasTaskPlan(txDb, projectId),
+      };
     }
   } else {
     const project = txDb.select({ id: schema.workItems.id, revision: schema.workItems.revision })
@@ -158,7 +187,10 @@ function createSteps(
       scheduledDate: step.scheduledDate ?? null,
     };
     return destinationTaskId !== null && convertedProjectId === null
-      ? createChildTaskInTransaction(txDb, destinationTaskId, taskInput, context, { activateCommitment: false })
+      ? createChildTaskInTransaction(txDb, destinationTaskId, taskInput, context, {
+          activateCommitment: false,
+          batchState: childBatchState!,
+        })
       : createTaskInTransaction(txDb, {
           ...taskInput,
           projectId,
