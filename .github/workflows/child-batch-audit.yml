@@ -8,7 +8,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
@@ -18,7 +18,7 @@ jobs:
       - run: npm run build -w @machbar/shared
       - name: Measure child-batch matrix
         env:
-          AUDIT_SIZES: 100,1000
+          AUDIT_SIZES: 100,1000,5000
           AUDIT_REPEATS: 3
           AUDIT_OPERATIONS: create-1-children,create-5-children,create-20-children,create-30-children
         run: npx tsx apps/api/scripts/graph-scaling-audit.ts | tee child-batch-audit.jsonl
