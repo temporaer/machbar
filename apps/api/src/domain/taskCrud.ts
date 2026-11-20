@@ -369,6 +369,29 @@ function insertTask(
   db: Db,
   input: CreateTaskInput,
   positionOverride?: number,
+): ReturnType<typeof getTaskOrThrow>;
+function insertTask(
+  db: Db,
+  input: CreateTaskInput,
+  positionOverride: number | undefined,
+  deferProjection: true,
+): {
+  id: number;
+  title: string;
+  projectId: number | null;
+  kind: TaskKind;
+  status: TaskStatus;
+  dueDate: string | null;
+  scheduledDate: string | null;
+  revisitAt: string | null;
+  repeatAfterDays: number | null;
+  reminders: readonly TaskReminderInput[];
+};
+function insertTask(
+  db: Db,
+  input: CreateTaskInput,
+  positionOverride?: number,
+  deferProjection = false,
 ) {
   if (!input.title || input.title.trim() === "") {
     throw AppError.badRequest(
@@ -502,7 +525,19 @@ function insertTask(
       .values({ workItemId: task.id, contextId })
       .run();
   }
-  return getTaskOrThrow(db, task.id);
+  if (!deferProjection) return getTaskOrThrow(db, task.id);
+  return {
+    id: task.id,
+    title: task.title,
+    projectId,
+    kind,
+    status,
+    dueDate: task.dueDate,
+    scheduledDate: task.scheduledDate,
+    revisitAt: task.revisitAt,
+    repeatAfterDays: task.repeatAfterDays,
+    reminders: input.reminders ?? [],
+  };
 }
 
 function commitmentSubjectForTask(
@@ -537,9 +572,23 @@ export function createTask(
   db: Db,
   input: CreateTaskInput,
   context?: MutationContext,
+): ReturnType<typeof getTaskOrThrow>;
+export function createTask(
+  db: Db,
+  input: CreateTaskInput,
+  context: MutationContext | undefined,
+  options: { deferProjection: true },
+): { id: number };
+export function createTask(
+  db: Db,
+  input: CreateTaskInput,
+  context?: MutationContext,
+  options?: { deferProjection: true },
 ) {
   return db.transaction((tx) =>
-    createTaskInTransaction(tx as unknown as Db, input, context),
+    options
+      ? createTaskInTransaction(tx as unknown as Db, input, context, options)
+      : createTaskInTransaction(tx as unknown as Db, input, context),
   );
 }
 
@@ -548,7 +597,19 @@ export function createTaskInTransaction(
   txDb: Db,
   input: CreateTaskInput,
   context?: MutationContext,
-  options: { activateCommitment?: boolean } = {},
+  options?: { activateCommitment?: boolean },
+): ReturnType<typeof getTaskOrThrow>;
+export function createTaskInTransaction(
+  txDb: Db,
+  input: CreateTaskInput,
+  context: MutationContext | undefined,
+  options: { activateCommitment?: boolean; deferProjection: true },
+): { id: number };
+export function createTaskInTransaction(
+  txDb: Db,
+  input: CreateTaskInput,
+  context?: MutationContext,
+  options: { activateCommitment?: boolean; deferProjection?: boolean } = {},
 ) {
     // A parentTaskId supplied through the general create contract is the same
     // structural mutation as POST /children. Route it through the canonical
@@ -562,7 +623,9 @@ export function createTaskInTransaction(
       projectId !== null ? projectHasNextAction(txDb, projectId) : true;
     const hadTaskPlan =
       projectId !== null ? projectHasTaskPlan(txDb, projectId) : true;
-    const task = insertTask(txDb, input);
+    const task = options.deferProjection
+      ? insertTask(txDb, input, undefined, true)
+      : insertTask(txDb, input);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_created",

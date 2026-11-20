@@ -42,6 +42,35 @@ describe("creation receipt transaction and authorization", () => {
     expect(response.statusCode).toBe(404);
     expect(ctx.handle.sqlite.prepare("SELECT count(*) AS n FROM creation_receipts").get()).toEqual({ n: 0 });
   });
+  it("returns the committed projection for scheduled project work with inherited and explicit metadata", async () => {
+    const owner = ctx.handle.db.insert(schema.members).values({ name: "Owner", color: "#111111" }).returning().get();
+    const inheritedTag = ctx.handle.db.insert(schema.tags).values({ name: "Inherited" }).returning().get();
+    const taskTag = ctx.handle.db.insert(schema.tags).values({ name: "Task" }).returning().get();
+    const context = ctx.handle.db.insert(schema.physicalContexts).values({ source: "home_assistant", externalId: "room", name: "Room" }).returning().get();
+    const projectResponse = await ctx.app.inject({ method: "POST", url: "/api/projects", payload: { title: "Project", ownerMemberId: owner.id, tagIds: [inheritedTag.id] } });
+    expect(projectResponse.statusCode, projectResponse.body).toBe(201);
+    const project = projectResponse.json();
+    const request = {
+      method: "POST" as const, url: "/api/tasks",
+      headers: { "idempotency-key": "scheduled_task_0001" },
+      payload: { title: "Scheduled", projectId: project.id, status: "someday", tagIds: [taskTag.id], contextIds: [context.id], contextInheritanceMode: "explicit", scheduledDate: "2027-01-15", reminders: [{ kind: "absolute", at: "2027-01-15T09:00:00.000Z" }] },
+    };
+    const created = await ctx.app.inject(request);
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json()).toMatchObject({
+      status: "actionable", scheduledDate: "2027-01-15", effectiveOwnerId: owner.id,
+      effectiveTags: expect.arrayContaining([expect.objectContaining({ id: inheritedTag.id }), expect.objectContaining({ id: taskTag.id })]),
+      effectiveContexts: [expect.objectContaining({ id: context.id })],
+      reminders: [expect.objectContaining({ at: "2027-01-15T09:00:00.000Z" })],
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
+    const read = await ctx.app.inject({ method: "GET", url: `/api/tasks/${created.json().id}` });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json()).toEqual(created.json());
+    const replay = await ctx.app.inject(request);
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json()).toEqual(read.json());
+  });
   it.each(["tasks", "projects"])("rejects a %s receipt after role conversion without side effects", async route => {
     const request = { method: "POST" as const, url: `/api/${route}`, headers: { "idempotency-key": `converted_${route}_0001` }, payload: { title: "Converted work item" } };
     const created = await ctx.app.inject(request);

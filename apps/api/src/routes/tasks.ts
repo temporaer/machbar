@@ -204,6 +204,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
           : {}),
       },
       { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
+      { deferProjection: true },
     );
     if (request.headers["x-machbar-preview"] === "activation") {
       reply.header("x-machbar-preview", "activation");
