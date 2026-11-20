@@ -1,9 +1,9 @@
 name: Graph load profile
 
 on:
-  push:
+  pull_request:
     branches:
-      - codex/347-graph-load-profile
+      - main
 
 permissions:
   contents: read
