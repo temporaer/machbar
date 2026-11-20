@@ -338,6 +338,27 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     expect(await screen.findByRole("heading", { name: "Wartet auf" })).toBeInTheDocument();
   });
 
+  it("does not dispatch task shortcuts for a row in an inert stale view", async () => {
+    const task = makeTask({ id: 42, title: "Veraltete Aufgabe", position: 0 });
+    const view = (inert: boolean) => (
+      <>
+        <WorkItemKeyboardNavMount />
+        <div {...(inert ? { inert: "" } : {})}>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        </div>
+        <OpenTaskProbe />
+      </>
+    );
+    const { rerender } = renderWithProviders(view(false));
+    await screen.findByText(task.title);
+
+    await userEvent.keyboard("j");
+    rerender(view(true));
+    await userEvent.keyboard("m");
+
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("none|none");
+  });
+
   it("does not run task-focused shortcuts for an active story", async () => {
     const story = makeProject({ id: 42, title: "Story", status: "active", ownerMemberId: 1 });
     const { container } = renderWithProviders(

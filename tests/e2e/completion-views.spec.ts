@@ -176,6 +176,44 @@ test("a criteria completion begun in Inbox cannot notify the replacement All vie
   await expect(page.locator(".view-completion-notice")).toHaveCount(0);
 });
 
+test("an All completion finishing after a same-route filter change cannot notify the replacement view", async ({ page, isMobile }) => {
+  const task = await createTask(page, `Filtered ${randomUUID()}`);
+  let releaseWrite!: () => void;
+  const write = new Promise<void>(resolve => { releaseWrite = resolve; });
+  let writing = false;
+  await page.route(`**/api/tasks/${task.id}/complete`, async route => {
+    writing = true;
+    await write;
+    await route.continue();
+  });
+
+  await page.goto("/#/more/all");
+  await completeRow(page, task.id, isMobile);
+  await expect.poll(() => writing).toBe(true);
+
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  const replacementQuery = `replacement-${randomUUID()}`;
+  const replacementSearch = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/search" && url.searchParams.get("text") === replacementQuery;
+  });
+  await page.getByRole("textbox", { name: "Suchen" }).fill(replacementQuery);
+  expect((await replacementSearch).ok()).toBe(true);
+  await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+
+  const completionRefresh = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/search" && url.searchParams.get("text") === replacementQuery;
+  });
+  releaseWrite();
+  await expect.poll(async () =>
+    (await (await page.request.get(`/api/tasks/${task.id}`)).json()).status,
+  ).toBe("done");
+  expect((await completionRefresh).ok()).toBe(true);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+});
+
 test("Inbox row and detail share one completion notice", async ({ page }) => {
   const task = await createTask(page, `Detail ${randomUUID()}`, {
     needsClarification: true,

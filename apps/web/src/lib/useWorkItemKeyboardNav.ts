@@ -9,14 +9,14 @@ import type { WorkItemCommand } from "./commands";
  * Every `TaskRow` currently rendered by this scope's outline(s), in
  * visible DOM order. Read live at each keypress rather than kept as
  * reactive state: closed disclosure sections remain mounted for native
- * disclosure behavior, so explicitly exclude rows inside closed `<details>`
- * while task subtrees remain unmounted when collapsed. This spans however
- * many `TaskOutline` sections a page renders (e.g. Today's up to five)
- * without a manual cross-outline registry.
+ * disclosure behavior, and refresh failures make stale views inert, so
+ * explicitly exclude rows inside either. This spans however many
+ * `TaskOutline` sections a page renders (e.g. Today's up to five) without a
+ * manual cross-outline registry.
  */
 function visibleWorkItemIds(): number[] {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-workitem-id]"))
-    .filter((element) => !element.closest("details:not([open])"))
+    .filter((element) => !element.closest("details:not([open])") && !element.closest("[inert]"))
     .map((element) => Number(element.dataset.workitemId))
     .filter((id) => Number.isFinite(id));
 }

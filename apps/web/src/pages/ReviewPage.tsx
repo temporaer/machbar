@@ -7,8 +7,8 @@ import type {
   Task,
 } from "@machbar/shared";
 import { useLocation, useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
-import { useAsync } from "../lib/useAsync";
+import { api, type ProjectWithActions } from "../lib/api";
+import { useAsync, type AsyncState } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
 import type { WorkItemCommand } from "../lib/commands";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -60,14 +60,35 @@ export function ReviewPage() {
     () => ({ type: "view" as const, key: `review:${currentMemberId}` }),
     [currentMemberId],
   );
+  const itemsRead = useAsync(() => api.getReviewItems(), [currentMemberId], accessResource);
+  const projectsRead = useAsync(() => api.getProjects(), []);
+  const tasksRead = useAsync(() => api.searchTasks({}), []);
+  const readsAvailable = [itemsRead, projectsRead, tasksRead].every(
+    read => read.data !== null && read.error === null && read.refreshError === null,
+  );
   return (
-    <ViewCompletionNotice accessResource={accessResource}>
-      <ReviewPageContent accessResource={accessResource} />
+    <ViewCompletionNotice accessResource={accessResource} enabled={readsAvailable}>
+      <ReviewPageContent
+        accessResource={accessResource}
+        itemsRead={itemsRead}
+        projectsRead={projectsRead}
+        tasksRead={tasksRead}
+      />
     </ViewCompletionNotice>
   );
 }
 
-function ReviewPageContent({ accessResource }: { accessResource: { type: "view"; key: string } }) {
+function ReviewPageContent({
+  accessResource,
+  itemsRead,
+  projectsRead,
+  tasksRead,
+}: {
+  accessResource: { type: "view"; key: string };
+  itemsRead: AsyncState<ReviewItem[]>;
+  projectsRead: AsyncState<ProjectWithActions[]>;
+  tasksRead: AsyncState<Task[]>;
+}) {
   const strings = useStrings();
   const navigate = useNavigate();
   const location = useLocation();
@@ -86,19 +107,21 @@ function ReviewPageContent({ accessResource }: { accessResource: { type: "view";
     error: itemsError,
     refreshError: itemsRefreshError,
     reload: reloadItems,
-  } = useAsync(() => api.getReviewItems(), [currentMemberId], accessResource);
+  } = itemsRead;
   const {
     data: projects,
     loading: projectsLoading,
     error: projectsError,
+    refreshError: projectsRefreshError,
     reload: reloadProjects,
-  } = useAsync(() => api.getProjects(), []);
+  } = projectsRead;
   const {
     data: tasks,
     loading: tasksLoading,
     error: tasksError,
+    refreshError: tasksRefreshError,
     reload: reloadTasks,
-  } = useAsync(() => api.searchTasks({}), []);
+  } = tasksRead;
   const projectActions = useProjectActions();
   const taskActions = useTaskActions();
   const projectById = useMemo(
@@ -493,6 +516,12 @@ function ReviewPageContent({ accessResource }: { accessResource: { type: "view";
 
   const loading = itemsLoading || projectsLoading || tasksLoading;
   const error = itemsError ?? projectsError ?? tasksError;
+  const refreshError = itemsRefreshError ?? projectsRefreshError ?? tasksRefreshError;
+  const readUnavailable = error !== null || refreshError !== null;
+
+  useEffect(() => {
+    if (readUnavailable) taskActions.cancelPrompt();
+  }, [readUnavailable, taskActions.cancelPrompt]);
 
   return (
     <div>
@@ -508,9 +537,22 @@ function ReviewPageContent({ accessResource }: { accessResource: { type: "view";
           }}
         />
       ) : null}
-      {itemsRefreshError ? <ErrorState message={itemsRefreshError} onRetry={reloadItems} /> : null}
+      {refreshError ? (
+        <ErrorState
+          message={refreshError}
+          onRetry={() => {
+            if (itemsRefreshError) reloadItems();
+            if (projectsRefreshError) reloadProjects();
+            if (tasksRefreshError) reloadTasks();
+          }}
+        />
+      ) : null}
       {items ? (
-        <section className="section" aria-labelledby="review-queue-heading">
+        <section
+          className="section"
+          aria-labelledby="review-queue-heading"
+          {...(readUnavailable ? { inert: "" } : {})}
+        >
           <h2 id="review-queue-heading" className="section-title">
             {strings.reviewPrimaryQueue}
           </h2>
@@ -544,7 +586,7 @@ function ReviewPageContent({ accessResource }: { accessResource: { type: "view";
                       ) : null}
                     </div>
                     <p>{reasonText(item.reason)}</p>
-                    <fieldset className="review-item-actions" disabled={pending} aria-busy={pending}
+                    <fieldset className="review-item-actions" disabled={pending || readUnavailable} aria-busy={pending}
                       style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
                       {!equivalentInspection ? (
                         <button
@@ -594,7 +636,7 @@ function ReviewPageContent({ accessResource }: { accessResource: { type: "view";
           </>
         ) : null}
       </details>
-      {taskActions.pendingTask && taskActions.pendingAction ? (
+      {!readUnavailable && taskActions.pendingTask && taskActions.pendingAction ? (
         <ChildPolicyPrompt
           taskTitle={taskActions.pendingTask.title}
           action={taskActions.pendingAction}

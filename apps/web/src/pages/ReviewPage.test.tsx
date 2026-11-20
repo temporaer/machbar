@@ -34,6 +34,7 @@ vi.mock("../lib/api", () => ({
     getRefinementTasks: vi.fn().mockResolvedValue([]),
     acknowledgeProjectReview: vi.fn(),
     acknowledgeTaskReview: vi.fn(),
+    completeTask: vi.fn(),
     updateTask: vi.fn(),
     activateProject: vi.fn(),
     returnProjectToBacklog: vi.fn(),
@@ -64,6 +65,11 @@ describe("ReviewPage", () => {
   const task = makeTask({
     id: 8,
     title: "Alte Lampen prüfen",
+    status: "someday",
+  });
+  const recoveredTask = makeTask({
+    id: 10,
+    title: "Wasserfilter wechseln",
     status: "someday",
   });
   const staleProject = makeProject({
@@ -423,6 +429,137 @@ describe("ReviewPage", () => {
     const classify = await within(card).findByRole("button", { name: "Machbar" });
     await userEvent.click(classify);
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenLastCalledWith(task.id, { status: "actionable", expectedRevision: 3 }));
+  });
+
+  it("disables stale Review decisions when the queue refresh fails", async () => {
+    let refreshFailed = false;
+    let currentTask = task;
+    mockedApi.getReviewItems.mockImplementation(async () => {
+      if (refreshFailed) throw new Error("Review refresh failed");
+      return [reviewItems[2]!];
+    });
+    mockedApi.searchTasks.mockImplementation(async () => [currentTask]);
+    function FailRefresh() {
+      const { bump } = useRefresh();
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            currentTask = { ...task, status: "done", revision: 2 };
+            refreshFailed = true;
+            void bump().catch(() => {});
+          }}
+        >
+          Fail Review refresh
+        </button>
+      );
+    }
+
+    renderWithProviders(<><ReviewPage /><FailRefresh /></>);
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    expect(within(card).getByRole("button", { name: "Machbar" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Fail Review refresh" }));
+    await screen.findByText(/Review refresh failed/);
+
+    expect(within(card).getByRole("button", { name: "Machbar" })).toBeDisabled();
+  });
+
+  it("dismisses a pending child-policy decision when Review becomes stale", async () => {
+    let refreshFailed = false;
+    const taskWithChild = makeTask({
+      ...task,
+      children: [makeTask({ id: 11, parentTaskId: task.id, status: "actionable" })],
+    });
+    mockedApi.getReviewItems.mockImplementation(async () => {
+      if (refreshFailed) throw new Error("Review refresh failed");
+      return [reviewItems[2]!];
+    });
+    mockedApi.searchTasks.mockResolvedValue([taskWithChild]);
+    function FailRefresh() {
+      const { bump } = useRefresh();
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            refreshFailed = true;
+            void bump().catch(() => {});
+          }}
+        >
+          Fail Review refresh
+        </button>
+      );
+    }
+
+    renderWithProviders(<><ReviewPage /><FailRefresh /></>);
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "Verwerfen" }));
+    expect(await screen.findByRole("dialog", { name: "Diese Aufgabe hat offene Teilaufgaben." })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Fail Review refresh" }));
+    await screen.findByText(/Review refresh failed/);
+    expect(screen.queryByRole("dialog", { name: "Diese Aufgabe hat offene Teilaufgaben." })).not.toBeInTheDocument();
+
+    refreshFailed = false;
+    await userEvent.click(screen.getByRole("button", { name: /^Erneut versuchen$/ }));
+    await waitFor(() => expect(within(card).getByRole("button", { name: "Verwerfen" })).toBeEnabled());
+    expect(screen.queryByRole("dialog", { name: "Diese Aufgabe hat offene Teilaufgaben." })).not.toBeInTheDocument();
+  });
+
+  it("does not own task completion feedback until all Review reads are available", async () => {
+    let releaseProjects!: (value: typeof project[]) => void;
+    mockedApi.getProjects.mockReturnValueOnce(new Promise(resolve => {
+      releaseProjects = resolve;
+    }));
+    mockedApi.getReviewItems.mockResolvedValue([
+      ...reviewItems,
+      {
+        entityType: "task",
+        entityId: recoveredTask.id,
+        entityTitle: recoveredTask.title,
+        projectId: null,
+        projectTitle: null,
+        category: "reconsider",
+        reason: "standalone_someday_stale",
+        suggestedAction: { code: "review_task" },
+      },
+    ]);
+    mockedApi.searchTasks.mockResolvedValue([task, recoveredTask]);
+    mockedApi.getTask.mockImplementation(async id => id === recoveredTask.id ? recoveredTask : task);
+    let commitCompletion!: (value: typeof task) => void;
+    mockedApi.completeTask.mockImplementation(() => new Promise(resolve => {
+      commitCompletion = resolve;
+    }));
+    renderWithProviders(<><ReviewPage /><TaskDetailSheet /></>);
+
+    const card = (await screen.findByText(task.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "Details öffnen" }));
+    const detail = await screen.findByRole("dialog", { name: "Details" });
+    await userEvent.click(within(detail).getByRole("button", { name: /^Status / }));
+    await userEvent.click(within(detail).getByRole("button", { name: /^Aufgabe abschließen$/ }));
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      commitCompletion({ ...task, status: "done", revision: 2 });
+    });
+    expect(document.querySelector(".view-completion-notice")).not.toBeInTheDocument();
+
+    await act(async () => {
+      releaseProjects([project, staleProject]);
+    });
+    await waitFor(() => expect(within(card).getByRole("button", { name: "Machbar" })).toBeEnabled());
+    expect(document.querySelector(".view-completion-notice")).not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Details" })).not.toBeInTheDocument());
+
+    mockedApi.completeTask.mockResolvedValue({ ...recoveredTask, status: "done", revision: 2 });
+    const recoveredCard = (await screen.findByText(recoveredTask.title)).closest("article")!;
+    await userEvent.click(within(recoveredCard).getByRole("button", { name: "Details öffnen" }));
+    const recoveredDetail = await screen.findByRole("dialog", { name: "Details" });
+    await userEvent.click(within(recoveredDetail).getByRole("button", { name: /^Status / }));
+    await userEvent.click(within(recoveredDetail).getByRole("button", { name: /^Aufgabe abschließen$/ }));
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.querySelector(".view-completion-notice")).toHaveTextContent(recoveredTask.title));
   });
 
   it("returns from project repair to the originating focused queue item", async () => {
