@@ -678,8 +678,22 @@ export function createChildTaskInTransaction(
   parentTaskId: number,
   input: CreateTaskInput,
   context?: MutationContext,
+  options?: { activateCommitment?: boolean },
+): ReturnType<typeof getTaskOrThrow>;
+export function createChildTaskInTransaction(
+  txDb: Db,
+  parentTaskId: number,
+  input: CreateTaskInput,
+  context: MutationContext | undefined,
+  options: { activateCommitment?: boolean; batchState: ChildTaskBatchState },
+): TaskCreationFacts;
+export function createChildTaskInTransaction(
+  txDb: Db,
+  parentTaskId: number,
+  input: CreateTaskInput,
+  context?: MutationContext,
   options: { activateCommitment?: boolean; batchState?: ChildTaskBatchState } = {},
-) {
+): ReturnType<typeof getTaskOrThrow> | TaskCreationFacts {
     const batchState = options.batchState;
     const parent = batchState?.parent ?? getTaskOrThrow(txDb, parentTaskId);
     assertParentAcceptsChildren(txDb, parentTaskId, batchState ? parent : undefined);
