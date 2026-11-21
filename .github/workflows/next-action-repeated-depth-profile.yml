@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           cp apps/api/src/repo/nextActionRepo.ts /tmp/nextActionRepo.after.ts
-          git show "$BASE_SHA:apps/api/src/repo/nextActionRepo.ts" > apps/api/src/repo/nextActionRepo.ts
+          curl --fail --location --silent --show-error "https://raw.githubusercontent.com/temporaer/machbar/$BASE_SHA/apps/api/src/repo/nextActionRepo.ts" > apps/api/src/repo/nextActionRepo.ts
           AUDIT_SIZES=1000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=90000 AUDIT_SHAPES=deep-chain AUDIT_DEPTHS=1,64,256,512,1000 npx tsx apps/api/scripts/graph-load-profile.ts > /tmp/depth-before.json
           cp /tmp/nextActionRepo.after.ts apps/api/src/repo/nextActionRepo.ts
           AUDIT_SIZES=1000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=90000 AUDIT_SHAPES=deep-chain AUDIT_DEPTHS=1,64,256,512,1000 npx tsx apps/api/scripts/graph-load-profile.ts > /tmp/depth-after.json
