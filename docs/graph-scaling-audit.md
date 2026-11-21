@@ -391,3 +391,57 @@ this run, and the CTE names alone (`blocking_descendants`, `candidates`,
 will isolate this query over controlled hierarchy depths and capture a valid
 plan before proposing a production change. Follow-up [#351](https://github.com/temporaer/machbar/issues/351)
 tracks the inheritance queries separately.
+
+
+## #350: next-action hierarchy-depth profile
+
+The next-action projection was profiled with 1,000 tasks held constant and
+maximum hierarchy depths of 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, and 1,000.
+The deep-chain fixture partitions tasks into chains capped at the requested
+depth; task status, kind, ownership, tags, contexts, dependencies, and reminders
+are generated from the same task index in every case. Each point uses one warm-up
+and one measured `Graph.load()` in a fresh process. The table shows measured
+Graph wall time and the dominant next-action SQL statement time:
+
+| Depth | Before Graph | After Graph | Before next-action SQL | After next-action SQL |
+|---:|---:|---:|---:|---:|
+| 1 | 373 ms | 337 ms | 163 ms | 77 ms |
+| 2 | 452 ms | 383 ms | 227 ms | 91 ms |
+| 4 | 564 ms | 383 ms | 337 ms | 92 ms |
+| 8 | 806 ms | 403 ms | 578 ms | 120 ms |
+| 16 | 1,218 ms | 387 ms | 984 ms | 104 ms |
+| 32 | 1,985 ms | 411 ms | 1,754 ms | 129 ms |
+| 64 | 3,537 ms | 494 ms | 3,295 ms | 184 ms |
+| 128 | 7,321 ms | 652 ms | 7,037 ms | 304 ms |
+| 256 | 13,379 ms | 997 ms | 13,033 ms | 548 ms |
+| 512 | 26,699 ms | 1,731 ms | 26,205 ms | 1,128 ms |
+| 1,000 | >90,000 ms (timeout) | 3,262 ms | >90,000 ms (timeout) | 2,285 ms |
+
+Before and after use the same runner, fixture, SQLite version, task count, and
+depth matrix. These are single-sample measurements, so small differences at
+shallow depths are not meaningful; the large-depth reduction is. The old
+`task_descendants` CTE generated task-to-descendant closure rows for every
+task before filtering to open work. The query plan confirmed this recursive
+materialization and repeated scans, while the measured next-action query grew
+from 163 ms at depth 1 to over 90 seconds at depth 1,000.
+
+The query now walks upward only from open actions and open project nodes to
+their task ancestors. That preserves the rows needed for the projection while
+avoiding closure rows for terminal actions and irrelevant branches. The
+projection still returns all open-action/ancestor pairs, so its output itself
+grows with the number of open actions and hierarchy depth; at depth 1,000 the
+measured query is 2.3 seconds. The depth-1,000 result is 27.6x faster than the
+depth-512 baseline query, and completes where the former depth-1,000 case timed
+out. These results justify the narrow recursive-query change; they do not imply
+that all deep graph operations have the same profile.
+
+The reproduction command is:
+
+```bash
+AUDIT_SIZES=1000 AUDIT_REPEATS=1 AUDIT_CASE_TIMEOUT_MS=90000 AUDIT_SHAPES=deep-chain AUDIT_DEPTHS=1,2,4,8,16,32,64,128,256,512,1000 npx tsx apps/api/scripts/graph-load-profile.ts
+```
+
+The repository tests now pin the full next-action projection across a nested
+reference, an externally waiting action, a future revisit, and a terminal
+descendant. Existing tests continue to cover dependency blockers, project and
+work-container semantics, preorder, and candidate availability.
