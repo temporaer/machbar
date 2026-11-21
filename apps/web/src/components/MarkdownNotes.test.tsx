@@ -1,8 +1,42 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MarkdownNotes, transformMarkdownUrl } from "./MarkdownNotes";
 
 describe("MarkdownNotes", () => {
+  it("maps nested, quoted, duplicate and multiline list markers to their exact source", () => {
+    const value = "> 1. [X] Same\r\n>    - [ ] Same\r\n\r\n-\r\n  [ ] Same\n\n```\n- [ ] Same\n```";
+    const onChecklistToggle = vi.fn();
+    render(<MarkdownNotes value={value} onChecklistToggle={onChecklistToggle} />);
+    const boxes = screen.getAllByRole("checkbox");
+    expect(boxes).toHaveLength(3);
+    fireEvent.click(boxes[0]!);
+    expect(onChecklistToggle).toHaveBeenLastCalledWith(value.replace("[X]", "[ ]"));
+    fireEvent.click(boxes[1]!);
+    expect(onChecklistToggle).toHaveBeenLastCalledWith(value.replace(">    - [ ]", ">    - [x]"));
+    fireEvent.click(boxes[2]!);
+    expect(onChecklistToggle).toHaveBeenLastCalledWith(value.replace("  [ ] Same\n\n```", "  [x] Same\n\n```"));
+  });
+
+  it("keeps checkboxes read-only without an enabled checklist callback", () => {
+    const callback = vi.fn();
+    const { rerender } = render(<MarkdownNotes value="- [ ] Item" />);
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+    rerender(<MarkdownNotes value="- [ ] Item" interactive={false} onChecklistToggle={callback} />);
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(callback).not.toHaveBeenCalled();
+    rerender(<MarkdownNotes value="- [ ] Item" onChecklistToggle={callback} checklistDisabled />);
+    expect(screen.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("toggles a tab-filled unchecked marker without changing surrounding text", () => {
+    const callback = vi.fn();
+    render(<MarkdownNotes value={"- [\t] Item"} onChecklistToggle={callback} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Item" }));
+    expect(callback).toHaveBeenCalledWith("- [x] Item");
+  });
   it("renders GFM, autolinks, and single newlines without raw HTML", () => {
     const { container } = render(
       <MarkdownNotes

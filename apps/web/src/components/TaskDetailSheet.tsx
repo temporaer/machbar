@@ -350,11 +350,13 @@ export function TaskDetailSheet() {
 
   const saveContentField = async (
     field: "title" | "notes",
+    checklistValue?: string,
   ): Promise<boolean> => {
     if (!task || savingTextFields) return false;
-    const value = field === "title" ? titleDraft.trim() : notesDraft;
+    if (checklistValue !== undefined && (readOnlyInspection || notesDraft !== task.notes)) return false;
+    const value = field === "title" ? titleDraft.trim() : checklistValue ?? notesDraft;
     if (field === "title" && !value) return false;
-    const dirty = field === "title" ? titleDirty : notesDirty;
+    const dirty = checklistValue !== undefined || (field === "title" ? titleDirty : notesDirty);
     if (!dirty) return true;
     const opening = contentOpeningRef.current;
     setSavingTextFields(true);
@@ -930,7 +932,9 @@ export function TaskDetailSheet() {
                 </div>
               </>
             ) : notesDraft.trim() ? (
-              <DetailNotesPreview key={task.id} value={notesDraft} />
+              <DetailNotesPreview key={task.id} value={notesDraft}
+                checklistDisabled={readOnlyInspection || savingTextFields || taskMutationPending || !!refreshError || notesDraft !== task.notes}
+                onChecklistToggle={value => { void saveContentField("notes", value); }} />
             ) : (
               <p className="text-muted">{strings.noNotes}</p>
             )}

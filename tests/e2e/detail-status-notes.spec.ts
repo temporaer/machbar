@@ -24,6 +24,8 @@ for (const role of ["task", "project"] as const) {
     const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
     const checkboxes = section.getByRole("checkbox");
     await expect(checkboxes).toHaveCount(3);
+    const more = section.getByRole("button", { name: "Mehr anzeigen", exact: true });
+    if (await more.isVisible()) await more.click();
     await checkboxes.nth(1).focus();
     await page.keyboard.press("Space");
     const expected = notes.replace("[X]", "[ ]");
@@ -33,6 +35,80 @@ for (const role of ["task", "project"] as const) {
     await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes)
       .toBe(expected.replace("- [ ] Same\n\n", "- [x] Same\n\n"));
     await expect(section.getByRole("link", { name: "Reference" })).toHaveAttribute("href", "https://example.com/");
+  });
+
+  for (const outcome of ["failure", "stale"] as const) {
+    test(`${role} checklist preserves notes on ${outcome}`, async ({ page }) => {
+      const { item, path } = await create(page, role, "- [ ] Item\n\nOriginal");
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      let writes = 0;
+      await page.route(`**${path}/${item.id}`, async route => {
+        if (route.request().method() !== "PATCH") { await route.continue(); return; }
+        writes++;
+        await gate;
+        if (outcome === "failure") await route.fulfill({ status: 503, json: { error: { code: "internal_error", message: "Unavailable" } } });
+        else await route.continue();
+      });
+      await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+      const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+      const checkbox = section.getByRole("checkbox");
+      await checkbox.focus();
+      await page.keyboard.press("Space");
+      await expect.poll(() => writes).toBe(1);
+      await expect(checkbox).toHaveAttribute("aria-disabled", "true");
+      await expect(checkbox).toBeFocused();
+      const updatedNotes = "- [ ] Item\n\nConcurrent change";
+      if (outcome === "stale") {
+        const response = await page.request.patch(`${path}/${item.id}`, { data: { notes: updatedNotes, expectedRevision: item.revision } });
+        expect(response.ok()).toBe(true);
+      }
+      release();
+      await expect(page.getByRole("alert").first()).toBeVisible();
+      await expect(checkbox).not.toBeChecked();
+      const expected = outcome === "stale" ? updatedNotes : item.notes;
+      await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(expected);
+      if (outcome === "stale") await expect(section).toContainText("Concurrent change");
+      expect(writes).toBe(1);
+    });
+  }
+
+  test(`${role} checklist waits for a successful refresh after a saved write`, async ({ page }) => {
+    const { item, path } = await create(page, role, "- [ ] Item");
+    let wrote = false, failRead = true;
+    await page.route(`**${path}/${item.id}`, async route => {
+      if (route.request().method() === "PATCH") {
+        wrote = true;
+        await route.continue();
+      } else if (wrote && failRead && route.request().method() === "GET") {
+        await route.fulfill({ status: 503, json: { error: { code: "internal_error", message: "Unavailable" } } });
+      } else await route.continue();
+    });
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkbox = section.getByRole("checkbox");
+    await checkbox.click();
+    await expect(page.getByRole("alert")).toContainText("Details konnten nicht aktualisiert werden");
+    await expect(checkbox).toHaveAttribute("aria-disabled", "true");
+    failRead = false;
+    await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+    await expect(checkbox).toBeChecked();
+    await expect(checkbox).toHaveAttribute("aria-disabled", "false");
+  });
+
+  test(`${role} clipped preview exposes only unobscured checkboxes`, async ({ page }) => {
+    const notes = "- [ ] Visible\n\n" + Array.from({ length: 12 }, (_, i) => `Paragraph ${i}`).join("\n\n") + "\n\n- [ ] Hidden";
+    const { item } = await create(page, role, notes);
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const visible = section.getByRole("checkbox", { name: "Visible" });
+    const hidden = section.getByRole("checkbox", { name: "Hidden" });
+    await expect(visible).toBeEnabled();
+    await expect(hidden).toBeDisabled();
+    await visible.click();
+    await expect(visible).toBeChecked();
+    await section.getByRole("button", { name: "Mehr anzeigen", exact: true }).click();
+    await expect(hidden).toBeEnabled();
   });
 
   test(`${role} notes measure actual overflow, group actions, expand and edit in the document`, async ({ page }, info) => {
@@ -53,6 +129,7 @@ for (const role of ["task", "project"] as const) {
     const reference = section.locator('a[href="https://example.com/"]');
     await expect(reference).toHaveAttribute("tabindex", "-1");
     await expect(reference).toHaveAttribute("aria-disabled", "true");
+    for (const checkbox of await section.getByRole("checkbox").all()) await expect(checkbox).toBeDisabled();
     // Programmatic activation also represents assistive-technology activation.
     expect(await reference.evaluate(link => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })))).toBe(false);
     expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(130);
@@ -75,6 +152,7 @@ for (const role of ["task", "project"] as const) {
     expect(await preview.evaluate(node => getComputedStyle(node, "::after").content)).toBe("none");
     await expect(section.getByRole("link", { name: "Reference", exact: true })).toHaveAttribute("href", "https://example.com/");
     await expect(section.getByRole("checkbox")).toHaveCount(2);
+    for (const checkbox of await section.getByRole("checkbox").all()) await expect(checkbox).toBeEnabled();
     await less.click();
     await expect(more).toBeVisible();
     await section.getByRole("button", { name: "Bearbeiten", exact: true }).click();

@@ -273,7 +273,11 @@ Outcome and structure editing sit beside their collapsible headings, remaining
 available when collapsed; activity and recurrence history are quiet disclosures.
 Saving feedback stays visible until the refreshed details arrive.
 Notes sit in a lightly tinted section; long notes expand with Show more
-without opening a separate scrolling area.
+without opening a separate scrolling area. Visible Markdown checklist items
+can be toggled directly; expand the preview to interact with obscured items.
+Other note text remains editable through Edit, Save and Cancel. A failed or
+stale checklist update leaves the current notes intact and requires another
+explicit attempt.
 
 ### 3. Execute
 
