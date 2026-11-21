@@ -4,25 +4,18 @@ import { useStrings } from "../lib/strings";
 import "./DetailNotesPreview.css";
 
 /** Measured Markdown preview; expansion uses the document's scroll surface. */
-export function DetailNotesPreview({ value }: { value: string }) {
+export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled = false }: {
+  value: string;
+  onChecklistToggle?: (value: string) => void;
+  checklistDisabled?: boolean;
+}) {
   const strings = useStrings();
   const id = useId();
   const content = useRef<HTMLDivElement>(null);
+  const checklistFocus = useRef<{ input: HTMLInputElement; before: string; after: string; restore: boolean } | null>(null);
+  const focusedItem = useRef<{ input: HTMLInputElement; offset: number; value: string } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
-  useLayoutEffect(() => {
-    const node = content.current;
-    if (!node) return;
-    const measure = () => {
-      const fontSize = parseFloat(getComputedStyle(node).fontSize) || 16;
-      setOverflows(node.scrollHeight > fontSize * 7.5 + 1);
-    };
-    measure();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    observer?.observe(node);
-    window.addEventListener("resize", measure);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
-  }, [value]);
   const clipped = overflows && !expanded;
   useLayoutEffect(() => {
     if (!clipped || !content.current) return;
@@ -44,6 +37,74 @@ export function DetailNotesPreview({ value }: { value: string }) {
       }
     };
   }, [clipped, value]);
+  useLayoutEffect(() => {
+    const node = content.current;
+    if (!node) return;
+    const measure = () => {
+      const preview = node.parentElement;
+      if (!preview) return;
+      const fontSize = parseFloat(getComputedStyle(node).fontSize) || 16;
+      setOverflows(node.scrollHeight > fontSize * 7.5 + 1);
+      const bottom = preview.getBoundingClientRect().bottom - fontSize * 2.25;
+      for (const checkbox of node.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+        const label = checkbox.closest("label");
+        const item = checkbox.closest("li");
+        let obscured = (label ?? checkbox).getBoundingClientRect().bottom > bottom;
+        if (clipped && item) {
+          for (const child of item.childNodes) {
+            if (child === label || (child instanceof Element && (child.tagName === "UL" || child.tagName === "OL"))) continue;
+            const range = document.createRange();
+            range.selectNode(child);
+            if (typeof range.getBoundingClientRect === "function" && range.getBoundingClientRect().bottom > bottom) obscured = true;
+          }
+        }
+        checkbox.disabled = !checkbox.hasAttribute("data-checklist-toggle") || (clipped && obscured);
+      }
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(node);
+    window.addEventListener("resize", measure);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
+  }, [clipped, value, checklistDisabled, !!onChecklistToggle]);
+  useLayoutEffect(() => {
+    const focused = focusedItem.current;
+    const saved = checklistFocus.current;
+    if (focused && document.activeElement === focused.input && focused.value !== value) {
+      const { offset } = focused;
+      const submittedToggle = saved && focused.value === saved.before && value === saved.after;
+      if (!submittedToggle && (focused.value.slice(0, offset) !== value.slice(0, offset) ||
+          focused.value.slice(offset + 1) !== value.slice(offset + 1))) {
+        focused.input.blur();
+        focusedItem.current = null;
+      } else {
+        focused.value = value;
+      }
+    }
+    if (!saved) return;
+    const { input, before, after } = saved;
+    if (value !== before && value !== after) {
+      checklistFocus.current = null;
+      return;
+    }
+    if (checklistDisabled) return;
+    if (saved.restore && input.isConnected && !input.matches(":disabled") && document.activeElement === document.body) input.focus({ preventScroll: true });
+    if (value === after) checklistFocus.current = null;
+  }, [checklistDisabled, value]);
+  useLayoutEffect(() => {
+    const retire = (event: Event) => {
+      const saved = checklistFocus.current;
+      if (saved && event.target instanceof Node && !saved.input.closest("label")?.contains(event.target)) {
+        saved.restore = false;
+      }
+    };
+    document.addEventListener("focusin", retire);
+    document.addEventListener("pointerdown", retire);
+    return () => {
+      document.removeEventListener("focusin", retire);
+      document.removeEventListener("pointerdown", retire);
+    };
+  }, []);
   const blockClippedLink = (event: MouseEvent<HTMLDivElement>) => {
     if (clipped && event.target instanceof Element && event.target.closest("a[href]")) {
       event.preventDefault();
@@ -52,8 +113,18 @@ export function DetailNotesPreview({ value }: { value: string }) {
   };
   return <div className="detail-notes-reader">
     <div id={id} className={`detail-notes-preview${clipped ? " is-clipped" : ""}`}>
-      <div ref={content} onClickCapture={blockClippedLink} onAuxClickCapture={blockClippedLink}
-        onContextMenuCapture={blockClippedLink}><MarkdownNotes value={value} /></div>
+      <div ref={content} onFocusCapture={event => {
+        const input = event.target;
+        if (input instanceof HTMLInputElement && input.dataset.checklistOffset !== undefined) {
+          focusedItem.current = { input, offset: Number(input.dataset.checklistOffset), value };
+        }
+      }} onClickCapture={blockClippedLink} onAuxClickCapture={blockClippedLink}
+        onContextMenuCapture={blockClippedLink}><MarkdownNotes value={value} onChecklistToggle={onChecklistToggle ? next => {
+          checklistFocus.current = document.activeElement instanceof HTMLInputElement && document.activeElement.type === "checkbox"
+            ? { input: document.activeElement, before: value, after: next, restore: true } : null;
+          onChecklistToggle(next);
+        } : undefined}
+          checklistDisabled={checklistDisabled} /></div>
     </div>
     {overflows ? <button type="button" className="btn btn-sm detail-notes-expand"
       aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(current => !current)}>

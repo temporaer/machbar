@@ -17,6 +17,126 @@ async function create(page: Page, role: "task" | "project", notes = "") {
 }
 
 for (const role of ["task", "project"] as const) {
+  test(`${role} checklist toggles persist only the chosen marker`, async ({ page }) => {
+    const notes = "- [ ] Same\n  - [X] Same\n- [ ] Same\n\n[Reference](https://example.com/)";
+    const { item, path } = await create(page, role, notes);
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkboxes = section.getByRole("checkbox");
+    await expect(checkboxes).toHaveCount(3);
+    const more = section.getByRole("button", { name: "Mehr anzeigen", exact: true });
+    if (await more.isVisible()) await more.click();
+    await checkboxes.nth(1).focus();
+    await page.keyboard.press("Space");
+    const expected = notes.replace("[X]", "[ ]");
+    await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(expected);
+    await expect(checkboxes.nth(1)).not.toBeChecked();
+    await checkboxes.nth(2).click();
+    await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes)
+      .toBe(expected.replace("- [ ] Same\n\n", "- [x] Same\n\n"));
+    await expect(section.getByRole("link", { name: "Reference" })).toHaveAttribute("href", "https://example.com/");
+  });
+
+  for (const outcome of ["failure", "stale"] as const) {
+    test(`${role} checklist preserves notes on ${outcome}`, async ({ page }) => {
+      const { item, path } = await create(page, role, "- [ ] Item\n\nOriginal");
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      let writes = 0;
+      await page.route(`**${path}/${item.id}`, async route => {
+        if (route.request().method() !== "PATCH") { await route.continue(); return; }
+        writes++;
+        await gate;
+        if (outcome === "failure") await route.fulfill({ status: 503, json: { error: { code: "internal_error", message: "Unavailable" } } });
+        else await route.continue();
+      });
+      await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+      const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+      const checkbox = section.getByRole("checkbox", { name: "Item", exact: true });
+      await checkbox.focus();
+      await page.keyboard.press("Space");
+      await expect.poll(() => writes).toBe(1);
+      await expect(checkbox).toHaveAttribute("aria-disabled", "true");
+      if (role === "project") await expect(checkbox).toBeFocused();
+      const updatedNotes = "- [ ] New item\n- [ ] Item\n\nConcurrent change";
+      if (outcome === "stale") {
+        const response = await page.request.patch(`${path}/${item.id}`, { data: { notes: updatedNotes, expectedRevision: item.revision } });
+        expect(response.ok()).toBe(true);
+      }
+      release();
+      await expect(page.getByRole("alert").first()).toBeVisible();
+      await expect(checkbox).not.toBeChecked();
+      if (outcome === "failure") await expect(checkbox).toBeFocused();
+      const expected = outcome === "stale" ? updatedNotes : item.notes;
+      await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(expected);
+      if (outcome === "stale") {
+        await expect(section).toContainText("Concurrent change");
+        await expect(section.getByRole("checkbox", { name: "New item" })).not.toBeFocused();
+      }
+      expect(writes).toBe(1);
+    });
+  }
+
+  test(`${role} checklist waits for a successful refresh after a saved write`, async ({ page }) => {
+    const { item, path } = await create(page, role, "- [ ] Item");
+    let wrote = false, failRead = true;
+    await page.route(`**${path}/${item.id}`, async route => {
+      if (route.request().method() === "PATCH") {
+        wrote = true;
+        await route.continue();
+      } else if (wrote && failRead && route.request().method() === "GET") {
+        await route.fulfill({ status: 503, json: { error: { code: "internal_error", message: "Unavailable" } } });
+      } else await route.continue();
+    });
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkbox = section.getByRole("checkbox");
+    await checkbox.click();
+    await expect(page.getByRole("alert")).toContainText("Details konnten nicht aktualisiert werden");
+    await expect(checkbox).toHaveAttribute("aria-disabled", "true");
+    failRead = false;
+    await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+    await expect(checkbox).toBeChecked();
+    await expect(checkbox).toHaveAttribute("aria-disabled", "false");
+  });
+
+  test(`${role} checklist keeps keyboard focus after a successful save`, async ({ page }) => {
+    const { item } = await create(page, role, "- [ ] Item");
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkbox = section.getByRole("checkbox", { name: "Item" });
+    await checkbox.focus();
+    await page.keyboard.press("Space");
+    await expect(checkbox).toBeChecked();
+    await expect(checkbox).toHaveAttribute("aria-disabled", "false");
+    await expect(checkbox).toBeFocused();
+  });
+
+  test(`${role} clipped preview exposes only unobscured checkboxes`, async ({ page }) => {
+    const notes = "- [ ] Visible\n\n" + Array.from({ length: 12 }, (_, i) => `Paragraph ${i}`).join("\n\n") + "\n\n- [ ] Hidden";
+    const { item } = await create(page, role, notes);
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const visible = section.getByRole("checkbox", { name: "Visible" });
+    const hidden = section.getByRole("checkbox", { name: "Hidden" });
+    await expect(visible).toBeEnabled();
+    await expect(hidden).toBeDisabled();
+    await visible.click();
+    await expect(visible).toBeChecked();
+    await section.getByRole("button", { name: "Mehr anzeigen", exact: true }).click();
+    await expect(hidden).toBeEnabled();
+  });
+
+  test(`${role} clipped preview disables a checkbox whose text extends into the fade`, async ({ page }) => {
+    const { item } = await create(page, role, `- [ ] ${"Long checklist item ".repeat(80)}`);
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkbox = section.getByRole("checkbox");
+    await expect(checkbox).toBeDisabled();
+    await section.getByRole("button", { name: "Mehr anzeigen", exact: true }).click();
+    await expect(checkbox).toBeEnabled();
+  });
+
   test(`${role} notes measure actual overflow, group actions, expand and edit in the document`, async ({ page }, info) => {
     const notes = Array.from({ length: 12 }, (_, i) => `Paragraph ${i}: **Keep this context** with several words that wrap on a narrow screen.`).join("\n\n") + "\n\n- [ ] A pending point\n- [x] A completed point\n\n[Reference](https://example.com/)";
     const { item } = await create(page, role, notes);
@@ -35,6 +155,7 @@ for (const role of ["task", "project"] as const) {
     const reference = section.locator('a[href="https://example.com/"]');
     await expect(reference).toHaveAttribute("tabindex", "-1");
     await expect(reference).toHaveAttribute("aria-disabled", "true");
+    for (const checkbox of await section.getByRole("checkbox").all()) await expect(checkbox).toBeDisabled();
     // Programmatic activation also represents assistive-technology activation.
     expect(await reference.evaluate(link => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })))).toBe(false);
     expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(130);
@@ -57,6 +178,7 @@ for (const role of ["task", "project"] as const) {
     expect(await preview.evaluate(node => getComputedStyle(node, "::after").content)).toBe("none");
     await expect(section.getByRole("link", { name: "Reference", exact: true })).toHaveAttribute("href", "https://example.com/");
     await expect(section.getByRole("checkbox")).toHaveCount(2);
+    for (const checkbox of await section.getByRole("checkbox").all()) await expect(checkbox).toBeEnabled();
     await less.click();
     await expect(more).toBeVisible();
     await section.getByRole("button", { name: "Bearbeiten", exact: true }).click();
@@ -147,6 +269,56 @@ for (const role of ["task", "project"] as const) {
     });
   }
 }
+
+test("project checklist keeps moved focus when a pending toggle succeeds", async ({ page }) => {
+  const { item, path } = await create(page, "project", "- [ ] First\n- [ ] Second");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let writing = false;
+  await page.route(`**${path}/${item.id}`, async route => {
+    if (route.request().method() !== "PATCH") { await route.continue(); return; }
+    writing = true;
+    await gate;
+    await route.continue();
+  });
+  await page.goto(`/#/projects/${item.id}`);
+  const section = page.locator(".project-notes-section");
+  await section.getByRole("checkbox", { name: "First" }).focus();
+  await page.keyboard.press("Space");
+  await expect.poll(() => writing).toBe(true);
+  const second = section.getByRole("checkbox", { name: "Second" });
+  await second.focus();
+  release();
+  await expect(section.getByRole("checkbox", { name: "First" })).toBeChecked();
+  await expect(second).toHaveAttribute("aria-disabled", "false");
+  await expect(second).toBeFocused();
+});
+
+test("project checklist does not transfer focus to a different item on conflict", async ({ page }) => {
+  const { item, path } = await create(page, "project", "- [ ] First\n- [ ] Second");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let writing = false;
+  await page.route(`**${path}/${item.id}`, async route => {
+    if (route.request().method() !== "PATCH") { await route.continue(); return; }
+    writing = true;
+    await gate;
+    await route.continue();
+  });
+  await page.goto(`/#/projects/${item.id}`);
+  const section = page.locator(".project-notes-section");
+  await section.getByRole("checkbox", { name: "First" }).focus();
+  await page.keyboard.press("Space");
+  await expect.poll(() => writing).toBe(true);
+  await section.getByRole("checkbox", { name: "Second" }).focus();
+  const notes = "- [ ] Inserted\n- [ ] First\n- [ ] Second";
+  expect((await page.request.patch(`${path}/${item.id}`, { data: { notes, expectedRevision: item.revision } })).ok()).toBe(true);
+  release();
+  await expect(section.getByRole("checkbox", { name: "Inserted" })).toBeVisible();
+  await expect(section.getByRole("checkbox", { name: "First" })).not.toBeFocused();
+  await page.keyboard.press("Space");
+  expect((await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(notes);
+});
 
 test("task descendant confirmation hands saving feedback back to details", async ({ page }) => {
   const { item } = await create(page, "task");

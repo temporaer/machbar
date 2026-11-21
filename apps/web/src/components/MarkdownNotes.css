@@ -48,6 +48,15 @@
   accent-color: var(--color-primary);
 }
 
+.markdown-notes .task-list-item .markdown-checklist-toggle {
+  display: inline-flex;
+  flex: 0 0 44px;
+  min-height: 44px;
+  align-items: flex-start;
+  justify-content: center;
+  cursor: pointer;
+}
+
 .markdown-notes a {
   color: var(--color-primary);
   text-decoration-thickness: 1px;

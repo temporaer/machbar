@@ -251,9 +251,10 @@ export function ProjectDetailPage() {
   const projectMutationPending =
     savingContent || deleting || (project ? projectActions.isPending(project.id) : false);
 
-  const saveContentField = async (field: "title" | "notes") => {
+  const saveContentField = async (field: "title" | "notes", checklistValue?: string) => {
     if (!project || savingContent) return false;
-    const value = field === "title" ? titleDraft.trim() : notesDraft;
+    if (checklistValue !== undefined && notesDraft !== project.notes) return false;
+    const value = field === "title" ? titleDraft.trim() : checklistValue ?? notesDraft;
     if (field === "title" && !value) return false;
     const opening = contentOpeningRef.current;
     setSavingContent(true);
@@ -750,7 +751,9 @@ export function ProjectDetailPage() {
                   </div>
                 </>
               ) : notesDraft.trim() ? (
-                <DetailNotesPreview key={project.id} value={notesDraft} />
+                <DetailNotesPreview key={project.id} value={notesDraft}
+                  checklistDisabled={projectMutationPending || !!projectRefreshError || notesDraft !== project.notes}
+                  onChecklistToggle={value => { void saveContentField("notes", value); }} />
               ) : (
                 <p className="text-muted">{strings.noNotes}</p>
               )}
