@@ -1,5 +1,7 @@
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import type Database from "better-sqlite3";
 import { openDb } from "../src/db/client.js";
@@ -326,31 +328,211 @@ function oneLoad(db: Db, sqlite: Database.Database): LoadSample {
   };
 }
 
-function runShape(taskCount: number, shape: "balanced" | "deep-chain", repeats: number) {
-  const handle = openDb(":memory:");
-  runMigrations(handle.db);
-  const fixture = seedFixture(handle.sqlite, taskCount, shape);
-  installStatementProfiler(handle.sqlite);
+type IsolatedRun = {
+  status: "success" | "out_of_memory" | "timed_out" | "process_error";
+  durationMs: number;
+  output?: { fixture: ReturnType<typeof seedFixture>; result: ReturnType<typeof summarize> };
+  error?: string;
+};
 
+function runIsolatedSample(
+  taskCount: number,
+  shape: "balanced" | "deep-chain",
+  timeoutMs: number,
+): Promise<IsolatedRun> {
+  return new Promise((resolve) => {
+    const startedAt = performance.now();
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const child = spawn(process.execPath, [
+      "--max-old-space-size=2048",
+      "--expose-gc",
+      "--import",
+      "tsx",
+      fileURLToPath(import.meta.url),
+    ], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        GRAPH_PROFILE_CHILD: "1",
+        GRAPH_PROFILE_SIZE: String(taskCount),
+        GRAPH_PROFILE_SHAPE: shape,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutMs);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      resolve({
+        status: "process_error",
+        durationMs: Number((performance.now() - startedAt).toFixed(2)),
+        error: error.message,
+      });
+    });
+    child.once("close", (code, signal) => {
+      clearTimeout(timer);
+      const durationMs = Number((performance.now() - startedAt).toFixed(2));
+      if (timedOut) {
+        resolve({ status: "timed_out", durationMs, error: "Fixture exceeded its time limit." });
+        return;
+      }
+      if (code !== 0) {
+        const combined = stderr + stdout;
+        const status = /heap out of memory|Allocation failed|FATAL ERROR/i.test(combined)
+          ? "out_of_memory"
+          : "process_error";
+        resolve({
+          status,
+          durationMs,
+          error: combined.slice(-4000) || ("Child exited with " + String(signal ?? code)),
+        });
+        return;
+      }
+      try {
+        const output = JSON.parse(stdout.trim()) as IsolatedRun["output"];
+        if (!output) throw new Error("Profiler child returned no JSON result.");
+        resolve({ status: "success", durationMs, output });
+      } catch (error) {
+        resolve({
+          status: "process_error",
+          durationMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+  });
+}
+
+function mergeSuccessfulSamples(
+  taskCount: number,
+  shape: "balanced" | "deep-chain",
+  requestedRepeats: number,
+  runs: IsolatedRun[],
+) {
+  const successful = runs.flatMap((run) => run.status === "success" && run.output ? [run.output] : []);
+  const metricKeys = ["wallMs", "sqlMs", "nonSqlMs", "taskRows", "projectRows"] as const;
+  const totals = Object.fromEntries(metricKeys.map((key) => [
+    key,
+    successful.length > 0
+      ? percentile(successful.map((sample) => sample.result.totals[key].median))
+      : { median: null, p95: null },
+  ]));
+
+  const bySql = new Map<string, Array<{
+    sample: ReturnType<typeof summarize>["statements"][number];
+  }>>();
+  for (const output of successful) {
+    for (const statement of output.result.statements) {
+      const entries = bySql.get(statement.sql) ?? [];
+      entries.push({ sample: statement });
+      bySql.set(statement.sql, entries);
+    }
+  }
+  const statements = [...bySql.entries()].map(([sql, entries]) => {
+    const statementValues = entries.map((entry) => entry.sample);
+    const first = statementValues[0]!;
+    return {
+      sql,
+      ctes: first.ctes,
+      executions: percentile(statementValues.map((entry) => entry.executions.median)),
+      rowsReturnedOrChanged: percentile(statementValues.map((entry) => entry.rowsReturnedOrChanged.median)),
+      elapsedMs: percentile(statementValues.map((entry) => entry.elapsedMs.median)),
+    };
+  }).sort((a, b) => b.elapsedMs.median - a.elapsedMs.median);
+
+  const failures = runs.flatMap((run, index) => run.status === "success" ? [] : [{
+    run: index + 1,
+    status: run.status,
+    durationMs: run.durationMs,
+    error: run.error,
+  }]);
+  return {
+    shape,
+    taskCount,
+    requestedRepeats,
+    successfulRepeats: successful.length,
+    warmupsPerSuccessfulRepeat: 1,
+    status: failures.length === 0 ? "complete" : successful.length > 0 ? "partial" : "unavailable",
+    totals,
+    queryCount: statements.length,
+    statements,
+    queryPlans: successful[0]?.result.queryPlans ?? [],
+    failures,
+  };
+}
+
+async function runShape(taskCount: number, shape: "balanced" | "deep-chain", repeats: number, timeoutMs: number) {
+  const runs: IsolatedRun[] = [];
+  for (let index = 0; index < repeats; index += 1) {
+    const run = await runIsolatedSample(taskCount, shape, timeoutMs);
+    runs.push(run);
+    console.error("PROFILE_PROGRESS " + JSON.stringify({
+      shape,
+      taskCount,
+      run: index + 1,
+      status: run.status,
+      durationMs: run.durationMs,
+    }));
+    if (run.status !== "success") break;
+  }
+  return mergeSuccessfulSamples(taskCount, shape, repeats, runs);
+}
+
+async function childMain(): Promise<void> {
+  const taskCount = Number(process.env.GRAPH_PROFILE_SIZE);
+  const shape = process.env.GRAPH_PROFILE_SHAPE;
+  if (!Number.isInteger(taskCount) || taskCount < 1 || (shape !== "balanced" && shape !== "deep-chain")) {
+    throw new Error("Invalid isolated Graph.load fixture arguments.");
+  }
+
+  const handle = openDb(":memory:");
   try {
+    runMigrations(handle.db);
+    const fixture = seedFixture(handle.sqlite, taskCount, shape);
+    installStatementProfiler(handle.sqlite);
     oneLoad(handle.db, handle.sqlite);
-    const samples = Array.from({ length: repeats }, () => oneLoad(handle.db, handle.sqlite));
-    return { fixture, result: summarize(taskCount, shape, repeats, samples, handle.sqlite) };
+    global.gc?.();
+    const sample = oneLoad(handle.db, handle.sqlite);
+    const result = summarize(taskCount, shape, 1, [sample], handle.sqlite);
+    console.log(JSON.stringify({ fixture, result }));
   } finally {
     handle.close();
   }
 }
 
-function main() {
+async function main(): Promise<void> {
+  if (process.env.GRAPH_PROFILE_CHILD === "1") {
+    await childMain();
+    return;
+  }
+
   const sizes = (process.env.AUDIT_SIZES ?? "100,1000,5000")
     .split(",").map((value) => Number(value.trim()))
     .filter((value) => Number.isInteger(value) && value > 0);
   const repeats = Number(process.env.AUDIT_REPEATS ?? 3);
+  const timeoutMs = Number(process.env.AUDIT_CASE_TIMEOUT_MS ?? 300000);
   const shapes = (process.env.AUDIT_SHAPES ?? "balanced,deep-chain")
     .split(",").map((value) => value.trim())
     .filter((value): value is "balanced" | "deep-chain" => value === "balanced" || value === "deep-chain");
-  if (sizes.length === 0 || repeats < 1 || !Number.isInteger(repeats) || shapes.length === 0) {
-    throw new Error("AUDIT_SIZES, AUDIT_SHAPES and AUDIT_REPEATS must contain valid values.");
+  if (sizes.length === 0 || repeats < 1 || !Number.isInteger(repeats) ||
+      shapes.length === 0 || !Number.isInteger(timeoutMs) || timeoutMs < 1000) {
+    throw new Error("AUDIT_SIZES, AUDIT_SHAPES, AUDIT_REPEATS and AUDIT_CASE_TIMEOUT_MS must be valid.");
+  }
+
+  const results = [];
+  for (const size of sizes) {
+    for (const shape of shapes) {
+      const result = await runShape(size, shape, repeats, timeoutMs);
+      results.push({ fixture: { shape, taskCount: size }, result });
+    }
   }
 
   console.log(JSON.stringify({
@@ -363,20 +545,23 @@ function main() {
       sqlite: handleSqliteVersion(),
     },
     methodology: {
-      measuredUnit: "one direct Graph.load() call",
-      warmupsPerFixture: 1,
+      measuredUnit: "one direct Graph.load() call in a fresh isolated child process",
+      warmupsPerRepeat: 1,
       repeatedSamples: repeats,
+      childHeapLimitMiB: 2048,
+      childTimeoutMs: timeoutMs,
       fixtures: shapes,
       sizes,
       sqlMetrics: "prepared statement wall time, call count, and result/change rows; grouped by normalized SQL text",
-      queryPlans: "EXPLAIN QUERY PLAN for each observed SELECT/WITH statement after measured runs",
+      queryPlans: "EXPLAIN QUERY PLAN for each observed SELECT/WITH statement after each measured call",
       notes: [
         "Fixture setup and query-plan collection are excluded from measured Graph.load() calls.",
+        "Each repeat runs in a fresh child, so an OOM or timeout is recorded for that fixture without discarding prior measurements.",
         "nonSqlMs is wall time minus prepared-statement execution time; inspect assembly membership scans separately only if this residual is material.",
-        "Bounded-depth tasks are spread over projects with branches capped at four levels; deep-chain tasks form one parent chain per project.",
+        "Balanced tasks are spread across projects with branches capped at four levels; deep-chain tasks form one parent chain per project.",
       ],
     },
-    results: sizes.flatMap((size) => shapes.map((shape) => runShape(size, shape, repeats))),
+    results,
   }, null, 2));
 }
 
@@ -389,4 +574,7 @@ function handleSqliteVersion() {
   }
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
