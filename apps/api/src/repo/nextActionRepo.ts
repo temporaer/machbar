@@ -105,7 +105,7 @@ export function getNextActionTaskIdsByProjectProjection(
       SELECT walk.node_id AS task_id, walk.descendant_id
       FROM ancestor_walk walk
       JOIN work_items ancestor ON ancestor.id = walk.node_id AND ancestor.role = 'task'
-      WHERE walk.descendant_role = 'task'
+      WHERE walk.descendant_role IN ('task', 'story')
     ),
     candidates AS (
       SELECT sk.task_id, sk.project_id, sk.key
