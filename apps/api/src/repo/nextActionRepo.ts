@@ -49,7 +49,17 @@ export function getNextActionTaskIdsByProject(
 export function getNextActionTaskIdsByProjectProjection(
   db: Db,
   now = new Date().toISOString(),
+  excludeOperationallyArchived = false,
 ): NextActionTaskIdsByProject {
+  const activeTask = excludeOperationallyArchived
+    ? sql`AND task.operational_archived_at IS NULL`
+    : sql``;
+  const activeT = excludeOperationallyArchived
+    ? sql`AND t.operational_archived_at IS NULL`
+    : sql``;
+  const activeItem = excludeOperationallyArchived
+    ? sql`AND operational_archived_at IS NULL`
+    : sql``;
   const rows = db.all<{
     project_id: number | null;
     task_id: number;
@@ -62,11 +72,13 @@ export function getNextActionTaskIdsByProjectProjection(
       FROM work_items task
       JOIN work_items story ON story.id = task.parent_id AND story.role = 'story'
       WHERE task.role = 'task'
+        ${activeTask}
       UNION ALL
       SELECT task.id, sk.project_id, sk.key || '.' || printf('%08d', task.position)
       FROM work_items task
       JOIN sortkey sk ON task.parent_id = sk.task_id
       WHERE task.role = 'task'
+        ${activeTask}
     ),
     relevant_descendants(descendant_id, descendant_role, parent_id) AS (
       -- Only open actions and projects can affect the container projection.
@@ -75,11 +87,13 @@ export function getNextActionTaskIdsByProjectProjection(
       WHERE role = 'task'
         AND COALESCE(task_kind, 'action') = 'action'
         AND status NOT IN ('done', 'cancelled')
+        ${activeItem}
       UNION ALL
       SELECT id, role, parent_id
       FROM work_items
       WHERE role = 'story' AND archived_at IS NULL
         AND status NOT IN ('done', 'cancelled')
+        ${activeItem}
     ),
     ancestor_walk(node_id, descendant_id, descendant_role) AS (
       -- Walk upward from relevant descendants instead of materializing every
@@ -92,6 +106,7 @@ export function getNextActionTaskIdsByProjectProjection(
       FROM ancestor_walk walk
       JOIN work_items current ON current.id = walk.node_id
       JOIN work_items parent ON parent.id = current.parent_id
+        ${excludeOperationallyArchived ? sql`AND parent.operational_archived_at IS NULL` : sql``}
       WHERE (
         current.role = 'task' AND parent.role IN ('task', 'story')
       ) OR (
@@ -114,6 +129,7 @@ export function getNextActionTaskIdsByProjectProjection(
       WHERE sk.project_id IS NOT NULL
         AND t.status = 'active'
         AND COALESCE(t.task_kind, 'action') = 'action'
+        ${activeT}
         AND NOT EXISTS (
           SELECT 1 FROM task_dependencies td
           JOIN work_items dep ON dep.id = td.depends_on_task_id

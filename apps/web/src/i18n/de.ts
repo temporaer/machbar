@@ -868,6 +868,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   moreTaskTags: (count: number) => `${count} weitere Tags`,
   showCompletedDescendants: (count: number) => `${count} erledigt anzeigen`,
   hideCompletedDescendants: (count: number) => `${count} erledigt ausblenden`,
+  openArchivedDescendants: (count: number) =>
+    `Verlauf öffnen (${count} archivierte ${count === 1 ? "Gruppe" : "Gruppen"})`,
   cardLabels: "Tags und Orte",
   moreCardLabels: (count: number) => `${count} weitere Kennzeichnungen`,
   identityRequiredBody: "Machbar merkt sich, wer du bist, damit Zuständigkeiten und die Heute-Ansicht stimmen.",

@@ -618,7 +618,7 @@ export function TaskRow({
         />
       ) : null}
 
-      {!collapsed && (visibleChildren.length > 0 || hiddenTerminalChildren.length > 0) ? (
+      {!collapsed && (visibleChildren.length > 0 || hiddenTerminalChildren.length > 0 || (compactDescendants && (task.archivedTerminalChildrenCount ?? 0) > 0)) ? (
         <ul className="task-row-children">
           {visibleChildren.map((child) => (
             <TaskRow
@@ -652,6 +652,17 @@ export function TaskRow({
                 {showHiddenTerminal
                   ? strings.hideCompletedDescendants(hiddenTerminalChildren.length)
                   : strings.showCompletedDescendants(hiddenTerminalChildren.length)}
+              </button>
+            </li>
+          ) : null}
+          {compactDescendants && (task.archivedTerminalChildrenCount ?? 0) > 0 ? (
+            <li className="task-row-terminal-summary" style={{ listStyle: "none" }}>
+              <button
+                type="button"
+                className="task-row-terminal-toggle"
+                onClick={() => dispatch({ type: "task.open", taskId: task.id })}
+              >
+                {strings.openArchivedDescendants(task.archivedTerminalChildrenCount!)}
               </button>
             </li>
           ) : null}

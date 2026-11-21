@@ -20,6 +20,7 @@ import { AppError } from "../errors.js";
 import {
   getDescendantIds as repoGetDescendantIds,
   getDirectChildren,
+  restoreOperationalArchivePath,
   neutralizeContribution,
   neutralizeEntityContributions,
   recordActivity,
@@ -509,6 +510,16 @@ function insertTask(
     allowedDeviationDays,
     position: positionOverride,
   });
+
+  // Adding visible work below a previously archived terminal branch restores
+  // the containing path in this transaction. References are also kept visible
+  // because their lifecycle is non-terminal, even though they are not actions.
+  if (status !== "done" && status !== "cancelled") {
+    const parentId = parentTaskId ?? projectId;
+    if (parentId !== null) {
+      restoreOperationalArchivePath(db, parentId, { includeSelf: true });
+    }
+  }
 
   if (input.reminders && input.reminders.length > 0) {
     insertReminders(db, task.id, input.reminders);
@@ -1494,6 +1505,11 @@ export function updateTask(
         : sortedIds(input.contextIds);
     assertPhysicalContextsExist(txDb, nextContextIds);
     const contextsChanged = !sameIds(existingContextIds, nextContextIds);
+
+    if (patch.status !== undefined && patch.status !== "done" && patch.status !== "cancelled") {
+      patch.operationalArchivedAt = null;
+      restoreOperationalArchivePath(txDb, id);
+    }
 
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();

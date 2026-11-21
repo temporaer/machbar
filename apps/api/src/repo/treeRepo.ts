@@ -1,4 +1,4 @@
-import { asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 
@@ -58,6 +58,41 @@ export function getAncestorIds(db: Db, itemId: number): number[] {
   return rows.map((r) => r.id);
 }
 
+/** Clear operational archive markers on an item and/or its ancestors inside
+ * the caller's transaction. Ancestors whose visibility changes get a revision
+ * bump so structural snapshots cannot silently cross the restored subtree. */
+export function restoreOperationalArchivePath(
+  db: Db,
+  itemId: number,
+  options: { includeSelf?: boolean; now?: string } = {},
+): number[] {
+  const ancestorIds = getAncestorIds(db, itemId);
+  const ids = options.includeSelf ? [itemId, ...ancestorIds] : ancestorIds;
+  if (ids.length === 0) return [];
+  const updated = db.update(schema.workItems).set({
+    operationalArchivedAt: null,
+    revision: sql`${schema.workItems.revision} + 1`,
+    updatedAt: options.now ?? new Date().toISOString(),
+  }).where(and(
+    inArray(schema.workItems.id, ids),
+    isNotNull(schema.workItems.operationalArchivedAt),
+  )).returning({ id: schema.workItems.id }).all();
+  return updated.map((row) => row.id);
+}
+
+/** Reparenting deliberately restores the moved historical subtree so the
+ * destination reflects the user's structural change immediately. */
+export function restoreOperationalArchiveSubtree(db: Db, rootId: number): number[] {
+  const ids = [rootId, ...getDescendantIds(db, rootId)];
+  const updated = db.update(schema.workItems).set({
+    operationalArchivedAt: null,
+  }).where(and(
+    inArray(schema.workItems.id, ids),
+    isNotNull(schema.workItems.operationalArchivedAt),
+  )).returning({ id: schema.workItems.id }).all();
+  return updated.map((row) => row.id);
+}
+
 /**
  * Would re-parenting `itemId` under `candidateParentId` create a hierarchy
  * cycle? True if the candidate parent is the task itself or one of its
@@ -85,12 +120,22 @@ export function wouldCreateHierarchyCycle(
 }
 
 /** Nearest ancestor story for each task, preserving the legacy `Task.projectId` projection. */
-export function getTaskProjectIds(db: Db): Map<number, number | null> {
+export function getTaskProjectIds(
+  db: Db,
+  excludeOperationallyArchived = false,
+): Map<number, number | null> {
+  const activeTask = excludeOperationallyArchived
+    ? sql`AND child.operational_archived_at IS NULL`
+    : sql``;
+  const activeChild = excludeOperationallyArchived
+    ? sql`AND task.operational_archived_at IS NULL`
+    : sql``;
   const rows = db.all<{ task_id: number; project_id: number | null }>(sql`
     WITH RECURSIVE ancestors(task_id, ancestor_id, depth) AS (
       SELECT child.id, child.parent_id, 1
       FROM work_items child
       WHERE child.role = 'task'
+        ${activeTask}
       UNION ALL
       SELECT ancestors.task_id, parent.parent_id, ancestors.depth + 1
       FROM ancestors
@@ -114,6 +159,7 @@ export function getTaskProjectIds(db: Db): Map<number, number | null> {
     LEFT JOIN nearest_story
       ON nearest_story.task_id = task.id AND nearest_story.rn = 1
     WHERE task.role = 'task'
+      ${activeChild}
   `);
   return new Map(rows.map((row) => [row.task_id, row.project_id]));
 }

@@ -124,6 +124,34 @@ describe("TaskRow – one-time swipe coach", () => {
   });
 });
 
+describe("TaskRow archived history affordance", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockPointer(false);
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("opens the complete detail outline from an archived-child count", async () => {
+    renderWithProviders(
+      <>
+        <TaskOutline
+          tasks={[makeTask({ id: 220, title: "Ongoing parent", archivedTerminalChildrenCount: 2 })]}
+          compactDescendants
+          emptyMessage="Nichts da"
+        />
+        <OpenTaskProbe />
+      </>,
+    );
+
+    const history = screen.getByRole("button", { name: "Verlauf öffnen (2 archivierte Gruppen)" });
+    await userEvent.click(history);
+    expect(screen.getByTestId("open-task")).toHaveTextContent("220");
+  });
+});
+
 describe("TaskRow – primary swipe direction mapping", () => {
   beforeEach(() => {
     vi.clearAllMocks();

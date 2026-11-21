@@ -7,7 +7,7 @@ import type {
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
-import { recordActivity, recordContribution } from "../repo/index.js";
+import { recordActivity, recordContribution, restoreOperationalArchivePath } from "../repo/index.js";
 import { getProjectActivationReadiness } from "./projectReadiness.js";
 import { insertTaskRow } from "./taskRowInsert.js";
 import { type MutationContext, actor, assertWorkItemAccessible, nowIso } from "./workItemShared.js";
@@ -145,6 +145,7 @@ export function applyProjectActivation(
     .set({
       status: "active",
       archivedAt: null,
+      operationalArchivedAt: null,
       completedAt: null,
       revisitAt: null,
       ownerMemberId,
@@ -332,6 +333,7 @@ function applyTransitionPlan(
     const project = projectById.get(activation.projectId);
     if (!project) throw AppError.notFound("project_not_found", "The project was not found.", { projectId: activation.projectId });
     const activityEventId = applyProjectActivation(db, project, activation.ownerMemberId, context);
+    restoreOperationalArchivePath(db, activation.projectId);
     if (activation.projectId === projectId) targetActivityEventId = activityEventId;
   }
   return targetActivityEventId;
@@ -350,6 +352,7 @@ export function createCommitmentNextAction(db: Db, projectId: number, title: str
     status: "actionable",
     scope: project.scope,
   });
+  restoreOperationalArchivePath(db, projectId, { includeSelf: true });
   recordActivity(db, {
     actorMemberId: actor(context),
     kind: "task_created",

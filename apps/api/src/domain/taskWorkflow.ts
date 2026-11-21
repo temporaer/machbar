@@ -12,6 +12,7 @@ import {
   neutralizeContribution,
   recordActivity,
   recordContribution,
+  restoreOperationalArchivePath,
 } from "../repo/index.js";
 import { getTaskOrThrow, listDescendants, updateTask } from "./taskCrud.js";
 import { assertActionTask } from "./taskKindGuard.js";
@@ -431,6 +432,7 @@ export function reopenTask(
     tx.update(schema.workItems)
       .set({
         status: "active",
+        operationalArchivedAt: null,
         completedAt: null,
         cancelledAt: null,
         revision: sql`${schema.workItems.revision} + 1`,
@@ -438,6 +440,7 @@ export function reopenTask(
       })
       .where(eq(schema.workItems.id, id))
       .run();
+    restoreOperationalArchivePath(txDb, id);
     const updated = getTaskOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),

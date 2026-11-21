@@ -133,7 +133,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       getMemberOrThrow(db, memberId);
     }
     const now = new Date().toISOString();
-    const graph = Graph.load(db, now, viewerMemberId);
+    const graph = Graph.loadOperational(db, now, viewerMemberId);
     const householdTimezone = getTimezone();
     const agendaScope: "mine" | "all" | "work" =
       scope === "work" ? "work" : memberId === undefined ? "all" : "mine";
@@ -177,7 +177,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     }
     const memberId = scope === "all" ? undefined : viewerMemberId;
     if (memberId !== undefined) getMemberOrThrow(db, memberId);
-    return buildWeekAgenda(Graph.load(db, start, viewerMemberId), {
+    return buildWeekAgenda(Graph.loadOperational(db, start, viewerMemberId), {
       start,
       today,
       memberId,
@@ -225,7 +225,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     // unconditionally household-only, see their comments above), Inbox
     // needs a real viewer so a private work item is reachable by its own
     // owner instead of vanishing everywhere.
-    const graph = Graph.load(db, undefined, viewerMemberId);
+    const graph = Graph.loadOperational(db, undefined, viewerMemberId);
     const selection = createAgendaSelection(graph, { memberId, scope });
     const householdToday = calendarDateForInstant(
       new Date().toISOString(),
@@ -298,7 +298,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
         : memberId === undefined
           ? "all"
           : "mine";
-    return buildWaitingEntries(Graph.load(db, undefined, viewerMemberId), {
+    return buildWaitingEntries(Graph.loadOperational(db, undefined, viewerMemberId), {
       memberId,
       scope,
       contextAvailability: (task, target) =>

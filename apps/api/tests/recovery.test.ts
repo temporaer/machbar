@@ -61,6 +61,10 @@ describe("durable upgrade, restart and restore", () => {
     const journal = JSON.parse(readFileSync(new URL("../drizzle/meta/_journal.json", import.meta.url), "utf8"));
     const receiptMigration = journal.entries.find((entry: { tag: string }) => entry.tag === "0031_creation_receipts");
     old.sqlite.exec("DROP TABLE external_task_routine_members; DROP TABLE external_task_occurrences; DROP TABLE creation_receipts");
+    // This test moves the migration journal backwards to simulate a database
+    // that predates the receipt migration. Remove later schema additions too
+    // so replaying their SQL matches the simulated on-disk schema.
+    old.sqlite.exec("DROP INDEX work_items_operational_archive_idx; ALTER TABLE work_items DROP COLUMN operational_archived_at;");
     old.sqlite.prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?").run(receiptMigration.when);
     old.close();
     ctx = createTestContext({ databasePath: file, dataDir: directory });

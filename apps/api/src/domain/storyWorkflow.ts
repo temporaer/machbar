@@ -12,6 +12,7 @@ import {
   neutralizeContribution,
   recordActivity,
   recordContribution,
+  restoreOperationalArchivePath,
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import {
@@ -206,12 +207,14 @@ export function returnProjectToBacklog(
         status: "backlog",
         ...(withdrawCommitments ? { dueDate: null } : {}),
         archivedAt: null,
+        operationalArchivedAt: null,
         revisitAt: project.status === "archived" ? null : revisitAt ?? null,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
       .where(eq(schema.workItems.id, id))
       .run();
+    restoreOperationalArchivePath(txDb, id);
     const updated = getProjectOrThrow(txDb, id);
     recordActivity(txDb, {
       actorMemberId: actor(context),
@@ -299,6 +302,7 @@ export function completeProject(
       .set({
         status: "done",
         archivedAt: null,
+        operationalArchivedAt: null,
         revisitAt: null,
         completedAt: nowIso(),
         revision: sql`${schema.workItems.revision} + 1`,

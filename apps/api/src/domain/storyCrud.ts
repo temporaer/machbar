@@ -15,6 +15,7 @@ import {
   neutralizeEntityContributions,
   recordActivity,
   recordContribution,
+  restoreOperationalArchivePath,
 } from "../repo/index.js";
 import {
   MutationContext,
@@ -147,6 +148,10 @@ export function createProject(
       })
       .returning()
       .get();
+
+    if (input.status !== "archived" && parentId !== null) {
+      restoreOperationalArchivePath(txDb, parentId, { includeSelf: true });
+    }
 
     if (input.tagIds && input.tagIds.length > 0) {
       for (const tagId of input.tagIds) {

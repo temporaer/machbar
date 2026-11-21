@@ -889,6 +889,9 @@ export interface Task {
   acceptanceCriteria: AcceptanceCriterion[];
   dependencies: Dependency[];
   children: Task[];
+  /** In operational projections, number of archived direct task children.
+   * Opening this task's detail view exposes the complete historical outline. */
+  archivedTerminalChildrenCount?: number;
   projectTitle?: string | null;
   projectOwnerMemberId?: number | null;
   projectDueDate?: string | null;

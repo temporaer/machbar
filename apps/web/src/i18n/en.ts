@@ -934,6 +934,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     `Show ${count} completed`,
   hideCompletedDescendants: (count: number) =>
     `Hide ${count} completed`,
+  openArchivedDescendants: (count: number) =>
+    `Open history (${count} archived ${count === 1 ? "branch" : "branches"})`,
   cardLabels: "Tags and places",
   moreCardLabels: (count: number) =>
     `${count} more ${count === 1 ? "label" : "labels"}`,

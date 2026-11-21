@@ -23,7 +23,11 @@ export interface EffectiveOwner {
  */
 export function getEffectiveOwners(
   db: Db,
+  excludeOperationallyArchived = false,
 ): Map<number, EffectiveOwner> {
+  const activeTask = excludeOperationallyArchived
+    ? sql`AND t.operational_archived_at IS NULL`
+    : sql``;
   const rows = db.all<{
     task_id: number;
     owner_id: number | null;
@@ -47,6 +51,7 @@ export function getEffectiveOwners(
       LEFT JOIN work_items story ON story.id = t.parent_id AND story.role = 'story'
       WHERE t.role = 'task'
         AND (t.parent_id IS NULL OR story.id IS NOT NULL)
+        ${activeTask}
 
       UNION ALL
 
@@ -67,6 +72,7 @@ export function getEffectiveOwners(
       FROM eff
       CROSS JOIN work_items t
       WHERE t.parent_id = eff.task_id AND t.role = 'task'
+        ${activeTask}
     )
     SELECT task_id, owner_id, owner_source FROM eff
   `);
@@ -89,7 +95,10 @@ export function getEffectiveOwners(
  * JSON set operations in SQL (`json_group_array` / `json_each`) rather than
  * as an in-memory recursive fold.
  */
-export function getEffectiveTagIds(db: Db): Map<number, number[]> {
+export function getEffectiveTagIds(db: Db, excludeOperationallyArchived = false): Map<number, number[]> {
+  const activeTask = excludeOperationallyArchived
+    ? sql`AND t.operational_archived_at IS NULL`
+    : sql``;
   const rows = db.all<{ task_id: number; effective_json: string }>(sql`
     WITH RECURSIVE tag_state(task_id, effective_json) AS (
       SELECT
@@ -107,6 +116,7 @@ export function getEffectiveTagIds(db: Db): Map<number, number[]> {
       LEFT JOIN work_items story ON story.id = t.parent_id AND story.role = 'story'
       WHERE t.role = 'task'
         AND (t.parent_id IS NULL OR story.id IS NOT NULL)
+        ${activeTask}
 
       UNION ALL
 
@@ -123,6 +133,7 @@ export function getEffectiveTagIds(db: Db): Map<number, number[]> {
       FROM tag_state ts
       CROSS JOIN work_items t
       WHERE t.parent_id = ts.task_id AND t.role = 'task'
+        ${activeTask}
     )
     SELECT task_id, effective_json FROM tag_state
   `);
@@ -137,7 +148,11 @@ export function getEffectiveTagIds(db: Db): Map<number, number[]> {
 
 export function getEffectivePhysicalContextIds(
   db: Db,
+  excludeOperationallyArchived = false,
 ): Map<number, number[]> {
+  const activeTask = excludeOperationallyArchived
+    ? sql`AND t.operational_archived_at IS NULL`
+    : sql``;
   const rows = db.all<{ task_id: number; effective_json: string }>(sql`
       WITH RECURSIVE context_state(task_id, effective_json) AS (
         SELECT
@@ -159,6 +174,7 @@ export function getEffectivePhysicalContextIds(
         LEFT JOIN work_items story ON story.id = t.parent_id AND story.role = 'story'
         WHERE t.role = 'task'
           AND (t.parent_id IS NULL OR story.id IS NOT NULL)
+          ${activeTask}
 
         UNION ALL
 
@@ -176,6 +192,7 @@ export function getEffectivePhysicalContextIds(
         FROM context_state parent
         CROSS JOIN work_items t
         WHERE t.parent_id = parent.task_id AND t.role = 'task'
+          ${activeTask}
       )
       SELECT task_id, effective_json FROM context_state
   `);

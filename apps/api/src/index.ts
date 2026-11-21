@@ -5,6 +5,7 @@ import { assertRevisitMigrationReady } from "./db/revisitMigration.js";
 import { seedDatabase } from "./db/seed.js";
 import * as schema from "./db/schema.js";
 import { loadEnv } from "./env.js";
+import { registerOperationalArchiveWorker } from "./domain/operationalArchiveWorker.js";
 
 async function main() {
   const env = loadEnv();
@@ -20,6 +21,7 @@ async function main() {
   }
 
   const app = buildApp({ db, env, logger: true });
+  registerOperationalArchiveWorker(app, db);
 
   const shutdown = async () => {
     await app.close();

@@ -13,6 +13,8 @@ import {
   neutralizeContribution,
   recordActivity,
   recordContribution,
+  restoreOperationalArchivePath,
+  restoreOperationalArchiveSubtree,
   wouldCreateHierarchyCycle,
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
@@ -180,6 +182,7 @@ export function moveTask(
         parentId: newParentTaskId ?? newProjectId,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
+        ...(!movingWithinSameGroup ? { operationalArchivedAt: null } : {}),
         ...(refilesCapturedInboxItem
           ? { status: "active" as const, needsClarification: false }
           : {}),
@@ -188,6 +191,14 @@ export function moveTask(
       .run();
 
     reindexGroup(txDb, destinationIds, taskId);
+
+    if (!movingWithinSameGroup) {
+      restoreOperationalArchiveSubtree(txDb, taskId);
+      const newParentId = newParentTaskId ?? newProjectId;
+      if (newParentId !== null) {
+        restoreOperationalArchivePath(txDb, newParentId, { includeSelf: true });
+      }
+    }
 
     if (!movingWithinSameGroup) {
       const sourceSiblings = getDirectChildren(txDb, task.parentTaskId ?? task.projectId)
@@ -335,7 +346,12 @@ export function moveProject(db: Db, projectId: number, input: MoveProjectInput, 
     const siblings = getDirectChildren(txDb, input.parentId).filter((row) => row.id !== projectId);
     const position = Math.max(-1, ...siblings.map((row) => row.position)) + 1;
     txDb.update(schema.workItems).set({ parentId: input.parentId, position,
+      operationalArchivedAt: null,
       revision: sql`${schema.workItems.revision} + 1`, updatedAt: nowIso() }).where(eq(schema.workItems.id, projectId)).run();
+    restoreOperationalArchiveSubtree(txDb, projectId);
+    if (input.parentId !== null) {
+      restoreOperationalArchivePath(txDb, input.parentId, { includeSelf: true });
+    }
     const ownersAfter = getEffectiveOwners(txDb);
     if (subtreeIds.some((id) => ownersBefore.get(id)?.ownerId !== ownersAfter.get(id)?.ownerId)) {
       throw AppError.conflict("project_transition_invalid", "Choose a destination that preserves this project's ownership.");

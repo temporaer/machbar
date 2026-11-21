@@ -521,6 +521,9 @@ export const workItems = sqliteTable(
     // captured | backlog | active | done | cancelled
     status: text("status").notNull().default("captured"),
     archivedAt: text("archived_at"),
+    // Internal operational projection marker, distinct from the
+    // user-visible archived lifecycle status used by projects.
+    operationalArchivedAt: text("operational_archived_at"),
     // Whether this item needs an explicit clarification pass is independent
     // of its lifecycle status. Captured items start in this state, but active
     // commitments may also need clarification without being demoted.
@@ -600,6 +603,11 @@ export const workItems = sqliteTable(
     index("work_items_parent_idx").on(t.parentId),
     index("work_items_role_idx").on(t.role),
     index("work_items_status_idx").on(t.status),
+    index("work_items_operational_archive_idx").on(
+      t.operationalArchivedAt,
+      t.parentId,
+      t.status,
+    ),
     index("work_items_size_idx").on(t.size),
     // Legacy index for the retired `reminder_at` column; unused by any
     // query after the `task_reminders` migration but harmless to keep.

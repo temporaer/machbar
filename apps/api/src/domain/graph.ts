@@ -22,7 +22,7 @@ import {
   DEFAULT_HOUSEHOLD_TIMEZONE,
   householdCalendarDateToRevisitAt,
 } from "@machbar/shared";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import {
@@ -255,6 +255,7 @@ export class Graph {
     ProjectActivationReadiness
   >();
   private readonly childStoryIdsByParent = new Map<number | null, number[]>();
+  private readonly archivedTerminalChildrenByParent = new Map<number, number>();
 
   private constructor(
     private readonly analysisNow: number,
@@ -297,23 +298,38 @@ export class Graph {
       now,
       arguments.length >= 3,
       true,
+      false,
     );
   }
 
-  /**
-   * Search needs the canonical task records, inheritance and blocker facts,
-   * but never reads next-action candidates, container projections, project
-   * readiness, or stuck-project state. Avoid those unrelated projections and
-   * return only the task list so the partial internal Graph cannot escape to
-   * other graph consumers.
-   */
+  /** Search needs canonical task records but not project readiness or stuck
+   * analysis; only this task projection may consume the partial internal graph. */
   static loadSearchTasks(
     db: Db,
     viewerMemberId?: number,
     today = new Date().toISOString().slice(0, 10),
     now = new Date().toISOString(),
   ): TaskRecord[] {
-    return Graph.loadInternal(db, today, viewerMemberId, now, true, false).allTasks();
+    return Graph.loadInternal(db, today, viewerMemberId, now, true, false, false).allTasks();
+  }
+
+  /** Operational views use the same graph rules while omitting persisted
+   * terminal subtrees. Detail, search, and mutation callers keep using load(). */
+  static loadOperational(
+    db: Db,
+    today = new Date().toISOString().slice(0, 10),
+    viewerMemberId?: number,
+    now = new Date().toISOString(),
+  ): Graph {
+    return Graph.loadInternal(
+      db,
+      today,
+      viewerMemberId,
+      now,
+      arguments.length >= 3,
+      true,
+      true,
+    );
   }
 
   private static loadInternal(
@@ -323,6 +339,7 @@ export class Graph {
     now: string,
     restrictToViewer: boolean,
     includeProjectAnalysis: boolean,
+    excludeOperationallyArchived: boolean,
   ): Graph {
     const startedAt = performance.now();
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
@@ -331,11 +348,11 @@ export class Graph {
     // value for but that the viewer must not see is simply never looked
     // up below — `rawTasks`/`rawProjects` (built from the viewer-filtered
     // `workItemRows`) never include it.
-    const effectiveOwners = getEffectiveOwners(db);
-    const effectiveTagIdsByTask = getEffectiveTagIds(db);
-    const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db);
+    const effectiveOwners = getEffectiveOwners(db, excludeOperationallyArchived);
+    const effectiveTagIdsByTask = getEffectiveTagIds(db, excludeOperationallyArchived);
+    const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db, excludeOperationallyArchived);
     const nextActionProjection: NextActionTaskIdsByProject = includeProjectAnalysis
-      ? getNextActionTaskIdsByProjectProjection(db, now)
+      ? getNextActionTaskIdsByProjectProjection(db, now, excludeOperationallyArchived)
       : {
           available: new Map(),
           ordered: new Map(),
@@ -355,7 +372,7 @@ export class Graph {
     );
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
-    const taskProjectIds = getTaskProjectIds(db);
+    const taskProjectIds = getTaskProjectIds(db, excludeOperationallyArchived);
     // Single funnel point for the "work" scope's owner-only invariant: a
     // "work" item is dropped for every viewer except its own owner (and
     // for all viewers when no `viewerMemberId` is known at all). A task's
@@ -364,15 +381,62 @@ export class Graph {
     // descendants of a work item legitimately have no explicit owner of
     // their own; a project has no owner-inheritance mechanism, so its own
     // row is authoritative there.
-    const workItemRows = db
-      .select()
-      .from(schema.workItems)
-      .all()
+    const allWorkItemRows = excludeOperationallyArchived
+      ? db.select().from(schema.workItems).where(isNull(schema.workItems.operationalArchivedAt)).all()
+      : db.select().from(schema.workItems).all();
+    const workItemRows = allWorkItemRows
       .filter((row) => {
         if (!restrictToViewer) return true;
         return workItemVisibleToViewer(row, viewerMemberId, effectiveOwners.get(row.id)?.ownerId ?? null);
       });
-    const reminderRows = db.select().from(schema.taskReminders).all();
+    const visibleTaskIds = workItemRows.filter((row) => row.role === "task").map((row) => row.id);
+    const visibleProjectIds = workItemRows.filter((row) => row.role === "story").map((row) => row.id);
+    const visibleWorkItemIds = workItemRows.map((row) => row.id);
+    if (excludeOperationallyArchived) {
+      const visibleRowsById = new Map(workItemRows.map((row) => [row.id, row]));
+      const archivedChildren = db.all<{
+        id: number;
+        parent_id: number;
+        role: string;
+        scope: string;
+        owner_member_id: number | null;
+        owner_inheritance_mode: string;
+        privacy_owner_member_id: number | null;
+      }>(sql`
+        SELECT id, parent_id, role, scope, owner_member_id, owner_inheritance_mode,
+          privacy_owner_member_id
+        FROM work_items
+        WHERE operational_archived_at IS NOT NULL
+          AND role = 'task'
+          AND parent_id IS NOT NULL
+      `);
+      for (const row of archivedChildren) {
+        const parent = visibleRowsById.get(row.parent_id);
+        if (!parent) continue;
+        const inheritedOwnerId = row.owner_inheritance_mode !== "inherit"
+          ? row.owner_member_id
+          : parent.role === "task"
+            ? effectiveOwners.get(parent.id)?.ownerId ?? null
+            : parent.ownerMemberId;
+        if (restrictToViewer && !workItemVisibleToViewer(
+          {
+            role: row.role,
+            scope: row.scope,
+            ownerMemberId: row.owner_member_id,
+            privacyOwnerMemberId: row.privacy_owner_member_id,
+          },
+          viewerMemberId,
+          inheritedOwnerId,
+        )) continue;
+        graph.archivedTerminalChildrenByParent.set(
+          row.parent_id,
+          (graph.archivedTerminalChildrenByParent.get(row.parent_id) ?? 0) + 1,
+        );
+      }
+    }
+    const reminderRows = excludeOperationallyArchived
+      ? db.select().from(schema.taskReminders).where(inArray(schema.taskReminders.taskId, visibleTaskIds)).all()
+      : db.select().from(schema.taskReminders).all();
     const remindersByTask = new Map<number, TaskReminder[]>();
     for (const row of reminderRows) {
       const list = remindersByTask.get(row.taskId) ?? [];
@@ -466,11 +530,10 @@ export class Graph {
       .all() as PhysicalContext[];
     const contextsById = new Map(allContexts.map((context) => [context.id, context]));
 
-    const projectTagRows = db
-      .select()
-      .from(schema.workItemTags)
-      .all()
-      .filter((row) => graph.projectsById.has(row.workItemId) || rawProjects.some((project) => project.id === row.workItemId));
+    const projectTagRows = excludeOperationallyArchived
+      ? db.select().from(schema.workItemTags).where(inArray(schema.workItemTags.workItemId, visibleProjectIds)).all()
+      : db.select().from(schema.workItemTags).all()
+          .filter((row) => graph.projectsById.has(row.workItemId) || rawProjects.some((project) => project.id === row.workItemId));
     const projectTagsByProject = new Map<number, Tag[]>();
     for (const row of projectTagRows) {
       const tag = tagsById.get(row.tagId);
@@ -480,11 +543,10 @@ export class Graph {
       projectTagsByProject.set(row.workItemId, list);
     }
 
-    const projectContextRows = db
-      .select()
-      .from(schema.workItemPhysicalContexts)
-      .all()
-      .filter((row) => rawProjects.some((project) => project.id === row.workItemId));
+    const projectContextRows = excludeOperationallyArchived
+      ? db.select().from(schema.workItemPhysicalContexts).where(inArray(schema.workItemPhysicalContexts.workItemId, visibleProjectIds)).all()
+      : db.select().from(schema.workItemPhysicalContexts).all()
+          .filter((row) => rawProjects.some((project) => project.id === row.workItemId));
     const contextIdsByProject = new Map<number, number[]>();
     for (const row of projectContextRows) {
       const list = contextIdsByProject.get(row.workItemId) ?? [];
@@ -492,11 +554,10 @@ export class Graph {
       contextIdsByProject.set(row.workItemId, list);
     }
 
-    const taskContextRows = db
-      .select()
-      .from(schema.workItemPhysicalContexts)
-      .all()
-      .filter((row) => rawTasks.some((task) => task.id === row.workItemId));
+    const taskContextRows = excludeOperationallyArchived
+      ? db.select().from(schema.workItemPhysicalContexts).where(inArray(schema.workItemPhysicalContexts.workItemId, visibleTaskIds)).all()
+      : db.select().from(schema.workItemPhysicalContexts).all()
+          .filter((row) => rawTasks.some((task) => task.id === row.workItemId));
     const contextIdsByTask = new Map<number, number[]>();
     for (const row of taskContextRows) {
       const list = contextIdsByTask.get(row.workItemId) ?? [];
@@ -504,11 +565,10 @@ export class Graph {
       contextIdsByTask.set(row.workItemId, list);
     }
 
-    const taskTagRows = db
-      .select()
-      .from(schema.workItemTags)
-      .all()
-      .filter((row) => rawTasks.some((task) => task.id === row.workItemId));
+    const taskTagRows = excludeOperationallyArchived
+      ? db.select().from(schema.workItemTags).where(inArray(schema.workItemTags.workItemId, visibleTaskIds)).all()
+      : db.select().from(schema.workItemTags).all()
+          .filter((row) => rawTasks.some((task) => task.id === row.workItemId));
     const explicitTagsByTask = new Map<number, Tag[]>();
     for (const row of taskTagRows) {
       const tag = tagsById.get(row.tagId);
@@ -518,7 +578,9 @@ export class Graph {
       explicitTagsByTask.set(row.workItemId, list);
     }
 
-    const excludedRows = db.select().from(schema.taskExcludedTags).all();
+    const excludedRows = excludeOperationallyArchived
+      ? db.select().from(schema.taskExcludedTags).where(inArray(schema.taskExcludedTags.taskId, visibleTaskIds)).all()
+      : db.select().from(schema.taskExcludedTags).all();
     const excludedByTask = new Map<number, number[]>();
     for (const row of excludedRows) {
       const list = excludedByTask.get(row.taskId) ?? [];
@@ -526,7 +588,9 @@ export class Graph {
       excludedByTask.set(row.taskId, list);
     }
 
-    const depRows = db.select().from(schema.taskDependencies).all();
+    const depRows = excludeOperationallyArchived
+      ? db.select().from(schema.taskDependencies).where(inArray(schema.taskDependencies.taskId, visibleTaskIds)).all()
+      : db.select().from(schema.taskDependencies).all();
     const dependenciesByTask = new Map<
       number,
       { id: number; dependsOnTaskId: number }[]
@@ -536,7 +600,9 @@ export class Graph {
       list.push({ id: row.id, dependsOnTaskId: row.dependsOnTaskId });
       dependenciesByTask.set(row.taskId, list);
     }
-    const externalWaitRows = db.select().from(schema.taskExternalWaits).all();
+    const externalWaitRows = excludeOperationallyArchived
+      ? db.select().from(schema.taskExternalWaits).where(inArray(schema.taskExternalWaits.taskId, visibleTaskIds)).all()
+      : db.select().from(schema.taskExternalWaits).all();
     const externalWaitByTask = new Map<number, {
       waitingFor: string | null;
       legacyRevisitDate: string | null;
@@ -552,10 +618,9 @@ export class Graph {
         ]),
     );
 
-    const criteriaRows = db
-      .select()
-      .from(schema.workItemAcceptanceCriteria)
-      .all();
+    const criteriaRows = excludeOperationallyArchived
+      ? db.select().from(schema.workItemAcceptanceCriteria).where(inArray(schema.workItemAcceptanceCriteria.workItemId, visibleWorkItemIds)).all()
+      : db.select().from(schema.workItemAcceptanceCriteria).all();
     const criteriaByWorkItem = new Map<number, AcceptanceCriterion[]>();
     for (const row of criteriaRows) {
       const list = criteriaByWorkItem.get(row.workItemId) ?? [];
@@ -578,6 +643,34 @@ export class Graph {
     }
 
     const rawTasksById = new Map(rawTasks.map((t) => [t.id, t]));
+    const archivedDependencyFacts = new Map<
+      number,
+      { title: string; status: TaskStatus }
+    >();
+    if (excludeOperationallyArchived) {
+      const targetIds = [...new Set(depRows.map((row) => row.dependsOnTaskId))];
+      if (targetIds.length > 0) {
+        const archivedTargets = db.select().from(schema.workItems).where(and(
+          inArray(schema.workItems.id, targetIds),
+          isNotNull(schema.workItems.operationalArchivedAt),
+          eq(schema.workItems.role, "task"),
+        )).all();
+        if (archivedTargets.length > 0) {
+          const historicalOwners = getEffectiveOwners(db);
+          for (const row of archivedTargets) {
+            if (restrictToViewer && !workItemVisibleToViewer(
+              row,
+              viewerMemberId,
+              historicalOwners.get(row.id)?.ownerId ?? null,
+            )) continue;
+            archivedDependencyFacts.set(row.id, {
+              title: row.title,
+              status: taskStatusFromStored(row.status as StoredWorkItemStatus),
+            });
+          }
+        }
+      }
+    }
     const incomingDependenciesByTask = new Map<number, Dependency[]>();
     for (const row of depRows) {
       const dependent = rawTasksById.get(row.taskId);
@@ -639,50 +732,48 @@ export class Graph {
     for (const [taskId, analysis] of blockerAnalysis) {
       graph.blockerAnalysisByTask.set(taskId, analysis);
     }
-    if (includeProjectAnalysis) {
-      for (const project of rawProjects) {
-        const activationStatuses = new Map(projectStatuses);
-        activationStatuses.set(project.id, "active");
-        const activationBlockers =
-          project.status === "active"
-            ? blockerAnalysis
-            : analyzeTaskBlockers(
-                blockerInputs,
-                activationStatuses,
-                today,
-                now,
-                householdTimezone(db),
-              );
-        graph.activationReadinessByProject.set(
-          project.id,
-          evaluateProjectActivationReadiness({
-            ownerMemberId: project.ownerMemberId,
-            candidateTaskIds: (
-              nextActionIdsByProject.get(project.id) ?? []
-            ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
-            projectTaskIds: rawTasks
-              .filter((task) => task.projectId === project.id)
-              .map((task) => task.id),
-            futureRevisitTaskIds: rawTasks
-              .filter(
-                (task) =>
-                  task.projectId === project.id &&
-                  task.kind === "action" &&
-                  task.status === "actionable" &&
-                  task.repeatAfterDays === null &&
-                  task.revisitAt !== null &&
-                  Date.parse(task.revisitAt) > Date.parse(now) &&
-                  blockerInputs.get(task.id)?.externalWait === null &&
-                  !(blockerInputs.get(task.id)?.dependencies ?? []).some(
-                    (dependency) => !dependency.resolved,
-                  ),
-              )
-              .map((task) => task.id),
-            blockerAnalysisByTask: activationBlockers,
-            today,
-          }),
-        );
-      }
+    if (includeProjectAnalysis) for (const project of rawProjects) {
+      const activationStatuses = new Map(projectStatuses);
+      activationStatuses.set(project.id, "active");
+      const activationBlockers =
+        project.status === "active"
+          ? blockerAnalysis
+          : analyzeTaskBlockers(
+              blockerInputs,
+              activationStatuses,
+              today,
+              now,
+              householdTimezone(db),
+            );
+      graph.activationReadinessByProject.set(
+        project.id,
+        evaluateProjectActivationReadiness({
+          ownerMemberId: project.ownerMemberId,
+          candidateTaskIds: (
+            nextActionIdsByProject.get(project.id) ?? []
+          ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
+          projectTaskIds: rawTasks
+            .filter((task) => task.projectId === project.id)
+            .map((task) => task.id),
+          futureRevisitTaskIds: rawTasks
+            .filter(
+              (task) =>
+                task.projectId === project.id &&
+                task.kind === "action" &&
+                task.status === "actionable" &&
+                task.repeatAfterDays === null &&
+                task.revisitAt !== null &&
+                Date.parse(task.revisitAt) > Date.parse(now) &&
+                blockerInputs.get(task.id)?.externalWait === null &&
+                !(blockerInputs.get(task.id)?.dependencies ?? []).some(
+                  (dependency) => !dependency.resolved,
+                ),
+            )
+            .map((task) => task.id),
+          blockerAnalysisByTask: activationBlockers,
+          today,
+        }),
+      );
     }
 
     for (const p of rawProjects) {
@@ -791,9 +882,13 @@ export class Graph {
 
       const depRefs = dependenciesByTask.get(raw.id) ?? [];
       const dependencies: Dependency[] = depRefs
-        .filter((dependency) => rawTasksById.has(dependency.dependsOnTaskId))
+        .filter((dependency) =>
+          rawTasksById.has(dependency.dependsOnTaskId) ||
+          archivedDependencyFacts.has(dependency.dependsOnTaskId),
+        )
         .map((d) => {
-          const dependsOn = rawTasksById.get(d.dependsOnTaskId)!;
+          const dependsOn = rawTasksById.get(d.dependsOnTaskId) ??
+            archivedDependencyFacts.get(d.dependsOnTaskId)!;
           const resolved =
             dependsOn.status === "done" || dependsOn.status === "cancelled";
           return {
@@ -896,6 +991,9 @@ export class Graph {
         dependencies,
         incomingDependencies,
         children: [],
+        ...(excludeOperationallyArchived && graph.archivedTerminalChildrenByParent.has(raw.id)
+          ? { archivedTerminalChildrenCount: graph.archivedTerminalChildrenByParent.get(raw.id)! }
+          : {}),
         projectTitle: project?.title ?? null,
         projectOwnerMemberId: project?.ownerMemberId ?? null,
         projectDueDate: project?.dueDate ?? null,

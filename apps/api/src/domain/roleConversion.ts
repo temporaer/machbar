@@ -13,6 +13,7 @@ import {
   getDescendantIds as repoGetDescendantIds,
   recordActivity,
   recordContribution,
+  restoreOperationalArchivePath,
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { getTaskOrThrow, nextPositionForGroup } from "./taskCrud.js";
@@ -250,6 +251,7 @@ export function convertTaskToStoryInTransaction(
         notes: input.notes ?? task.notes,
         status: targetStatus,
         archivedAt: null,
+        operationalArchivedAt: null,
         needsClarification: false,
         ownerMemberId,
         scheduledDate: null,
@@ -270,6 +272,7 @@ export function convertTaskToStoryInTransaction(
       })
       .where(eq(schema.workItems.id, taskId))
       .run();
+    restoreOperationalArchivePath(txDb, taskId);
 
     for (const tag of task.effectiveTags) {
       txDb.insert(schema.workItemTags).values({ workItemId: taskId, tagId: tag.id }).onConflictDoNothing().run();
@@ -623,6 +626,7 @@ export function convertStoryToTask(
         notes: input.notes ?? project.notes,
         status: taskStatusToStored(status),
         archivedAt: null,
+        operationalArchivedAt: null,
         needsClarification: false,
         ownerMemberId: project.ownerMemberId,
         ownerInheritanceMode: project.ownerMemberId !== null ? "explicit" : "none",
@@ -636,6 +640,9 @@ export function convertStoryToTask(
       })
       .where(eq(schema.workItems.id, projectId))
       .run();
+    if (status !== "done") {
+      restoreOperationalArchivePath(txDb, projectId);
+    }
 
     tx.update(schema.notificationEvents)
       .set({ entityType: "task" })
