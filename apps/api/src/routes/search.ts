@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { Graph } from "../domain/graph.js";
-import { searchTasks } from "../domain/search.js";
+import { searchTaskRecords } from "../domain/search.js";
 import { searchQuerySchema } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 
@@ -11,11 +11,10 @@ export function registerSearchRoutes(app: FastifyInstance, db: Db) {
       code: "search_query_invalid",
       message: "The search query parameters are invalid.",
     });
-    const graph = Graph.load(
+    const taskRecords = Graph.loadSearchTasks(
       db,
-      undefined,
       request.authMember?.id ?? request.activityActor?.id ?? undefined,
     );
-    return searchTasks(graph, query);
+    return searchTaskRecords(taskRecords, query);
   });
 }

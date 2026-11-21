@@ -66,8 +66,18 @@ function scoreNotes(query: string, queryTokens: Set<string>, notes: string): num
   return 0;
 }
 
-export function searchTasks(graph: Graph, filters: SearchFilters): TaskRecord[] {
-  let results = graph.allTasks();
+export function searchTasks(
+  graph: Pick<Graph, "allTasks">,
+  filters: SearchFilters,
+): TaskRecord[] {
+  return searchTaskRecords(graph.allTasks(), filters);
+}
+
+export function searchTaskRecords(
+  taskRecords: readonly TaskRecord[],
+  filters: SearchFilters,
+): TaskRecord[] {
+  let results = [...taskRecords];
 
   if (filters.kinds !== undefined) {
     const wantedKinds = new Set(filters.kinds);
