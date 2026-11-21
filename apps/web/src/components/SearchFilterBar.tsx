@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Project, SearchFilters, Tag, TaskStatus } from "@machbar/shared";
 import { tagKinds, taskStatuses } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -23,6 +23,29 @@ export function SearchFilterBar({
   const { locale } = useLocale();
   const { members } = useIdentity();
   const [expanded, setExpanded] = useState(false);
+  const [queryText, setQueryText] = useState(filters.text ?? "");
+  const filtersRef = useRef(filters);
+  const queryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  filtersRef.current = filters;
+
+  useEffect(() => {
+    setQueryText(filters.text ?? "");
+  }, [filters.text]);
+
+  useEffect(() => () => {
+    if (queryTimer.current !== null) clearTimeout(queryTimer.current);
+  }, []);
+
+  const changeQueryText = (value: string) => {
+    setQueryText(value);
+    if (queryTimer.current !== null) clearTimeout(queryTimer.current);
+    queryTimer.current = setTimeout(() => {
+      const next = { ...filtersRef.current };
+      if (value.trim()) next.text = value;
+      else delete next.text;
+      onChange(next);
+    }, 250);
+  };
 
   const set = <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => {
     onChange({ ...filters, [key]: value || undefined });
@@ -42,8 +65,8 @@ export function SearchFilterBar({
       <input
         aria-label={strings.search}
         placeholder={strings.searchPlaceholder}
-        value={filters.text ?? ""}
-        onChange={(e) => set("text", e.target.value)}
+        value={queryText}
+        onChange={(e) => changeQueryText(e.target.value)}
       />
       <div className="row-between">
         <button
@@ -55,7 +78,16 @@ export function SearchFilterBar({
           <span>{strings.filters}</span>
           <span className="disclosure-button-chevron" aria-hidden="true">▾</span>
         </button>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange({})}>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          onClick={() => {
+            if (queryTimer.current !== null) clearTimeout(queryTimer.current);
+            queryTimer.current = null;
+            setQueryText("");
+            onChange({});
+          }}
+        >
           {strings.resetFilters}
         </button>
       </div>
