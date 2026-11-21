@@ -525,3 +525,67 @@ AUDIT_MODE=effective-inheritance AUDIT_SIZES=5000 AUDIT_REPEATS=3 AUDIT_CASE_TIM
 
 The temporary GitHub Actions workflow used to collect these measurements is
 removed from this PR; the script mode remains available for reproduction.
+
+## #351: complete Graph.load() before and after
+
+The complete graph load was measured on identical balanced 100-, 1,000-, and
+5,000-task fixtures, using five fresh-process samples plus one warm-up per
+sample. Both revisions ran sequentially on the same GitHub runner and SQLite
+version (Node 22.23.5, SQLite 3.53.2, Linux x64, four Intel Xeon 6975P-C CPUs,
+15.3 GiB memory). The “before” checkout was current main at
+`4c01f10495dbbff0c5612c2de33ed536a3d79045` (includes #352); “after” was the
+#354 join-order branch at `240641dcfbbc09aef966f3d299979ef9eb84a2b7`.
+Fixture generation, warm-up, graph projection and query-plan collection used
+the same script and settings. Values are median (p95), in milliseconds.
+
+| Tasks | Graph.load before | Graph.load after | Prepared SQL before | Prepared SQL after | Non-SQL before | Non-SQL after |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 7.30 (8.47) | 6.26 (7.15) | 2.88 (2.89) | 1.60 (1.64) | 4.44 (5.57) | 4.64 (5.57) |
+| 1,000 | 202.37 (204.47) | 75.67 (76.50) | 179.80 (180.29) | 54.24 (54.38) | 23.08 (24.60) | 21.63 (22.13) |
+| 5,000 | 4,336.92 (4,383.96) | 1,207.61 (1,228.35) | 4,217.72 (4,271.93) | 1,096.70 (1,111.64) | 111.46 (119.19) | 110.92 (116.70) |
+
+The change reduces median Graph.load time by 14% at 100 tasks, 63% at 1,000,
+and 72% at 5,000. The non-SQL portion is effectively unchanged, so the gain
+comes from the three inheritance statements. At 5,000 tasks those statements
+together fall from 3,118.82 ms to 18.82 ms.
+
+The remaining large SQL cost is the next-action `sortkey` query (CTEs
+`blocking_descendants`, `candidates`, and `eligible`). It takes 1,060.59
+(1,077.05) ms at 5,000 tasks and returns 11,295 rows, about 97% of all SQL
+elapsed time after #354. It is nearly unchanged from 1,067.91 (1,085.03) ms
+before #354, as expected. At 1,000 tasks it takes 47.62 (47.85) ms and returns
+2,268 rows. The next largest 5,000-task query after #354 is `nearest_story`
+at 16.23 (16.75) ms; tag, owner, and context inheritance take 8.25 (8.72),
+5.78 (6.10), and 4.79 (5.20) ms respectively. Other prepared SQL costs are
+small by comparison. The remaining Graph.load time outside measured prepared-statement calls is about 111 ms at 5,000 tasks,
+roughly 9% of wall time.
+
+For context, PR #349's documented post-#348 medians were 14.63 ms at 100,
+678.81 ms at 1,000, and 16,400.23 ms at 5,000. That run used a different
+GitHub runner (AMD EPYC 9V45), used three samples, and reported no p95, so these
+cross-run comparisons are indicative, not a controlled hardware comparison.
+Against those recorded medians, current main after #352 is already materially
+faster (about 50%, 70%, and 74% lower respectively); #354 further reduces the
+same-run current-main medians by 14%, 63%, and 72%. The #352 next-action
+optimization is responsible for the largest reduction from the #349 baseline;
+the #354 inheritance change removes nearly all of the next-largest prior cost.
+
+This profile does not justify adding a graph cache or asynchronous precomputed
+read model yet. After #354, the workload has one identifiable dominant SQL
+query, while the rest of the query and graph-assembly costs are comparatively
+small. A server-side cache would add invalidation, authorization-scope, and
+freshness rules without addressing that query's per-load cost. A targeted
+follow-up should investigate the remaining next-action query's candidate and
+descendant work, preserving the one authoritative `Graph.load()` projection.
+Reconsider caching only if repeated-read latency remains material after that
+query is addressed or measured request patterns show substantial redundant
+loads.
+
+The paired run is [GitHub Actions run 44886427655](https://github.com/temporaer/machbar/actions/runs/44886427655).
+Its workflow uses `AUDIT_REPEATS=5`, sizes 100/1,000/5,000, and balanced
+fixtures in isolated child processes; the temporary workflow is removed after
+this recorded run. The profiler remains reproducible with:
+
+```bash
+AUDIT_SIZES=100,1000,5000 AUDIT_REPEATS=5 AUDIT_CASE_TIMEOUT_MS=180000 AUDIT_SHAPES=balanced npx tsx apps/api/scripts/graph-load-profile.ts
+```
