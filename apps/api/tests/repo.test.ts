@@ -17,7 +17,10 @@ import {
   getEffectiveOwners,
   getEffectiveTagIds,
 } from "../src/repo/effectiveRepo.js";
-import { getNextActionTaskIdsByProject } from "../src/repo/nextActionRepo.js";
+import {
+  getNextActionTaskIdsByProject,
+  getNextActionTaskIdsByProjectProjection,
+} from "../src/repo/nextActionRepo.js";
 import { getStuckReasonsByProject } from "../src/repo/stuckRepo.js";
 import {
   getAncestorIds,
@@ -238,6 +241,56 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
   });
 
   describe("next-action selection", () => {
+    it("preserves the full projection through reference, waiting, deferred, and terminal descendants", () => {
+      const project = createProject(handle.db, { title: "Projektionsäquivalenz", status: "active" });
+      const root = createTask(handle.db, {
+        projectId: project.id,
+        title: "Wurzel",
+        status: "actionable",
+      });
+      const reference = createTask(handle.db, {
+        parentTaskId: root.id,
+        title: "Referenz",
+        kind: "reference",
+      });
+      const waiting = createTask(handle.db, {
+        parentTaskId: reference.id,
+        title: "Wartende Aktion",
+        status: "actionable",
+      });
+      addExternalWait(waiting.id);
+      const deferred = createTask(handle.db, {
+        parentTaskId: reference.id,
+        title: "Zurückgestellte Aktion",
+        status: "actionable",
+        revisitAt: "2099-01-01T00:00:00.000Z",
+      });
+      const terminal = createTask(handle.db, {
+        parentTaskId: reference.id,
+        title: "Erledigte Aktion",
+        status: "actionable",
+      });
+      updateTask(handle.db, terminal.id, { status: "done" });
+
+      const projection = getNextActionTaskIdsByProjectProjection(
+        handle.db,
+        "2026-11-21T00:00:00.000Z",
+      );
+
+      expect(projection.openProjectContainers).toEqual(new Set());
+      expect(projection.unfinishedWorkContainers).toEqual(new Set([root.id, reference.id]));
+      expect(projection.unfinishedWorkDescendantsByContainer).toEqual(
+        new Map([
+          [root.id, [waiting.id, deferred.id]],
+          [reference.id, [waiting.id, deferred.id]],
+        ]),
+      );
+      expect(projection.ordered).toEqual(
+        new Map([[project.id, [{ taskId: deferred.id, availability: "deferred" }]]]),
+      );
+      expect(projection.available).toEqual(new Map());
+    });
+
     it("picks the first actionable, unblocked task in depth-first pre-order", () => {
       const project = createProject(handle.db, { title: "Projekt" });
       const root = createTask(handle.db, {
