@@ -33,7 +33,7 @@ jobs:
               rows: statement.rowsReturnedOrChanged,
               ctes: statement.ctes,
               sql: statement.sql.slice(0, 180),
-              plan: plans.get(statement.sql)?.plan.map((row) => row.detail) ?? []
+              plan: plans.get(statement.sql)?.plan.map((row) => row.detail) ?? [],\n              explainError: plans.get(statement.sql)?.explainError ?? null
             }));
             console.log("PLAN_EVIDENCE " + JSON.stringify(evidence));
           '
