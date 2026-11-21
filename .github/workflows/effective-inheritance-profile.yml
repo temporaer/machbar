@@ -25,7 +25,7 @@ jobs:
       - name: Profile balanced and controlled-depth inheritance queries
         run: |
           set -euo pipefail
-          AUDIT_SIZES=1000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=180000 AUDIT_SHAPES=balanced,deep-chain AUDIT_DEPTHS=1,8,32,128,512,1000 npx tsx apps/api/scripts/graph-load-profile.ts > /tmp/inheritance-profile.json
+          AUDIT_MODE=effective-inheritance AUDIT_SIZES=5000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=180000 AUDIT_SHAPES=balanced,deep-chain AUDIT_DEPTHS=1,64,512,5000 npx tsx apps/api/scripts/graph-load-profile.ts > /tmp/inheritance-profile.json
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           const report = JSON.parse(fs.readFileSync("/tmp/inheritance-profile.json", "utf8"));
