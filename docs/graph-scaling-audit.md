@@ -557,7 +557,7 @@ before #354, as expected. At 1,000 tasks it takes 47.62 (47.85) ms and returns
 2,268 rows. The next largest 5,000-task query after #354 is `nearest_story`
 at 16.23 (16.75) ms; tag, owner, and context inheritance take 8.25 (8.72),
 5.78 (6.10), and 4.79 (5.20) ms respectively. Other prepared SQL costs are
-small by comparison. Non-SQL graph assembly is about 111 ms at 5,000 tasks,
+small by comparison. The remaining Graph.load time outside measured prepared-statement calls is about 111 ms at 5,000 tasks,
 roughly 9% of wall time.
 
 For context, PR #349's documented post-#348 medians were 14.63 ms at 100,
