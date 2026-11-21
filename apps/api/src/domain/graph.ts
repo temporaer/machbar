@@ -639,61 +639,50 @@ export class Graph {
     for (const [taskId, analysis] of blockerAnalysis) {
       graph.blockerAnalysisByTask.set(taskId, analysis);
     }
-    for (const project of rawProjects) {
-      if (!includeProjectAnalysis) {
+    if (includeProjectAnalysis) {
+      for (const project of rawProjects) {
+        const activationStatuses = new Map(projectStatuses);
+        activationStatuses.set(project.id, "active");
+        const activationBlockers =
+          project.status === "active"
+            ? blockerAnalysis
+            : analyzeTaskBlockers(
+                blockerInputs,
+                activationStatuses,
+                today,
+                now,
+                householdTimezone(db),
+              );
         graph.activationReadinessByProject.set(
           project.id,
           evaluateProjectActivationReadiness({
             ownerMemberId: project.ownerMemberId,
-            candidateTaskIds: [],
-            projectTaskIds: [],
-            blockerAnalysisByTask: new Map(),
+            candidateTaskIds: (
+              nextActionIdsByProject.get(project.id) ?? []
+            ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
+            projectTaskIds: rawTasks
+              .filter((task) => task.projectId === project.id)
+              .map((task) => task.id),
+            futureRevisitTaskIds: rawTasks
+              .filter(
+                (task) =>
+                  task.projectId === project.id &&
+                  task.kind === "action" &&
+                  task.status === "actionable" &&
+                  task.repeatAfterDays === null &&
+                  task.revisitAt !== null &&
+                  Date.parse(task.revisitAt) > Date.parse(now) &&
+                  blockerInputs.get(task.id)?.externalWait === null &&
+                  !(blockerInputs.get(task.id)?.dependencies ?? []).some(
+                    (dependency) => !dependency.resolved,
+                  ),
+              )
+              .map((task) => task.id),
+            blockerAnalysisByTask: activationBlockers,
             today,
           }),
         );
-        continue;
       }
-      const activationStatuses = new Map(projectStatuses);
-      activationStatuses.set(project.id, "active");
-      const activationBlockers =
-        project.status === "active"
-          ? blockerAnalysis
-          : analyzeTaskBlockers(
-              blockerInputs,
-              activationStatuses,
-              today,
-              now,
-              householdTimezone(db),
-            );
-      graph.activationReadinessByProject.set(
-        project.id,
-        evaluateProjectActivationReadiness({
-          ownerMemberId: project.ownerMemberId,
-          candidateTaskIds: (
-            nextActionIdsByProject.get(project.id) ?? []
-          ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
-          projectTaskIds: rawTasks
-            .filter((task) => task.projectId === project.id)
-            .map((task) => task.id),
-          futureRevisitTaskIds: rawTasks
-            .filter(
-              (task) =>
-                task.projectId === project.id &&
-                task.kind === "action" &&
-                task.status === "actionable" &&
-                task.repeatAfterDays === null &&
-                task.revisitAt !== null &&
-                Date.parse(task.revisitAt) > Date.parse(now) &&
-                blockerInputs.get(task.id)?.externalWait === null &&
-                !(blockerInputs.get(task.id)?.dependencies ?? []).some(
-                  (dependency) => !dependency.resolved,
-                ),
-            )
-            .map((task) => task.id),
-          blockerAnalysisByTask: activationBlockers,
-          today,
-        }),
-      );
     }
 
     for (const p of rawProjects) {

@@ -49,6 +49,21 @@ describe("search task projection", () => {
     const publicChild = createChildTask(ctx.handle.db, publicTask.id, {
       title: "Werkzeug öffentliche Teilaufgabe",
     });
+    const nestedActiveProject = ctx.handle.db.insert(schema.workItems).values({
+      parentId: publicTask.id,
+      role: "story",
+      title: "Active child project boundary",
+      status: "active",
+      ownerMemberId: alice.id,
+      scope: "work",
+    }).returning().get();
+    ctx.handle.db.insert(schema.workItemTags)
+      .values({ workItemId: nestedActiveProject.id, tagId: inheritedTag.id }).run();
+    const nestedProjectTask = createTask(ctx.handle.db, {
+      projectId: nestedActiveProject.id,
+      title: "Boundary nested task",
+      status: "actionable",
+    });
     const privateProject = createProject(ctx.handle.db, {
       title: "Bob private project", scope: "work", ownerMemberId: bob.id,
     });
@@ -63,8 +78,10 @@ describe("search task projection", () => {
 
     const filterSets: SearchFilters[] = [
       { text: "werkzeug ordnungsamt", includeTerminal: true },
+      { text: "boundary", includeTerminal: true },
       { text: "KELLERKRAN", includeTerminal: true },
       { ownerId: alice.id, includeTerminal: true },
+      { projectId: nestedActiveProject.id, ownerId: alice.id, tagIds: [inheritedTag.id], includeTerminal: true },
       { ownerId: bob.id, tagIds: [inheritedTag.id], includeTerminal: true },
       { tagIds: [inheritedTag.id, explicitTag.id], includeTerminal: true },
       { blocked: true, includeTerminal: true },
@@ -86,6 +103,20 @@ describe("search task projection", () => {
     expect(aliceResults.map((task) => task.title)).not.toContain("Werkzeug Bob confidential");
     expect(searchTaskRecords(Graph.loadSearchTasks(ctx.handle.db, bob.id), { text: "confidential" }).map((task) => task.id))
       .toContain(bobPrivate.id);
+    const nestedAlice = searchTaskRecords(Graph.loadSearchTasks(ctx.handle.db, alice.id), {
+      text: "boundary", includeTerminal: true,
+    });
+    expect(nestedAlice.map((task) => task.id)).toContain(nestedProjectTask.id);
+    expect(nestedAlice.find((task) => task.id === nestedProjectTask.id)).toMatchObject({
+      projectId: nestedActiveProject.id,
+      projectTitle: "Active child project boundary",
+      effectiveOwnerId: alice.id,
+      effectiveTags: [expect.objectContaining({ id: inheritedTag.id })],
+    });
+    const nestedBob = searchTaskRecords(Graph.loadSearchTasks(ctx.handle.db, bob.id), {
+      text: "boundary", includeTerminal: true,
+    });
+    expect(nestedBob.map((task) => task.id)).not.toContain(nestedProjectTask.id);
 
     const hierarchyResults = searchTaskRecords(Graph.loadSearchTasks(ctx.handle.db, alice.id), {
       text: "Werkzeug", includeTerminal: true,
