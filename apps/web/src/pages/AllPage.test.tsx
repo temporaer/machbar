@@ -266,30 +266,26 @@ describe("AllPage", () => {
     mockedApi.searchTasks.mockImplementation(
       () => new Promise((resolve) => pending.push(resolve)),
     );
-    try {
-      renderWithProviders(<AllPage />);
-      await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(1));
-      const search = screen.getByRole("textbox", { name: "Suchen" });
+    renderWithProviders(<AllPage />);
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(1));
+    const search = screen.getByRole("textbox", { name: "Suchen" });
 
-      fireEvent.change(search, { target: { value: "alt" } });
-      await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
+    fireEvent.change(search, { target: { value: "alt" } });
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
 
-      fireEvent.change(search, { target: { value: "neu" } });
-      await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(3));
+    fireEvent.change(search, { target: { value: "neu" } });
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(3));
 
-      await act(async () => {
-        pending[2]!([makeTask({ id: 91, title: "Neueste Suche" })]);
-      });
-      expect(await screen.findByText("Neueste Suche")).toBeInTheDocument();
+    await act(async () => {
+      pending[2]!([makeTask({ id: 91, title: "Neueste Suche" })]);
+    });
+    expect(await screen.findByText("Neueste Suche")).toBeInTheDocument();
 
-      await act(async () => {
-        pending[1]!([makeTask({ id: 92, title: "Veraltete Suche" })]);
-      });
-      expect(screen.getByText("Neueste Suche")).toBeInTheDocument();
-      expect(screen.queryByText("Veraltete Suche")).not.toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
+    await act(async () => {
+      pending[1]!([makeTask({ id: 92, title: "Veraltete Suche" })]);
+    });
+    expect(screen.getByText("Neueste Suche")).toBeInTheDocument();
+    expect(screen.queryByText("Veraltete Suche")).not.toBeInTheDocument();
   });
 
 });
