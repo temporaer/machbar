@@ -34,7 +34,10 @@ import {
   getEffectivePhysicalContextIds,
   getEffectiveTagIds,
 } from "../repo/effectiveRepo.js";
-import { getNextActionTaskIdsByProjectProjection } from "../repo/nextActionRepo.js";
+import {
+  getNextActionTaskIdsByProjectProjection,
+  type NextActionTaskIdsByProject,
+} from "../repo/nextActionRepo.js";
 import { getTaskProjectIds } from "../repo/treeRepo.js";
 import { selectPrimaryAreaTag } from "./projectAreas.js";
 import { performance } from "node:perf_hooks";
@@ -287,7 +290,40 @@ export class Graph {
     // could not resolve a viewer, so every "work" row must be hidden) is
     // the reason this checks `arguments.length` instead of just `viewerMemberId
     // === undefined`.
-    const restrictToViewer = arguments.length >= 3;
+    return Graph.loadInternal(
+      db,
+      today,
+      viewerMemberId,
+      now,
+      arguments.length >= 3,
+      true,
+    );
+  }
+
+  /**
+   * Search needs the canonical task records, inheritance and blocker facts,
+   * but never reads next-action candidates, container projections, project
+   * readiness, or stuck-project state. Avoid those unrelated projections and
+   * return only the task list so the partial internal Graph cannot escape to
+   * other graph consumers.
+   */
+  static loadSearchTasks(
+    db: Db,
+    viewerMemberId?: number,
+    today = new Date().toISOString().slice(0, 10),
+    now = new Date().toISOString(),
+  ): TaskRecord[] {
+    return Graph.loadInternal(db, today, viewerMemberId, now, true, false).allTasks();
+  }
+
+  private static loadInternal(
+    db: Db,
+    today: string,
+    viewerMemberId: number | undefined,
+    now: string,
+    restrictToViewer: boolean,
+    includeProjectAnalysis: boolean,
+  ): Graph {
     const startedAt = performance.now();
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
     // These run unrestricted (no viewer filtering): scope is uniform down
@@ -298,7 +334,15 @@ export class Graph {
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
     const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db);
-    const nextActionProjection = getNextActionTaskIdsByProjectProjection(db, now);
+    const nextActionProjection: NextActionTaskIdsByProject = includeProjectAnalysis
+      ? getNextActionTaskIdsByProjectProjection(db, now)
+      : {
+          available: new Map(),
+          ordered: new Map(),
+          openProjectContainers: new Set(),
+          unfinishedWorkContainers: new Set(),
+          unfinishedWorkDescendantsByContainer: new Map(),
+        };
     const nextActionIdsByProject = nextActionProjection.available;
     const graph = new Graph(
       Date.parse(now),
@@ -596,6 +640,19 @@ export class Graph {
       graph.blockerAnalysisByTask.set(taskId, analysis);
     }
     for (const project of rawProjects) {
+      if (!includeProjectAnalysis) {
+        graph.activationReadinessByProject.set(
+          project.id,
+          evaluateProjectActivationReadiness({
+            ownerMemberId: project.ownerMemberId,
+            candidateTaskIds: [],
+            projectTaskIds: [],
+            blockerAnalysisByTask: new Map(),
+            today,
+          }),
+        );
+        continue;
+      }
       const activationStatuses = new Map(projectStatuses);
       activationStatuses.set(project.id, "active");
       const activationBlockers =
@@ -886,7 +943,7 @@ export class Graph {
       graph.rootsByProject.set(projectId, list);
     }
 
-    for (const project of graph.projectsById.values()) {
+    for (const project of includeProjectAnalysis ? graph.projectsById.values() : []) {
       if (project.status !== "active") continue;
       const tasks = graph.actionsForProject(project.id);
       const openTasks = tasks.filter(

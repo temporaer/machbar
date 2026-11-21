@@ -14,6 +14,13 @@ type Metrics = {
   graphLoads: number;
   graphMs: number;
   graphSqlMs: number;
+  taskProjections: number;
+  taskProjectionMs: number;
+  taskProjectionSqlMs: number;
+  searchFilterMs: number;
+  serializationMs: number;
+  requestStartedAt: number;
+  serializationStartedAt: number;
 };
 
 type Sample = Metrics & {
@@ -21,6 +28,7 @@ type Sample = Metrics & {
   wallMs: number;
   responseBytes: number;
   taskCountBefore: number;
+  resultCount: number;
 };
 
 let activeMetrics: Metrics | undefined;
@@ -67,6 +75,41 @@ Graph.load = ((...args: Parameters<typeof Graph.load>) => {
   }
 }) as typeof Graph.load;
 
+const originalLoadSearchTasks = Graph.loadSearchTasks;
+Graph.loadSearchTasks = ((...args: Parameters<typeof Graph.loadSearchTasks>) => {
+  if (!activeMetrics) return originalLoadSearchTasks(...args);
+  const metrics = activeMetrics;
+  const beforeSqlMs = metrics.sqlMs;
+  const startedAt = performance.now();
+  try {
+    return originalLoadSearchTasks(...args);
+  } finally {
+    metrics.taskProjections += 1;
+    metrics.taskProjectionMs += performance.now() - startedAt;
+    metrics.taskProjectionSqlMs += metrics.sqlMs - beforeSqlMs;
+  }
+}) as typeof Graph.loadSearchTasks;
+
+function installSearchStageTiming(app: ReturnType<typeof buildApp>): void {
+  app.addHook("preSerialization", (_request, _reply, _payload, done) => {
+    if (activeMetrics) {
+      activeMetrics.searchFilterMs = Math.max(
+        0,
+        performance.now() - activeMetrics.requestStartedAt -
+          activeMetrics.graphMs - activeMetrics.taskProjectionMs,
+      );
+      activeMetrics.serializationStartedAt = performance.now();
+    }
+    done();
+  });
+  app.addHook("onSend", (_request, _reply, payload, done) => {
+    if (activeMetrics) {
+      activeMetrics.serializationMs = performance.now() - activeMetrics.serializationStartedAt;
+    }
+    done(null, payload);
+  });
+}
+
 function quantile(values: number[], fraction: number): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.ceil(sorted.length * fraction) - 1] ?? 0;
@@ -80,8 +123,14 @@ function summarize(samples: Sample[]) {
     "graphLoads",
     "graphMs",
     "graphSqlMs",
+    "taskProjections",
+    "taskProjectionMs",
+    "taskProjectionSqlMs",
+    "searchFilterMs",
+    "serializationMs",
     "responseBytes",
     "taskCountBefore",
+    "resultCount",
   ] as const;
   return {
     operation: samples[0]!.operation,
@@ -109,10 +158,18 @@ async function measuredRequest(
     graphLoads: 0,
     graphMs: 0,
     graphSqlMs: 0,
+    taskProjections: 0,
+    taskProjectionMs: 0,
+    taskProjectionSqlMs: 0,
+    searchFilterMs: 0,
+    serializationMs: 0,
+    requestStartedAt: performance.now(),
+    serializationStartedAt: 0,
   };
   const taskCountBefore = (
     sqlite.prepare("SELECT COUNT(*) AS count FROM work_items WHERE role = 'task'").get() as { count: number }
   ).count;
+  metrics.requestStartedAt = performance.now();
   activeMetrics = metrics;
   const startedAt = performance.now();
   let response;
@@ -134,6 +191,7 @@ async function measuredRequest(
     wallMs,
     responseBytes: Buffer.byteLength(response.body),
     taskCountBefore,
+    resultCount: Array.isArray(response.json()) ? (response.json() as unknown[]).length : 0,
     ...metrics,
   };
 }
@@ -171,9 +229,9 @@ function seedFixture(sqlite: Database.Database, taskCount: number) {
 
   const insertWorkItem = sqlite.prepare(`
     INSERT INTO work_items
-      (parent_id, role, title, status, owner_member_id, owner_inheritance_mode,
+      (parent_id, role, title, notes, status, owner_member_id, owner_inheritance_mode,
        task_kind, position, size, due_date, scheduled_date, needs_clarification)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertTagRelation = sqlite.prepare(
     "INSERT OR IGNORE INTO work_item_tags (work_item_id, tag_id) VALUES (?, ?)",
@@ -197,6 +255,7 @@ function seedFixture(sqlite: Database.Database, taskCount: number) {
         null,
         "story",
         `Audit project ${index}`,
+        "",
         "active",
         1,
         "explicit",
@@ -230,7 +289,10 @@ function seedFixture(sqlite: Database.Database, taskCount: number) {
       const result = insertWorkItem.run(
         parentId,
         "task",
-        `Audit task ${index}`,
+        `Audit task ${index}${index % 100 === 0 ? " Kellerkran" : ""}`,
+        index % 10 === 0
+          ? `Handwerker Ordnungsamt notes for task ${index}. ${"Kontext und Details. ".repeat(40)}`
+          : "",
         status,
         index % 17 === 0 ? 2 : null,
         index % 17 === 0 ? "explicit" : "inherit",
@@ -290,6 +352,7 @@ async function benchmarkSize(taskCount: number, repeats: number) {
   installSqlTiming(handle.sqlite);
   const dataDir = os.tmpdir();
   const app = buildApp({ db: handle.db, env: makeEnv(dataDir), logger: false });
+  installSearchStageTiming(app);
   const results: ReturnType<typeof summarize>[] = [];
 
   const scenarios: Array<{
@@ -355,6 +418,18 @@ async function benchmarkSize(taskCount: number, repeats: number) {
     {
       operation: "today-view",
       setup: () => ({ url: "/api/agenda/today?scope=all&date=2026-10-12" }),
+    },
+    {
+      operation: "search-narrow-title",
+      setup: () => ({ url: "/api/search?text=Kellerkran&includeTerminal=true" }),
+    },
+    {
+      operation: "search-narrow-notes",
+      setup: () => ({ url: "/api/search?text=Handwerker%20Ordnungsamt&includeTerminal=true" }),
+    },
+    {
+      operation: "search-broad",
+      setup: () => ({ url: "/api/search?text=Audit%20task&includeTerminal=true" }),
     },
   ];
   const selectedOperations = process.env.AUDIT_OPERATIONS
@@ -458,7 +533,7 @@ async function main() {
       warmupsPerScenario: 1,
       measuredRepeats: repeats,
       selectedOperations: selectedOperations ?? "all",
-      stages: "HTTP injection wall time; prepared-statement count/time; Graph.load count/inclusive time and its SQL subset; serialized response bytes",
+      stages: "HTTP injection wall time; prepared-statement count/time; full Graph.load or search-task projection count/inclusive time and its SQL subset; serialized response bytes and result count",
       note: "No frontend, network, or browser invalidation/refetch is included.",
     },
   }));
