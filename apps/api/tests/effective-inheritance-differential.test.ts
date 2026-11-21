@@ -2,6 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
+import { createProject } from "../src/domain/storyCrud.js";
+import { createChildTask, createTask } from "../src/domain/taskCrud.js";
 import type { Db } from "../src/db/client.js";
 import {
   getEffectiveOwners,
@@ -209,32 +211,6 @@ describe("effective inheritance query differential", () => {
       url: "/api/tags",
       payload: { name: "Explicit" },
     })).json();
-    const project = (await ctx.app.inject({
-      method: "POST",
-      url: "/api/projects",
-      payload: {
-        title: "Inheritance fixture",
-        scope: "work",
-        ownerMemberId: ownerA.id,
-        tagIds: [tagA.id],
-      },
-    })).json();
-    const root = (await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: { projectId: project.id, title: "Inherited root" },
-    })).json();
-    const child = (await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${root.id}/children`,
-      payload: { title: "Explicit child" },
-    })).json();
-    const grandchild = (await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${child.id}/children`,
-      payload: { title: "Disabled grandchild" },
-    })).json();
-
     const contextA = ctx.handle.db.insert(schema.physicalContexts).values({
       source: "home_assistant",
       externalId: "inheritance-home",
@@ -246,8 +222,24 @@ describe("effective inheritance query differential", () => {
       name: "Office",
     }).returning().get();
 
-    ctx.handle.db.insert(schema.workItemPhysicalContexts)
-      .values({ workItemId: project.id, contextId: contextA.id }).run();
+    const project = createProject(ctx.handle.db, {
+      title: "Inheritance fixture",
+      scope: "work",
+      ownerMemberId: ownerA.id,
+      tagIds: [tagA.id],
+      contextIds: [contextA.id],
+    });
+    const root = createTask(ctx.handle.db, {
+      projectId: project.id,
+      title: "Inherited root",
+    });
+    const child = createChildTask(ctx.handle.db, root.id, {
+      title: "Explicit child",
+    });
+    const grandchild = createChildTask(ctx.handle.db, child.id, {
+      title: "Disabled grandchild",
+    });
+
     ctx.handle.db.update(schema.workItems)
       .set({
         ownerMemberId: ownerB.id,
