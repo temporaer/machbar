@@ -431,6 +431,14 @@ async function benchmarkSize(taskCount: number, repeats: number) {
       operation: "search-broad",
       setup: () => ({ url: "/api/search?text=Audit%20task&includeTerminal=true" }),
     },
+    {
+      operation: "search-outline-narrow-notes",
+      setup: () => ({ url: "/api/search?text=Handwerker%20Ordnungsamt&includeTerminal=true&outline=true" }),
+    },
+    {
+      operation: "search-outline-broad",
+      setup: () => ({ url: "/api/search?text=Audit%20task&includeTerminal=true&outline=true" }),
+    },
   ];
   const selectedOperations = process.env.AUDIT_OPERATIONS
     ? new Set(process.env.AUDIT_OPERATIONS.split(",").map((value) => value.trim()).filter(Boolean))

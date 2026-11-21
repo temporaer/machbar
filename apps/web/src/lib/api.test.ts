@@ -78,6 +78,16 @@ describe("api request() Content-Type handling", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/search?kinds=reference");
   });
 
+  it("requests outline-shaped search results for the inventory page", async () => {
+    const fetchMock = mockFetchOnce({ text: async () => "[]" });
+
+    await api.searchTaskOutlines({ text: "Werkzeug", includeTerminal: true });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/search?text=Werkzeug&includeTerminal=true&outline=true",
+    );
+  });
+
   it("binds intake reads to the committed initiating identity, without trusting raw local storage", async () => {
     setRequestActorMemberId(7);
     window.localStorage.setItem("machbar:identity-member-id", "999");

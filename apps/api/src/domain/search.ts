@@ -167,3 +167,33 @@ export function searchTaskRecords(
     return a.id - b.id;
   });
 }
+
+/**
+ * Search outline payloads keep every matching task in reference/material
+ * mode because those are rendered as independent cards. For task outlines,
+ * only return matching roots; each root already carries its complete nested
+ * subtree. This preserves the All page hierarchy while avoiding a second
+ * serialized copy of every matching descendant.
+ */
+export function searchTaskOutlines(
+  taskRecords: readonly TaskRecord[],
+  filters: SearchFilters,
+): TaskRecord[] {
+  const matches = searchTaskRecords(taskRecords, filters);
+  if (filters.kinds?.includes("reference")) {
+    return matches.map((task) => ({ ...task, children: [] }));
+  }
+
+  const matchedIds = new Set(matches.map((task) => task.id));
+  const tasksById = new Map(taskRecords.map((task) => [task.id, task]));
+  return matches.filter((task) => {
+    const seen = new Set<number>([task.id]);
+    let parentTaskId = task.parentTaskId;
+    while (parentTaskId !== null && !seen.has(parentTaskId)) {
+      if (matchedIds.has(parentTaskId)) return false;
+      seen.add(parentTaskId);
+      parentTaskId = tasksById.get(parentTaskId)?.parentTaskId ?? null;
+    }
+    return true;
+  });
+}

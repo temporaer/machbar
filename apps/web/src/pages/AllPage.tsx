@@ -6,7 +6,6 @@ import { useStrings } from "../lib/strings";
 import {
   filterInventoryProjects,
   hasInventoryFilters,
-  topLevelTaskResults,
 } from "../lib/allInventory";
 import {
   LoadingState,
@@ -79,7 +78,7 @@ export function AllPage() {
     refreshError: tasksRefreshError,
     reload: reloadTasks,
   } = useAsync(
-    (signal) => api.searchTasks({ ...filters, includeTerminal: true }, signal),
+    (signal) => api.searchTaskOutlines({ ...filters, includeTerminal: true }, signal),
     [filtersKey, currentMemberId],
     accessResource,
   );
@@ -97,9 +96,7 @@ export function AllPage() {
   const materialOnly = filters.kinds?.includes("reference") ?? false;
   const taskCandidates = sortInventoryTasks(
     filtering
-      ? materialOnly
-        ? tasks ?? []
-        : topLevelTaskResults(tasks ?? [])
+      ? tasks ?? []
       : (tasks ?? []).filter(
           (task) => task.projectId === null && task.parentTaskId === null,
         ),
