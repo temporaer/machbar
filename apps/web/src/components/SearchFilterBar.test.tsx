@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
@@ -66,6 +66,49 @@ describe("SearchFilterBar", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Filter zurücksetzen" }));
     expect(screen.getByLabelText("Suchen")).toHaveValue("");
+  });
+
+  it("debounces text queries and applies discrete filters immediately", async () => {
+    vi.useFakeTimers();
+    try {
+      mockedApi.getMembers.mockResolvedValue([]);
+      render(
+        <MemoryRouter>
+          <IdentityProvider>
+            <Harness />
+          </IdentityProvider>
+        </MemoryRouter>,
+      );
+      const search = screen.getByLabelText("Suchen");
+
+      fireEvent.change(search, { target: { value: "K" } });
+      fireEvent.change(search, { target: { value: "Ki" } });
+      fireEvent.change(search, { target: { value: "Kiste" } });
+      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent("{}");
+
+      await act(async () => {
+        vi.advanceTimersByTime(249);
+      });
+      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent("{}");
+
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent('"text":"Kiste"');
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Status"), {
+          target: { value: "actionable" },
+        });
+      });
+      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent('"status":"actionable"');
+      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent('"text":"Kiste"');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("accepts natural dates in search ranges", async () => {
