@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import type { DbHandle } from "../src/db/client.js";
+import { eq, sql } from "drizzle-orm";
+import type { Db, DbHandle } from "../src/db/client.js";
 import { createTestDatabase } from "./database.js";
 import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
@@ -20,6 +20,7 @@ import {
 import {
   getNextActionTaskIdsByProject,
   getNextActionTaskIdsByProjectProjection,
+  type NextActionTaskIdsByProject,
 } from "../src/repo/nextActionRepo.js";
 import { getStuckReasonsByProject } from "../src/repo/stuckRepo.js";
 import {
@@ -241,6 +242,143 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
   });
 
   describe("next-action selection", () => {
+    // Frozen pre-optimization SQL retained only as a differential test oracle.
+    // Keep this query aligned with the canonical implementation at the #350 base.
+    function getBaselineNextActionTaskIdsByProjectProjection(
+      db: Db,
+      now = new Date().toISOString(),
+    ): NextActionTaskIdsByProject {
+      const rows = db.all<{
+        project_id: number | null;
+        task_id: number;
+        availability: "available" | "deferred" | "project_container" | "work_container" | "work_descendant";
+        key: string | null;
+        descendant_id: number | null;
+      }>(sql`
+        WITH RECURSIVE sortkey(task_id, project_id, key) AS (
+          SELECT task.id, story.id, printf('%08d', task.position)
+          FROM work_items task
+          JOIN work_items story ON story.id = task.parent_id AND story.role = 'story'
+          WHERE task.role = 'task'
+          UNION ALL
+          SELECT task.id, sk.project_id, sk.key || '.' || printf('%08d', task.position)
+          FROM work_items task
+          JOIN sortkey sk ON task.parent_id = sk.task_id
+          WHERE task.role = 'task'
+        ),
+        task_descendants(ancestor_id, descendant_id) AS (
+          SELECT id, id FROM work_items WHERE role = 'task'
+          UNION ALL
+          SELECT td.ancestor_id, child.id
+          FROM task_descendants td
+          JOIN work_items child ON child.parent_id = td.descendant_id
+          -- An open project is part of the containing task's structure. A
+          -- terminal project's historical subtree is outside that task's work.
+          WHERE child.role = 'task' OR (
+            child.role = 'story' AND child.archived_at IS NULL
+            AND child.status NOT IN ('done', 'cancelled')
+          )
+        ),
+        blocking_descendants AS (
+          -- Open actions and projects keep their task ancestors as containers.
+          -- Reference nodes remain transparent; terminal project subtrees stop above.
+          SELECT td.ancestor_id AS task_id, td.descendant_id
+          FROM task_descendants td
+          JOIN work_items descendant ON descendant.id = td.descendant_id
+          WHERE td.descendant_id != td.ancestor_id
+            AND COALESCE(descendant.task_kind, 'action') = 'action'
+            AND descendant.status NOT IN ('done', 'cancelled')
+        ),
+        candidates AS (
+          SELECT sk.task_id, sk.project_id, sk.key
+          FROM sortkey sk
+          JOIN work_items t ON t.id = sk.task_id
+          WHERE sk.project_id IS NOT NULL
+            AND t.status = 'active'
+            AND COALESCE(t.task_kind, 'action') = 'action'
+            AND NOT EXISTS (
+              SELECT 1 FROM task_dependencies td
+              JOIN work_items dep ON dep.id = td.depends_on_task_id
+              WHERE td.task_id = t.id AND dep.status NOT IN ('done', 'cancelled')
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM task_external_waits ew WHERE ew.task_id = t.id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM blocking_descendants bd WHERE bd.task_id = t.id
+            )
+        ),
+        eligible AS (
+          SELECT c.project_id, c.task_id, c.key,
+            CASE
+             WHEN t.revisit_at IS NULL OR julianday(t.revisit_at) <= julianday(${now})
+               THEN 'available'
+             ELSE 'deferred'
+            END AS availability
+          FROM candidates c
+          JOIN work_items t ON t.id = c.task_id
+        )
+        SELECT project_id, task_id, availability, key, NULL AS descendant_id FROM eligible
+        UNION ALL
+        SELECT NULL, td.ancestor_id, 'project_container', NULL, NULL
+        FROM task_descendants td
+        JOIN work_items descendant ON descendant.id = td.descendant_id
+        WHERE descendant.role = 'story'
+        GROUP BY td.ancestor_id
+        UNION ALL
+        SELECT NULL, task_id, 'work_container', NULL, NULL
+        FROM (SELECT DISTINCT task_id FROM blocking_descendants)
+        UNION ALL
+        SELECT NULL, task_id, 'work_descendant', NULL, descendant_id
+        FROM blocking_descendants
+        ORDER BY project_id, key
+      `);
+      const openProjectContainers = new Set<number>();
+      const unfinishedWorkContainers = new Set<number>();
+      const unfinishedWorkDescendantsByContainer = new Map<number, number[]>();
+      const available = new Map<number, number[]>();
+      const ordered = new Map<
+        number,
+        Array<{ taskId: number; availability: "available" | "deferred" }>
+      >();
+      for (const row of rows) {
+        if (row.availability === "work_descendant") {
+          if (row.descendant_id !== null) {
+            const descendants =
+              unfinishedWorkDescendantsByContainer.get(row.task_id) ?? [];
+            descendants.push(row.descendant_id);
+            unfinishedWorkDescendantsByContainer.set(row.task_id, descendants);
+          }
+          continue;
+        }
+        if (row.availability === "work_container") {
+          unfinishedWorkContainers.add(row.task_id);
+          continue;
+        }
+        if (row.availability === "project_container") {
+          openProjectContainers.add(row.task_id);
+          continue;
+        }
+        if (row.project_id === null) continue;
+        if (row.availability === "available") {
+          const ids = available.get(row.project_id) ?? [];
+          ids.push(row.task_id);
+          available.set(row.project_id, ids);
+        }
+        const candidates = ordered.get(row.project_id) ?? [];
+        candidates.push({ taskId: row.task_id, availability: row.availability });
+        ordered.set(row.project_id, candidates);
+      }
+      return {
+        available,
+        ordered,
+        openProjectContainers,
+        unfinishedWorkContainers,
+        unfinishedWorkDescendantsByContainer,
+      };
+    }
+    
+
     it("preserves the full projection through reference, waiting, deferred, and terminal descendants", () => {
       const project = createProject(handle.db, { title: "Projektionsäquivalenz", status: "active" });
       const root = createTask(handle.db, {
@@ -271,6 +409,17 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
       });
       updateTask(handle.db, terminal.id, { status: "done" });
+      const dependencyBlocker = createTask(handle.db, {
+        parentTaskId: reference.id,
+        title: "Offener Abhängigkeitsblocker",
+        status: "actionable",
+      });
+      const blocked = createTask(handle.db, {
+        parentTaskId: reference.id,
+        title: "Abhängige Aktion",
+        status: "actionable",
+      });
+      addDependency(handle.db, blocked.id, dependencyBlocker.id);
 
       const projection = getNextActionTaskIdsByProjectProjection(
         handle.db,
@@ -281,14 +430,25 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(projection.unfinishedWorkContainers).toEqual(new Set([root.id, reference.id]));
       expect(projection.unfinishedWorkDescendantsByContainer).toEqual(
         new Map([
-          [root.id, [waiting.id, deferred.id]],
-          [reference.id, [waiting.id, deferred.id]],
+          [root.id, [waiting.id, deferred.id, dependencyBlocker.id, blocked.id]],
+          [reference.id, [waiting.id, deferred.id, dependencyBlocker.id, blocked.id]],
         ]),
       );
       expect(projection.ordered).toEqual(
-        new Map([[project.id, [{ taskId: deferred.id, availability: "deferred" }]]]),
+        new Map([[
+          project.id,
+          [
+            { taskId: deferred.id, availability: "deferred" },
+            { taskId: dependencyBlocker.id, availability: "available" },
+          ],
+        ]]),
       );
-      expect(projection.available).toEqual(new Map());
+      expect(projection.available).toEqual(
+        new Map([[project.id, [dependencyBlocker.id]]]),
+      );
+      expect(projection).toEqual(
+        getBaselineNextActionTaskIdsByProjectProjection(handle.db, "2026-11-21T00:00:00.000Z"),
+      );
     });
 
     it("includes active project descendants as containers and stops at terminal projects", () => {
@@ -330,6 +490,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         new Map([[container.id, [openAction.id]]]),
       );
       expect(activeProjection.available).toEqual(new Map([[childProject.id, [openAction.id]]]));
+      expect(activeProjection).toEqual(
+        getBaselineNextActionTaskIdsByProjectProjection(handle.db, "2026-11-21T00:00:00.000Z"),
+      );
 
       handle.db
         .update(schema.workItems)
@@ -349,6 +512,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
           [project.id, [container.id]],
           [childProject.id, [openAction.id]],
         ]),
+      );
+      expect(terminalProjection).toEqual(
+        getBaselineNextActionTaskIdsByProjectProjection(handle.db, "2026-11-21T00:00:00.000Z"),
       );
     });
 
