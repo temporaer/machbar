@@ -352,14 +352,16 @@ the three inheritance queries took about 76–78 ms each. The profiler records
 SQLite `EXPLAIN QUERY PLAN` output for each statement in the workflow artifact.
 
 The deep-chain fixture exposes a separate hierarchy sensitivity. At 100
-tasks, `Graph.load()` took 96 ms (84 ms in prepared SQL); the next-action
-recursive query accounted for 77 ms. At 1,000 and 5,000 tasks, the isolated
-measurement exceeded its 90-second limit. Those cases are recorded as timed
-out, not as successful samples, and the parent continued to produce the
-balanced measurements. This confirms a severe deep-chain scaling risk but
-does not distinguish whether the recursion, sort-key expansion, or another
-part of that query dominates at those depths. A focused query-level benchmark
-with controlled depth increments is the next diagnostic.
+tasks, the measured `Graph.load()` call took 96 ms (84 ms in prepared SQL);
+the next-action recursive query accounted for 77 ms. At 1,000 and 5,000 tasks,
+the **isolated profiling case** timed out at 90 seconds. That limit covers
+process startup, fixture seeding, warm-up `Graph.load()`, the measured call,
+and query-plan collection. The timeout therefore does not prove that one
+`Graph.load()` call itself takes more than 90 seconds. Those cases are
+recorded as timed out, not as successful samples, and the parent continued to
+produce the balanced measurements. They show a severe deep-chain scaling
+risk, while the per-query/depth threshold remains unmeasured. A focused
+query-level benchmark with controlled depth increments is the next diagnostic.
 
 The profiling run completed successfully:
 [run 44871845526](https://github.com/temporaer/machbar/actions/runs/44871845526).
@@ -367,3 +369,25 @@ Its JSON artifact is retained for seven days. The measurement-only harness is
 `apps/api/scripts/graph-load-profile.ts`; each fixture runs in a fresh Node
 process with a 2 GiB heap limit, a 90-second timeout, and independent result
 collection. No production code or read-model behavior changed.
+
+
+### Durable query-plan findings
+
+For the 5,000-task balanced fixture, SQLite `EXPLAIN QUERY PLAN` succeeded on
+the effective owner, tag, and physical-context statements. The recursive
+steps use `work_items_role_idx` to find task rows, then scan their recursive
+CTE state (`eff`, `ts`, or `parent`). The correlated relation lookups use
+covering indexes keyed by `work_item_id`; tag exclusions use the covering
+`task_excluded_tags` index. The tag plan also reports a temporary B-tree for
+an `ORDER BY`. These plans support a focused investigation of repeated
+recursive-state scans and correlated per-task inheritance lookups; they do not
+by themselves establish which sub-operation consumes the measured time.
+
+The dominant next-action sort-key query took about 10.5 s and returned 11,295
+rows, but `EXPLAIN QUERY PLAN` failed for this statement with SQLite's
+`incomplete input` error. Its query plan is therefore **not available** from
+this run, and the CTE names alone (`blocking_descendants`, `candidates`,
+`eligible`) are not a substitute for a plan. Follow-up [#350](https://github.com/temporaer/machbar/issues/350)
+will isolate this query over controlled hierarchy depths and capture a valid
+plan before proposing a production change. Follow-up [#351](https://github.com/temporaer/machbar/issues/351)
+tracks the inheritance queries separately.
