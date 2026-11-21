@@ -35,6 +35,20 @@ describe("detail checklist focus", () => {
     expect(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
   });
 
+  it("keeps the user's new checklist focus when the pending toggle succeeds", () => {
+    const value = "- [ ] First\n- [ ] Second";
+    const toggle = vi.fn();
+    const { rerender } = render(<DetailNotesPreview value={value} onChecklistToggle={toggle} />);
+    const first = screen.getByRole("checkbox", { name: "First" });
+    first.focus();
+    fireEvent.click(first);
+    rerender(<DetailNotesPreview value={value} onChecklistToggle={toggle} checklistDisabled />);
+    const second = screen.getByRole("checkbox", { name: "Second" });
+    second.focus();
+    rerender(<DetailNotesPreview value={"- [x] First\n- [ ] Second"} onChecklistToggle={toggle} />);
+    expect(second).toHaveFocus();
+  });
+
   it("does not focus a disconnected input or a replacement after a refresh", () => {
     const toggle = vi.fn();
     const { rerender } = render(<DetailNotesPreview value={before} onChecklistToggle={toggle} />);

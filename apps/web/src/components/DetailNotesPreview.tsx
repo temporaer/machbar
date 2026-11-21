@@ -12,7 +12,7 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
   const strings = useStrings();
   const id = useId();
   const content = useRef<HTMLDivElement>(null);
-  const checklistFocus = useRef<{ input: HTMLInputElement; before: string; after: string } | null>(null);
+  const checklistFocus = useRef<{ input: HTMLInputElement; before: string; after: string; restore: boolean } | null>(null);
   const focusedItem = useRef<{ input: HTMLInputElement; offset: number; value: string } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
@@ -69,17 +69,18 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
   }, [clipped, value, checklistDisabled, !!onChecklistToggle]);
   useLayoutEffect(() => {
     const focused = focusedItem.current;
+    const saved = checklistFocus.current;
     if (focused && document.activeElement === focused.input && focused.value !== value) {
       const { offset } = focused;
-      if (focused.value.slice(0, offset) !== value.slice(0, offset) ||
-          focused.value.slice(offset + 1) !== value.slice(offset + 1)) {
+      const submittedToggle = saved && focused.value === saved.before && value === saved.after;
+      if (!submittedToggle && (focused.value.slice(0, offset) !== value.slice(0, offset) ||
+          focused.value.slice(offset + 1) !== value.slice(offset + 1))) {
         focused.input.blur();
         focusedItem.current = null;
       } else {
         focused.value = value;
       }
     }
-    const saved = checklistFocus.current;
     if (!saved) return;
     const { input, before, after } = saved;
     if (value !== before && value !== after) {
@@ -87,14 +88,14 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
       return;
     }
     if (checklistDisabled) return;
-    if (input.isConnected && !input.matches(":disabled") && document.activeElement === document.body) input.focus({ preventScroll: true });
+    if (saved.restore && input.isConnected && !input.matches(":disabled") && document.activeElement === document.body) input.focus({ preventScroll: true });
     if (value === after) checklistFocus.current = null;
   }, [checklistDisabled, value]);
   useLayoutEffect(() => {
     const retire = (event: Event) => {
       const saved = checklistFocus.current;
       if (saved && event.target instanceof Node && !saved.input.closest("label")?.contains(event.target)) {
-        checklistFocus.current = null;
+        saved.restore = false;
       }
     };
     document.addEventListener("focusin", retire);
@@ -120,7 +121,7 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
       }} onClickCapture={blockClippedLink} onAuxClickCapture={blockClippedLink}
         onContextMenuCapture={blockClippedLink}><MarkdownNotes value={value} onChecklistToggle={onChecklistToggle ? next => {
           checklistFocus.current = document.activeElement instanceof HTMLInputElement && document.activeElement.type === "checkbox"
-            ? { input: document.activeElement, before: value, after: next } : null;
+            ? { input: document.activeElement, before: value, after: next, restore: true } : null;
           onChecklistToggle(next);
         } : undefined}
           checklistDisabled={checklistDisabled} /></div>

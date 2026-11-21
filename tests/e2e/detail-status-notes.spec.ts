@@ -270,6 +270,30 @@ for (const role of ["task", "project"] as const) {
   }
 }
 
+test("project checklist keeps moved focus when a pending toggle succeeds", async ({ page }) => {
+  const { item, path } = await create(page, "project", "- [ ] First\n- [ ] Second");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let writing = false;
+  await page.route(`**${path}/${item.id}`, async route => {
+    if (route.request().method() !== "PATCH") { await route.continue(); return; }
+    writing = true;
+    await gate;
+    await route.continue();
+  });
+  await page.goto(`/#/projects/${item.id}`);
+  const section = page.locator(".project-notes-section");
+  await section.getByRole("checkbox", { name: "First" }).focus();
+  await page.keyboard.press("Space");
+  await expect.poll(() => writing).toBe(true);
+  const second = section.getByRole("checkbox", { name: "Second" });
+  await second.focus();
+  release();
+  await expect(section.getByRole("checkbox", { name: "First" })).toBeChecked();
+  await expect(second).toHaveAttribute("aria-disabled", "false");
+  await expect(second).toBeFocused();
+});
+
 test("project checklist does not transfer focus to a different item on conflict", async ({ page }) => {
   const { item, path } = await create(page, "project", "- [ ] First\n- [ ] Second");
   let release!: () => void;
