@@ -68,7 +68,7 @@ describe("SearchFilterBar", () => {
     expect(screen.getByLabelText("Suchen")).toHaveValue("");
   });
 
-  it("debounces text queries and applies discrete filters immediately", async () => {
+  it("debounces text queries while applying discrete filters immediately", async () => {
     vi.useFakeTimers();
     try {
       mockedApi.getMembers.mockResolvedValue([]);
@@ -86,26 +86,23 @@ describe("SearchFilterBar", () => {
       fireEvent.change(search, { target: { value: "Kiste" } });
       expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent("{}");
 
+      fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+      fireEvent.change(screen.getByLabelText("Status"), {
+        target: { value: "actionable" },
+      });
+      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent('"status":"actionable"');
+      expect(screen.getByLabelText("Aktive Filter")).not.toHaveTextContent('"text"');
+
       await act(async () => {
         vi.advanceTimersByTime(249);
       });
-      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent("{}");
+      expect(screen.getByLabelText("Aktive Filter")).not.toHaveTextContent('"text"');
 
       await act(async () => {
         vi.advanceTimersByTime(1);
       });
       expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent('"text":"Kiste"');
-
-      await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Filter" }));
-      });
-      await act(async () => {
-        fireEvent.change(screen.getByLabelText("Status"), {
-          target: { value: "actionable" },
-        });
-      });
       expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent('"status":"actionable"');
-      expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent('"text":"Kiste"');
     } finally {
       vi.useRealTimers();
     }
