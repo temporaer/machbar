@@ -1,0 +1,55 @@
+name: Effective inheritance query profile
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/scripts/graph-load-profile.ts"
+      - "apps/api/src/repo/effectiveRepo.ts"
+      - ".github/workflows/effective-inheritance-profile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @machbar/shared
+      - name: Profile balanced and controlled-depth inheritance queries
+        run: |
+          set -euo pipefail
+          AUDIT_SIZES=1000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=180000 AUDIT_SHAPES=balanced,deep-chain AUDIT_DEPTHS=1,8,32,128,512,1000 npx tsx apps/api/scripts/graph-load-profile.ts > /tmp/inheritance-profile.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const report = JSON.parse(fs.readFileSync("/tmp/inheritance-profile.json", "utf8"));
+          const wanted = new Set(["eff", "tag_state", "context_state"]);
+          for (const { fixture, result } of report.results) {
+            for (const statement of result.statements) {
+              const cte = statement.ctes.find((name) => wanted.has(name));
+              if (!cte) continue;
+              const plan = result.queryPlans.find((candidate) => candidate.sql === statement.sql);
+              console.log("INHERITANCE_RESULT " + JSON.stringify({
+                shape: fixture.shape,
+                depth: fixture.maxHierarchyDepth,
+                cte,
+                executions: statement.executions,
+                rows: statement.rowsReturnedOrChanged,
+                elapsedMs: statement.elapsedMs,
+                queryPlan: plan?.plan?.map(({ detail }) => detail) ?? [],
+                explainError: plan?.explainError ?? null,
+              }));
+            }
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: effective-inheritance-profile
+          path: /tmp/inheritance-profile.json
+          retention-days: 7
