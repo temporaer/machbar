@@ -318,3 +318,52 @@ browser invalidation/refetch remain unmeasured.
 No architecture-changing follow-up should start until a human reviews this
 audit and approves its exact behavior/test scope. Preserve the existing
 mutation/read ownership and refresh architecture.
+
+## #347 single `Graph.load()` attribution
+
+Measured with the isolated profiler on the same GitHub-hosted runner for the
+pre-#343 revision, PR #343 head, and the current revision after #348. Each
+balanced-fixture value is the median of three fresh-process measurements,
+with one warm-up per measurement. Times are milliseconds.
+
+| Revision | Tasks | Wall | Prepared SQL | Outside prepared SQL |
+|---|---:|---:|---:|---:|
+| pre-#343 | 100 | 15.16 | 8.46 | 6.69 |
+| #343 head | 100 | 17.29 | 8.42 | 8.88 |
+| after #348 | 100 | 14.63 | 8.50 | 6.14 |
+| pre-#343 | 1,000 | 681.16 | 646.05 | 35.11 |
+| #343 head | 1,000 | 677.85 | 647.83 | 30.68 |
+| after #348 | 1,000 | 678.81 | 646.57 | 30.90 |
+| pre-#343 | 5,000 | 16,346.36 | 16,179.27 | 167.09 |
+| #343 head | 5,000 | 16,256.33 | 16,094.10 | 160.20 |
+| after #348 | 5,000 | 16,400.23 | 16,238.35 | 161.13 |
+
+The balanced fixture shows no material change across these revisions: one
+`Graph.load()` takes about 0.68 s at 1,000 tasks and 16.3 s at 5,000.
+At 5,000, prepared SQL accounts for about 99% of measured wall time, so graph
+assembly membership scans are not the main cost in this fixture.
+
+The largest query is the recursive next-action sort-key query. Its median was
+10,196 ms before #343, 10,278 ms at #343, and 10,357 ms after #348 for 5,000
+tasks (11,295 rows). The next three expensive statements compute effective
+tags, owners, and physical contexts; each took about 1.9–2.0 s and returned
+5,000 rows. At 1,000 tasks the same next-action query took about 411 ms, while
+the three inheritance queries took about 76–78 ms each. The profiler records
+SQLite `EXPLAIN QUERY PLAN` output for each statement in the workflow artifact.
+
+The deep-chain fixture exposes a separate hierarchy sensitivity. At 100
+tasks, `Graph.load()` took 96 ms (84 ms in prepared SQL); the next-action
+recursive query accounted for 77 ms. At 1,000 and 5,000 tasks, the isolated
+measurement exceeded its 90-second limit. Those cases are recorded as timed
+out, not as successful samples, and the parent continued to produce the
+balanced measurements. This confirms a severe deep-chain scaling risk but
+does not distinguish whether the recursion, sort-key expansion, or another
+part of that query dominates at those depths. A focused query-level benchmark
+with controlled depth increments is the next diagnostic.
+
+The profiling run completed successfully:
+[run 44871845526](https://github.com/temporaer/machbar/actions/runs/44871845526).
+Its JSON artifact is retained for seven days. The measurement-only harness is
+`apps/api/scripts/graph-load-profile.ts`; each fixture runs in a fresh Node
+process with a 2 GiB heap limit, a 90-second timeout, and independent result
+collection. No production code or read-model behavior changed.
