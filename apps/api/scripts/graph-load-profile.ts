@@ -8,6 +8,11 @@ import { openDb } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import type { Db } from "../src/db/client.js";
 import { Graph } from "../src/domain/graph.js";
+import {
+  getEffectiveOwners,
+  getEffectivePhysicalContextIds,
+  getEffectiveTagIds,
+} from "../src/repo/effectiveRepo.js";
 
 type QuerySample = { ms: number; executions: number; rows: number; args: unknown[] };
 type LoadSample = {
@@ -315,9 +320,23 @@ function oneLoad(db: Db, sqlite: Database.Database): LoadSample {
   activeQueries = queries;
   const startedAt = performance.now();
   let graph: Graph | undefined;
+  let taskRows = 0;
+  let projectRows = 0;
   let error: string | undefined;
   try {
-    graph = Graph.load(db);
+    if (process.env.GRAPH_PROFILE_MODE === "effective-inheritance") {
+      const owners = getEffectiveOwners(db);
+      const tags = getEffectiveTagIds(db);
+      const contexts = getEffectivePhysicalContextIds(db);
+      if (owners.size !== tags.size || owners.size !== contexts.size) {
+        throw new Error("Effective inheritance projections returned different task counts.");
+      }
+      taskRows = owners.size;
+    } else {
+      graph = Graph.load(db);
+      taskRows = graph.tasksById.size;
+      projectRows = graph.projectsById.size;
+    }
   } catch (caught) {
     error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   } finally {
@@ -329,8 +348,8 @@ function oneLoad(db: Db, sqlite: Database.Database): LoadSample {
     wallMs,
     sqlMs,
     querySamples: queries,
-    taskRows: graph?.tasksById.size ?? 0,
-    projectRows: graph?.projectsById.size ?? 0,
+    taskRows,
+    projectRows,
     ...(error ? { error } : {}),
   };
 }
@@ -367,6 +386,7 @@ function runIsolatedSample(
         GRAPH_PROFILE_SIZE: String(taskCount),
         GRAPH_PROFILE_SHAPE: shape,
         GRAPH_PROFILE_DEPTH: String(maxDepth),
+        GRAPH_PROFILE_MODE: process.env.AUDIT_MODE ?? "graph-load",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -564,7 +584,7 @@ async function main(): Promise<void> {
       sqlite: handleSqliteVersion(),
     },
     methodology: {
-      measuredUnit: "one direct Graph.load() call in a fresh isolated child process",
+      measuredUnit: process.env.AUDIT_MODE === "effective-inheritance" ? "one call to each effective inheritance repository query in a fresh isolated child process" : "one direct Graph.load() call in a fresh isolated child process",
       warmupsPerRepeat: 1,
       repeatedSamples: repeats,
       childHeapLimitMiB: 2048,
