@@ -1147,6 +1147,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
    * current eligibility -- see `additionalNextAction` on `Task`).
    */
   nextActionBadgeCanonical: "Nächste Aktion",
+  checklistProgress: (completed: number, total: number) => `Checkliste: ${completed} von ${total} erledigt`,
   nextActionBadgeAdditional: "Nächste Aktion · parallel",
   nextActionBadgeMarked: "parallel",
   markAdditionalNextAction: "Als weitere nächste Aktion markieren",

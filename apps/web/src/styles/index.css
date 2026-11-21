@@ -4256,6 +4256,10 @@ details[open] > .disclosure-summary::after {
   font-weight: 600;
 }
 
+.task-row-checklist-progress {
+  white-space: nowrap;
+}
+
 .task-row-state::after {
   width: 5px;
   height: 5px;

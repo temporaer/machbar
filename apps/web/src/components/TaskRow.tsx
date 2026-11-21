@@ -1,5 +1,5 @@
 import { NotesTail } from "./NotesTail";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { calendarDateForInstant, type Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -26,6 +26,7 @@ import { useLocale } from "../lib/locale";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
+import { markdownChecklistProgress } from "../lib/markdownChecklist";
 import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
 import { useHorizontalSwipe, DEEP_ACTION_THRESHOLD } from "../lib/useHorizontalSwipe";
 import { extractPaperlessReferences, markdownWithoutPaperlessReferences } from "../lib/paperlessAttachments";
@@ -140,6 +141,11 @@ export function TaskRow({
     () => markdownWithoutPaperlessReferences(task.notes),
     [task.notes],
   );
+  const checklistProgress = useMemo(
+    () => markdownChecklistProgress(task.notes),
+    [task.notes],
+  );
+  const checklistProgressDescriptionId = useId();
   const rowError = errors[taskProp.id];
   const showTodayRevisitActions =
     attentionTone === "revisit" &&
@@ -431,6 +437,7 @@ export function TaskRow({
               className="task-row-main"
               ref={mainButtonRef}
               aria-label={task.title}
+              aria-describedby={checklistProgress ? checklistProgressDescriptionId : undefined}
               disabled={outlineRefreshing}
               onClick={() => dispatch({ type: "task.open", taskId: task.id })}
             >
@@ -469,6 +476,17 @@ export function TaskRow({
                   {task.externalWait?.waitingFor?.trim() ? (
                     <span className="task-row-meta-item">
                       {strings.waitingFor}: {task.externalWait.waitingFor.trim()}
+                    </span>
+                  ) : null}
+                  {checklistProgress ? (
+                    <span
+                      className="task-row-meta-item task-row-checklist-progress"
+                      title={strings.checklistProgress(checklistProgress.completed, checklistProgress.total)}
+                    >
+                      <span aria-hidden="true">✓{checklistProgress.completed}/{checklistProgress.total}</span>
+                      <span id={checklistProgressDescriptionId} className="visually-hidden">
+                        {strings.checklistProgress(checklistProgress.completed, checklistProgress.total)}
+                      </span>
                     </span>
                   ) : null}
                   {task.dependencies

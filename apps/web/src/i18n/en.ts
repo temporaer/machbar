@@ -1203,6 +1203,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   reminderDeadlineRelative: "Deadline-relative",
   moreActions: "More actions",
   nextActionBadgeCanonical: "Next Action",
+  checklistProgress: (completed: number, total: number) => `Checklist: ${completed} of ${total} complete`,
   nextActionBadgeAdditional: "Next Action · parallel",
   nextActionBadgeMarked: "parallel",
   markAdditionalNextAction: "Mark as additional next action",
