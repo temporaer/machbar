@@ -291,6 +291,67 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(projection.available).toEqual(new Map());
     });
 
+    it("includes active project descendants as containers and stops at terminal projects", () => {
+      const project = createProject(handle.db, { title: "Projektstatus", status: "active" });
+      const container = createTask(handle.db, {
+        projectId: project.id,
+        title: "Projekt enthaltende Aufgabe",
+        status: "actionable",
+      });
+      const childProject = handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "story",
+          parentId: container.id,
+          title: "Unterprojekt",
+          status: "active",
+        })
+        .returning()
+        .get();
+      const openAction = handle.db
+        .insert(schema.workItems)
+        .values({
+          role: "task",
+          parentId: childProject.id,
+          title: "Offene Unteraufgabe",
+          status: "active",
+          taskKind: "action",
+        })
+        .returning()
+        .get();
+
+      const activeProjection = getNextActionTaskIdsByProjectProjection(
+        handle.db,
+        "2026-11-21T00:00:00.000Z",
+      );
+      expect(activeProjection.openProjectContainers).toEqual(new Set([container.id]));
+      expect(activeProjection.unfinishedWorkContainers).toEqual(new Set([container.id]));
+      expect(activeProjection.unfinishedWorkDescendantsByContainer).toEqual(
+        new Map([[container.id, [openAction.id]]]),
+      );
+      expect(activeProjection.available).toEqual(new Map([[childProject.id, [openAction.id]]]));
+
+      handle.db
+        .update(schema.workItems)
+        .set({ status: "done" })
+        .where(eq(schema.workItems.id, childProject.id))
+        .run();
+
+      const terminalProjection = getNextActionTaskIdsByProjectProjection(
+        handle.db,
+        "2026-11-21T00:00:00.000Z",
+      );
+      expect(terminalProjection.openProjectContainers).toEqual(new Set());
+      expect(terminalProjection.unfinishedWorkContainers).toEqual(new Set());
+      expect(terminalProjection.unfinishedWorkDescendantsByContainer).toEqual(new Map());
+      expect(terminalProjection.available).toEqual(
+        new Map([
+          [project.id, [container.id]],
+          [childProject.id, [openAction.id]],
+        ]),
+      );
+    });
+
     it("picks the first actionable, unblocked task in depth-first pre-order", () => {
       const project = createProject(handle.db, { title: "Projekt" });
       const root = createTask(handle.db, {
