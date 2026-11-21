@@ -64,9 +64,9 @@ export function getEffectiveOwners(
           WHEN eff.owner_source = 'project' THEN 'project'
           ELSE 'parent'
         END
-      FROM eff
-      CROSS JOIN work_items t
-      WHERE t.parent_id = eff.task_id AND t.role = 'task'
+      FROM work_items t
+      JOIN eff ON t.parent_id = eff.task_id
+      WHERE t.role = 'task'
     )
     SELECT task_id, owner_id, owner_source FROM eff
   `);
@@ -120,9 +120,9 @@ export function getEffectiveTagIds(db: Db): Map<number, number[]> {
             SELECT task_tags.tag_id FROM work_item_tags task_tags WHERE task_tags.work_item_id = t.id
           )
         )
-      FROM tag_state ts
-      CROSS JOIN work_items t
-      WHERE t.parent_id = ts.task_id AND t.role = 'task'
+      FROM work_items t
+      JOIN tag_state ts ON t.parent_id = ts.task_id
+      WHERE t.role = 'task'
     )
     SELECT task_id, effective_json FROM tag_state
   `);
@@ -173,9 +173,9 @@ export function getEffectivePhysicalContextIds(
             )
             ELSE parent.effective_json
           END
-        FROM context_state parent
-        CROSS JOIN work_items t
-        WHERE t.parent_id = parent.task_id AND t.role = 'task'
+        FROM work_items t
+        JOIN context_state parent ON t.parent_id = parent.task_id
+        WHERE t.role = 'task'
       )
       SELECT task_id, effective_json FROM context_state
   `);
