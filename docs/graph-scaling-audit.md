@@ -425,6 +425,30 @@ task before filtering to open work. The query plan confirmed this recursive
 materialization and repeated scans, while the measured next-action query grew
 from 163 ms at depth 1 to over 90 seconds at depth 1,000.
 
+A second comparison used three measured runs per point (one warm-up each) at
+depths 1, 64, 256, 512, and 1,000, switching only the next-action repository
+source between the PR base and optimized implementation on the same runner.
+Values below are median (p95) milliseconds:
+
+| Depth | Before Graph.load | After Graph.load | Before next-action SQL | After next-action SQL |
+|---:|---:|---:|---:|---:|
+| 1 | 401 (405) | 288 (289) | 172 (173) | 65 (67) |
+| 64 | 3,897 (3,898) | 428 (430) | 3,627 (3,630) | 162 (163) |
+| 256 | 14,345 (14,503) | 891 (897) | 13,952 (14,115) | 498 (501) |
+| 512 | 28,268 (28,868) | 1,591 (1,595) | 27,722 (28,321) | 1,042 (1,044) |
+| 1,000 | >90,000 (timeout) | 3,127 (3,134) | >90,000 (timeout) | 2,225 (2,233) |
+
+The sharp growth is already visible by depth 64 (3.6 s in the old query);
+depth 128 exceeds 7 s in the full one-sample matrix, and depths 256–512 reach
+14–28 s. The three-run depth-1,000 baseline exceeded its 90 s per-case bound,
+while the optimized query completed in about 2.2 s.
+
+The before query plan contains `MATERIALIZE task_descendants`, recursive child
+lookups, and automatic indexes over the closure. The after plan contains
+`MATERIALIZE ancestor_walk`; each recursive step scans the current walk and
+looks up the current node and parent by primary key. This confirms the narrowed
+traversal in the actual SQLite plan.
+
 The query now walks upward only from open actions and open project nodes to
 their task ancestors. That preserves the rows needed for the projection while
 avoiding closure rows for terminal actions and irrelevant branches. The
