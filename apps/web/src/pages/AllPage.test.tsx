@@ -135,6 +135,10 @@ describe("AllPage", () => {
     const search = await screen.findByRole("textbox", { name: "Suchen" });
 
     await userEvent.type(search, "Wohnung");
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith(
+      { text: "Wohnung", includeTerminal: true },
+      expect.any(AbortSignal),
+    ));
     expect(await screen.findByText("Wohnung streichen")).toBeInTheDocument();
     expect(screen.queryByText("Eigenständige Aufgabe")).not.toBeInTheDocument();
 
@@ -144,7 +148,7 @@ describe("AllPage", () => {
       expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
         text: "Projektfarbe",
         includeTerminal: true,
-      }),
+      }, expect.any(AbortSignal)),
     );
     expect(await screen.findByText("Projektfarbe auswählen")).toBeInTheDocument();
     expect(screen.queryByText("Projektwurzel")).not.toBeInTheDocument();
@@ -159,7 +163,7 @@ describe("AllPage", () => {
       expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
         kinds: ["reference"],
         includeTerminal: true,
-      }),
+      }, expect.any(AbortSignal)),
     );
     expect(await screen.findByRole("heading", { name: "Material" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Material öffnen: Haftpflichtbedingungen" }))
@@ -197,7 +201,7 @@ describe("AllPage", () => {
     await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
       status: "captured",
       includeTerminal: true,
-    }));
+    }, expect.any(AbortSignal)));
 
     await userEvent.click(material);
     expect(status).toHaveValue("");
@@ -205,7 +209,7 @@ describe("AllPage", () => {
     await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
       kinds: ["reference"],
       includeTerminal: true,
-    }));
+    }, expect.any(AbortSignal)));
     expect(await screen.findByRole("button", { name: "Material öffnen: Kassenbeleg" })).toBeVisible();
 
     await userEvent.click(material);
@@ -258,7 +262,6 @@ describe("AllPage", () => {
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("31");
   });
   it("ignores an obsolete search response after rapid typing", async () => {
-    vi.useFakeTimers();
     const pending: Array<(tasks: ReturnType<typeof makeTask>[]) => void> = [];
     mockedApi.searchTasks.mockImplementation(
       () => new Promise((resolve) => pending.push(resolve)),
@@ -269,15 +272,9 @@ describe("AllPage", () => {
       const search = screen.getByRole("textbox", { name: "Suchen" });
 
       fireEvent.change(search, { target: { value: "alt" } });
-      await act(async () => {
-        vi.advanceTimersByTime(250);
-      });
       await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
 
       fireEvent.change(search, { target: { value: "neu" } });
-      await act(async () => {
-        vi.advanceTimersByTime(250);
-      });
       await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(3));
 
       await act(async () => {
