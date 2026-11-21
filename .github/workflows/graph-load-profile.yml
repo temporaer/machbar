@@ -35,7 +35,11 @@ jobs:
             npm ci
             npm run build -w @machbar/shared
             local output="/tmp/graph-load-profiles/${label}.json"
-            AUDIT_SIZES=100,1000,5000 AUDIT_REPEATS=3 AUDIT_SHAPES=balanced,deep-chain \
+            local shapes="balanced"
+            if [[ "$label" == "current" ]]; then
+              shapes="balanced,deep-chain"
+            fi
+            AUDIT_SIZES=100,1000,5000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=90000 AUDIT_SHAPES="$shapes" \
               npx tsx apps/api/scripts/graph-load-profile.ts > "$output"
             node -e '
               const fs = require("node:fs");
