@@ -400,8 +400,10 @@ maximum hierarchy depths of 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, and 1,000.
 The deep-chain fixture partitions tasks into chains capped at the requested
 depth; task status, kind, ownership, tags, contexts, dependencies, and reminders
 are generated from the same task index in every case. Each point uses one warm-up
-and one measured `Graph.load()` in a fresh process. The table shows measured
-Graph wall time and the dominant next-action SQL statement time:
+and one measured `Graph.load()` in a fresh process. The depth-1,000 baseline
+case timed out under a 90-second limit covering setup, warm-up, graph load, and
+query-plan collection; its individual Graph and SQL durations are unavailable.
+The table shows measured Graph wall time and dominant next-action SQL time where available:
 
 | Depth | Before Graph | After Graph | Before next-action SQL | After next-action SQL |
 |---:|---:|---:|---:|---:|
@@ -415,15 +417,16 @@ Graph wall time and the dominant next-action SQL statement time:
 | 128 | 7,321 ms | 652 ms | 7,037 ms | 304 ms |
 | 256 | 13,379 ms | 997 ms | 13,033 ms | 548 ms |
 | 512 | 26,699 ms | 1,731 ms | 26,205 ms | 1,128 ms |
-| 1,000 | >90,000 ms (timeout) | 3,262 ms | >90,000 ms (timeout) | 2,285 ms |
+| 1,000 | case timed out | 3,262 ms | not measured (case timeout) | 2,285 ms |
 
 Before and after use the same runner, fixture, SQLite version, task count, and
 depth matrix. These are single-sample measurements, so small differences at
 shallow depths are not meaningful; the large-depth reduction is. The old
 `task_descendants` CTE generated task-to-descendant closure rows for every
 task before filtering to open work. The query plan confirmed this recursive
-materialization and repeated scans, while the measured next-action query grew
-from 163 ms at depth 1 to over 90 seconds at depth 1,000.
+materialization and repeated scans. The isolated depth-1,000 benchmark case timed
+out at 90 seconds, so no Graph.load or standalone query duration was recorded
+for that point.
 
 A second comparison used three measured runs per point (one warm-up each) at
 depths 1, 64, 256, 512, and 1,000, switching only the next-action repository
@@ -436,12 +439,13 @@ Values below are median (p95) milliseconds:
 | 64 | 3,897 (3,898) | 428 (430) | 3,627 (3,630) | 162 (163) |
 | 256 | 14,345 (14,503) | 891 (897) | 13,952 (14,115) | 498 (501) |
 | 512 | 28,268 (28,868) | 1,591 (1,595) | 27,722 (28,321) | 1,042 (1,044) |
-| 1,000 | >90,000 (timeout) | 3,127 (3,134) | >90,000 (timeout) | 2,225 (2,233) |
+| 1,000 | case timed out | 3,127 (3,134) | not measured (case timeout) | 2,225 (2,233) |
 
 The sharp growth is already visible by depth 64 (3.6 s in the old query);
 depth 128 exceeds 7 s in the full one-sample matrix, and depths 256–512 reach
-14–28 s. The three-run depth-1,000 baseline exceeded its 90 s per-case bound,
-while the optimized query completed in about 2.2 s.
+14–28 s. The three-run depth-1,000 baseline case hit its 90 s whole-case timeout
+(including setup and warm-up), so standalone query time was not measured; the
+after case completed in about 2.2 s.
 
 The before query plan contains `MATERIALIZE task_descendants`, recursive child
 lookups, and automatic indexes over the closure. The after plan contains
@@ -454,9 +458,8 @@ their task ancestors. That preserves the rows needed for the projection while
 avoiding closure rows for terminal actions and irrelevant branches. The
 projection still returns all open-action/ancestor pairs, so its output itself
 grows with the number of open actions and hierarchy depth; at depth 1,000 the
-measured query is 2.3 seconds. The depth-1,000 result is 27.6x faster than the
-depth-512 baseline query, and completes where the former depth-1,000 case timed
-out. These results justify the narrow recursive-query change; they do not imply
+measured query is about 2.2 seconds. It completes where the baseline's full
+isolated depth-1,000 case timed out. These results justify the narrow recursive-query change; they do not imply
 that all deep graph operations have the same profile.
 
 The reproduction command is:
