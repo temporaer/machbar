@@ -1,0 +1,58 @@
+name: Next action repeated depth profile
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/scripts/graph-load-profile.ts"
+      - "apps/api/src/repo/nextActionRepo.ts"
+      - ".github/workflows/next-action-repeated-depth-profile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @machbar/shared
+      - name: Compare baseline and optimized query at controlled depths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          cp apps/api/src/repo/nextActionRepo.ts /tmp/nextActionRepo.after.ts
+          git show "$BASE_SHA:apps/api/src/repo/nextActionRepo.ts" > apps/api/src/repo/nextActionRepo.ts
+          AUDIT_SIZES=1000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=90000 AUDIT_SHAPES=deep-chain AUDIT_DEPTHS=1,64,256,512,1000 npx tsx apps/api/scripts/graph-load-profile.ts > /tmp/depth-before.json
+          cp /tmp/nextActionRepo.after.ts apps/api/src/repo/nextActionRepo.ts
+          AUDIT_SIZES=1000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=90000 AUDIT_SHAPES=deep-chain AUDIT_DEPTHS=1,64,256,512,1000 npx tsx apps/api/scripts/graph-load-profile.ts > /tmp/depth-after.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          for (const [label, path] of [["before", "/tmp/depth-before.json"], ["after", "/tmp/depth-after.json"]]) {
+            const report = JSON.parse(fs.readFileSync(path, "utf8"));
+            for (const { fixture, result } of report.results) {
+              const query = result.statements[0];
+              console.log("REPEATED_DEPTH_RESULT " + JSON.stringify({
+                label,
+                depth: fixture.maxHierarchyDepth,
+                status: result.status,
+                wallMs: result.totals.wallMs,
+                sqlMs: result.totals.sqlMs,
+                nextActionSqlMs: query?.elapsedMs ?? null,
+                queryPlans: result.queryPlans.map(({ ctes, explainError, plan }) => ({ ctes, explainError, plan: plan.map(({ detail }) => detail) })),
+                failures: result.failures,
+              }));
+            }
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: next-action-repeated-depth-profile
+          path: /tmp/depth-*.json
+          retention-days: 7
