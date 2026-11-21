@@ -23,7 +23,9 @@ type QueryAggregate = { sql: string; samples: QuerySample[] };
 let activeQueries: Map<string, QuerySample> | undefined;
 
 function normalizeSql(sql: string): string {
-  return sql.replace(/\s+/g, " ").trim();
+  // Preserve line comments and quoted whitespace so the key remains executable
+  // SQL for EXPLAIN QUERY PLAN. Exact source text is stable across repetitions.
+  return sql.trim();
 }
 
 function resultRows(method: string, result: unknown): number {
@@ -123,7 +125,12 @@ function addRelations(sqlite: Database.Database, taskId: number, index: number):
   }
 }
 
-function seedFixture(sqlite: Database.Database, taskCount: number, shape: "balanced" | "deep-chain") {
+function seedFixture(
+  sqlite: Database.Database,
+  taskCount: number,
+  shape: "balanced" | "deep-chain",
+  maxDepth = taskCount,
+) {
   sqlite.prepare("INSERT INTO members (name, color) VALUES (?, ?)").run("Profile owner", "#334155");
   sqlite.prepare("INSERT INTO members (name, color) VALUES (?, ?)").run("Profile second owner", "#64748b");
 
@@ -167,8 +174,8 @@ function seedFixture(sqlite: Database.Database, taskCount: number, shape: "balan
       let parentId: number;
       if (shape === "deep-chain") {
         projectIndex = 0;
-        localIndex = index;
-        parentId = index === 0 ? projects[0]! : taskIds[index - 1]!;
+        localIndex = index % maxDepth;
+        parentId = localIndex === 0 ? projects[0]! : taskIds[index - 1]!;
       } else {
         projectIndex = index % projectCount;
         const previousInProject = tasksByProject[projectIndex]!;
@@ -211,7 +218,7 @@ function seedFixture(sqlite: Database.Database, taskCount: number, shape: "balan
     projectCount,
     taskCount,
     shape,
-    maxHierarchyDepth: shape === "deep-chain" ? taskCount : Math.min(4, taskCount),
+    maxHierarchyDepth: shape === "deep-chain" ? Math.min(maxDepth, taskCount) : Math.min(4, taskCount),
   };
 }
 
@@ -339,6 +346,7 @@ function runIsolatedSample(
   taskCount: number,
   shape: "balanced" | "deep-chain",
   timeoutMs: number,
+  maxDepth: number,
 ): Promise<IsolatedRun> {
   return new Promise((resolve) => {
     const startedAt = performance.now();
@@ -358,6 +366,7 @@ function runIsolatedSample(
         GRAPH_PROFILE_CHILD: "1",
         GRAPH_PROFILE_SIZE: String(taskCount),
         GRAPH_PROFILE_SHAPE: shape,
+        GRAPH_PROFILE_DEPTH: String(maxDepth),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -469,10 +478,10 @@ function mergeSuccessfulSamples(
   };
 }
 
-async function runShape(taskCount: number, shape: "balanced" | "deep-chain", repeats: number, timeoutMs: number) {
+async function runShape(taskCount: number, shape: "balanced" | "deep-chain", repeats: number, timeoutMs: number, maxDepth: number) {
   const runs: IsolatedRun[] = [];
   for (let index = 0; index < repeats; index += 1) {
-    const run = await runIsolatedSample(taskCount, shape, timeoutMs);
+    const run = await runIsolatedSample(taskCount, shape, timeoutMs, maxDepth);
     runs.push(run);
     console.error("PROFILE_PROGRESS " + JSON.stringify({
       shape,
@@ -489,14 +498,16 @@ async function runShape(taskCount: number, shape: "balanced" | "deep-chain", rep
 async function childMain(): Promise<void> {
   const taskCount = Number(process.env.GRAPH_PROFILE_SIZE);
   const shape = process.env.GRAPH_PROFILE_SHAPE;
-  if (!Number.isInteger(taskCount) || taskCount < 1 || (shape !== "balanced" && shape !== "deep-chain")) {
+  const maxDepth = Number(process.env.GRAPH_PROFILE_DEPTH ?? taskCount);
+  if (!Number.isInteger(taskCount) || taskCount < 1 || (shape !== "balanced" && shape !== "deep-chain") ||
+      !Number.isInteger(maxDepth) || maxDepth < 1 || maxDepth > taskCount) {
     throw new Error("Invalid isolated Graph.load fixture arguments.");
   }
 
   const handle = openDb(":memory:");
   try {
     runMigrations(handle.db);
-    const fixture = seedFixture(handle.sqlite, taskCount, shape);
+    const fixture = seedFixture(handle.sqlite, taskCount, shape, maxDepth);
     installStatementProfiler(handle.sqlite);
     oneLoad(handle.db, handle.sqlite);
     (globalThis as typeof globalThis & { gc?: () => void }).gc?.();
@@ -522,6 +533,9 @@ async function main(): Promise<void> {
   const shapes = (process.env.AUDIT_SHAPES ?? "balanced,deep-chain")
     .split(",").map((value) => value.trim())
     .filter((value): value is "balanced" | "deep-chain" => value === "balanced" || value === "deep-chain");
+  const requestedDepths = (process.env.AUDIT_DEPTHS ?? "")
+    .split(",").map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
   if (sizes.length === 0 || repeats < 1 || !Number.isInteger(repeats) ||
       shapes.length === 0 || !Number.isInteger(timeoutMs) || timeoutMs < 1000) {
     throw new Error("AUDIT_SIZES, AUDIT_SHAPES, AUDIT_REPEATS and AUDIT_CASE_TIMEOUT_MS must be valid.");
@@ -530,8 +544,13 @@ async function main(): Promise<void> {
   const results = [];
   for (const size of sizes) {
     for (const shape of shapes) {
-      const result = await runShape(size, shape, repeats, timeoutMs);
-      results.push({ fixture: { shape, taskCount: size }, result });
+      const depths = shape === "deep-chain" && requestedDepths.length > 0
+        ? requestedDepths.map((depth) => Math.min(depth, size))
+        : [Math.min(size, shape === "balanced" ? 4 : size)];
+      for (const maxDepth of [...new Set(depths)]) {
+        const result = await runShape(size, shape, repeats, timeoutMs, maxDepth);
+        results.push({ fixture: { shape, taskCount: size, maxHierarchyDepth: maxDepth }, result });
+      }
     }
   }
 
@@ -552,6 +571,7 @@ async function main(): Promise<void> {
       childTimeoutMs: timeoutMs,
       fixtures: shapes,
       sizes,
+      controlledDepths: requestedDepths,
       sqlMetrics: "prepared statement wall time, call count, and result/change rows; grouped by normalized SQL text",
       queryPlans: "EXPLAIN QUERY PLAN for each observed SELECT/WITH statement after each measured call",
       notes: [
