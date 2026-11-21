@@ -142,7 +142,7 @@ const checklistComponents: Components = {
     const strings = useStrings();
     if (!checklist || !item || props.type !== "checkbox") return <input {...props} checked={checked} />;
     return <label className="markdown-checklist-toggle"><input {...props} disabled={false}
-      data-checklist-toggle="" aria-disabled={checklist.disabled} checked={checked} aria-label={item.label || strings.markdownTaskList}
+      data-checklist-toggle="" data-checklist-offset={item.offset} aria-disabled={checklist.disabled} checked={checked} aria-label={item.label || strings.markdownTaskList}
       onClick={event => { if (checklist.disabled) event.preventDefault(); }}
       onChange={event => {
         const marker = checklist.value[item.offset];

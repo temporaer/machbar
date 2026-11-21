@@ -100,6 +100,18 @@ for (const role of ["task", "project"] as const) {
     await expect(checkbox).toHaveAttribute("aria-disabled", "false");
   });
 
+  test(`${role} checklist keeps keyboard focus after a successful save`, async ({ page }) => {
+    const { item } = await create(page, role, "- [ ] Item");
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkbox = section.getByRole("checkbox", { name: "Item" });
+    await checkbox.focus();
+    await page.keyboard.press("Space");
+    await expect(checkbox).toBeChecked();
+    await expect(checkbox).toHaveAttribute("aria-disabled", "false");
+    await expect(checkbox).toBeFocused();
+  });
+
   test(`${role} clipped preview exposes only unobscured checkboxes`, async ({ page }) => {
     const notes = "- [ ] Visible\n\n" + Array.from({ length: 12 }, (_, i) => `Paragraph ${i}`).join("\n\n") + "\n\n- [ ] Hidden";
     const { item } = await create(page, role, notes);
@@ -257,6 +269,32 @@ for (const role of ["task", "project"] as const) {
     });
   }
 }
+
+test("project checklist does not transfer focus to a different item on conflict", async ({ page }) => {
+  const { item, path } = await create(page, "project", "- [ ] First\n- [ ] Second");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let writing = false;
+  await page.route(`**${path}/${item.id}`, async route => {
+    if (route.request().method() !== "PATCH") { await route.continue(); return; }
+    writing = true;
+    await gate;
+    await route.continue();
+  });
+  await page.goto(`/#/projects/${item.id}`);
+  const section = page.locator(".project-notes-section");
+  await section.getByRole("checkbox", { name: "First" }).focus();
+  await page.keyboard.press("Space");
+  await expect.poll(() => writing).toBe(true);
+  await section.getByRole("checkbox", { name: "Second" }).focus();
+  const notes = "- [ ] Inserted\n- [ ] First\n- [ ] Second";
+  expect((await page.request.patch(`${path}/${item.id}`, { data: { notes, expectedRevision: item.revision } })).ok()).toBe(true);
+  release();
+  await expect(section.getByRole("checkbox", { name: "Inserted" })).toBeVisible();
+  await expect(section.getByRole("checkbox", { name: "First" })).not.toBeFocused();
+  await page.keyboard.press("Space");
+  expect((await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(notes);
+});
 
 test("task descendant confirmation hands saving feedback back to details", async ({ page }) => {
   const { item } = await create(page, "task");
