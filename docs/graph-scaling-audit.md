@@ -472,3 +472,56 @@ The repository tests now pin the full next-action projection across a nested
 reference, an externally waiting action, a future revisit, and a terminal
 descendant. Existing tests continue to cover dependency blockers, project and
 work-container semantics, preorder, and candidate availability.
+
+## #351: effective inheritance query profile
+
+The three effective-inheritance queries were measured directly (without the
+rest of `Graph.load()`) on the same GitHub Actions Ubuntu runner, SQLite
+version and generated fixture. Each point used one warm-up and three measured
+runs; the table reports median and p95 milliseconds. Every run returned exactly
+5,000 rows.
+
+| Fixture | Max depth | Effective owner | Effective tags | Physical context |
+|---|---:|---:|---:|---:|
+| Balanced | 4 | 1,039.88 (1,055.61) | 1,047.15 (1,065.09) | 1,037.97 (1,042.51) |
+| Deep chain | 1 | 1,019.81 (1,020.60) | 1,019.64 (1,029.20) | 1,017.96 (1,019.21) |
+| Deep chain | 64 | 1,031.15 (1,033.02) | 1,044.41 (1,048.34) | 1,032.36 (1,033.21) |
+| Deep chain | 512 | 1,028.35 (1,036.35) | 1,044.30 (1,047.02) | 1,031.91 (1,033.16) |
+| Deep chain | 5,000 | 1,026.41 (1,032.03) | 1,039.39 (1,049.40) | 1,028.16 (1,030.31) |
+
+All three took about one second at 5,000 tasks, independent of hierarchy depth.
+No single inheritance domain dominated. The plans showed the recursive step
+searching all task rows through `work_items_role_idx` and scanning the recursive
+state to match children, despite the existing `work_items_parent_idx`.
+
+An isolated experiment changed only the recursive join order to drive from
+each already-resolved parent and look up children through
+`work_items_parent_idx`. The plan then changed to `SCAN` the recursive state
+followed by `SEARCH work_items USING INDEX work_items_parent_idx (parent_id=?)`.
+With the same 5,000-row fixtures and three runs, measured medians were:
+
+| Fixture | Max depth | Effective owner | Effective tags | Physical context |
+|---|---:|---:|---:|---:|
+| Balanced | 4 | 5.33 ms (5.59) | 8.03 ms (8.58) | 4.63 ms (4.87) |
+| Deep chain | 1 | 3.38 ms (3.92) | 5.08 ms (5.22) | 4.48 ms (4.62) |
+| Deep chain | 64 | 5.65 ms (5.88) | 12.42 ms (12.80) | 4.99 ms (5.54) |
+| Deep chain | 512 | 5.54 ms (12.05) | 12.97 ms (18.09) | 5.37 ms (10.87) |
+| Deep chain | 5,000 | 5.53 ms (5.88) | 12.92 ms (13.04) | 4.33 ms (4.95) |
+
+The parent-driven plan is roughly 100–250 times faster in these fixtures.
+Tag inheritance remains the slowest of the three after the change, consistent
+with JSON set construction, exclusions, and a temporary ordering B-tree in its
+plan. This is evidence for a narrow query-level optimization, not a general
+claim about all graph reads. The experimental source change is not included in
+this measurement PR; a separate reviewed change should preserve these values
+and verify effective outputs against canonical graph behavior for inherited,
+explicit, and disabled modes, nested tasks, and viewer-filtered graph loads.
+
+The measurement harness can be rerun with:
+
+```bash
+AUDIT_MODE=effective-inheritance AUDIT_SIZES=5000 AUDIT_REPEATS=3 AUDIT_CASE_TIMEOUT_MS=180000 AUDIT_SHAPES=balanced,deep-chain AUDIT_DEPTHS=1,64,512,5000 npx tsx apps/api/scripts/graph-load-profile.ts
+```
+
+The temporary GitHub Actions workflow used to collect these measurements is
+removed from this PR; the script mode remains available for reproduction.
