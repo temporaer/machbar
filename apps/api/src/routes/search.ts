@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { Graph } from "../domain/graph.js";
-import { searchTaskRecords } from "../domain/search.js";
+import { searchTaskOutlines, searchTaskRecords } from "../domain/search.js";
 import { searchQuerySchema } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 
@@ -15,6 +15,8 @@ export function registerSearchRoutes(app: FastifyInstance, db: Db) {
       db,
       request.authMember?.id ?? request.activityActor?.id ?? undefined,
     );
-    return searchTaskRecords(taskRecords, query);
+    return query.outline
+      ? searchTaskOutlines(taskRecords, query)
+      : searchTaskRecords(taskRecords, query);
   });
 }

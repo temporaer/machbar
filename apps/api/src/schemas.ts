@@ -713,6 +713,7 @@ export const searchQuerySchema = z.object({
   blocked: queryBoolean.optional(),
   externalWait: queryBoolean.optional(),
   includeTerminal: queryBoolean.optional(),
+  outline: queryBoolean.optional(),
   kinds: z
     .string()
     .optional()

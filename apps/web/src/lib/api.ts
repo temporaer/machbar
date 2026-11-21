@@ -218,6 +218,25 @@ function query(
   return s ? `?${s}` : "";
 }
 
+function searchQuery(filters: SearchFilters, outline = false): string {
+  return `/search${query({
+    text: filters.text,
+    ownerId: filters.ownerId,
+    projectId: filters.projectId,
+    tagIds: filters.tagIds,
+    status: filters.status,
+    dueFrom: filters.dueFrom,
+    dueTo: filters.dueTo,
+    scheduledFrom: filters.scheduledFrom,
+    scheduledTo: filters.scheduledTo,
+    blocked: filters.blocked,
+    externalWait: filters.externalWait,
+    includeTerminal: filters.includeTerminal,
+    kinds: filters.kinds?.join(","),
+    outline: outline || undefined,
+  })}`;
+}
+
 /** Matches the transactional task lifecycle policy accepted by complete/cancel. */
 export type TaskDescendantsPolicy =
   | "leave_open"
@@ -985,24 +1004,9 @@ export const api = {
       method: "DELETE",
     }),
   searchTasks: (filters: SearchFilters, signal?: AbortSignal) =>
-    request<Task[]>(
-      `/search${query({
-        text: filters.text,
-        ownerId: filters.ownerId,
-        projectId: filters.projectId,
-        tagIds: filters.tagIds,
-        status: filters.status,
-        dueFrom: filters.dueFrom,
-        dueTo: filters.dueTo,
-        scheduledFrom: filters.scheduledFrom,
-        scheduledTo: filters.scheduledTo,
-        blocked: filters.blocked,
-        externalWait: filters.externalWait,
-        includeTerminal: filters.includeTerminal,
-        kinds: filters.kinds?.join(","),
-      })}`,
-      signal ? { signal } : undefined,
-    ),
+    request<Task[]>(searchQuery(filters), signal ? { signal } : undefined),
+  searchTaskOutlines: (filters: SearchFilters, signal?: AbortSignal) =>
+    request<Task[]>(searchQuery(filters, true), signal ? { signal } : undefined),
 
   getTask: (id: number) => request<TaskDetail>(`/tasks/${id}`),
   acknowledgeTaskReview: (id: number, expectedRevision: number) =>

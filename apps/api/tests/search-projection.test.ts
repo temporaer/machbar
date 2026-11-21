@@ -4,7 +4,7 @@ import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
 import { createProject } from "../src/domain/storyCrud.js";
 import { createChildTask, createTask } from "../src/domain/taskCrud.js";
-import { searchTaskRecords, searchTasks } from "../src/domain/search.js";
+import { searchTaskOutlines, searchTaskRecords, searchTasks } from "../src/domain/search.js";
 import type { SearchFilters } from "@machbar/shared";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -49,6 +49,12 @@ describe("search task projection", () => {
     const publicChild = createChildTask(ctx.handle.db, publicTask.id, {
       title: "Werkzeug öffentliche Teilaufgabe",
     });
+    const publicReference = createTask(ctx.handle.db, {
+      parentTaskId: publicTask.id,
+      kind: "reference",
+      title: "Manual reference material",
+      notes: "Manual details",
+    });
     const nestedActiveProject = ctx.handle.db.insert(schema.workItems).values({
       parentId: publicTask.id,
       role: "story",
@@ -80,6 +86,7 @@ describe("search task projection", () => {
       { text: "werkzeug ordnungsamt", includeTerminal: true },
       { text: "boundary", includeTerminal: true },
       { text: "KELLERKRAN", includeTerminal: true },
+      { text: "manual", kinds: ["reference"], includeTerminal: true },
       { ownerId: alice.id, includeTerminal: true },
       { projectId: nestedActiveProject.id, ownerId: alice.id, tagIds: [inheritedTag.id], includeTerminal: true },
       { ownerId: bob.id, tagIds: [inheritedTag.id], includeTerminal: true },
@@ -95,6 +102,26 @@ describe("search task projection", () => {
       const projectedTasks = Graph.loadSearchTasks(ctx.handle.db, viewerId);
       for (const filters of filterSets) {
         expect(searchTaskRecords(projectedTasks, filters)).toEqual(searchTasks(graph, filters));
+        const fullMatches = searchTasks(graph, filters);
+        if (filters.kinds?.includes("reference")) {
+          expect(searchTaskOutlines(projectedTasks, filters)).toEqual(
+            fullMatches.map((task) => ({ ...task, children: [] })),
+          );
+        } else {
+          const matchedIds = new Set(fullMatches.map((task) => task.id));
+          const allTasksById = new Map(graph.allTasks().map((task) => [task.id, task]));
+          const expectedRoots = fullMatches.filter((task) => {
+            const seen = new Set<number>([task.id]);
+            let parentId = task.parentTaskId;
+            while (parentId !== null && !seen.has(parentId)) {
+              if (matchedIds.has(parentId)) return false;
+              seen.add(parentId);
+              parentId = allTasksById.get(parentId)?.parentTaskId ?? null;
+            }
+            return true;
+          });
+          expect(searchTaskOutlines(projectedTasks, filters)).toEqual(expectedRoots);
+        }
       }
     }
 
@@ -117,6 +144,28 @@ describe("search task projection", () => {
       text: "boundary", includeTerminal: true,
     });
     expect(nestedBob.map((task) => task.id)).not.toContain(nestedProjectTask.id);
+    const materialOutline = searchTaskOutlines(Graph.loadSearchTasks(ctx.handle.db), {
+      text: "manual", kinds: ["reference"], includeTerminal: true,
+    });
+    expect(materialOutline.map((task) => task.id)).toEqual([publicReference.id]);
+    expect(materialOutline[0]?.children).toEqual([]);
+
+    const routeFull = await ctx.app.inject({
+      method: "GET",
+      url: "/api/search?text=werkzeug&includeTerminal=true",
+    });
+    const routeOutline = await ctx.app.inject({
+      method: "GET",
+      url: "/api/search?text=werkzeug&includeTerminal=true&outline=true",
+    });
+    expect(routeOutline.statusCode).toBe(200);
+    expect(Buffer.byteLength(routeOutline.body)).toBeLessThan(
+      Buffer.byteLength(routeFull.body),
+    );
+    expect(routeOutline.json()).toEqual(searchTaskOutlines(
+      Graph.loadSearchTasks(ctx.handle.db, undefined),
+      { text: "werkzeug", includeTerminal: true },
+    ));
 
     const hierarchyResults = searchTaskRecords(Graph.loadSearchTasks(ctx.handle.db, alice.id), {
       text: "Werkzeug", includeTerminal: true,

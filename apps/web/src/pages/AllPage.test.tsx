@@ -24,6 +24,7 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn().mockResolvedValue([]),
     getProjects: vi.fn(),
     searchTasks: vi.fn(),
+    searchTaskOutlines: vi.fn(),
     getPaperlessStatus: vi.fn(),
   },
 }));
@@ -98,6 +99,9 @@ describe("AllPage", () => {
       if (filters.text) return [];
       return [projectTask, nested, standalone, standaloneChild, cancelled];
     });
+    mockedApi.searchTaskOutlines.mockImplementation((filters, signal) =>
+      mockedApi.searchTasks(filters, signal),
+    );
   });
 
   it("keeps text search first in the inventory and waits for intentional focus", async () => {
