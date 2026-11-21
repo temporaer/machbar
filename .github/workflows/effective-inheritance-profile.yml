@@ -32,8 +32,8 @@ jobs:
           const wanted = new Set(["eff", "tag_state", "context_state"]);
           for (const { fixture, result } of report.results) {
             for (const statement of result.statements) {
-              const cte = statement.ctes.find((name) => wanted.has(name));
-              if (!cte) continue;
+              const cte = statement.sql.match(/^\\s*WITH RECURSIVE\\s+([a-z_]+)\\s*\\(/i)?.[1];
+              if (!cte || !wanted.has(cte)) continue;
               const plan = result.queryPlans.find((candidate) => candidate.sql === statement.sql);
               console.log("INHERITANCE_RESULT " + JSON.stringify({
                 shape: fixture.shape,
