@@ -499,7 +499,7 @@ async function childMain(): Promise<void> {
     const fixture = seedFixture(handle.sqlite, taskCount, shape);
     installStatementProfiler(handle.sqlite);
     oneLoad(handle.db, handle.sqlite);
-    global.gc?.();
+    (globalThis as typeof globalThis & { gc?: () => void }).gc?.();
     const sample = oneLoad(handle.db, handle.sqlite);
     const result = summarize(taskCount, shape, 1, [sample], handle.sqlite);
     console.log(JSON.stringify({ fixture, result }));
