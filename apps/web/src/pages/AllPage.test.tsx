@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
@@ -135,6 +135,10 @@ describe("AllPage", () => {
     const search = await screen.findByRole("textbox", { name: "Suchen" });
 
     await userEvent.type(search, "Wohnung");
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith(
+      { text: "Wohnung", includeTerminal: true },
+      expect.any(AbortSignal),
+    ));
     expect(await screen.findByText("Wohnung streichen")).toBeInTheDocument();
     expect(screen.queryByText("Eigenständige Aufgabe")).not.toBeInTheDocument();
 
@@ -144,7 +148,7 @@ describe("AllPage", () => {
       expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
         text: "Projektfarbe",
         includeTerminal: true,
-      }),
+      }, expect.any(AbortSignal)),
     );
     expect(await screen.findByText("Projektfarbe auswählen")).toBeInTheDocument();
     expect(screen.queryByText("Projektwurzel")).not.toBeInTheDocument();
@@ -159,7 +163,7 @@ describe("AllPage", () => {
       expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
         kinds: ["reference"],
         includeTerminal: true,
-      }),
+      }, expect.any(AbortSignal)),
     );
     expect(await screen.findByRole("heading", { name: "Material" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Material öffnen: Haftpflichtbedingungen" }))
@@ -197,7 +201,7 @@ describe("AllPage", () => {
     await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
       status: "captured",
       includeTerminal: true,
-    }));
+    }, expect.any(AbortSignal)));
 
     await userEvent.click(material);
     expect(status).toHaveValue("");
@@ -205,7 +209,7 @@ describe("AllPage", () => {
     await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
       kinds: ["reference"],
       includeTerminal: true,
-    }));
+    }, expect.any(AbortSignal)));
     expect(await screen.findByRole("button", { name: "Material öffnen: Kassenbeleg" })).toBeVisible();
 
     await userEvent.click(material);
@@ -257,4 +261,31 @@ describe("AllPage", () => {
     await userEvent.keyboard("m");
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("31");
   });
+  it("ignores an obsolete search response after rapid typing", async () => {
+    const pending: Array<(tasks: ReturnType<typeof makeTask>[]) => void> = [];
+    mockedApi.searchTasks.mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    renderWithProviders(<AllPage />);
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(1));
+    const search = screen.getByRole("textbox", { name: "Suchen" });
+
+    fireEvent.change(search, { target: { value: "alt" } });
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
+
+    fireEvent.change(search, { target: { value: "neu" } });
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      pending[2]!([makeTask({ id: 91, title: "Neueste Suche" })]);
+    });
+    expect(await screen.findByText("Neueste Suche")).toBeInTheDocument();
+
+    await act(async () => {
+      pending[1]!([makeTask({ id: 92, title: "Veraltete Suche" })]);
+    });
+    expect(screen.getByText("Neueste Suche")).toBeInTheDocument();
+    expect(screen.queryByText("Veraltete Suche")).not.toBeInTheDocument();
+  });
+
 });

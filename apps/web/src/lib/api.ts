@@ -984,7 +984,7 @@ export const api = {
     request<void>(`/integrations/mcp/agents/${id}`, {
       method: "DELETE",
     }),
-  searchTasks: (filters: SearchFilters) =>
+  searchTasks: (filters: SearchFilters, signal?: AbortSignal) =>
     request<Task[]>(
       `/search${query({
         text: filters.text,
@@ -1001,6 +1001,7 @@ export const api = {
         includeTerminal: filters.includeTerminal,
         kinds: filters.kinds?.join(","),
       })}`,
+      signal ? { signal } : undefined,
     ),
 
   getTask: (id: number) => request<TaskDetail>(`/tasks/${id}`),

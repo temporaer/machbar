@@ -79,7 +79,7 @@ export function AllPage() {
     refreshError: tasksRefreshError,
     reload: reloadTasks,
   } = useAsync(
-    () => api.searchTasks({ ...filters, includeTerminal: true }),
+    (signal) => api.searchTasks({ ...filters, includeTerminal: true }, signal),
     [filtersKey, currentMemberId],
     accessResource,
   );
