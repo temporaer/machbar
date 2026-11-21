@@ -487,7 +487,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(activeProjection.openProjectContainers).toEqual(new Set([container.id]));
       expect(activeProjection.unfinishedWorkContainers).toEqual(new Set([container.id]));
       expect(activeProjection.unfinishedWorkDescendantsByContainer).toEqual(
-        new Map([[container.id, [openAction.id]]]),
+        new Map([[container.id, [childProject.id, openAction.id]]]),
       );
       expect(activeProjection.available).toEqual(new Map([[childProject.id, [openAction.id]]]));
       expect(activeProjection).toEqual(
