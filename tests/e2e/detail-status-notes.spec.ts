@@ -17,6 +17,24 @@ async function create(page: Page, role: "task" | "project", notes = "") {
 }
 
 for (const role of ["task", "project"] as const) {
+  test(`${role} checklist toggles persist only the chosen marker`, async ({ page }) => {
+    const notes = "- [ ] Same\n  - [X] Same\n- [ ] Same\n\n[Reference](https://example.com/)";
+    const { item, path } = await create(page, role, notes);
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkboxes = section.getByRole("checkbox");
+    await expect(checkboxes).toHaveCount(3);
+    await checkboxes.nth(1).focus();
+    await page.keyboard.press("Space");
+    const expected = notes.replace("[X]", "[ ]");
+    await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(expected);
+    await expect(checkboxes.nth(1)).not.toBeChecked();
+    await checkboxes.nth(2).click();
+    await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes)
+      .toBe(expected.replace("- [ ] Same\n\n", "- [x] Same\n\n"));
+    await expect(section.getByRole("link", { name: "Reference" })).toHaveAttribute("href", "https://example.com/");
+  });
+
   test(`${role} notes measure actual overflow, group actions, expand and edit in the document`, async ({ page }, info) => {
     const notes = Array.from({ length: 12 }, (_, i) => `Paragraph ${i}: **Keep this context** with several words that wrap on a narrow screen.`).join("\n\n") + "\n\n- [ ] A pending point\n- [x] A completed point\n\n[Reference](https://example.com/)";
     const { item } = await create(page, role, notes);
