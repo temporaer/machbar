@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
@@ -257,4 +257,42 @@ describe("AllPage", () => {
     await userEvent.keyboard("m");
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("31");
   });
+  it("ignores an obsolete search response after rapid typing", async () => {
+    vi.useFakeTimers();
+    const pending: Array<(tasks: ReturnType<typeof makeTask>[]) => void> = [];
+    mockedApi.searchTasks.mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    try {
+      renderWithProviders(<AllPage />);
+      await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(1));
+      const search = screen.getByRole("textbox", { name: "Suchen" });
+
+      fireEvent.change(search, { target: { value: "alt" } });
+      await act(async () => {
+        vi.advanceTimersByTime(250);
+      });
+      await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
+
+      fireEvent.change(search, { target: { value: "neu" } });
+      await act(async () => {
+        vi.advanceTimersByTime(250);
+      });
+      await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(3));
+
+      await act(async () => {
+        pending[2]!([makeTask({ id: 91, title: "Neueste Suche" })]);
+      });
+      expect(await screen.findByText("Neueste Suche")).toBeInTheDocument();
+
+      await act(async () => {
+        pending[1]!([makeTask({ id: 92, title: "Veraltete Suche" })]);
+      });
+      expect(screen.getByText("Neueste Suche")).toBeInTheDocument();
+      expect(screen.queryByText("Veraltete Suche")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });
