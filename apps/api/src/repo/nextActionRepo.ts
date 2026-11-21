@@ -68,28 +68,44 @@ export function getNextActionTaskIdsByProjectProjection(
       JOIN sortkey sk ON task.parent_id = sk.task_id
       WHERE task.role = 'task'
     ),
-    task_descendants(ancestor_id, descendant_id) AS (
-      SELECT id, id FROM work_items WHERE role = 'task'
+    relevant_descendants(descendant_id, descendant_role, parent_id) AS (
+      -- Only open actions and projects can affect the container projection.
+      SELECT id, role, parent_id
+      FROM work_items
+      WHERE role = 'task'
+        AND COALESCE(task_kind, 'action') = 'action'
+        AND status NOT IN ('done', 'cancelled')
       UNION ALL
-      SELECT td.ancestor_id, child.id
-      FROM task_descendants td
-      JOIN work_items child ON child.parent_id = td.descendant_id
-      -- An open project is part of the containing task's structure. A
-      -- terminal project's historical subtree is outside that task's work.
-      WHERE child.role = 'task' OR (
-        child.role = 'story' AND child.archived_at IS NULL
-        AND child.status NOT IN ('done', 'cancelled')
+      SELECT id, role, parent_id
+      FROM work_items
+      WHERE role = 'story' AND archived_at IS NULL
+        AND status NOT IN ('done', 'cancelled')
+    ),
+    ancestor_walk(node_id, descendant_id, descendant_role) AS (
+      -- Walk upward from relevant descendants instead of materializing every
+      -- task-to-descendant pair, including pairs in terminal or irrelevant branches.
+      SELECT parent_id, descendant_id, descendant_role
+      FROM relevant_descendants
+      WHERE parent_id IS NOT NULL
+      UNION ALL
+      SELECT parent.id, walk.descendant_id, walk.descendant_role
+      FROM ancestor_walk walk
+      JOIN work_items current ON current.id = walk.node_id
+      JOIN work_items parent ON parent.id = current.parent_id
+      WHERE (
+        current.role = 'task' AND parent.role IN ('task', 'story')
+      ) OR (
+        current.role = 'story' AND current.archived_at IS NULL
+        AND current.status NOT IN ('done', 'cancelled')
+        AND parent.role = 'task'
       )
     ),
     blocking_descendants AS (
-      -- Open actions and projects keep their task ancestors as containers.
-      -- Reference nodes remain transparent; terminal project subtrees stop above.
-      SELECT td.ancestor_id AS task_id, td.descendant_id
-      FROM task_descendants td
-      JOIN work_items descendant ON descendant.id = td.descendant_id
-      WHERE td.descendant_id != td.ancestor_id
-        AND COALESCE(descendant.task_kind, 'action') = 'action'
-        AND descendant.status NOT IN ('done', 'cancelled')
+      -- Each row is an open action and one of its task ancestors.
+      SELECT walk.node_id AS task_id, walk.descendant_id
+      FROM ancestor_walk walk
+      JOIN work_items ancestor ON ancestor.id = walk.node_id AND ancestor.role = 'task'
+      WHERE walk.descendant_role = 'task'
     ),
     candidates AS (
       SELECT sk.task_id, sk.project_id, sk.key
@@ -122,11 +138,11 @@ export function getNextActionTaskIdsByProjectProjection(
     )
     SELECT project_id, task_id, availability, key, NULL AS descendant_id FROM eligible
     UNION ALL
-    SELECT NULL, td.ancestor_id, 'project_container', NULL, NULL
-    FROM task_descendants td
-    JOIN work_items descendant ON descendant.id = td.descendant_id
-    WHERE descendant.role = 'story'
-    GROUP BY td.ancestor_id
+    SELECT NULL, walk.node_id, 'project_container', NULL, NULL
+    FROM ancestor_walk walk
+    JOIN work_items ancestor ON ancestor.id = walk.node_id AND ancestor.role = 'task'
+    WHERE walk.descendant_role = 'story'
+    GROUP BY walk.node_id
     UNION ALL
     SELECT NULL, task_id, 'work_container', NULL, NULL
     FROM (SELECT DISTINCT task_id FROM blocking_descendants)
