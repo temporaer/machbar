@@ -37,6 +37,11 @@ describe("MarkdownNotes", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Item" }));
     expect(callback).toHaveBeenCalledWith("- [x] Item");
   });
+
+  it("uses image alternative text as the checklist item's accessible name", () => {
+    render(<MarkdownNotes value="- [ ] ![Receipt](https://example.com/image.png)" onChecklistToggle={vi.fn()} />);
+    expect(screen.getByRole("checkbox", { name: "Receipt" })).toBeEnabled();
+  });
   it("renders GFM, autolinks, and single newlines without raw HTML", () => {
     const { container } = render(
       <MarkdownNotes

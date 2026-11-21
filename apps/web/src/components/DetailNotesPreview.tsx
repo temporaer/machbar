@@ -12,7 +12,7 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
   const strings = useStrings();
   const id = useId();
   const content = useRef<HTMLDivElement>(null);
-  const checklistFocus = useRef<HTMLInputElement | null>(null);
+  const checklistFocus = useRef<{ input: HTMLInputElement; before: string; after: string } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
@@ -78,13 +78,32 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
     return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
   }, [clipped, value, checklistDisabled, onChecklistToggle]);
   useLayoutEffect(() => {
-    if (checklistDisabled || !checklistFocus.current) return;
-    const input = checklistFocus.current;
-    checklistFocus.current = null;
-    if (input.isConnected && !input.matches(":disabled") && document.activeElement === document.body) {
-      input.focus({ preventScroll: true });
+    const saved = checklistFocus.current;
+    if (!saved) return;
+    const { input, before, after } = saved;
+    if (value !== before && value !== after) {
+      if (document.activeElement === input) input.blur();
+      checklistFocus.current = null;
+      return;
     }
+    if (checklistDisabled) return;
+    if (input.isConnected && !input.matches(":disabled") && document.activeElement === document.body) input.focus({ preventScroll: true });
+    if (value === after) checklistFocus.current = null;
   }, [checklistDisabled, value]);
+  useLayoutEffect(() => {
+    const retire = (event: Event) => {
+      const saved = checklistFocus.current;
+      if (saved && event.target instanceof Node && !saved.input.closest("label")?.contains(event.target)) {
+        checklistFocus.current = null;
+      }
+    };
+    document.addEventListener("focusin", retire);
+    document.addEventListener("pointerdown", retire);
+    return () => {
+      document.removeEventListener("focusin", retire);
+      document.removeEventListener("pointerdown", retire);
+    };
+  }, []);
   const blockClippedLink = (event: MouseEvent<HTMLDivElement>) => {
     if (clipped && event.target instanceof Element && event.target.closest("a[href]")) {
       event.preventDefault();
@@ -96,7 +115,7 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
       <div ref={content} onClickCapture={blockClippedLink} onAuxClickCapture={blockClippedLink}
         onContextMenuCapture={blockClippedLink}><MarkdownNotes value={value} onChecklistToggle={onChecklistToggle ? next => {
           checklistFocus.current = document.activeElement instanceof HTMLInputElement && document.activeElement.type === "checkbox"
-            ? document.activeElement : null;
+            ? { input: document.activeElement, before: value, after: next } : null;
           onChecklistToggle(next);
         } : undefined}
           checklistDisabled={checklistDisabled} /></div>

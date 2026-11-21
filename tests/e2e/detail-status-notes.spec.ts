@@ -52,13 +52,13 @@ for (const role of ["task", "project"] as const) {
       });
       await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
       const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
-      const checkbox = section.getByRole("checkbox");
+      const checkbox = section.getByRole("checkbox", { name: "Item", exact: true });
       await checkbox.focus();
       await page.keyboard.press("Space");
       await expect.poll(() => writes).toBe(1);
       await expect(checkbox).toHaveAttribute("aria-disabled", "true");
       if (role === "project") await expect(checkbox).toBeFocused();
-      const updatedNotes = "- [ ] Item\n\nConcurrent change";
+      const updatedNotes = "- [ ] New item\n- [ ] Item\n\nConcurrent change";
       if (outcome === "stale") {
         const response = await page.request.patch(`${path}/${item.id}`, { data: { notes: updatedNotes, expectedRevision: item.revision } });
         expect(response.ok()).toBe(true);
@@ -66,10 +66,13 @@ for (const role of ["task", "project"] as const) {
       release();
       await expect(page.getByRole("alert").first()).toBeVisible();
       await expect(checkbox).not.toBeChecked();
-      await expect(checkbox).toBeFocused();
+      if (outcome === "failure") await expect(checkbox).toBeFocused();
       const expected = outcome === "stale" ? updatedNotes : item.notes;
       await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(expected);
-      if (outcome === "stale") await expect(section).toContainText("Concurrent change");
+      if (outcome === "stale") {
+        await expect(section).toContainText("Concurrent change");
+        await expect(section.getByRole("checkbox", { name: "New item" })).not.toBeFocused();
+      }
       expect(writes).toBe(1);
     });
   }

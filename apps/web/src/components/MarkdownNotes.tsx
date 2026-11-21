@@ -127,6 +127,7 @@ const checklistComponents: Components = {
     const offset = match && start !== undefined ? start + match[0].length - 2 : -1;
     const text = (nodes: ElementContent[]): string => nodes.map(child => {
       if (child.type === "text") return child.value;
+      if (child.type === "element" && child.tagName === "img") return String(child.properties.alt ?? "");
       if (child.type === "element" && child.tagName !== "ul" && child.tagName !== "ol") return text(child.children);
       return "";
     }).join("");
