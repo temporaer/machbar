@@ -57,7 +57,7 @@ for (const role of ["task", "project"] as const) {
       await page.keyboard.press("Space");
       await expect.poll(() => writes).toBe(1);
       await expect(checkbox).toHaveAttribute("aria-disabled", "true");
-      await expect(checkbox).toBeFocused();
+      if (role === "project") await expect(checkbox).toBeFocused();
       const updatedNotes = "- [ ] Item\n\nConcurrent change";
       if (outcome === "stale") {
         const response = await page.request.patch(`${path}/${item.id}`, { data: { notes: updatedNotes, expectedRevision: item.revision } });
@@ -66,6 +66,7 @@ for (const role of ["task", "project"] as const) {
       release();
       await expect(page.getByRole("alert").first()).toBeVisible();
       await expect(checkbox).not.toBeChecked();
+      await expect(checkbox).toBeFocused();
       const expected = outcome === "stale" ? updatedNotes : item.notes;
       await expect.poll(async () => (await (await page.request.get(`${path}/${item.id}`)).json()).notes).toBe(expected);
       if (outcome === "stale") await expect(section).toContainText("Concurrent change");
@@ -109,6 +110,16 @@ for (const role of ["task", "project"] as const) {
     await expect(visible).toBeChecked();
     await section.getByRole("button", { name: "Mehr anzeigen", exact: true }).click();
     await expect(hidden).toBeEnabled();
+  });
+
+  test(`${role} clipped preview disables a checkbox whose text extends into the fade`, async ({ page }) => {
+    const { item } = await create(page, role, `- [ ] ${"Long checklist item ".repeat(80)}`);
+    await page.goto(`/#/${role === "task" ? "tasks" : "projects"}/${item.id}`);
+    const section = page.locator(role === "task" ? ".task-notes-section" : ".project-notes-section");
+    const checkbox = section.getByRole("checkbox");
+    await expect(checkbox).toBeDisabled();
+    await section.getByRole("button", { name: "Mehr anzeigen", exact: true }).click();
+    await expect(checkbox).toBeEnabled();
   });
 
   test(`${role} notes measure actual overflow, group actions, expand and edit in the document`, async ({ page }, info) => {

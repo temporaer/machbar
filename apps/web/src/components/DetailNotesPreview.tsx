@@ -12,6 +12,7 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
   const strings = useStrings();
   const id = useId();
   const content = useRef<HTMLDivElement>(null);
+  const checklistFocus = useRef<HTMLInputElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
@@ -76,6 +77,14 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
     window.addEventListener("resize", measure);
     return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
   }, [clipped, value, checklistDisabled, onChecklistToggle]);
+  useLayoutEffect(() => {
+    if (checklistDisabled || !checklistFocus.current) return;
+    const input = checklistFocus.current;
+    checklistFocus.current = null;
+    if (input.isConnected && !input.matches(":disabled") && document.activeElement === document.body) {
+      input.focus({ preventScroll: true });
+    }
+  }, [checklistDisabled, value]);
   const blockClippedLink = (event: MouseEvent<HTMLDivElement>) => {
     if (clipped && event.target instanceof Element && event.target.closest("a[href]")) {
       event.preventDefault();
@@ -85,7 +94,11 @@ export function DetailNotesPreview({ value, onChecklistToggle, checklistDisabled
   return <div className="detail-notes-reader">
     <div id={id} className={`detail-notes-preview${clipped ? " is-clipped" : ""}`}>
       <div ref={content} onClickCapture={blockClippedLink} onAuxClickCapture={blockClippedLink}
-        onContextMenuCapture={blockClippedLink}><MarkdownNotes value={value} onChecklistToggle={onChecklistToggle}
+        onContextMenuCapture={blockClippedLink}><MarkdownNotes value={value} onChecklistToggle={onChecklistToggle ? next => {
+          checklistFocus.current = document.activeElement instanceof HTMLInputElement && document.activeElement.type === "checkbox"
+            ? document.activeElement : null;
+          onChecklistToggle(next);
+        } : undefined}
           checklistDisabled={checklistDisabled} /></div>
     </div>
     {overflows ? <button type="button" className="btn btn-sm detail-notes-expand"
