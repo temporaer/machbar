@@ -1,11 +1,12 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { makeProject, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { AllPage } from "./AllPage";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useRefresh } from "../lib/refresh";
 
 vi.mock("../lib/api", () => ({
   paperlessDocumentDownloadUrl: (id: number) =>
@@ -24,6 +25,7 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn().mockResolvedValue([]),
     getProjects: vi.fn(),
     searchTasks: vi.fn(),
+    completeTask: vi.fn(),
     getPaperlessStatus: vi.fn(),
   },
 }));
@@ -33,6 +35,11 @@ const mockedApi = vi.mocked(api, true);
 function OpenTaskProbe() {
   const { openTaskId } = useTaskDetail();
   return <output data-testid="open-task-id">{openTaskId ?? "none"}</output>;
+}
+
+function ForceRefresh() {
+  const { bump } = useRefresh();
+  return <button type="button" onClick={() => { void bump(); }}>Refresh reads</button>;
 }
 
 describe("AllPage", () => {
@@ -99,6 +106,7 @@ describe("AllPage", () => {
       return [projectTask, nested, standalone, standaloneChild, cancelled];
     });
   });
+  afterEach(() => { vi.useRealTimers(); });
 
   it("keeps text search first in the inventory and waits for intentional focus", async () => {
     renderWithProviders(<AllPage />);
@@ -108,6 +116,118 @@ describe("AllPage", () => {
     expect(search).toHaveFocus();
     await userEvent.type(search, "Projektfarbe");
     expect(await screen.findByText("Projektfarbe auswählen")).toBeInTheDocument();
+  });
+
+  it("acknowledges a committed checkbox in place and delays only the matching list query", async () => {
+    mockedApi.completeTask.mockResolvedValue({ ...standaloneChild, status: "done", revision: 2 });
+    renderWithProviders(<AllPage />);
+    const row = (await screen.findByText(standaloneChild.title)).closest<HTMLElement>(".task-row")!;
+    const checkbox = within(row).getByRole("button", { name: "Erledigt" });
+    mockedApi.searchTasks.mockClear();
+    mockedApi.getProjects.mockClear();
+
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledOnce());
+    await waitFor(() => expect(row.querySelector(".task-row-title")).toHaveClass("done"));
+    expect(document.querySelector(".view-completion-notice")?.textContent ?? "").not.toContain(standaloneChild.title);
+    expect(mockedApi.searchTasks).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockedApi.getProjects).toHaveBeenCalled());
+    expect(within(row).getByRole("button", { name: "Wieder öffnen" })).toBeDisabled();
+
+    await new Promise(resolve => setTimeout(resolve, 3_100));
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalled());
+  }, 10_000);
+
+  it("does not acknowledge a rejected checkbox completion", async () => {
+    mockedApi.completeTask.mockRejectedValueOnce(new Error("Write rejected"));
+    renderWithProviders(<AllPage />);
+    const row = (await screen.findByText(standaloneChild.title)).closest<HTMLElement>(".task-row")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    expect(await within(row).findByRole("alert")).toHaveTextContent("Write rejected");
+    expect(row.querySelector(".task-row-title")).not.toHaveClass("done");
+    expect(document.querySelector(".view-completion-notice")?.textContent ?? "").not.toContain(standaloneChild.title);
+  });
+
+  it("keeps a slow completion pending, then acknowledges only after its write commits", async () => {
+    let commit!: (value: typeof standaloneChild) => void;
+    mockedApi.completeTask.mockImplementationOnce(() => new Promise(resolve => { commit = resolve; }));
+    renderWithProviders(<AllPage />);
+    const row = (await screen.findByText(standaloneChild.title)).closest<HTMLElement>(".task-row")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    expect(await within(row).findByText("Wird erledigt …")).toBeInTheDocument();
+    expect(row.querySelector(".task-row-title")).not.toHaveClass("done");
+    expect(document.querySelector(".view-completion-notice")?.textContent ?? "").not.toContain(standaloneChild.title);
+
+    await act(async () => { commit({ ...standaloneChild, status: "done", revision: 2 }); });
+    await waitFor(() => expect(row.querySelector(".task-row-title")).toHaveClass("done"));
+    expect(document.querySelector(".view-completion-notice")?.textContent ?? "").not.toContain(standaloneChild.title);
+  });
+
+  it("lets a normal refresh shorten the source-query hold", async () => {
+    mockedApi.completeTask.mockResolvedValue({ ...standaloneChild, status: "done", revision: 2 });
+    renderWithProviders(<><AllPage /><ForceRefresh /></>);
+    const row = (await screen.findByText(standaloneChild.title)).closest<HTMLElement>(".task-row")!;
+    mockedApi.searchTasks.mockClear();
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(row.querySelector(".task-row-title")).toHaveClass("done"));
+    expect(mockedApi.searchTasks).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh reads" }));
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalled());
+  });
+
+  it("coordinates two quick completions against one source query", async () => {
+    const completed = new Set<number>();
+    const secondTask = makeTask({ id: 24, title: "Zweite schnelle Aufgabe" });
+    mockedApi.completeTask.mockImplementation(async id => {
+      completed.add(id);
+      const task = [standaloneChild, secondTask].find(candidate => candidate.id === id)!;
+      return { ...task, status: "done", revision: task.revision + 1 };
+    });
+    mockedApi.searchTasks.mockImplementation(async filters => {
+      const results = filters.kinds?.includes("reference")
+        ? [projectMaterial, standaloneMaterial]
+        : filters.text === "Projektfarbe" ? [nested]
+          : filters.text ? [] : [projectTask, nested, standalone, standaloneChild, secondTask, cancelled];
+      return results.map(task => completed.has(task.id) ? { ...task, status: "done" } : task);
+    });
+    renderWithProviders(<AllPage />);
+    const first = (await screen.findByText(standaloneChild.title)).closest<HTMLElement>(".task-row")!;
+    const second = screen.getByText(secondTask.title).closest<HTMLElement>(".task-row")!;
+    mockedApi.searchTasks.mockClear();
+
+    fireEvent.click(within(first).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(first.querySelector(".task-row-title")).toHaveClass("done"));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 2_000)); });
+    fireEvent.click(within(second).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(second.querySelector(".task-row-title")).toHaveClass("done"));
+
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_200)); });
+    expect(first.querySelector(".task-row-title")).toHaveClass("done");
+    expect(second.querySelector(".task-row-title")).toHaveClass("done");
+    expect(mockedApi.searchTasks).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalled(), { timeout: 2_500 });
+    expect(within(first).queryByRole("status")).not.toBeInTheDocument();
+    expect(within(second).queryByRole("status")).not.toBeInTheDocument();
+    expect(within(first).getByRole("button", { name: /Erledigt|Wieder öffnen/ })).toBeEnabled();
+    expect(within(second).getByRole("button", { name: /Erledigt|Wieder öffnen/ })).toBeEnabled();
+  }, 10_000);
+
+  it("retires an inline acknowledgement as soon as an explicit refresh starts", async () => {
+    mockedApi.completeTask.mockResolvedValue({ ...standaloneChild, status: "done", revision: 2 });
+    renderWithProviders(<><AllPage /><ForceRefresh /></>);
+    const row = (await screen.findByText(standaloneChild.title)).closest<HTMLElement>(".task-row")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Erledigt" }));
+    await waitFor(() => expect(row.querySelector(".task-row-title")).toHaveClass("done"));
+
+    let releaseRead!: (tasks: typeof standaloneChild[]) => void;
+    mockedApi.searchTasks.mockImplementationOnce(() => new Promise(resolve => { releaseRead = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh reads" }));
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalled());
+    expect(row.querySelector(".task-row-title")).not.toHaveClass("done");
+    expect(within(row).queryByRole("status")).not.toBeInTheDocument();
+    await act(async () => { releaseRead([standaloneChild]); });
   });
 
   it("shows every project status and standalone trees without project descendants by default", async () => {

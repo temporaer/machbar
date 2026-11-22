@@ -747,9 +747,13 @@ outside this read facade.
 The #336 extraction established a small view-owned completion notice; #337
 reuses it across task-completion surfaces, and #338 extends its typed commit
 payload to cancellation, reopening and direct captured/actionable/someday status
-transitions. Clarification/deferral and ordinary edits retain their focused
-feedback. Neither rollout changes `useItemMutations`
-or adding row retention. Its pending operation text ends at write
+transitions. #367 reuses that owner for a short-lived row acknowledgement when
+the visible row checkbox completes a task. It delays only the unique active
+source query; other reads refresh immediately, while another refresh cancels the
+delay. That row does not also receive the floating completion notice. Detail and
+workflow completion still use the notice. Clarification/deferral and ordinary
+edits retain their focused feedback. This does not add task DTO or row
+retention. Its pending operation text ends at write
 commit/rejection, independently of the gate that still covers read settlement.
 The typed `onCommitted` callback runs after a successful write and captured
 invalidation starts, before awaiting reads. Only write rejection enters

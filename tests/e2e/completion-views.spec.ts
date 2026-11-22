@@ -109,8 +109,9 @@ const views = [
 ] as const;
 
 for (const view of views) {
-  test(`${view.name} confirms a committed completion without retaining its row`, async ({ page, isMobile }) => {
+  test(`${view.name} shows the completion acknowledgement in its source view`, async ({ page, isMobile }) => {
     const { task, path } = await view.setup(page);
+    await page.clock.install();
     await page.goto(path);
     if (isMobile && view.name === "All") {
       const row = page.locator(`[data-workitem-id="${task.id}"]`);
@@ -122,22 +123,58 @@ for (const view of views) {
       await completeRow(page, task.id, isMobile);
     }
     const notice = page.locator(".view-completion-notice");
-    await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
-    await expect(notice).toBeInViewport();
-    expect(await notice.evaluate(element => element.closest("[inert], [aria-hidden=true]"))).toBeNull();
+    const inlineAcknowledgement = !(view.name === "All" && isMobile);
+    if (inlineAcknowledgement) {
+      const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
+      await expect(source.locator(".task-row-title")).toHaveClass(/done/);
+      await expect(notice).toHaveCount(0);
+    } else {
+      await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
+      await expect(notice).toBeInViewport();
+      expect(await notice.evaluate(element => element.closest("[inert], [aria-hidden=true]"))).toBeNull();
+    }
     expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("done");
 
     if (view.name === "Inbox") {
-      await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
-      if (await page.locator(".inbox-page [data-workitem-id]").count() === 0) {
-        await expect(page.getByText("Der Eingang ist leer. Gute Arbeit!")).toBeVisible();
+      if (inlineAcknowledgement) await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(1);
+      else {
+        await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
+        if (await page.locator(".inbox-page [data-workitem-id]").count() === 0) {
+          await expect(page.getByText("Der Eingang ist leer. Gute Arbeit!")).toBeVisible();
+        }
       }
     } else if (view.name !== "Today") {
       await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(1);
     }
-    await expect(notice).toHaveCount(1);
+    if (inlineAcknowledgement) {
+      await page.clock.runFor(3_000);
+      await expect(notice).toHaveCount(0);
+      if (view.name === "Inbox") await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
+    } else await expect(notice).toHaveCount(1);
   });
 }
+
+test("a swipe completion stays struck through inside a narrow Today row", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "this exercises the touch swipe interaction");
+  const task = await createTask(page, `Narrow ${randomUUID()}`, { dueDate: "2000-01-01" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install();
+  await page.goto("/#/today");
+  const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
+  await expect(source).toBeVisible();
+  const title = source.locator(".task-row-title");
+  await completeRow(page, task.id, true);
+  await expect(title).toHaveClass(/done/);
+  await expect(source.locator(".task-row-checkbox")).toBeDisabled();
+  await expect(source.getByRole("status")).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+  const bounds = await source.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await page.clock.runFor(3_000);
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("done");
+});
 
 test("a criteria completion begun in Inbox cannot notify the replacement All view", async ({ page }) => {
   const task = await createTask(page, `Criteria ${randomUUID()}`, {
@@ -266,13 +303,15 @@ test("committed Inbox completion with failed refresh keeps stale task rows inert
     if (committed && failRefresh) await route.abort("failed");
     else await route.continue();
   });
+  await page.clock.install();
   await page.goto("/#/inbox");
   const source = page.locator(`[data-workitem-id="${task.id}"]`);
   await expect(source).toBeVisible();
   failRefresh = true;
   await completeRow(page, task.id, isMobile);
-  const notice = page.locator(".view-completion-notice");
-  await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(source.getByRole("status")).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+  await page.clock.runFor(3_000);
   await expect(page.locator(".inbox-page > .error-state")).toBeVisible();
   await expect(source.locator("xpath=ancestor::div[@inert]")).toHaveCount(1);
   expect(writes).toBe(1);
@@ -290,11 +329,13 @@ test("a recurring task confirms an occurrence rather than terminal completion", 
     allowedDeviationDays: 0,
     scheduledDate: new Date().toISOString().slice(0, 10),
   });
+  await page.clock.install();
   await page.goto("/#/more/all");
   await completeRow(page, task.id, isMobile);
-  await expect(page.locator(".view-completion-notice")).toHaveText(
-    `Durchgang von „${task.title}“ erledigt.`,
-  );
+  const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
+  await expect(source.locator(".task-row-title")).toHaveClass(/done/);
+  await expect(source.getByRole("status")).toHaveText(`Durchgang von „${task.title}“ erledigt.`);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
   expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("actionable");
 });
 

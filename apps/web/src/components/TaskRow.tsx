@@ -6,6 +6,7 @@ import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useInlineCompletionAcknowledgement } from "./ViewCompletionNotice";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useInteractionScope } from "../lib/interactionScope";
 import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
@@ -126,9 +127,10 @@ export function TaskRow({
   const organize = useOutlineOrganizeRow(taskProp.id);
   const dispatch = useWorkItemCommands();
   const taskActions = useTaskActions();
+  const inlineCompletionAcknowledged = useInlineCompletionAcknowledgement(taskProp.id);
   const { isPending, errors, clearError } = taskActions;
   const outlineRefreshing = organize?.pendingId != null;
-  const busy = isPending(taskProp.id) || outlineRefreshing;
+  const busy = isPending(taskProp.id) || outlineRefreshing || inlineCompletionAcknowledged;
 
   const task = taskProp;
   const isReference = task.kind === "reference";
@@ -196,7 +198,7 @@ export function TaskRow({
     ? children.filter(isEntirelyTerminal)
     : [];
   const [showHiddenTerminal, setShowHiddenTerminal] = useState(false);
-  const isDone = task.status === "done";
+  const isDone = task.status === "done" || inlineCompletionAcknowledged;
   const isCancelled = task.status === "cancelled";
   const overdue = isOverdue(task.dueDate, task.status);
   const ownerMember =
@@ -253,7 +255,16 @@ export function TaskRow({
     cancel: cancelSwipe,
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null || isReference,
-    onPrimary: () => dispatch({ type: "task.primaryAction", task }),
+    onPrimary: () => dispatch({
+      type: "task.primaryAction",
+      task,
+      // Primary swipe means "complete" for actionable tasks, but clarify for
+      // captured tasks and reopen for terminal ones. Only completion uses the
+      // inline acknowledgement.
+      ...(task.status !== "captured" && task.status !== "done" && task.status !== "cancelled"
+        ? { inlineCompletion: true }
+        : {}),
+    }),
     onDeepPrimary: () => scope.setOpenLifecycle(taskProp.id),
     onSecondary: () => scope.setOpenRail(taskProp.id),
     onRealDrag: clearLongPress,
@@ -396,7 +407,7 @@ export function TaskRow({
               className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
               aria-label={isDone || isCancelled ? strings.reopen : strings.done}
               disabled={busy}
-              onClick={() => dispatch({ type: "task.toggleDone", task })}
+              onClick={() => dispatch({ type: "task.toggleDone", task, inlineCompletion: true })}
             >
               {isDone ? "✓" : isCancelled ? "×" : ""}
             </button>
@@ -586,6 +597,13 @@ export function TaskRow({
       </div>
       {taskActions.pendingMessages.get(task.id) ? (
         <p role="status" className="task-row-pending">{taskActions.pendingMessages.get(task.id)}</p>
+      ) : null}
+      {inlineCompletionAcknowledged ? (
+        <span role="status" className="visually-hidden">
+          {task.repeatAfterDays !== null
+            ? strings.taskOccurrenceConfirmed(task.title)
+            : strings.taskCompletionConfirmed(task.title)}
+        </span>
       ) : null}
       {!isReference && swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />

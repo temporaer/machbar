@@ -82,15 +82,19 @@ success, views reload and rows may move to another group or disappear from the
 current view immediately; there is no timed keep-in-place window.
 
 Task-completion views show **Wird erledigt …** on the live row while the write
-is pending. A committed completion gets one short accessible confirmation in a
-stable, non-inert surface even when the row moves or disappears; it does not
-retain or reconstruct the source row. A rejected write never shows success.
-If refreshing fails, the separate read error offers Retry and stale task rows
-cannot be operated on until the read recovers. The initiating view owns the
-notice through row, detail, criteria, and nested-outline completion, so a
-replacement view cannot receive a late confirmation. Changing identity,
-filters, member/scope, route, or access clears that view's notice. Recurring
-tasks say that an occurrence was completed.
+is pending. When a visible row's checkbox commits, that row is struck through
+in place for about three seconds while only its source list read is held back;
+the write is immediate and other reads still refresh. The row stays disabled
+until the hold ends. An external refresh or navigation can shorten the
+acknowledgement. If no unique source list read can be identified, or completion
+starts from detail/workflow, the view uses the short accessible confirmation
+instead. Other lifecycle changes keep that confirmation. A rejected write
+never shows success. If refreshing fails, the separate read error offers Retry
+and stale task rows cannot be operated on until the read recovers. The
+initiating view owns feedback through row, detail, criteria, and nested-outline
+completion, so a replacement view cannot receive a late confirmation. Changing
+identity, filters, member/scope, route, or access clears that view's feedback.
+Recurring tasks say that an occurrence was completed.
 
 Ordinary refreshes and network failures preserve authored editor drafts.
 Losing access ends the focused editor and discards its choices; reopening

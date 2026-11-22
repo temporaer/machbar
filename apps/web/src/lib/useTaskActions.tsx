@@ -4,8 +4,9 @@ import { api, type ExternalWaitFollowUpInput, type ExternalWaitInput, type Updat
 import { toIsoCalendarDate } from "./naturalDate";
 import { hasOpenDescendants } from "./taskHelpers";
 import { ownerAssignmentPatch, updateTask } from "./taskMutations";
-import { useItemMutations } from "./useItemMutations";
+import { useItemMutations, type ItemMutationRefreshOptions } from "./useItemMutations";
 import { useStrings } from "./strings";
+import type { Query } from "@tanstack/react-query";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
 export type CompletionFeedbackOwner = symbol;
@@ -58,7 +59,16 @@ export function useTaskCommandEligibility() {
 
 interface CompletionFeedback {
   pendingMessage: string | ((action: TaskFeedbackAction) => string);
-  onCommitted: (completion: { taskId: number; title: string; recurring: boolean; action: TaskFeedbackAction }) => void;
+  refreshOptions?: (completion: CompletionCommit) => ItemMutationRefreshOptions | undefined;
+  onCommitted: (completion: CompletionCommit) => void;
+}
+interface CompletionCommit {
+  taskId: number;
+  title: string;
+  recurring: boolean;
+  action: TaskFeedbackAction;
+  inlineCompletion?: boolean;
+  sourceQuery?: Query;
 }
 
 function useTaskActionsState() {
@@ -66,6 +76,7 @@ function useTaskActionsState() {
   const [pending, setPending] = useState<{
     task: Task;
     action: PendingAction;
+    inlineCompletion?: boolean;
     completionFeedbackOwner?: CompletionFeedbackOwner;
     commandEligibility?: TaskCommandEligibility;
   } | null>(null);
@@ -85,6 +96,7 @@ function useTaskActionsState() {
     completionFeedbackOwner?: CompletionFeedbackOwner,
     commandEligibility?: TaskCommandEligibility,
     throwOnError = false,
+    inlineCompletion = false,
   ) => {
     if (commandEligibility && !commandEligibility.active) {
       if (throwOnError) throw new Error(strings.taskCommandUnavailable);
@@ -93,17 +105,30 @@ function useTaskActionsState() {
     const observer = completionFeedbackOwner
       ? completionFeedback.current.get(completionFeedbackOwner)
       : undefined;
+    let committedRefreshOptions: ItemMutationRefreshOptions | undefined;
     return run({
       id: task.id, mutate, throwOnError,
       pendingMessage: typeof observer?.pendingMessage === "function"
         ? observer.pendingMessage(action) : observer?.pendingMessage,
+      refreshOptions: () => {
+        committedRefreshOptions = observer && completionFeedbackOwner && inlineCompletion &&
+          completionFeedback.current.get(completionFeedbackOwner) === observer
+          ? observer.refreshOptions?.({
+          taskId: task.id, title: task.title,
+          recurring: action === "complete" && task.repeatAfterDays !== null,
+          action, ...(inlineCompletion ? { inlineCompletion: true } : {}),
+        })
+          : undefined;
+        return committedRefreshOptions;
+      },
       onCommitted: () => {
         if (observer && completionFeedbackOwner &&
           completionFeedback.current.get(completionFeedbackOwner) === observer) {
           observer.onCommitted({
             taskId: task.id, title: task.title,
             recurring: action === "complete" && task.repeatAfterDays !== null,
-            action,
+            action, ...(inlineCompletion ? { inlineCompletion: true } : {}),
+            ...(committedRefreshOptions?.deferQuery ? { sourceQuery: committedRefreshOptions.deferQuery } : {}),
           });
         }
       },
@@ -117,12 +142,13 @@ function useTaskActionsState() {
     throwOnError = false,
     completionFeedbackOwner?: CompletionFeedbackOwner,
     commandEligibility?: TaskCommandEligibility,
+    inlineCompletion = false,
   ) => {
     return runLifecycle(task, "complete", () => api.completeTask(
         task.id, policy ?? "leave_open",
         task.repeatAfterDays !== null ? toIsoCalendarDate(new Date()) : undefined,
         task.revision, ...(criteriaToCheck !== undefined ? [criteriaToCheck] : []),
-      ), completionFeedbackOwner, commandEligibility, throwOnError);
+      ), completionFeedbackOwner, commandEligibility, throwOnError, inlineCompletion);
   }, [runLifecycle]);
   const cancel = useCallback((
     task: Task, policy?: ChildPolicy,
@@ -186,6 +212,7 @@ function useTaskActionsState() {
     task: Task,
     completionFeedbackOwner?: CompletionFeedbackOwner,
     commandEligibility?: TaskCommandEligibility,
+    inlineCompletion = false,
   ) => {
     if (commandEligibility && !commandEligibility.active) return;
     if (task.status === "done" || task.status === "cancelled") {
@@ -195,12 +222,13 @@ function useTaskActionsState() {
       setPending({
         task,
         action: "complete",
+        ...(inlineCompletion ? { inlineCompletion: true } : {}),
         ...(completionFeedbackOwner ? { completionFeedbackOwner } : {}),
         ...(commandEligibility ? { commandEligibility } : {}),
       });
       return;
     }
-    void complete(task, undefined, undefined, false, completionFeedbackOwner, commandEligibility);
+    void complete(task, undefined, undefined, false, completionFeedbackOwner, commandEligibility, inlineCompletion);
   }, [complete, reopen]);
   const requestCancel = useCallback((
     task: Task,
@@ -240,6 +268,7 @@ function useTaskActionsState() {
         false,
         pending.completionFeedbackOwner,
         pending.commandEligibility,
+        pending.inlineCompletion ?? false,
       );
     }
     else void cancel(pending.task, policy, pending.completionFeedbackOwner, pending.commandEligibility);
@@ -283,7 +312,8 @@ export function useTaskActions(): TaskActionsValue {
   const completionFeedbackOwner = useCompletionFeedbackOwner();
   const commandEligibility = useTaskCommandEligibility();
   const requestToggle = useCallback(
-    (task: Task) => context.requestToggle(task, completionFeedbackOwner ?? undefined, commandEligibility ?? undefined),
+    (task: Task, owner?: CompletionFeedbackOwner, eligibility?: TaskCommandEligibility, inlineCompletion = false) =>
+      context.requestToggle(task, owner ?? completionFeedbackOwner ?? undefined, eligibility ?? commandEligibility ?? undefined, inlineCompletion),
     [commandEligibility, completionFeedbackOwner, context],
   );
   const requestCancel = useCallback(
