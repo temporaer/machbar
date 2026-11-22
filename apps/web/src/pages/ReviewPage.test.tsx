@@ -340,7 +340,9 @@ describe("ReviewPage", () => {
         effectiveTags: [],
       },
     ]);
-    renderWithProviders(<ReviewPage />);
+    // Exercise the real page-level scope instead of the test harness fallback:
+    // refinement rows consume InteractionScope when opened.
+    renderWithProviders(<ReviewPage />, { interactionScope: false });
 
     await userEvent.click(
       await screen.findByText("Optionale Planungswerkzeuge"),
