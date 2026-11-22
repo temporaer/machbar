@@ -25,11 +25,20 @@ function AllProviders({
   children,
   initialEntries,
   locale,
+  interactionScope,
 }: {
   children: ReactNode;
   initialEntries?: ComponentProps<typeof MemoryRouter>["initialEntries"];
   locale: Locale;
+  interactionScope?: boolean | undefined;
 }) {
+  const taskProviders = (
+    <TaskWorkflowProvider>
+      <TaskDetailProvider>
+        <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
+      </TaskDetailProvider>
+    </TaskWorkflowProvider>
+  );
   return (
     <ThemeProvider>
       <LocaleProvider initialLocale={locale}>
@@ -40,13 +49,9 @@ function AllProviders({
                   <SwipeCoachProvider>
                     <TaskActionsProvider>
                       <ProjectActionsProvider>
-                        <InteractionScopeProvider>
-                          <TaskWorkflowProvider>
-                            <TaskDetailProvider>
-                                <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
-                              </TaskDetailProvider>
-                            </TaskWorkflowProvider>
-                        </InteractionScopeProvider>
+                        {interactionScope === false ? taskProviders : (
+                          <InteractionScopeProvider>{taskProviders}</InteractionScopeProvider>
+                        )}
                       </ProjectActionsProvider>
                     </TaskActionsProvider>
                   </SwipeCoachProvider>
@@ -87,6 +92,7 @@ export function renderWithProviders(
   options: {
     initialEntries?: ComponentProps<typeof MemoryRouter>["initialEntries"];
     locale?: Locale | undefined;
+    interactionScope?: boolean | undefined;
   } = {},
 ) {
   return render(ui, {
@@ -94,6 +100,7 @@ export function renderWithProviders(
       <AllProviders
         initialEntries={options.initialEntries}
         locale={options.locale ?? "de"}
+        interactionScope={options.interactionScope}
       >
         {children}
       </AllProviders>
