@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 41927)
-Total output lines: 2576
-
 # Machbar — Architecture
 
 ## Commitment-driven project activation
@@ -100,8 +97,7 @@ starts mutating work.
 
 ## Goals and advisory coach proposals
 
-Goals and interventions are an owner-scoped journal, not work-item roles.
-Manual writes and accepted coach proposals share the domain mutations in
+Goals and interventions are an owner-scoped journal, not work-item roles.Manual writes and accepted coach proposals share the domain mutations in
 `apps/api/src/domain/goals.ts`; no `goal_id` is added to work items and goals
 remain outside Review.
 
@@ -200,8 +196,7 @@ submit button, not browsing, swipes, the picker, or Exit. The shared swipe
 primitive suppresses only trailing pointer clicks, never keyboard activation.
 The question-led reflection cards use catalog group tones and motion gated by
 `prefers-reduced-motion`.
-Saved-thought notes are local presentation grouped by area, never another backlog.
-Thought mode skips metadata requests/syntax suggestions and omits destination and
+Saved-thought notes are local presentation grouped by area, never another backlog.Thought mode skips metadata requests/syntax suggestions and omits destination and
 reset controls. Save failures keep the draft for retry; success refocuses an empty
 input only if the submitted card is still current. A save resolves against its
 original card, even after navigation; failure retains that card's draft/error for
@@ -300,8 +295,7 @@ Apply checks every pending destination before external effects, after file reads
 and again before any work writes in the existing SQLite transaction. Ledger-confirmed
 work is skipped on partial replay. Canonical transactional task creation disables
 commitment activation only for these existing-destination subtrees, preserving
-backlog lifecycle and Today eligibility; new-project creation is unchanged.
-If destination validation fails after source retention but before any work/calendar
+backlog lifecycle and Today eligibility; new-project creation is unchanged.If destination validation fails after source retention but before any work/calendar
 has committed, review becomes editable again. The uploaded-source ledger is retained,
 acceptance is cleared, and the draft keeps its stale reviewed destination revisions:
 the user must explicitly reselect or remove the association. Saving and applying the
@@ -400,7 +394,6 @@ chooses and runs the AI provider and owns the calendar event; Machbar owns the
 review and the resulting household work.
 
 ## Historical reflection export
-
 `GET /api/reflection/briefing` remains the sole source for historical reflection
 facts. `ReflectionStartPage` selects its reporting window and scope, previews
 the complete content, and only then enables native share, clipboard, or file
@@ -500,7 +493,6 @@ ancestor/project union *before this task's own exclusions are applied*, so the
 UI can keep inherited tags visible and reversible even while they are currently
 excluded from `effectiveTags`. Physical contexts are Home Assistant-owned
 entities rather than a tag kind.
-
 Tag selection is a reusable compact chip picker in both task and project
 editors. Every flexible, non-exclusive tag has one primary kind: Bereich,
 Person, or Normal. The picker creates a missing tag with the
@@ -600,8 +592,7 @@ JSON field. The planning sheet offers Anytime, Business hours, or Outside busine
 hours; the constrained window is Monday–Friday 09:00 inclusive to 17:00 exclusive
 in the household IANA timezone. `taskAvailability.ts` evaluates an explicit instant
 with Temporal without database or clock access. Today passes one instant through
-`agendaSelection.ts` and `agenda.ts`: project next-action selection, planned rows,
-ordinary reached revisits, shared/unplanned work, and embedded execution suggestions
+`agendaSelection.ts` and `agenda.ts`: project next-action selection, planned rows,ordinary reached revisits, shared/unplanned work, and embedded execution suggestions
 respect the window. Planned rows, execution suggestions and ordinary reached
 revisits also share scheduled-date eligibility: an old reconsideration instant
 cannot pull future-planned work into Today. Reached external-wait follow-ups
@@ -700,8 +691,7 @@ decision. Project dates never become task dates.
   (see §9) so activity history, tags, contexts, and notifications survive
   untouched. Task → project conversion preserves task-only work plans,
   reminders, external waits, recurrence history and dependencies by moving
-  them to a retained action step, with optional per-dependency assignment to
-  an existing open action. It preserves the project deadline and existing
+  them to a retained action step, with optional per-dependency assignment to  an existing open action. It preserves the project deadline and existing
   children. Reverse conversion retains task descendants, the existing task
   identity, tags/contexts, planning dates, external waits, reminders,
   recurrence state, occurrence history, and criteria. Criteria remain
@@ -750,9 +740,13 @@ outside this read facade.
 The #336 extraction established a small view-owned completion notice; #337
 reuses it across task-completion surfaces, and #338 extends its typed commit
 payload to cancellation, reopening and direct captured/actionable/someday status
-transitions. Clarification/deferral and ordinary edits retain their focused
-feedback. Neither rollout changes `useItemMutations`
-or adding row retention. Its pending operation text ends at write
+transitions. #367 reuses that owner for a short-lived row acknowledgement when
+the visible row checkbox completes a task. It delays only the unique active
+source query; other reads refresh immediately, while another refresh cancels the
+delay. That row does not also receive the floating completion notice. Detail and
+workflow completion still use the notice. Clarification/deferral and ordinary
+edits retain their focused feedback. This does not add task DTO or row
+retention. Its pending operation text ends at write
 commit/rejection, independently of the gate that still covers read settlement.
 The typed `onCommitted` callback runs after a successful write and captured
 invalidation starts, before awaiting reads. Only write rejection enters
@@ -796,8 +790,7 @@ view owner through the native Query cache subscription, even if the view read
 still succeeds. After a successful reread, the view establishes fresh owner and
 eligibility tokens; delayed work from the retired scope cannot target the new
 registration. The existing authoritative queries continue to control status,
-hierarchy and membership; no snapshot or destination suppression is used. Each
-task-completion view exposes failed refresh through Retry and makes stale task
+hierarchy and membership; no snapshot or destination suppression is used. Eachtask-completion view exposes failed refresh through Retry and makes stale task
 rows inert until a fresh read succeeds. Waiting retains the same behavior; no
 other lifecycle action is included.
 
@@ -896,8 +889,7 @@ fixed `machbar:mcp:household` scope, then maps the immutable `(issuer, sub)`
 pair to an already-linked member. OAuth is household-only and never provisions
 or updates a member; work access remains limited to explicit agent
 credentials. `apps/api/src/auth/routes.ts` is the common credential boundary,
-while `apps/api/src/mcp/tools.ts` remains independent of the credential
-mechanism.
+while `apps/api/src/mcp/tools.ts` remains independent of the credentialmechanism.
 
 Protected-resource metadata is permanent resource-server behavior. The
 Machbar authorization-server metadata and `/api/mcp/oauth/authorize` route are
@@ -983,7 +975,673 @@ archived ◄──archive── (backlog | active | completed)
   remaining criterion must be checked first. Project criteria remain attached
   through Project → Task conversion and use the same editor/check API after
   conversion.
-- `comple…11927 tokens truncated…ails and clarification rails via `TaskWorkflowHost`:
+- `completeProject()` accepts revision-bound criterion checks and open-task
+  branch dispositions as one decision set. It validates that set before using
+  the canonical task cancel/move commands and completing the project inside
+  the enclosing transaction. Missing choices, stale descendants, or failed
+  criteria roll the whole operation back; the focused sheet does not persist
+  choices before confirmation.
+- `completeTask()` applies any completion-time criterion checks in the same
+  transaction as the existing task lifecycle transition. With no missing
+  criteria, ordinary completion remains a direct action. Task criteria
+  retained through project conversion continue to be enforced by the same
+  completion guard.
+- Returning a project to backlog does not silently withdraw execution
+  commitments. The command checks project deadlines and descendant plans,
+  recurrence and reminders. When explicitly requested, it revision-checks the  descendant tasks and clears those commitments atomically with parking while
+  preserving wait and revisit information.
+- Task Planning is also the focused editor for prerequisite relationships.
+  External waiting remains separate state: ending a wait removes only the
+  external-wait row and revisit date, leaving dependency edges in place.
+  Follow-up outcome text and the continue/end decision are written by one
+  revision-checked domain operation. Dependency add/remove requests carry the
+  task revision and use the existing cycle and task-kind guards.
+- `archived` only exposes `return_to_backlog`; there is no `archived → active`
+  transition. Reactivating an archived project always goes through backlog
+  first.
+- `DELETE /api/projects/:id` permanently removes the project, its tag links,
+  and its “Erledigt, wenn …” rows. Existing tasks are preserved and detached
+  (`tasks.project_id = NULL`) by the foreign key's `ON DELETE SET NULL`.
+
+### Responsible-person invariant
+
+Every active project must have a responsible person (`ownerMemberId`) and
+either executable progress or an intentional healthy future-waiting path:
+
+- `POST /api/projects/:id/activate` fails with `project_driver_required`
+  unless the project already has a responsible person or one is supplied
+  inline (`{"ownerMemberId": n}`).
+- Activation and reopening also fail when the project has neither a canonical
+  executable candidate nor a healthy blocker path with future attention. Every
+  project response exposes that exact domain evaluation as
+  `activationReadiness`, so focused UI collects only the missing driver or next
+  step instead of approximating readiness from display fields.
+- `PATCH /api/projects/:id` with `ownerMemberId: null` fails with
+  `project_driver_locked` unless the project is in `backlog`. Reassigning to a
+  different member is always allowed. Individual task ownership remains
+  independent.
+- Household-scope projects in `backlog` have no project driver. Creating or
+  assigning one with an owner is rejected; returning a household project to
+  backlog clears its driver atomically. Work-scope projects retain their owner
+  because ownership also governs access. A migration clears legacy violations
+  and SQLite triggers enforce this rule.
+- Member deletion fails with `member_active_projects_conflict` while that
+  person still drives an active project. The project must be reassigned or
+  returned to backlog first.
+
+Quick project capture creates title-only backlog work and opens the project.
+Adding work and starting are separate explicit actions there. Conversion opens
+the resulting project after its existing mapping/commitment decisions; no extra
+post-conversion task-entry dialog remains. Explicit Start uses the server's
+activation snapshot and the canonical activation command, collecting only missing
+decisions before confirmation. Proposed task creation/planning uses a rollback-only
+preview of that same canonical mutation to account for the actual proposed graph.
+The canonical `ProjectWorkflowHost` read supplies the activation sheet.
+Access loss removes protected content and ends the editor; reopening starts
+with current requirements and no restored choices. Other refresh failures keep
+usable content and drafts. Stale compound decisions require a fresh read and
+explicit reconfirmation, never an automatic second mutation. Delayed responses
+cannot affect a replacement opening or identity.
+
+`ProjectWorkflowProvider` owns the active `{kind, projectId}` and assigns a
+monotonic opening ID for every `open`, including repeated identical opens.
+`ProjectWorkflowHost` keys sheet content by member and opening ID; mounted and
+current-opening checks retire delayed callbacks. This replaces its former
+render-time object-reference comparison and local sequence counter. Project
+sheets keep authored drafts locally and project writes continue through
+`useProjectActions`.
+
+| Lifecycle concern | Project workflow | Task workflow |
+|---|---|---|
+| Opening identity | `projectWorkflowContext.tsx` assigns a fresh ID on every open; `ProjectWorkflowHost` keys by member and ID. | `taskWorkflowContext.tsx` assigns `currentOpeningId`; `TaskWorkflowHost` keys by member and ID. |
+| Callback retirement | The mounted project sheet checks its opening ID; read cancellation and access-denial handling remain local to the host/sheet boundary. | The mounted task sheet checks its opening ID; task-specific split-draft retirement remains local to the task host. |
+| Navigation and handoff | The project host has no router-history observer; refinement explicitly closes before navigating to intake. | The task host separately observes router history and coordinates its task-detail handoff protocol. |
+| Drafts and writes | Focused sheets own local drafts; canonical mutations go through `useProjectActions`. | Focused sheets own local drafts; canonical mutations go through `useTaskActions`. |
+
+These are separate workflow owners, not a shared orchestrator or a global
+task/project mutex. The project identity change does not alter route, focus,
+dismissal, conflict, or mutation semantics.
+
+Legacy rows migrated from before the invariant may still be `active` without a
+responsible person; the clarification service flags them urgently.
+
+### Stuck detection
+
+`Graph` and the canonical cycle-safe analyzer in
+`apps/api/src/domain/blockers.ts` classify **`active` projects only** (backlog
+stories are not "stuck" — they are simply not started).
+
+| Reason | Condition |
+|--------|-----------|
+| `no_next_action` | No healthy actionable path exists and no more specific blocker diagnosis explains it (including an empty project or open work that is only captured/someday) |
+| `completion_review` | Project has tasks but **zero open** ones — everything is `done`/`cancelled`, so the story is ready to be completed or extended |
+| `waiting_without_followup` | An external blocker path has no Wiedervorlage |
+| `blocked_without_clear_path` | A dependency path ends in captured/someday/non-operational work, a missing task, or a corrupt cycle |
+| *(healthy)* | At least one meaningful path reaches executable work or an intentional external wait with a revisit |
+
+`completion_review` is a distinct classification from the other three
+reasons: a project with no remaining open tasks is **not** stuck — it is
+healthy and simply ready for a completion decision. The backend still reports
+it through `stuckReason` (Review needs to surface it as maintenance work), but
+the frontend's `apps/web/src/lib/projectListFilter.ts` maps it to its own
+`"active-review"` presentation classification (sorted with active work, styled
+with a distinct accent) rather than folding it into `"active-stuck"`.
+`ProjectStuckNotice`/`ProjectStoryRow`/`ProjectAgendaRow` all branch on this
+same distinction to avoid framing "ready to complete" as a blocked project.
+
+A reached external-wait revisit remains a task-level attention signal and
+returns to Today. It does not make an otherwise valid waiting project
+structurally stuck.
+Shared tasks without an effective owner are valid actionable work. They do not
+make their project structurally stuck.
+
+Dependency chains are deliberately **not** defects by themselves. A sequence
+such as `Angebot → Termin → Arbeit → Rechnung → Bezahlen` is healthy while
+every unresolved branch leads back to a task that can be done now or to work
+intentionally parked with a future Wiedervorlage. An external wait without a
+future revisit, captured blocker, someday task, or any other branch without a
+progression anchor produces a specific waiting reason or
+`blocked_without_clear_path` and may keep the project stuck. Open tasks in
+completed/archived projects are not valid progression anchors. More specific
+issues remain attached to the terminal blocker so the repair action points at
+the cause rather than every downstream task.
+Once all blockers close, normal next-action or completion-review semantics
+take over.
+
+### Entering successive tasks
+
+`StepComposer` is the shared authored step-entry component used for inline
+successors, task splitting, and explicit project task entry. Inline
+**Nächsten Schritt danach hinzufügen** still creates one actionable sibling at
+the same outline level and makes it depend on its source task;
+`POST /api/tasks/:id/successors` performs creation and dependency insertion in
+one SQLite transaction. It may include the optional plan or deadline collected
+by the shared composer.
+
+Per-member session drafts use identity-bearing `{id, rows}` records; legacy
+row arrays remain readable. Confirmed submission consumes only its matching
+record, including after the composer unmounts. A newer draft with identical
+rows must survive; retired UI callbacks and navigation do not resume.
+
+Task splitting and project task entry submit every filled row in one request to
+`domain/taskStepBatch.ts`. The domain operation checks the selected parent or
+project revision and the full containing project chain, creates all tasks,
+classifies an Inbox parent with its first child, and runs the Phase 1
+commitment evaluator before commit. Missing driver/progress decisions roll back
+the complete batch; the UI keeps its rows and renders the server requirements
+for an explicit retry. A requested captured-task conversion invokes the
+existing guarded role-conversion implementation inside the same transaction.
+Undated children do not activate Someday/backlog work. Existing outline
+reordering still uses `useOutlineOrganize` and the canonical task move API.
+
+The task row rail offers **Aufteilen** (`task.split`) for ready actions.
+Movement remains in task details and the existing structure workflow.
+The row does not reproduce task creation or movement semantics.
+
+Outline position (likely work order) and dependencies (genuinely blocked
+work) remain distinct: a project's ordinary task list needs neither a
+sequence-entry bulk feature nor automatic dependencies between adjacent
+outline rows, since Today already derives the next useful project action
+from outline order and eligibility.
+
+---
+
+## 8. Review and exhaustive inventory
+
+### Derived Review — `/more/review`
+
+`apps/api/src/domain/reviewItems.ts` is the single deterministic maintenance
+projection. It derives compact project/task diagnoses from the graph and an
+injected calendar date; there is no Review table or workflow status.
+
+Review contains structural decisions: missing project driver or progress path,
+due-without-plan, malformed waiting, broken blocker paths, XL work without
+breakdown, completion review, and age-based reconsideration. It also flags
+semantic contradictions between a project's own dates/status and its child
+tasks: a backlog project already carrying genuinely executable/actionable open
+work (an intentionally scheduled or due child-task date alone is not flagged —
+those task dates are allowed planning signals that Week surfaces); a task
+scheduled or due before its project's Wiedervorlage (`scheduledDate`); a
+project whose deadline precedes its own Wiedervorlage; and a completed/archived
+project that still has open child tasks (a repair signal for legacy/corrupt or
+externally-created data — normal completion no longer creates this state, since
+completion asks the driver to resolve remaining open tasks first). It
+deliberately excludes valid shared tasks, absent optional acceptance criteria,
+Inbox captures, reached follow-ups, and past planning dates already owned by
+Today. More's badge is the exact number of current derived items.
+
+Nullable `projects.reviewed_at` and `tasks.reviewed_at` record only explicit
+"keep active/parked/later" decisions. Opening an item never acknowledges it,
+and acknowledgement advances the entity revision without changing
+`updated_at`. Ordinary edits naturally postpone review because age uses the
+latest meaningful update or acknowledgement. Active and backlog project age
+also considers descendant activity. The fixed calendar-day leases are 14 days
+for active projects, 30 for backlog projects, and 90 for standalone Someday
+tasks. Healthy future waiting suppresses generic active inactivity.
+
+Review decisions execute through `useProjectActions` and `useTaskActions`.
+Expected revisions, pending/errors, stale conflicts, and refresh remain
+inside those canonical hooks. Focused repair reuses project/task detail,
+`TaskOwnerSheet`, `MemberSelectionSheet`, `StepComposer`, and
+`AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
+available as optional secondary planning tools rather than a separate
+Refinement workflow.
+
+### Aufräumrunde — `/more/cleanup-round`
+
+The Aufräumrunde is an on-demand, advisory planning-clarity pass over semantic
+work-item quality. It does not replace Review/Stuck Detection's mechanical
+workflow hygiene: Review knows owners, dates, waits, blockers, next actions,stuck reasons, status, and review age; the Aufräumrunde asks a Home Assistant
+AI Task whether a few sampled items preserve enough intent, outcome, and
+decision structure for a tired human to resume them without reconstructing the
+plan from memory.
+
+- **Sampling** (`apps/api/src/cleanupRound/sampler.ts`) selects, not
+  diagnoses: up to five open tasks (captured/actionable/someday action tasks in
+  no or an open project) and active/backlog projects visible to the viewer,
+  excluding items reviewed in the last seven days and items already in an open
+  round. Weighted randomness favours staleness, notes, children, and vague
+  titles, caps two items per project/parent cluster, and mixes tasks with
+  projects when possible.
+- **Contract** (`packages/shared/src/cleanupRound.ts`): each sampled item is
+  sent as a `CleanupItemContext` with mechanical facts as context only. The AI
+  must not report missing owner/due/scheduled/revisit dates, stale age,
+  blocked state, or graph next-action gaps as findings; those belong to
+  Review/Stuck Detection. It instead looks for unclear intent, hidden
+  decisions, vague outcomes, wrong shape, weak uncertainty-reducing slices,
+  incident follow-up, and admin target ambiguity. A sparse `planningContext`
+  adds only relevant open/waiting/done children, the current next action, and
+  non-empty project acceptance criteria, bounded for the Home Assistant AI
+  Task; empty/default/null fields and the context itself are omitted when
+  there is no useful evidence. This lets the AI avoid duplicating existing
+  plans or completed work without receiving the whole graph. The AI returns
+  one `CleanupTriageResult` per item from closed proposal, resolution surface,
+  inferred work type, and flow vocabularies. Work type and uphill/downhill are
+  reasoning lenses and are never persisted on tasks or projects.
+- **Validation** (`validate.ts`) normalizes strings and enums, trims excessive
+  text, rejects unknown targets, type mismatches, duplicates, and malformed
+  entries as warnings, and keeps raw and validated responses separately. All
+  valid → `ready`; some → `partial`; none → `failed`. Retry re-analyzes only
+  `failed` items, keeps accepted (`ready`) cards and the round summary, and
+  feeds validation issues back into the prompt; a round that still holds
+  accepted cards stays `partial` even when the retry fails. Failed items stay
+  reserved from new rounds while their round is open. The Home Assistant
+  structure only enforces the response envelope; this validator is the strict
+  boundary: the Home Assistant result fields are optional and nullable, so an
+  incomplete entry reaches this validator and becomes one `schema_invalid`
+  warning (the round turns `partial`) instead of failing the whole response.
+- **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
+  operational state (24-hour expiry, purged with intake jobs); a
+  `home_assistant_requests` row belongs to either an intake job or a round.
+- **Resolution**: AI results never mutate work items by themselves; every
+  change needs an explicit user confirmation. “Hinten anstellen” reuses the
+  canonical Review acknowledgement (`reviewedAt`) and is the only action that
+  sets it. “Einschätzung ausblenden” only dismisses the card. The pure mapping
+  in `apps/web/src/lib/cleanupRound.ts` turns each surface into one of:
+  - a **micro-flow** (`CleanupMicroFlow`) for text-shaped surfaces. The card
+    shows the AI suggestion as an editable answer; the button opens
+    `CleanupRoundActionSheet`, which loads the current item and shows the
+    target plus the exact title/text before anything is written. Confirming
+    sends one request to a narrow action endpoint,
+    `POST /api/cleanup-rounds/:id/items/:itemId/actions/<action>`
+    (`apps/api/src/cleanupRound/actions.ts`). In one transaction it checks
+    that the round is open and the card is open and `ready`; that the action
+    fits the card's stored `resolutionSurface` (`rename` ← `rename_item`;
+    `create-task` ← `create_decision_task`/`create_first_slice`/
+    `create_followup`; `add-done-when` ← `edit_done_when`; `clarify-admin` ←
+    `clarify_admin_target`; otherwise `cleanup_round_action_surface_mismatch`,
+    and a missing or unreadable stored result is rejected); and that the
+    target still exists with the card's type. It then calls the canonical domain
+    function and dismisses the card (never `reviewedAt`). Either the item
+    improves and the card disappears, or nothing changes; the page renders the
+    returned round:
+    - `rename` (rename_item): `updateTask` / `updateProject` with the loaded
+      `expectedRevision`, so stale writes are rejected;
+    - `create-task` (decision, first slice, follow-up): `createChildTask`
+      under a task, or `createTask` with `projectId` in a project, with the
+      normal owner/context/tag inheritance;
+    - `add-done-when`: `addCriterion` for a project; for a task, the
+      `appendTaskNotes` notes append of the `Erledigt, wenn: …` block;
+    - `clarify-admin`: a rename to `suggestedTitle` and/or a notes append with
+      the recipient/document details, both previewed and editable; at least
+      one must change, and `expectedRevision` is checked before either write.
+  - an existing `useWorkItemCommands()` workflow where Machbar has no specific
+    change to offer: `task.convertToProject` (choose_shape → project; its sheet
+    is already the confirmation), `task.plan`/`story.defer` (rhythm/revisit,
+    no date prefilled), `task.structure` (“Öffnen und strukturieren”) and
+    `story.planWork` (opens the project’s next-action focus), and “Öffnen und als Information prüfen” for reference
+    suggestions. There is no canonical action → reference conversion
+    (`makeTaskAction` only promotes references), so Machbar does not add a
+    parallel one.
+  - no extra button, when the surface only reaches the plain item view that
+    the card's own “Öffnen” already covers.
+
+  There is no generic “apply AI result” endpoint: each action endpoint accepts
+  only its own strict payload and reuses the canonical domain function inside
+  the card-resolution transaction. Failed items
+  stay visible as cards with open and hide; a single failed item carries its
+  own retry, while several failed items share one banner retry.
+
+The More entry appears only when the Home Assistant AI Task is ready. Older
+Home Assistant components answer the new request kind with
+`unsupported_request`, so the round fails visibly instead of hanging.
+
+### Alles — `/more/all`
+
+Alles evolves the existing Search implementation. It composes `getProjects()`
+with `searchTasks()` and `SearchFilterBar`; it does not introduce another
+storage or indexing model. With no filters, every non-deleted project is afirst-class entry and standalone task trees cover all lifecycle/blocker states.
+Project descendants are reached through project detail rather than duplicated
+beside the project. Active search/filtering may return a matching nested task
+directly and searches project title/notes as well as tasks.
+
+### Projects tab — `/projects`
+
+`ProjectsPage` renders the same `ProjectStoryRow` (card variant) for active,
+backlog, completed, and archived projects. Active stories stay primary, backlog
+stories render in their own visible but collapsed-by-default **Später / noch
+nicht aktiv** section, and completed/archived stories remain folded.
+
+- **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail instead, never the one-tap default. Backlog activation is also offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
+- **Left swipe / ⋯** asks what should happen next with the item, revealing up to three contextual interventions in one horizontal row. Lifecycle transitions remain in the separate right-swipe rail.
+- The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step. `archived` only ever offers `return_to_backlog`; there is no direct `archived → active` shortcut anywhere in the UI.
+- Activation requires a driver plus an executable progress path or intentional
+  healthy future wait. Focused preflight opens `MemberSelectionSheet` or the
+  existing task composer for the missing decision and then uses the canonical
+  project action.
+- Completion is intercepted centrally by `lifecyclePrerequisite()` in
+  `lib/projectWorkflow.ts`, not by special-casing individual buttons: unchecked
+  acceptance criteria open `CompleteWithCriteriaSheet` (the focused checklist,
+  never the structural `StoryCriteriaSheet`/`editOutcome` editor), and — once
+  criteria are satisfied or absent — remaining open child tasks open
+  `CompleteWithOpenTasksSheet`, which lets the driver cancel or move each one
+  (reusing `useTaskActions().requestCancel` and the canonical
+  `task.changeProject` command) before the primary "Projekt abschließen"
+  action becomes enabled. Every entry point still dispatches the same semantic
+  `story.complete` command.
+- Task completion with retained criteria is resolved centrally in
+  `useWorkItemCommands()`: unchecked criteria open the shared
+  `CompleteWithCriteriaSheet`, then dispatch the same `task.toggleDone`
+  command after the criteria are checked. The API independently validates
+  criteria inside the canonical task completion transaction.
+- Every row shows its server-confirmed status; pending actions disable conflicting controls.
+
+#### Filtering and ordering the list
+
+`lib/projectListFilter.ts` is a pure `filterAndSortProjects(projects, { query, scope, currentMemberId })`, unit-tested on its own and called once per render by `ProjectsPage`:
+
+- **Search** folds diacritics (`NFD` + combining-mark strip) and lower-cases both sides, then substring-matches the title **and** every `acceptanceCriteria[].text`. The list endpoint already returns criteria (`Graph.load`), so no extra request is needed.
+- **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter. A third state, `work`, shows only the current member's own `scope: "work"` items (household items are excluded); `nextAgendaScope` in `apps/web/src/lib/todayScope.ts` defines the shared Mine → Household → Work cycle order and is reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, and `InboxPage`.
+- **Sort buckets**, in order: active & healthy, active & ready-to-complete
+  (`completion_review`), active & `stuckReason`, active with a future-scheduled
+  next action, active waiting, backlog, completed, archived; ties break on
+  `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is
+  stable across reloads.
+- Active rows form the primary list. Backlog rows form a visible **Später /
+  noch nicht aktiv** disclosure that starts closed by default. Completed and
+  archived rows keep that same deterministic order inside the folded
+  **Abgeschlossen & archiviert** section. A non-empty search reveals matching
+  terminal rows automatically.
+- Filtering runs **before** sorting on the current server response; no retained copies are merged into the list.
+- `ProjectsPage` distinguishes *no stories at all* (`noProjects`) from *nothing matches* (`noMatchingProjects`) by testing the unfiltered list first.
+
+#### Status accents and a single progress bar
+
+`statusAccent(story)` collapses status + `stuckReason` into six values — `backlog | active | review | stuck | completed | archived` — and every colour-carrying element keys off that one class (`.story-row-accent-*`, `.story-row-status-badge--*`, `.story-row-primary--*`, and the primary swipe background). An `active` story with a `stuckReason` therefore reads as a warning, not as healthy progress, except `completion_review`, which renders as the distinct `review` accent — ready to complete, not stuck — and `backlog` is deliberately not green.
+
+The four targeted actions render as icon-only 44 px buttons (`.story-row-chip-icon`) with inline, `aria-hidden`/`focusable="false"` SVG glyphs; the German `aria-label` **and** `title` carry the accessible name, so nothing is conveyed by the glyph alone. Workflow transitions stay labelled text chips.
+
+The row shows **one** progress bar — task completion, marked up as a real `role="progressbar"` with `aria-valuenow/min/max` and `aria-valuetext` (`2/4`). Acceptance-criteria progress is core outcome content instead: `ProjectDetailPage` renders a visible **Ergebnis** checklist with its `done/total` count, direct check/uncheck, and an explicit `story.editOutcome` entry into the structural editor.
+
+### Status disclosure and explicit transition buttons
+
+No surface offers status as a `<select>`. Lists keep read-only status badges;
+task details use a labeled current-status disclosure with a chevron and
+`aria-expanded`. Project details separate the read-only status badge from an
+explicit Change status button. Their choices sit directly below and dispatch
+canonical task/project commands. Project choices come from `availableActions`
+and `storyWorkflowCommand()`; task terminal transitions retain criteria and child
+policy decisions. Captured Inbox classification remains separate. Tests assert
+there is no status combobox and preserve all legal transitions.
+
+### One headless horizontal-swipe primitive
+
+`useHorizontalSwipe` owns drag distance, the 8 px slop, delayed pointer
+capture, horizontal/vertical intent, clamping, thresholds, cancellation, and
+one-shot click suppression for `TaskRow`, `ProjectStoryRow`, `RefinementTaskRow`,
+and guided capture cards. Callers can opt out of interactive-control starts.
+Disabling the hook cancels an in-flight gesture. It captures from
+`pointermove` only after a real drag, never from `pointerdown`, so ordinary taps
+and mouse clicks inside rows remain reliable. Labels, backgrounds, actions,
+and swipe-coach policy stay local to each row.
+
+The outline's structural drag is a *separate* gesture and deliberately uses
+window-level listeners instead of pointer capture. The handle's `pointerdown`
+stops propagation, and TaskRow cancels horizontal swipe when its hierarchy
+long press becomes real, so the two mechanics never run at once.
+
+`useOutlineOrganize` separately suppresses the handle click synthesized after a
+real structural drag. Both suppression paths are one-shot and reset for the
+next independent pointer sequence.
+
+### Optional planning tools
+
+The owner × effort matrix remains a collapsed secondary view inside Review,
+backed by `GET /api/refinement/owners` and `GET /api/refinement/tasks`.
+
+`RefinementTaskRow` supports:
+- **Effort** — `lib/refinementHelpers.ts` defines the pure
+  `S → M → L → XL → (none)` cycle; swipe and tap execute it through
+  `useRefinementActions.cycleSize`/`setSize`/`clearSize`. `XL` with no open
+  child produces `too_large_without_children` and suggests adding a child.
+- **Assignment** — the *Zuweisen* chip opens `TaskOwnerSheet` with the
+  `TaskOwnerChoiceGroup`, **not** the full task detail sheet. The owner picker
+  keeps the three persistence semantics distinct without exposing raw
+  `inherit` / `explicit` / `none` storage terms: inherited owner (when one
+  exists), deliberate shared/unassigned, or an explicit member. Standalone
+  tasks omit a meaningless inherit option. `useRefinementActions.assignOwner`
+  waits for the server and rethrows on failure so the still-open sheet renders
+  the error.
+
+Task metadata execution and owner-assignment semantics live in the non-React
+`lib/taskMutations.ts`. `useTaskActions` and `useRefinementActions` both use
+that revision-safe executor and the same pending/error mutation primitive.
+Fresh reads regroup normal lists and the owner-by-effort matrix without a
+retention window.
+
+---
+
+## 9. Web Interaction Patterns
+
+### Three editing contracts
+
+Editing surfaces follow three explicit contracts:
+
+1. **Discrete properties** such as owner, tags, dates, and lifecycle transitions
+   save immediately after one deliberate choice.
+2. **Authored content** such as titles and notes uses an explicit edit state
+   with Save/Cancel; drafts are never persisted by closing a sheet.
+3. **Compound workflows** such as external-wait follow-up and task hierarchy
+   movement map to one atomic backend command.
+
+Focused sheets may own drafts and user intent, but not a second mutation
+implementation. Task metadata and external-wait execution flow through
+`useTaskActions`; project metadata and lifecycle changes flow through
+`useProjectActions`. `ProjectDetailPage` is the sole project-notes editor.
+
+### One canonical mutation path
+
+Shared domain semantics live in small explicit modules rather than a generic
+repository or command bus. `taskMutations.ts` owns revision-safe task metadata
+execution and owner assignment semantics. `useItemMutations` supplies common
+per-item pending state, localized errors, duplicate-in-flight protection and
+successful-write/stale-conflict invalidation. Actions do not predict domain
+state or retain confirmed server-value overlays.
+Successful writes invalidate the captured refresh owner even after their
+consumer sheet closes. Provider retirement isolates that owner from a new
+identity; local callbacks and state still require their own lifetime guards.
+
+Presentation components call those paths instead of rebuilding revision,
+refresh, and error handling. Unique workflows such as SharePage's append/date
+conflict behavior stay local because they do not duplicate an established
+action contract.
+
+### Server-confirmed interactions
+
+The approved simplification deliberately removes optimistic domain updates,
+confirmed DTO overlays, timed row retention and interaction leases. A command
+shows pending feedback and prevents another command for that item until its
+request settles. Failure leaves server data unchanged and displays the error;
+success invalidates reads. Backend revisions still reject stale writes.
+
+Lists, Review cards, tag groups and outlines immediately adopt the next server
+result's values, membership and ordering. Rows may move or disappear after a
+successful action; there is no four-second undo/reopen placement window.
+Focused editors live in the canonical workflow/detail hosts rather than in the
+row they were opened from. Ordinary refreshes/network errors preserve drafts;
+access revocation deliberately ends the workflow and discards its choices.
+Stale compound operations require explicit reconfirmation.
+
+`queryClient.ts` contains the small native Query cancellation/invalidation
+adapter and access-error cache eviction. It does not merge revisions, traverse
+nested project copies or publish metadata as full detail. View-specific endpoint
+results refetch independently. This trades immediate cross-view consistency for
+less client coordination while leaving backend authority unchanged.
+
+### Focused quick sheets
+
+Interactions target one field at a time instead of opening the full detail sheet:
+
+| Component | Purpose |
+|-----------|---------|
+| `TaskQuickActionSheet` | Focused task schedule or notes editing; execution is supplied by `useTaskActions` |
+| `TaskOwnerSheet` | Focused task-owner chooser that preserves inherit / explicit / none semantics without exposing storage terminology |
+| `TaskOwnerChoiceGroup` | Task-owner chips for inherited owner, shared/unassigned, and explicit members |
+| `MemberSelectionSheet` | Reusable household-member picker for project-driver and other non-inheritable member choices |
+| `MemberChoiceGroup` | The tap-chip choice group rendered by assignment surfaces |
+| `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` and the task-detail criteria disclosure |
+| `StoryCriteriaSheet` | Targeted criteria popup for a story row |
+| `CompleteWithCriteriaSheet` | Focused project/task completion continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` and commits the canonical completion command after the user checks all criteria |
+| `CompleteWithOpenTasksSheet` | Focused `story.complete` continuation when criteria are satisfied/absent but open child tasks remain: lets the driver cancel or move each task (reusing `useTaskActions().requestCancel` and `task.changeProject`) and commits the same completion transition once no open tasks remain |
+| `ProjectDeferSheet` | Canonical backlog-project Wiedervorlage (`scheduledDate`) editor |
+| `ProjectDeadlineSheet` | Project deadline (`dueDate`) only |
+| `TaskPlanningSheet` | Owns the shared scheduled/recurrence/reminders/waiting/revisit/deadline draft; composes the draft-only `TaskRemindersEditor` and delegates one revision-safe atomic update, pending state, errors, and refresh to `useTaskActions` |
+| `DestinationPicker` | Searchable refile destination list with recents (see below) |
+
+Assignment surfaces read members from `useIdentity`, so tests mounting themmust wrap in `IdentityProvider` and mock `api.getMembers`.
+
+### Assignment pickers are tap chips, not selects
+
+A household has at most ~5 members, so every focused assignment popup renders the full choice set as chips through `MemberChoiceGroup`:
+
+- No native `<select>` overlay stacked on top of a bottom sheet, and one tap instead of open-scroll-confirm.
+- A `role="group"` labelled via `aria-labelledby` (`Zuständig` / `Verantwortlich`), with each chip reporting `aria-pressed` — selection is never conveyed by colour alone.
+- An explicit "nobody" chip (`Gemeinsam / offen` for tasks, `Niemand zugewiesen` for stories) where clearing is legal. Driver activation omits it because the API rejects activating without a driver.
+- Chips keep a ~44 px touch target (`.choice-chip`) and wrap rather than scroll.
+
+`TaskDetailSheet` and `ProjectDetailPage` read as documents. Authored title
+and notes keep explicit Edit/Save/Cancel. The summary labels Responsibility,
+Planning and Organization, separating status from scalar-property editing and
+authored content. Task owner and Project owner name the respective existing
+owner/driver workflow; inherited task ownership identifies the parent-task or
+project source from `effectiveOwnerSource`. Project ancestry appears once in
+clickable breadcrumbs, not as a second ownership/property control. Scheduled dates
+and deadlines have separate buttons and target the same planning draft.
+
+`DetailPropertyPill` remains the shared current-value control. Detail summary
+CSS makes it quiet and wraps long values while keeping 44px touch targets;
+focused editors retain their existing presentation. Every current value opens
+its canonical editor directly. Unset tags/places always have a direct labelled
+shortcut. Add details beside Planning contains only applicable unset revisit,
+reminder, recurrence, priority and prerequisite entries. Missing external waits
+have a direct entry in the planning summary, through the same waiting command.
+Clearing a value brings its add entry back; no domain eligibility rules change.
+Captured tasks also expose a secondary Add subtasks entry through `task.split`,
+with the same pending/authored-draft guards as Structure. Manual subtask entry
+precedes optional AI in Structure; both retain their existing workflow hosts.
+
+`DetailActionMenu` is a shared presentation wrapper over `BottomSheet` and
+`ActionTileGrid`, with no mutation or workflow routing. Its header instance
+owns discussion, manual clarification (tasks), additional-next-action (tasks),
+attachments, sharing/export and confirmed delete as a normal red action tile.
+Project lifecycle choices live only under Change status, not in this menu.
+The AI shortcut remains beside it. A selected command dismisses the menu before
+dispatching to the existing workflow host; sharing keeps its feedback in the
+menu. The old lower Weitere Aktionen and danger catalogs are removed. Contextual
+step, outcome and prerequisite actions remain at their content sections.
+`WorkItemDetailDisclosure` places outcome/structure heading actions outside the
+native summary; the 44px icon controls remain reachable when collapsed.
+Project outcome and project task sections start expanded, preserving their initial
+content visibility. Task structure retains its existing default-open behavior
+and all variants retain the Structure workflow entry.
+Empty content has quiet add access instead of a prominent empty panel.
+Created/updated metadata is inside the final activity disclosure; both activity
+and recurrence history use quiet collapsed disclosures. Material/provenance keep
+their existing navigation. Breadcrumbs dispatch `workItem.open`; opening a
+project closes any task detail sheet before navigating.
+
+Focused task workflows may derive optional structured suggestions from the
+task title through the React-free `lib/captionHints.ts` primitive. It retains
+source and removal spans, resolves German/English calendar phrases against the
+task's original `createdAt`, and ranks matches only against known members,
+tags, and active Home Assistant contexts. `CaptionHintSuggestions` renders at
+most three matches inside the existing plan, owner, tag, context, or start-wait
+sheet; there is no parsing dialog and capture syntax is unchanged.
+
+Suggestion acceptance remains part of the owning workflow. Planning stages
+accepted spans until **Fertig**; owner, tag, and context acceptance sends the
+structured field plus cleaned title through the existing revision-safe task
+PATCH. Ignoring or cancelling is inert, and cleanup never creates an empty
+title. Starting an external wait is the deliberate exception: its person/text
+and follow-up-date hints only fill the existing local draft and preserve the
+title, because the dedicated wait command remains one backend operation and is
+not expanded with unrelated title metadata.
+
+`ProjectDetailPage` is the same shape for stories, and `ProjectEditSheet` is
+gone. The page edits only its authored title and notes in place; driver,
+dates, tags and contexts are meta-row values that dispatch
+`story.assignDriver`/`story.defer`/`story.deadline`/`story.tags`/`story.contexts`, and the
+driver avatar itself is also directly clickable for the same
+`story.assignDriver` shortcut.
+Outcome is visible **Ergebnis** content: `AcceptanceCriteriaChecklist` shares
+the direct `useCriterionCheck` mutation with `AcceptanceCriteriaEditor`, while
+the explicit `story.editOutcome` action is the sole route for changing
+criterion structure — reachable both from the row rail's `Struktur` sheet and
+from the contextual icon button next to the outcome section. Its genuine
+non-property commands use the same header `DetailActionMenu` as tasks, with
+only project-supported commands and properties.
+Deleting the sheet also deleted its private copies of
+activation-driver, activation-progress and completion-criteria prerequisite
+handling, which `resolveStoryPrerequisite()` already decides once. Review
+repair links (`?focus=driver|completion|outcome`) dispatch those same
+commands rather than scrolling a form to a field. Filters
+(`SearchFilterBar`) are unaffected; settings (`MorePage`) no longer has a
+rail-favorites configuration section since the rail is fixed.
+
+### Outline structure editing: drag and keyboard
+
+The old global "Sortiermodus" and its seven-button panel under *every* row — and later, the intermediate single selected-task toolbar — are gone. Structural editing now lives in two files:
+
+| Module | Responsibility |
+|--------|----------------|
+| `lib/taskTreeMove.ts` | Pure, React-free geometry and tree maths: `slotFromPointer`, `projectDrop`, `locateTask`, `planMove`, `applyMove`, `outlineRootGroup`. Unit-tested on its own |
+| `lib/useOutlineOrganize.tsx` | Drag/keyboard destination calculation, live drag geometry and pending feedback; publishes `OutlineOrganizeValue` through context. Row errors belong to the canonical task action, not an outline-local copy |
+
+`TaskRow` renders exactly one structural control — the ⠿ handle. Pressing it starts a drag (a row long-press is the touch shortcut into the same drag); arrow keys on the focused handle move the task directly, and `Alt+ArrowUp/Down/Left/Right` moves the interaction scope's active task the same way from anywhere in the row (`lib/useWorkItemKeyboardNav.ts`). A plain click/tap on the handle opens no separate mode. `consumeDragClick()` swallows the click a real drag ends with, so a drag never also fires a stray click.
+**Projection.** Rows register themselves (`registerRow`) so the rendered — i.e. currently *visible*, non-collapsed — tree becomes a flat ordered list. The list and its rects are snapshotted once when the drag starts (rows do not move while dragging). `projectDrop` bounds the target depth by the neighbours: at most one level deeper than the row above, never shallower than the row below. All traversals in `taskTreeMove.ts` are iterative and identity-preserving, so a 30-level outline neither blows the stack nor re-renders untouched branches.
+
+**Command mapping.** `planMove` returns either no-op or one concrete
+destination (`parentTaskId`, optional root `projectId`, `position`, and the
+rendered `expectedRevision`). `useOutlineOrganize` executes that destination through `useTaskActions.move`
+and `POST /api/tasks/:id/move`; indent/outdent are geometry, not API operations.
+`targetIndex` is always counted inside the destination sibling group excluding
+the moved task, matching the backend contract.
+
+**Server-confirmed movement.** Drag geometry previews the destination before
+submission, but a submitted move does not install an optimistic task tree.
+Pending feedback blocks conflicting commands through the shared task-ID gate.
+Success invalidates reads and the returned server hierarchy supplies order and
+positions; failure leaves the displayed hierarchy unchanged and shows the
+localized move error. Stale failures refresh before another explicit attempt.
+
+**Where it is offered.** `TaskOutline` takes an explicit `organizable` prop and only `ProjectDetailPage` passes it: `GET /api/projects/:id` returns `graph.rootsByProject`, the complete stored sibling group. Compiled views (`TodayPage`, `InboxPage`, `AllPage`) show a filtered slice of tasks from unrelated groups, where a position read off the screen would be applied to the *full* group on the server and silently shuffle rows the user never saw. `outlineRootGroup` is then applied on top as a structural second guard (all roots must share `parentTaskId` **and** `projectId`).
+
+### Compact descendant presentation (Today)
+
+`TaskOutline`'s `compactDescendants` prop is a presentation-only mode, not a
+different data path. `TodayPage` passes it on every `TaskOutline` it mounts;
+`ProjectDetailPage` never sets it, so the full outline is unchanged there.
+
+`TaskRow` derives its own compactness as `depth > 0 && compactDescendants`: the
+root row of any Today card always keeps its full metadata stack (tags, notes,
+attachment preview, next-action badge, scheduled/revisit/project-due chips),
+while every nested descendant renders only the title, its status control, and
+the high-value signals (owner, due date, waiting/blocked) — this keeps
+execution context legible without duplicating Project Detail's authoring view.
+
+Entirely-terminal descendant subtrees (a `done`/`cancelled` task whose own
+children are all likewise entirely terminal) collapse behind an inline
+"N erledigt anzeigen" affordance instead of rendering by default; expanding it
+reveals them inline and it can be collapsed again. The prune is recursive but
+never hides a path to open work: a terminal task with a still-open descendant
+stays visible so that descendant remains reachable. Freshly completed children
+follow this same rule immediately, without a retention exception. The parent's `done/total`
+progress count is always computed against the full, unpruned `children` array.
+
+**Details that are easy to get wrong, and are covered by tests:**
+
+- Window `pointermove`/`up`/`cancel`/`keydown` listeners are installed through *stable* dispatchers that forward to a ref, so a re-render mid-drag cannot leave a stale listener attached.
+- The `mounted` ref is re-asserted **on mount**, not only cleared on unmount — React `StrictMode` mounts, unmounts and remounts every effect in development, and a one-way flag would leave every later move without refresh, without rollback and permanently "busy".
+- Re-parenting unmounts and remounts the row, which would drop keyboard focus; the hook remembers the row and restores focus to its handle once the new DOM node exists (one attempt only, so it can never steal focus later).
+- Dropping into a **collapsed** parent would hide the moved row, so the hook publishes an `expandRequest` the addressed row reacts to (collapse state is per row).
+- A drag is announced through a `role="status"` live region, since the gesture has no meaning for assistive tech.
+
+`MoveTaskSheet` always renders both the project and parent destination pickers
+in one step — there is no separate `parent`-only mode, since a project-only
+move is not representable in the `work_items.parentId`-only hierarchy anyway,
+and the combined shape is a strict superset. It is opened from
+`task.changeProject`, dispatched from the `Struktur` workflow
+(`TaskStructureSheet`), available in task details and clarification rails via `TaskWorkflowHost`:
 
 - **Search** is an always-visible filter over the candidate list, matched case-insensitively (`toLocaleLowerCase`, so German umlauts fold correctly) as a substring of `title + subtitle`. For parent-task candidates the subtitle is the owning project's title, so typing a project name finds its tasks.
 - **Recents** (`lib/recentDestinations.ts`) are shown first while the query is empty, in a `Zuletzt verwendet` group, with the remaining candidates under `Alle Ziele`. Once a query is typed the grouping collapses to plain results.
@@ -1028,8 +1686,7 @@ The obsolete `TaskAvailabilitySheet` and `TaskPlanSheet` compatibility wrappers
 were removed; availability entry, DST and caption-hint coverage exercise
 `TaskPlanningSheet` directly.
 
-Planning starts with compact value summaries and small add actions. The expanded
-sections are presentation state; collapsed date/reminder controls remain mounted
+Planning starts with compact value summaries and small add actions. The expandedsections are presentation state; collapsed date/reminder controls remain mounted
 to retain authored text and pending inputs. Reminder control IDs are scoped to
 each editor instance so retained and foreground forms cannot collide. Direct targets expand only their
 editor, scroll and focus it. Invalid input and same-field conflicts reveal their
@@ -1128,8 +1785,7 @@ untouched. The API serializes image preparation and rejects inputs above 64
 megapixels so concurrent or pathological decodes cannot multiply server memory
 use.
 
-The installed PWA's POST share target is deliberately separate from API upload.
-`apps/web/public/sw.js` stages title, text, URL, and files in IndexedDB, then
+The installed PWA's POST share target is deliberately separate from API upload.`apps/web/public/sw.js` stages title, text, URL, and files in IndexedDB, then
 opens the existing `SharePage` with an opaque pending ID. The ID remains in the
 OIDC `returnTo` URL, and `pendingShareTarget.ts` removes the staged payload only
 after SharePage has created or updated its selected destination. The service
@@ -1228,8 +1884,7 @@ Project Wiedervorlage never routes through Week; it uses `story.defer`.
 React-independent descriptor layer for labels, groups, keys, and availability.
 It does not execute commands; `useWorkItemCommands()` remains the execution
 path. The descriptor registry derives keyboard help and `g` prefix hints, so
-shortcut documentation is not maintained as a second handwritten table.
-`Ctrl/Cmd+K` command palette UI is intentionally deferred until it can reuse
+shortcut documentation is not maintained as a second handwritten table.`Ctrl/Cmd+K` command palette UI is intentionally deferred until it can reuse
 the same descriptors without introducing a separate combobox/action framework.
 
 **Interaction scopes and the logical active item.**
@@ -1328,8 +1983,7 @@ split sheet's subtree editor) via `InlineSuccessorComposer`, not in
 compiled views where sibling order isn't visible. Owner/driver avatars in
 `TaskRow`/`ProjectStoryRow` are directly clickable shortcuts to
 `task.assignOwner`/`story.assignDriver`.
-`InteractionScopeProvider` owns the open rail identity and closes other rails
-when a new row is opened or the user taps elsewhere.
+`InteractionScopeProvider` owns the open rail identity and closes other railswhen a new row is opened or the user taps elsewhere.
 
 **Readable detail projections.** Task and project details remain separate
 because their domain content differs, but they present current scalar values
@@ -1428,7 +2082,6 @@ Source and destination ancestry are reviewed along with the source subtree.
 Committed moves and nested conversions use `activateCommittedProjectChain`
 inside their original transaction. That adapter walks through intervening task
 parents and presents the nearest project parent to the pure commitment rules.
-
 `story.move` dispatches only through `useWorkItemCommands` / `ProjectWorkflowHost`
 to `MoveProjectSheet`. It reuses `DestinationPicker`, recents, and
 `ProjectActivationDecisionFields`. Conflict keeps the destination and authored
@@ -1528,8 +2181,7 @@ only through `useGoalActions.recordObservation`. Questions never become tasks.
 `domain/goals.ts::backIntervention` is the single backing mutation for all
 intervention types, using canonical task creation and `intervention_tasks`
 provenance with stable proposal-local keys. `InterventionTasksEditor` authors
-only drafts; `InterventionTasksSheet` commits through `useGoalActions`.
-The singular backing pointer is a presentation summary; provenance is durable
+only drafts; `InterventionTasksSheet` commits through `useGoalActions`.The singular backing pointer is a presentation summary; provenance is durable
 and retains deleted-work identity. Migration 0028 converts existing pointers.
 
 ### Intervention evidence and checkpoint decisions
@@ -1628,8 +2280,7 @@ previous textarea keydown/beforeinput/execCommand continuation path is removed.
 
 Callers must pass asynchronous save/mutation state explicitly through
 `MarkdownEditor.disabled`; contenteditable does not inherit a disabled fieldset.
-Task/project notes and Capture lock input during submission; quick append
-combines its own pending state with the caller lock. Intake content edits are
+Task/project notes and Capture lock input during submission; quick appendcombines its own pending state with the caller lock. Intake content edits are
 synchronous draft edits inside a modal, with no asynchronous field save.
 
 ### Navigation chrome (#238)
@@ -1728,8 +2379,7 @@ Project status and header lifecycle choices use server `availableActions` and
 explicit withdrawal decisions and the canonical atomic return-to-backlog command
 for active/archived projects. `story.planWork` adds a next action, never a project
 execution date. Outcome guidance/edit access and next-step guidance/actions remain
-prominent for empty projects; completed/archived projects retain their existing
-next-step eligibility guards. Task captured/reference/recurrence/terminal guards
+prominent for empty projects; completed/archived projects retain their existingnext-step eligibility guards. Task captured/reference/recurrence/terminal guards
 remain independent.
 
 The project Add tasks launcher lives beside the summary/task count, rather than
@@ -1829,7 +2479,6 @@ the project projection after role conversion and returns project_not_found
 instead of 200/null. Migration 0031 includes its chained schema snapshot; the
 schema-drift regression invokes the installed generator against a temporary copy
 and requires that it produces no additional SQL migration.
-
 The early stale project-deadline branch also passes viewer context to
 projectActivationDecisionSnapshot. That builder authorizes every project in
 both its requirements and revision arrays before returning an error snapshot.
