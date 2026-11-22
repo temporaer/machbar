@@ -1271,13 +1271,16 @@ export class Graph {
     const nextSeen = new Set(seen);
     nextSeen.add(projectId);
     const tasks = this.actionsForProject(projectId);
+    const waitingTasks = tasks.filter(
+      (task) => task.status !== "done" && task.status !== "cancelled",
+    );
     const openCount = tasks.filter(
       (t) => t.status !== "done" && t.status !== "cancelled",
     ).length;
     const doneCount = tasks.filter((t) => t.status === "done").length;
     const waitingOn = [
       ...new Set(
-        tasks
+        waitingTasks
           .filter((task) => task.externalWait !== null)
           .sort(
             (a, b) =>
@@ -1292,7 +1295,7 @@ export class Graph {
       ),
     ];
     const waitingUntil =
-      tasks
+      waitingTasks
           .map((task) => task.revisitAt ?? null)
           .filter((date): date is string => date !== null)
           .sort()[0] ?? null;
