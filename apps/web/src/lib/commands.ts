@@ -58,7 +58,7 @@ export type WorkItemCommand =
   | { type: "task.convertToProject"; taskId: number }
   | { type: "task.lifecycle"; taskId: number }
   | { type: "task.setStatus"; task: Task; status: Task["status"] }
-  | { type: "task.toggleDone"; task: Task }
+  | { type: "task.toggleDone"; task: Task; inlineCompletion?: boolean }
   | { type: "task.toggleAdditionalNextAction"; task: Task }
   | { type: "task.primaryAction"; task: Task }
   | { type: "task.makeAction"; task: Task }

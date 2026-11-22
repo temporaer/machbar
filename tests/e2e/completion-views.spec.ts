@@ -111,6 +111,7 @@ const views = [
 for (const view of views) {
   test(`${view.name} confirms a committed completion without retaining its row`, async ({ page, isMobile }) => {
     const { task, path } = await view.setup(page);
+    await page.clock.install();
     await page.goto(path);
     if (isMobile && view.name === "All") {
       const row = page.locator(`[data-workitem-id="${task.id}"]`);
@@ -122,22 +123,58 @@ for (const view of views) {
       await completeRow(page, task.id, isMobile);
     }
     const notice = page.locator(".view-completion-notice");
-    await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
-    await expect(notice).toBeInViewport();
-    expect(await notice.evaluate(element => element.closest("[inert], [aria-hidden=true]"))).toBeNull();
+    const inlineAcknowledgement = !isMobile && !(view.name === "All" && isMobile);
+    if (inlineAcknowledgement) {
+      const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
+      await expect(source.locator(".task-row-title")).toHaveClass(/done/);
+      await expect(notice).not.toHaveText(`„${task.title}“ erledigt.`);
+    } else {
+      await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
+      await expect(notice).toBeInViewport();
+      expect(await notice.evaluate(element => element.closest("[inert], [aria-hidden=true]"))).toBeNull();
+    }
     expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("done");
 
     if (view.name === "Inbox") {
-      await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
-      if (await page.locator(".inbox-page [data-workitem-id]").count() === 0) {
-        await expect(page.getByText("Der Eingang ist leer. Gute Arbeit!")).toBeVisible();
+      if (inlineAcknowledgement) await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(1);
+      else {
+        await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
+        if (await page.locator(".inbox-page [data-workitem-id]").count() === 0) {
+          await expect(page.getByText("Der Eingang ist leer. Gute Arbeit!")).toBeVisible();
+        }
       }
     } else if (view.name !== "Today") {
       await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(1);
     }
-    await expect(notice).toHaveCount(1);
+    if (inlineAcknowledgement) {
+      await page.clock.runFor(3_000);
+      await expect(notice).not.toHaveText(`„${task.title}“ erledigt.`);
+      if (view.name === "Inbox") await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
+    } else await expect(notice).toHaveCount(1);
   });
 }
+
+test("a checkbox acknowledgement stays struck through inside a narrow Today row", async ({ page, isMobile }) => {
+  test.skip(isMobile, "the mobile task row uses its swipe completion action");
+  const task = await createTask(page, `Narrow ${randomUUID()}`, { dueDate: "2000-01-01" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install();
+  await page.goto("/#/today");
+  const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
+  await expect(source).toBeVisible();
+  const title = source.locator(".task-row-title");
+  const checkbox = source.getByRole("button", { name: "Erledigt", exact: true });
+  await checkbox.click();
+  await expect(title).toHaveClass(/done/);
+  await expect(source.getByRole("button", { name: "Wieder öffnen", exact: true })).toBeDisabled();
+  await expect(page.locator(".view-completion-notice")).not.toContainText(task.title);
+  const bounds = await source.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await page.clock.runFor(3_000);
+  await expect.poll(async () => (await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("done");
+});
 
 test("a criteria completion begun in Inbox cannot notify the replacement All view", async ({ page }) => {
   const task = await createTask(page, `Criteria ${randomUUID()}`, {

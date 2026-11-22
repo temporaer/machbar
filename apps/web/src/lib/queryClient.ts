@@ -22,8 +22,10 @@ export function createReadQueryClient() {
   });
 }
 
-export async function invalidateReads(client: QueryClient, afterWrite = false, only?: Query) {
-  const filter: QueryFilters = only ? { predicate: query => query === only } : {};
+export async function invalidateReads(client: QueryClient, afterWrite = false, only?: Query, except?: Query) {
+  const filter: QueryFilters = only
+    ? { predicate: query => query === only }
+    : except ? { predicate: query => query !== except } : {};
   if (afterWrite) {
     await client.cancelQueries(filter);
     await client.invalidateQueries(filter);

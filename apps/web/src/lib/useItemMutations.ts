@@ -2,19 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "./errorMessage";
 import { useRefresh } from "./refresh";
 import { useStrings } from "./strings";
+import type { Query } from "@tanstack/react-query";
+
+export interface ItemMutationRefreshOptions {
+  deferQuery?: Query;
+  delayMs?: number;
+}
 
 interface ItemMutation<TResult> {
   id: number;
   mutate: () => Promise<TResult>;
   throwOnError?: boolean;
   pendingMessage?: string | undefined;
+  refreshOptions?: () => ItemMutationRefreshOptions | undefined;
   onCommitted?: (result: TResult) => void;
 }
 
 /** Pending/error feedback only: server reads own every domain value and row. */
 export function useItemMutations() {
   const strings = useStrings();
-  const { bump } = useRefresh();
+  const { bump, bumpAfterQuery } = useRefresh();
   const [pendingMessages, setPendingMessages] = useState(new Map<number, string | undefined>());
   const pendingIds = useMemo(() => new Set(pendingMessages.keys()), [pendingMessages]);
   const [errors, setErrors] = useState<Record<number, string>>({});
@@ -34,7 +41,7 @@ export function useItemMutations() {
   }, []);
 
   const run = useCallback(async <TResult,>({
-    id, mutate, throwOnError = false, pendingMessage, onCommitted,
+    id, mutate, throwOnError = false, pendingMessage, refreshOptions, onCommitted,
   }: ItemMutation<TResult>): Promise<TResult | undefined> => {
     if (!mounted.current) return undefined;
     if (inFlight.current.has(id)) {
@@ -60,7 +67,11 @@ export function useItemMutations() {
       }
       // The captured refresh owner outlives a sheet, but cannot target a replacement identity.
       // Query errors remain read errors; the write has already committed.
-      const refresh = Promise.resolve(bump()).catch(() => undefined);
+      let deferredRefresh: ItemMutationRefreshOptions | undefined;
+      try { deferredRefresh = refreshOptions?.(); } catch { /* A presentation hint must not block a committed write. */ }
+      const refresh = Promise.resolve(deferredRefresh?.deferQuery
+        ? bumpAfterQuery(deferredRefresh.deferQuery, deferredRefresh.delayMs)
+        : bump()).catch(() => undefined);
       if (mounted.current) {
         setPendingMessages(current => new Map(current).set(id, undefined));
         try {
@@ -79,7 +90,7 @@ export function useItemMutations() {
         return next;
       });
     }
-  }, [bump, clearError, strings]);
+  }, [bump, bumpAfterQuery, clearError, strings]);
 
   const isPending = useCallback((id: number) => pendingIds.has(id), [pendingIds]);
   return { run, pendingIds, pendingMessages, isPending, errors, clearError };

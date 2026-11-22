@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { changeStreamUrl } from "./api";
 import { getClientId } from "./clientId";
 import { QueryClientProvider } from "@tanstack/react-query";
+import type { Query } from "@tanstack/react-query";
 import { createReadQueryClient, invalidateReads } from "./queryClient";
 
 export const DISCONNECTED_POLL_MS = 120_000;
@@ -37,6 +38,7 @@ function refreshDiagnostic(reason: string, version: number) {
 interface RefreshContextValue {
   version: number;
   bump: () => Promise<void>;
+  bumpAfterQuery: (query: Query, delayMs?: number) => Promise<void>;
 }
 
 const RefreshContext = createContext<RefreshContextValue | null>(null);
@@ -55,11 +57,17 @@ export function RefreshProvider({
   const lastExternalRefresh = useRef<number | null>(null);
   const diagnosticVersion = useRef(0);
   const latestInvalidation = useRef<Promise<void> | null>(null);
-  const invalidate = useCallback((reason: string) => {
+  const deferredQueryTimers = useRef(new Map<Query, ReturnType<typeof setTimeout>>());
+  const clearDeferredQueryTimers = useCallback(() => {
+    for (const timer of deferredQueryTimers.current.values()) clearTimeout(timer);
+    deferredQueryTimers.current.clear();
+  }, []);
+  const invalidate = useCallback((reason: string, except?: Query, preserveDeferred = false) => {
+    if (!preserveDeferred) clearDeferredQueryTimers();
     diagnosticVersion.current += 1;
     refreshDiagnostic(reason, diagnosticVersion.current);
     setVersion((v) => v + 1);
-    const work = invalidateReads(queryClient, reason === "mutation");
+    const work = invalidateReads(queryClient, reason === "mutation", undefined, except);
     latestInvalidation.current = work;
     return (async () => {
       // Native invalidation can cancel an older refetch. Its completion is
@@ -73,8 +81,18 @@ export function RefreshProvider({
         pending = latestInvalidation.current!;
       }
     })();
-  }, [queryClient]);
+  }, [clearDeferredQueryTimers, queryClient]);
   const bump = useCallback(() => invalidate("mutation"), [invalidate]);
+  const bumpAfterQuery = useCallback((deferredQuery: Query, delayMs = 3_000) => {
+    clearDeferredQueryTimers();
+    const work = invalidate("mutation", deferredQuery, true);
+    const timer = setTimeout(() => {
+      deferredQueryTimers.current.delete(deferredQuery);
+      void invalidateReads(queryClient, true, deferredQuery).catch(() => undefined);
+    }, delayMs);
+    deferredQueryTimers.current.set(deferredQuery, timer);
+    return work;
+  }, [clearDeferredQueryTimers, invalidate, queryClient]);
 
   // Leading refresh plus one trailing refresh; continuous events cannot
   // postpone convergence or invalidate all queries several times per second.
@@ -158,15 +176,16 @@ export function RefreshProvider({
 
   useEffect(
     () => () => {
+      clearDeferredQueryTimers();
       if (coalesceTimer.current !== null) {
         clearTimeout(coalesceTimer.current);
         coalesceTimer.current = null;
       }
     },
-    [],
+    [clearDeferredQueryTimers],
   );
 
-  const value = useMemo(() => ({ version, bump }), [version, bump]);
+  const value = useMemo(() => ({ version, bump, bumpAfterQuery }), [version, bump, bumpAfterQuery]);
   return (
     <QueryClientProvider client={queryClient}>
       <RefreshContext.Provider value={value}>{children}</RefreshContext.Provider>
