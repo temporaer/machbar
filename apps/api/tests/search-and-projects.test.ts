@@ -635,6 +635,9 @@ describe("search/filter and project CRUD/archive", () => {
           status: "actionable",
           title: payload.title,
           scheduledDate: payload.plannedDate,
+          revisitAt: payload.status === "done"
+            ? "2025-01-01T00:00:00.000Z"
+            : undefined,
         },
       })).json();
       if (payload.status !== "done") {
