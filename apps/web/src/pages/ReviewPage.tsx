@@ -26,6 +26,7 @@ import { PageHeader } from "../components/PageHeader";
 import { ViewCompletionNotice } from "../components/ViewCompletionNotice";
 import { RefinementTools } from "../components/RefinementTools";
 import { ChildPolicyPrompt } from "../components/ChildPolicyPrompt";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 import "./ReviewPage.css";
 
 interface ReviewReturn {
@@ -68,19 +69,21 @@ export function ReviewPage() {
     read => read.error !== null || read.refreshError !== null,
   );
   return (
-    <ViewCompletionNotice
-      accessResource={accessResource}
-      enabled={cachedReadsAvailable}
-      readUnavailable={readUnavailable}
-    >
-      <ReviewPageContent
+    <InteractionScopeProvider>
+      <ViewCompletionNotice
         accessResource={accessResource}
-        itemsRead={itemsRead}
-        projectsRead={projectsRead}
-        tasksRead={tasksRead}
+        enabled={cachedReadsAvailable}
         readUnavailable={readUnavailable}
-      />
-    </ViewCompletionNotice>
+      >
+        <ReviewPageContent
+          accessResource={accessResource}
+          itemsRead={itemsRead}
+          projectsRead={projectsRead}
+          tasksRead={tasksRead}
+          readUnavailable={readUnavailable}
+        />
+      </ViewCompletionNotice>
+    </InteractionScopeProvider>
   );
 }
 
