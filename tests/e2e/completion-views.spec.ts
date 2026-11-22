@@ -262,8 +262,8 @@ test("Inbox row and detail share one completion notice", async ({ page }) => {
   const detail = page.getByRole("dialog", { name: "Details", exact: true });
   await detail.getByRole("button", { name: /^Status / }).click();
   await detail.getByRole("button", { name: "Aufgabe abschließen", exact: true }).click();
-  await expect(source.getByRole("status")).toHaveText(`„${task.title}“ erledigt.`);
-  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+  const notice = page.locator(".view-completion-notice");
+  await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
   await expect(notice).toHaveCount(1);
   await expect(notice).toBeInViewport();
 });
