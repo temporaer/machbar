@@ -422,7 +422,7 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
   await page.goto("/#/today");
   const memberId = Number(await page.evaluate(() => localStorage.getItem("machbar:identity-member-id")));
   const projectResponse = await page.request.post("/api/projects", {
-    data: { title: `Familienprojekt mit einem langen erklärenden Namen ${randomUUID()}`, ownerMemberId: memberId },
+    data: { title: `Familienprojekt mit einem langen erklärenden Namen ${randomUUID()}` },
   });
   expect(projectResponse.status()).toBe(201);
   const project = await projectResponse.json();
@@ -431,6 +431,10 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
     scheduledDate: "2099-05-10",
     title: `Eine ausführlich beschriebene Aufgabe ${randomUUID()}`,
   });
+  const activated = await page.request.post(`/api/projects/${project.id}/activate`, {
+    data: { expectedRevision: project.revision, ownerMemberId: memberId },
+  });
+  expect(activated.ok(), await activated.text()).toBe(true);
   await page.goto(`/#/tasks/${item.id}`);
   await expect(page.getByText("Vom Projekt geerbt", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Aufgabenverantwortung/ })).toBeVisible();
