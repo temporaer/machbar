@@ -353,8 +353,12 @@ export function updateProject(
       }
       patch.scope = input.scope;
       changedFields.push("scope");
-      if (input.scope === "household" && project.status === "backlog") {
-        if (project.ownerMemberId !== null && input.ownerMemberId === undefined) {
+      if (input.scope === "household") {
+        if (
+          project.status === "backlog" &&
+          project.ownerMemberId !== null &&
+          input.ownerMemberId === undefined
+        ) {
           throw AppError.conflict(
             "project_backlog_owner_forbidden",
             "Clear the project owner when moving a backlog project to household scope.",
@@ -380,7 +384,11 @@ export function updateProject(
             { projectId: id, nestedProjectIds: ownedBacklogDescendants.map((item) => item.id) },
           );
         }
-        if (project.ownerMemberId !== null && input.ownerMemberId === null) {
+        if (
+          project.status === "backlog" &&
+          project.ownerMemberId !== null &&
+          input.ownerMemberId === null
+        ) {
           patch.ownerMemberId = null;
           if (!changedFields.includes("ownerMemberId")) changedFields.push("ownerMemberId");
         }
