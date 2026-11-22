@@ -194,6 +194,14 @@ describe("filterAndSortProjects", () => {
 
   it("interleaves quiet projects by next-action date and external-wait revisit date", () => {
     const now = new Date(2026, 7, 31, 23, 30);
+    const undatedNextAction = makeProject({
+      id: 5,
+      title: "Nächster Schritt ohne Datum",
+      status: "active",
+      position: 99,
+      nextAction: null,
+      deferredNextAction: makeTask({ scheduledDate: null, revisitAt: null }),
+    });
     const scheduledLater = makeProject({
       id: 1,
       title: "Aktion später",
@@ -226,13 +234,24 @@ describe("filterAndSortProjects", () => {
       stuckReason: null,
       waitingUntil: null,
     });
+    const deferredWithDate = makeProject({
+      id: 6,
+      title: "Verfügbar ab früher",
+      status: "active",
+      position: 99,
+      nextAction: null,
+      deferredNextAction: makeTask({
+        scheduledDate: null,
+        revisitAt: "2026-09-02T08:00:00.000Z",
+      }),
+    });
 
     const result = filterAndSortProjects(
-      [scheduledLater, waitWithoutDate, scheduledSooner, waitSooner],
+      [scheduledLater, waitWithoutDate, scheduledSooner, waitSooner, undatedNextAction, deferredWithDate],
       { query: "", scope: "all", currentMemberId: null, now },
     );
 
-    expect(result.map((project) => project.id)).toEqual([2, 3, 1, 4]);
+    expect(result.map((project) => project.id)).toEqual([5, 6, 2, 3, 1, 4]);
   });
 
   it("breaks ties within a bucket by position, then locale title, then id", () => {

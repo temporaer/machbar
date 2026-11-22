@@ -129,20 +129,24 @@ function projectListSortOrder(
   return projectListClassificationOrder[classification];
 }
 
-/** The date used to order quiet active projects alongside external waits. */
-function activeQuietSortDate(
+/** The date and fallback band used to order quiet active projects. */
+function activeQuietSortKey(
   project: ProjectWithActions,
   now: Date,
-): number | null {
+): { band: 0 | 1 | 2; date: number | null } {
   const classification = classifyProjectListItem(project, now);
   const date = classification === "active-deferred"
-    ? project.nextAction?.scheduledDate
+    ? project.nextAction?.scheduledDate ?? project.deferredNextAction?.revisitAt
     : classification === "active-waiting"
       ? project.waitingUntil
       : null;
-  if (!date) return null;
-  const timestamp = Date.parse(date);
-  return Number.isFinite(timestamp) ? timestamp : null;
+  const timestamp = date ? Date.parse(date) : Number.NaN;
+  if (Number.isFinite(timestamp)) return { band: 1, date: timestamp };
+  // Keep a deferred next-action candidate ahead of external waits when neither
+  // has a usable date; undated waits follow the dated quiet work.
+  return classification === "active-deferred"
+    ? { band: 0, date: null }
+    : { band: 2, date: null };
 }
 
 /**
@@ -163,11 +167,11 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  * Sort buckets, in order: active & actionable, active & ready-to-complete
  * (`completion_review`), active & stuck, quiet active projects
  * (future-scheduled next actions and external waits), backlog, completed,
- * archived. Quiet active projects with
- * dates are interleaved chronologically: scheduled date for next actions,
- * revisit date for external waits. Undated entries follow dated ones. Ties
- * break on classification, backend-assigned `position`, locale-aware title,
- * then id, so the order stays stable and reproducible across reloads.
+ * archived. Quiet projects with dates are interleaved chronologically:
+ * scheduled date for next actions, revisit date for external waits. Undated
+ * next-action candidates lead that date band; undated external waits follow
+ * it. Ties break on classification, backend-assigned `position`, locale-aware
+ * title, then id, so the order stays stable and reproducible across reloads.
  */
 export function filterAndSortProjects(
   projects: ProjectWithActions[],
@@ -195,12 +199,11 @@ export function filterAndSortProjects(
       (aClass === "active-deferred" || aClass === "active-waiting") &&
       (bClass === "active-deferred" || bClass === "active-waiting")
     ) {
-      const aDate = activeQuietSortDate(a, now);
-      const bDate = activeQuietSortDate(b, now);
-      if (aDate !== bDate) {
-        if (aDate === null) return 1;
-        if (bDate === null) return -1;
-        return aDate - bDate;
+      const aKey = activeQuietSortKey(a, now);
+      const bKey = activeQuietSortKey(b, now);
+      if (aKey.band !== bKey.band) return aKey.band - bKey.band;
+      if (aKey.band === 1 && aKey.date !== bKey.date) {
+        return (aKey.date ?? 0) - (bKey.date ?? 0);
       }
       // Keep the two kinds visually grouped when their dates are identical
       // or both are missing, with each kind still recognizable by its color.
