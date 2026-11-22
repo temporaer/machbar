@@ -248,6 +248,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       title: "Rechnung archivieren",
       projectId: projectRes.json().id,
       parentTaskId: root.id,
+      position: 1,
       status: "actionable",
       needsClarification: false,
       dependencies: [
@@ -259,14 +260,14 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       method: "GET",
       url: `/api/projects/${projectRes.json().id}`,
     });
-    expect(
-      projectDetail
-        .json()
-        .tasks[0].children.map((task: { title: string }) => task.title),
-    ).toEqual([
-      "Handwerkerrechnung suchen",
-      "Rechnung archivieren",
-      "Späterer bestehender Schritt",
+    expect(projectDetail.json().tasks[0].children.map((task: {
+      title: string;
+      parentTaskId: number;
+      position: number;
+    }) => ({ title: task.title, parentTaskId: task.parentTaskId, position: task.position }))).toEqual([
+      { title: "Handwerkerrechnung suchen", parentTaskId: root.id, position: 0 },
+      { title: "Rechnung archivieren", parentTaskId: root.id, position: 1 },
+      { title: "Späterer bestehender Schritt", parentTaskId: root.id, position: 2 },
     ]);
 
     await ctx.app.inject({

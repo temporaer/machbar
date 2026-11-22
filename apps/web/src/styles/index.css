@@ -4129,8 +4129,8 @@ details[open] > .disclosure-summary::after {
 
 .task-row-insert-successor-action {
   padding: 6px 10px 10px;
-  border-top: 1px solid color-mix(in srgb, var(--color-danger) 18%, var(--color-border));
-  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-alt));
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
 }
 
 .task-row-insert-successor-action button {
