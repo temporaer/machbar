@@ -682,6 +682,22 @@ describe("TaskRow – calm shared card presentation", () => {
     );
   });
 
+  it("shows checklist progress with an accessible description on the task card", async () => {
+    const task = makeTask({
+      id: 22,
+      title: "Einkauf erledigen",
+      notes: "- [x] Milch\n- [ ] Brot\n- Zum Laden gehen",
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+
+    expect(await screen.findByText("✓1/2")).toBeVisible();
+    expect(container.querySelector(".task-row-main")).toHaveAccessibleDescription(
+      "Checkliste: 1 von 2 erledigt",
+    );
+  });
+
   it.each([
     ["someday", "Irgendwann"],
     ["done", "Erledigt"],
