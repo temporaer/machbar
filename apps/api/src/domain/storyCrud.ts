@@ -3,7 +3,7 @@
  * Lifecycle transitions live in `storyWorkflow.ts`; acceptance criteria live
  * in `acceptanceCriteria.ts`.
  */
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { ProjectActivationResolution, ProjectStatus, WorkItemScope } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -122,6 +122,17 @@ export function createProject(
     const parent = parentId !== null ? getProjectOrThrow(txDb, parentId) : null;
     const scope: WorkItemScope =
       parent !== null ? (parent.scope as WorkItemScope) : input.scope ?? "household";
+    const requestedStatus = input.status ?? "backlog";
+    if (
+      scope === "household" &&
+      requestedStatus === "backlog" &&
+      input.ownerMemberId != null
+    ) {
+      throw AppError.badRequest(
+        "project_backlog_owner_forbidden",
+        "A household project in the backlog cannot have an owner. Activate it to assign a driver.",
+      );
+    }
     // A "work" project is always owner-only; a root project with nobody set
     // as owner would be invisible to everyone including whoever just
     // created it, so default the owner to the creator when none was given.
@@ -253,6 +264,18 @@ export function updateProject(
         { projectId: id },
       );
     }
+    const nextScope = input.scope ?? project.scope;
+    if (
+      project.status === "backlog" &&
+      nextScope === "household" &&
+      input.ownerMemberId != null
+    ) {
+      throw AppError.conflict(
+        "project_backlog_owner_forbidden",
+        "A household project in the backlog cannot have an owner. Activate it to assign a driver.",
+        { projectId: id, currentStatus: project.status, scope: nextScope },
+      );
+    }
     if (input.ownerMemberId === null && project.status !== "backlog") {
       throw AppError.conflict(
         "project_driver_locked",
@@ -330,6 +353,38 @@ export function updateProject(
       }
       patch.scope = input.scope;
       changedFields.push("scope");
+      if (input.scope === "household" && project.status === "backlog") {
+        if (project.ownerMemberId !== null && input.ownerMemberId === undefined) {
+          throw AppError.conflict(
+            "project_backlog_owner_forbidden",
+            "Clear the project owner when moving a backlog project to household scope.",
+            { projectId: id, currentStatus: project.status, scope: input.scope },
+          );
+        }
+        const descendantIds = repoGetDescendantIds(txDb, id);
+        const ownedBacklogDescendants = descendantIds.length === 0 ? [] : tx.select({
+          id: schema.workItems.id,
+          title: schema.workItems.title,
+          ownerMemberId: schema.workItems.ownerMemberId,
+        }).from(schema.workItems).where(and(
+          inArray(schema.workItems.id, descendantIds),
+          eq(schema.workItems.role, "story"),
+          eq(schema.workItems.status, "backlog"),
+          isNull(schema.workItems.archivedAt),
+          eq(schema.workItems.scope, "work"),
+        )).all().filter((item) => item.ownerMemberId !== null);
+        if (ownedBacklogDescendants.length > 0) {
+          throw AppError.conflict(
+            "project_backlog_owner_forbidden",
+            "Clear owners from nested backlog projects before moving this hierarchy to household scope.",
+            { projectId: id, nestedProjectIds: ownedBacklogDescendants.map((item) => item.id) },
+          );
+        }
+        if (project.ownerMemberId !== null && input.ownerMemberId === null) {
+          patch.ownerMemberId = null;
+          if (!changedFields.includes("ownerMemberId")) changedFields.push("ownerMemberId");
+        }
+      }
       // A "work" project is always owner-only; default the owner to the
       // acting member if converting to "work" leaves nobody owning it.
       if (
