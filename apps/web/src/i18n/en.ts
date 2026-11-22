@@ -1144,7 +1144,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   structureMove: "Move …",
   structureConvertToProject: "Convert to project",
   structureEditOutcome: "Edit outcome",
-  insertSuccessorLabel: "Add task after this one",
+  insertSuccessorLabel: "Insert task after",
   actionTileLabels: {
     "task.structure": "Change structure",
     "task.priority": "Set priority",
