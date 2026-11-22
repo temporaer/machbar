@@ -205,8 +205,8 @@ export function filterAndSortProjects(
       if (aKey.band === 1 && aKey.date !== bKey.date) {
         return (aKey.date ?? 0) - (bKey.date ?? 0);
       }
-      // Keep the two kinds visually grouped when their dates are identical
-      // or both are missing, with each kind still recognizable by its color.
+      // Keep equal-date entries deterministic while retaining their distinct
+      // classifications and visible colors.
       if (aClass !== bClass) {
         return projectListClassificationOrder[aClass] - projectListClassificationOrder[bClass];
       }
