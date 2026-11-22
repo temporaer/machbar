@@ -192,6 +192,49 @@ describe("filterAndSortProjects", () => {
     expect(classifyProjectListItem(deferred, now)).toBe("active-deferred");
   });
 
+  it("interleaves quiet projects by next-action date and external-wait revisit date", () => {
+    const now = new Date(2026, 7, 31, 23, 30);
+    const scheduledLater = makeProject({
+      id: 1,
+      title: "Aktion später",
+      status: "active",
+      position: 0,
+      nextAction: makeTask({ scheduledDate: "2026-09-12" }),
+    });
+    const waitSooner = makeProject({
+      id: 2,
+      title: "Wiedervorlage früher",
+      status: "active",
+      position: 99,
+      nextAction: null,
+      stuckReason: null,
+      waitingUntil: "2026-09-03T08:00:00.000Z",
+    });
+    const scheduledSooner = makeProject({
+      id: 3,
+      title: "Aktion früher",
+      status: "active",
+      position: 99,
+      nextAction: makeTask({ scheduledDate: "2026-09-06" }),
+    });
+    const waitWithoutDate = makeProject({
+      id: 4,
+      title: "Wiedervorlage offen",
+      status: "active",
+      position: 0,
+      nextAction: null,
+      stuckReason: null,
+      waitingUntil: null,
+    });
+
+    const result = filterAndSortProjects(
+      [scheduledLater, waitWithoutDate, scheduledSooner, waitSooner],
+      { query: "", scope: "all", currentMemberId: null, now },
+    );
+
+    expect(result.map((project) => project.id)).toEqual([2, 3, 1, 4]);
+  });
+
   it("breaks ties within a bucket by position, then locale title, then id", () => {
     const a = makeProject({ id: 30, title: "Zebra", status: "backlog", position: 1 });
     const b = makeProject({ id: 20, title: "Apfel", status: "backlog", position: 1 });

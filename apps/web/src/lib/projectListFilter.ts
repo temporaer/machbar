@@ -115,10 +115,10 @@ const projectListClassificationOrder: Record<ProjectListClassification, number> 
   "active-review": 1,
   "active-stuck": 2,
   "active-deferred": 3,
-  "active-waiting": 4,
-  backlog: 5,
-  completed: 6,
-  archived: 7,
+  "active-waiting": 3,
+  backlog: 4,
+  completed: 5,
+  archived: 6,
 };
 
 function projectListSortOrder(
@@ -127,6 +127,22 @@ function projectListSortOrder(
 ): number {
   const classification = classifyProjectListItem(project, now);
   return projectListClassificationOrder[classification];
+}
+
+/** The date used to order quiet active projects alongside external waits. */
+function activeQuietSortDate(
+  project: ProjectWithActions,
+  now: Date,
+): number | null {
+  const classification = classifyProjectListItem(project, now);
+  const date = classification === "active-deferred"
+    ? project.nextAction?.scheduledDate
+    : classification === "active-waiting"
+      ? project.waitingUntil
+      : null;
+  if (!date) return null;
+  const timestamp = Date.parse(date);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 /**
@@ -145,11 +161,13 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  * bucket never contains a story the current search/scope would hide.
  *
  * Sort buckets, in order: active & actionable, active & ready-to-complete
- * (`completion_review`), active & stuck, active with a future-scheduled next
- * action, active waiting, backlog, completed, archived. Within a bucket,
- * ties break on the backend-assigned `position`, then the locale-aware
- * title, then the id, so the order stays stable and reproducible across
- * reloads/retentions.
+ * (`completion_review`), active & stuck, quiet active projects
+ * (future-scheduled next actions and external waits), backlog, completed,
+ * archived. Quiet active projects with
+ * dates are interleaved chronologically: scheduled date for next actions,
+ * revisit date for external waits. Undated entries follow dated ones. Ties
+ * break on classification, backend-assigned `position`, locale-aware title,
+ * then id, so the order stays stable and reproducible across reloads.
  */
 export function filterAndSortProjects(
   projects: ProjectWithActions[],
@@ -171,6 +189,25 @@ export function filterAndSortProjects(
     const bucketDiff =
       projectListSortOrder(a, now) - projectListSortOrder(b, now);
     if (bucketDiff !== 0) return bucketDiff;
+    const aClass = classifyProjectListItem(a, now);
+    const bClass = classifyProjectListItem(b, now);
+    if (
+      (aClass === "active-deferred" || aClass === "active-waiting") &&
+      (bClass === "active-deferred" || bClass === "active-waiting")
+    ) {
+      const aDate = activeQuietSortDate(a, now);
+      const bDate = activeQuietSortDate(b, now);
+      if (aDate !== bDate) {
+        if (aDate === null) return 1;
+        if (bDate === null) return -1;
+        return aDate - bDate;
+      }
+      // Keep the two kinds visually grouped when their dates are identical
+      // or both are missing, with each kind still recognizable by its color.
+      if (aClass !== bClass) {
+        return projectListClassificationOrder[aClass] - projectListClassificationOrder[bClass];
+      }
+    }
     if (a.position !== b.position) return a.position - b.position;
     const titleDiff = a.title.localeCompare(b.title, locale);
     if (titleDiff !== 0) return titleDiff;
