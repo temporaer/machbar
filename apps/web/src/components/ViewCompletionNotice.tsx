@@ -70,7 +70,6 @@ export function ViewCompletionNotice({
   const pendingIdsRef = useRef(pendingIds);
   const deniedTaskIds = useRef(new Set<number>());
   const inlineTimers = useRef(new Map<number, { query: Query; timer: ReturnType<typeof setTimeout> }>());
-  const inlineSourceQuery = useRef<Query | null>(null);
   const previousResource = useRef(accessResource);
   const previousAccessGeneration = useRef(accessGeneration);
   noticeRef.current = notice;
@@ -125,13 +124,11 @@ export function ViewCompletionNotice({
           },
         });
         const sourceQuery: Query | null = candidates.length === 1 ? candidates[0] ?? null : null;
-        inlineSourceQuery.current = sourceQuery;
         return sourceQuery ? { deferQuery: sourceQuery, delayMs: 3_000 } : undefined;
       },
       onCommitted: completion => {
         if (!availableRef.current || deniedTaskIds.current.has(completion.taskId)) return;
-        const sourceQuery = inlineSourceQuery.current;
-        inlineSourceQuery.current = null;
+        const sourceQuery = completion.sourceQuery ?? null;
         if (completion.action === "complete" && completion.inlineCompletion && sourceQuery) {
           setInlineAcknowledgements(current => new Set(current).add(completion.taskId));
           const idsToRenew = new Set([completion.taskId]);
@@ -176,6 +173,22 @@ export function ViewCompletionNotice({
   useLayoutEffect(() => {
     const unsubscribe = client.getQueryCache().subscribe(event => {
       if (event.type !== "updated") return;
+      if (event.query.state.fetchStatus === "fetching") {
+        const retiredIds: number[] = [];
+        for (const [taskId, entry] of inlineTimers.current) {
+          if (entry.query !== event.query) continue;
+          clearTimeout(entry.timer);
+          inlineTimers.current.delete(taskId);
+          retiredIds.push(taskId);
+        }
+        if (retiredIds.length) {
+          setInlineAcknowledgements(current => {
+            const next = new Set(current);
+            retiredIds.forEach(taskId => next.delete(taskId));
+            return next;
+          });
+        }
+      }
       const resource = event.query.meta?.accessResource as ReadAccessResource | undefined;
       if (!isReadAccessError(event.query.state.error) || resource?.type !== "task") return;
       if (!pendingIdsRef.current.has(resource.taskId) && noticeRef.current?.taskId !== resource.taskId) return;

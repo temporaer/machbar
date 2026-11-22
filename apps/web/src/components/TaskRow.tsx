@@ -255,7 +255,16 @@ export function TaskRow({
     cancel: cancelSwipe,
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null || isReference,
-    onPrimary: () => dispatch({ type: "task.primaryAction", task }),
+    onPrimary: () => dispatch({
+      type: "task.primaryAction",
+      task,
+      // Primary swipe means "complete" for actionable tasks, but clarify for
+      // captured tasks and reopen for terminal ones. Only completion uses the
+      // inline acknowledgement.
+      ...(task.status !== "captured" && task.status !== "done" && task.status !== "cancelled"
+        ? { inlineCompletion: true }
+        : {}),
+    }),
     onDeepPrimary: () => scope.setOpenLifecycle(taskProp.id),
     onSecondary: () => scope.setOpenRail(taskProp.id),
     onRealDrag: clearLongPress,

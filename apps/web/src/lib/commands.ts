@@ -60,7 +60,7 @@ export type WorkItemCommand =
   | { type: "task.setStatus"; task: Task; status: Task["status"] }
   | { type: "task.toggleDone"; task: Task; inlineCompletion?: boolean }
   | { type: "task.toggleAdditionalNextAction"; task: Task }
-  | { type: "task.primaryAction"; task: Task }
+  | { type: "task.primaryAction"; task: Task; inlineCompletion?: boolean }
   | { type: "task.makeAction"; task: Task }
   | { type: "task.setDiscussion"; task: Task; requested: boolean }
   | { type: "task.setClarification"; task: Task; requested: boolean }

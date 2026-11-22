@@ -380,7 +380,7 @@ export function useWorkItemCommands() {
         }
         case "task.primaryAction":
           if (command.task.status === "captured") void taskActions.clarify(command.task);
-          else requestTaskCompletion(command.task);
+          else requestTaskCompletion(command.task, command.inlineCompletion ?? false);
           return;
         case "task.makeAction":
           void taskActions.makeAction(command.task);

@@ -123,7 +123,7 @@ for (const view of views) {
       await completeRow(page, task.id, isMobile);
     }
     const notice = page.locator(".view-completion-notice");
-    const inlineAcknowledgement = !isMobile && !(view.name === "All" && isMobile);
+    const inlineAcknowledgement = !(view.name === "All" && isMobile);
     if (inlineAcknowledgement) {
       const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
       await expect(source.locator(".task-row-title")).toHaveClass(/done/);
@@ -154,8 +154,8 @@ for (const view of views) {
   });
 }
 
-test("a checkbox acknowledgement stays struck through inside a narrow Today row", async ({ page, isMobile }) => {
-  test.skip(isMobile, "the mobile task row uses its swipe completion action");
+test("a swipe completion stays struck through inside a narrow Today row", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "this exercises the touch swipe interaction");
   const task = await createTask(page, `Narrow ${randomUUID()}`, { dueDate: "2000-01-01" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.clock.install();
@@ -163,8 +163,7 @@ test("a checkbox acknowledgement stays struck through inside a narrow Today row"
   const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
   await expect(source).toBeVisible();
   const title = source.locator(".task-row-title");
-  const checkbox = source.getByRole("button", { name: "Erledigt", exact: true });
-  await checkbox.click();
+  await completeRow(page, task.id, true);
   await expect(title).toHaveClass(/done/);
   await expect(source.getByRole("button", { name: "Wieder öffnen", exact: true })).toBeDisabled();
   await expect(page.locator(".view-completion-notice")).not.toContainText(task.title);

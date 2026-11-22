@@ -6,6 +6,7 @@ import { hasOpenDescendants } from "./taskHelpers";
 import { ownerAssignmentPatch, updateTask } from "./taskMutations";
 import { useItemMutations, type ItemMutationRefreshOptions } from "./useItemMutations";
 import { useStrings } from "./strings";
+import type { Query } from "@tanstack/react-query";
 export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
 export type CompletionFeedbackOwner = symbol;
@@ -67,6 +68,7 @@ interface CompletionCommit {
   recurring: boolean;
   action: TaskFeedbackAction;
   inlineCompletion?: boolean;
+  sourceQuery?: Query;
 }
 
 function useTaskActionsState() {
@@ -103,18 +105,22 @@ function useTaskActionsState() {
     const observer = completionFeedbackOwner
       ? completionFeedback.current.get(completionFeedbackOwner)
       : undefined;
+    let committedRefreshOptions: ItemMutationRefreshOptions | undefined;
     return run({
       id: task.id, mutate, throwOnError,
       pendingMessage: typeof observer?.pendingMessage === "function"
         ? observer.pendingMessage(action) : observer?.pendingMessage,
-      refreshOptions: () => observer && completionFeedbackOwner && inlineCompletion &&
-        completionFeedback.current.get(completionFeedbackOwner) === observer
-        ? observer.refreshOptions?.({
+      refreshOptions: () => {
+        committedRefreshOptions = observer && completionFeedbackOwner && inlineCompletion &&
+          completionFeedback.current.get(completionFeedbackOwner) === observer
+          ? observer.refreshOptions?.({
           taskId: task.id, title: task.title,
           recurring: action === "complete" && task.repeatAfterDays !== null,
           action, ...(inlineCompletion ? { inlineCompletion: true } : {}),
         })
-        : undefined,
+          : undefined;
+        return committedRefreshOptions;
+      },
       onCommitted: () => {
         if (observer && completionFeedbackOwner &&
           completionFeedback.current.get(completionFeedbackOwner) === observer) {
@@ -122,6 +128,7 @@ function useTaskActionsState() {
             taskId: task.id, title: task.title,
             recurring: action === "complete" && task.repeatAfterDays !== null,
             action, ...(inlineCompletion ? { inlineCompletion: true } : {}),
+            ...(committedRefreshOptions?.deferQuery ? { sourceQuery: committedRefreshOptions.deferQuery } : {}),
           });
         }
       },
