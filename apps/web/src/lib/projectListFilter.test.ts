@@ -149,6 +149,54 @@ describe("filterAndSortProjects", () => {
     expect(result.map((p) => p.id)).toEqual([3, 2, 1]);
   });
 
+  it("orders actionable projects by earliest deadline, then next-action priority", () => {
+    const overdue = makeProject({
+      id: 15,
+      title: "Frist vorbei",
+      status: "active",
+      position: 99,
+      dueDate: "2026-08-30",
+      nextAction: makeTask({ priority: 5 }),
+    });
+    const nextActionDeadline = makeProject({
+      id: 16,
+      title: "Nächste Aktion fällig",
+      status: "active",
+      position: 0,
+      dueDate: "2026-10-01",
+      nextAction: makeTask({ dueDate: "2026-09-02", priority: 5 }),
+    });
+    const projectDeadline = makeProject({
+      id: 17,
+      title: "Projektfrist fällig",
+      status: "active",
+      position: 99,
+      dueDate: "2026-09-02",
+      nextAction: makeTask({ priority: 1 }),
+    });
+    const highPriorityNoDeadline = makeProject({
+      id: 18,
+      title: "Hohe Priorität ohne Frist",
+      status: "active",
+      position: 99,
+      nextAction: makeTask({ priority: 1 }),
+    });
+    const lowerPriorityNoDeadline = makeProject({
+      id: 19,
+      title: "Niedrigere Priorität ohne Frist",
+      status: "active",
+      position: 0,
+      nextAction: makeTask({ priority: 4 }),
+    });
+
+    const result = filterAndSortProjects(
+      [lowerPriorityNoDeadline, nextActionDeadline, overdue, highPriorityNoDeadline, projectDeadline],
+      { query: "", scope: "all", currentMemberId: null, now: new Date(2026, 7, 31) },
+    );
+
+    expect(result.map((project) => project.id)).toEqual([15, 17, 16, 18, 19]);
+  });
+
   it("classifies future-scheduled next actions as quiet", () => {
     const now = new Date(2026, 7, 31, 23, 30);
     const actionable = makeProject({

@@ -129,6 +129,13 @@ function projectListSortOrder(
   return projectListClassificationOrder[classification];
 }
 
+/** Earliest meaningful deadline exposed by a project-list row. */
+function actionableProjectDeadline(project: ProjectWithActions): string | null {
+  return [project.dueDate, project.nextAction?.dueDate ?? null]
+    .filter((date): date is string => date !== null)
+    .sort()[0] ?? null;
+}
+
 /** The date and fallback band used to order quiet active projects. */
 function activeQuietSortKey(
   project: ProjectWithActions,
@@ -195,6 +202,18 @@ export function filterAndSortProjects(
     if (bucketDiff !== 0) return bucketDiff;
     const aClass = classifyProjectListItem(a, now);
     const bClass = classifyProjectListItem(b, now);
+    if (aClass === "active-actionable" && bClass === "active-actionable") {
+      const aDeadline = actionableProjectDeadline(a);
+      const bDeadline = actionableProjectDeadline(b);
+      if (aDeadline !== bDeadline) {
+        if (aDeadline === null) return 1;
+        if (bDeadline === null) return -1;
+        return aDeadline.localeCompare(bDeadline);
+      }
+      const aPriority = a.nextAction?.priority ?? Number.POSITIVE_INFINITY;
+      const bPriority = b.nextAction?.priority ?? Number.POSITIVE_INFINITY;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+    }
     if (
       (aClass === "active-deferred" || aClass === "active-waiting") &&
       (bClass === "active-deferred" || bClass === "active-waiting")
