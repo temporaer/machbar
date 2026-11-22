@@ -242,7 +242,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
   });
 
   it("assigns a driver directly via the row's driver avatar once one is set, without opening the rail", async () => {
-    const story = makeProject({ id: 15, title: "Keller aufräumen", status: "backlog", ownerMemberId: 1 });
+    const story = makeProject({ id: 15, title: "Keller aufräumen", status: "backlog", scope: "work", ownerMemberId: 1 });
     mockedApi.updateProject.mockResolvedValue({ ...story, ownerMemberId: 2 });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Keller aufräumen");

@@ -910,8 +910,8 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(mockedApi.completeProject).not.toHaveBeenCalled();
   });
 
-  it.each(["card", "compact", "quiet"] as const)("offers driver assignment on driverless backlog %s rows without activating", async variant => {
-    const story = makeProject({ id: 145, title: "Driverless backlog", status: "backlog", ownerMemberId: null });
+  it.each(["card", "compact", "quiet"] as const)("offers direct driver assignment on work backlog %s rows", async variant => {
+    const story = makeProject({ id: 145, title: "Driverless backlog", status: "backlog", scope: "work", ownerMemberId: null });
     mockedApi.updateProject.mockResolvedValue({ ...story, ownerMemberId: 1 });
     renderWithProviders(<Harness story={story} variant={variant} />);
     const button = await screen.findByRole("button", { name: "Noch nicht zugeordnet – Verantwortung wählen" });
@@ -937,6 +937,13 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
+  it("does not offer direct driver assignment for a household backlog project", async () => {
+    const story = makeProject({ id: 147, title: "Shared backlog", status: "backlog", scope: "household", ownerMemberId: null });
+    renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Shared backlog");
+    expect(screen.queryByRole("button", { name: "Noch nicht zugeordnet – Verantwortung wählen" })).not.toBeInTheDocument();
+  });
+
   it("does not call an unresolved driver shared or unassigned", async () => {
     const story = makeProject({ id: 146, title: "Unknown driver", ownerMemberId: 999 });
     renderWithProviders(<Harness story={story} />);
@@ -945,7 +952,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
   });
 
   it("still allows clearing the driver of a backlog story", async () => {
-    const story = makeProject({ id: 45, title: "Backlog-Driver", status: "backlog", ownerMemberId: 1 });
+    const story = makeProject({ id: 45, title: "Backlog-Driver", status: "backlog", scope: "work", ownerMemberId: 1 });
     renderWithProviders(<Harness story={story} variant="compact" />);
     await screen.findByText("Backlog-Driver");
 

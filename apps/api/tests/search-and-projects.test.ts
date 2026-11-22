@@ -35,15 +35,16 @@ describe("search/filter and project CRUD/archive", () => {
     ...args: Parameters<typeof createProjectMutation>
   ): ReturnType<typeof createProjectMutation> {
     const [db, input, context] = args;
-    const requestedActive = input.status === "active";
+    const requestedActive = input.status === "active" ||
+      (input.status === undefined && input.scope !== "work" && input.ownerMemberId != null);
     const project = createProjectMutation(
       db,
-      requestedActive ? { ...input, status: "backlog" } : input,
+      requestedActive ? { ...input, status: "backlog", ownerMemberId: null } : input,
       context,
     );
     if (!requestedActive) return project;
     db.update(schema.workItems)
-      .set({ status: "active" })
+      .set({ status: "active", ownerMemberId: input.ownerMemberId ?? null })
       .where(eq(schema.workItems.id, project.id))
       .run();
     return { ...project, status: "active" };
@@ -228,11 +229,9 @@ describe("search/filter and project CRUD/archive", () => {
   });
 
   it("searches reference URLs through the HTTP kind filter and retains project context", async () => {
-    const owner = ctx.handle.db.select().from(schema.members).get()!;
     const project = createProject(ctx.handle.db, {
       title: "Quellenprojekt",
       status: "backlog",
-      ownerMemberId: owner.id,
     });
     const projectMaterial = createTask(ctx.handle.db, {
       title: "Versicherungsseite",
@@ -592,10 +591,10 @@ describe("search/filter and project CRUD/archive", () => {
         url: "/api/projects",
         payload: {
           title: "Küchenrenovierung",
-          ownerMemberId: owner.id,
         },
       })
     ).json();
+    ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?").run(owner.id, project.id);
     ctx.handle.sqlite
       .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
       .run(project.id);
@@ -635,9 +634,6 @@ describe("search/filter and project CRUD/archive", () => {
           status: "actionable",
           title: payload.title,
           scheduledDate: payload.plannedDate,
-          revisitAt: payload.status === "done"
-            ? "2025-01-01T00:00:00.000Z"
-            : undefined,
         },
       })).json();
       if (payload.status !== "done") {

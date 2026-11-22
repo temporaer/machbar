@@ -403,12 +403,20 @@ describe("atomic activity recording", () => {
       payload: { title: "Activation path", projectId: project.id, status: "actionable" },
     });
     expect(action.statusCode).toBe(201);
-    await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/projects/${project.id}`,
-      payload: { ownerMemberId: owner.id },
+    const activation = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/activate`,
+      payload: {
+        expectedRevision: project.revision,
+        activationResolution: {
+          expectedProjects: [{ projectId: project.id, revision: project.revision }],
+          drivers: [{ projectId: project.id, ownerMemberId: owner.id }],
+          nextActionTitle: "Activation path",
+        },
+      },
     });
-    const currentProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    expect(activation.statusCode, activation.body).toBe(200);
+    const currentProject = activation.json();
     await ctx.app.inject({ method: "PATCH", url: `/api/projects/${project.id}`, payload: { expectedRevision: currentProject.revision, dueDate: "2026-09-02" } });
     await ctx.app.inject({
       method: "PATCH",

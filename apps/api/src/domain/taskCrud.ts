@@ -34,6 +34,7 @@ import { assertActionTask } from "./taskKindGuard.js";
 import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import { insertTaskRow, nextTaskPosition, storedTaskStatus } from "./taskRowInsert.js";
+import { cascadeDescendantScope } from "./scopeCascade.js";
 import {
   committedTaskStatus,
   evaluateCommitmentTransition,
@@ -1501,12 +1502,7 @@ export function updateTask(
     }
     if (patch.scope !== undefined) {
       const descendantIds = repoGetDescendantIds(txDb, id);
-      if (descendantIds.length > 0) {
-        tx.update(schema.workItems)
-          .set({ scope: patch.scope, updatedAt: nowIso() })
-          .where(inArray(schema.workItems.id, descendantIds))
-          .run();
-      }
+      cascadeDescendantScope(txDb, descendantIds, patch.scope);
     }
     if (removingExternalWait) {
       if (!changedFields.includes("externalWait")) {

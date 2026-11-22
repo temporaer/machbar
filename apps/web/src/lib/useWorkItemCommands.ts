@@ -226,7 +226,7 @@ export function useWorkItemCommands() {
     [projectActions, projectWorkflow, resolveStoryPrerequisite],
   );
 
-  const requestTaskCompletion = useCallback((task: Task, inlineCompletion = false) => {
+  const requestTaskCompletion = useCallback((task: Task) => {
     if (task.status === "done" || task.status === "cancelled") {
       taskActions.requestToggle(task);
       return;
@@ -236,7 +236,7 @@ export function useWorkItemCommands() {
       taskWorkflow.open("completeWithCriteria", task.id, undefined, originDetail);
       return;
     }
-    taskActions.requestToggle(task, undefined, undefined, inlineCompletion);
+    taskActions.requestToggle(task);
   }, [taskActions, taskDetail, taskWorkflow]);
 
   const dispatch = useCallback(
@@ -368,7 +368,7 @@ export function useWorkItemCommands() {
           return;
         }
         case "task.toggleDone":
-          requestTaskCompletion(command.task, command.inlineCompletion);
+          requestTaskCompletion(command.task);
           return;
         case "task.toggleAdditionalNextAction": {
           const nextValue = !command.task.additionalNextAction;
@@ -380,7 +380,7 @@ export function useWorkItemCommands() {
         }
         case "task.primaryAction":
           if (command.task.status === "captured") void taskActions.clarify(command.task);
-          else requestTaskCompletion(command.task, command.inlineCompletion ?? false);
+          else requestTaskCompletion(command.task);
           return;
         case "task.makeAction":
           void taskActions.makeAction(command.task);
@@ -483,7 +483,11 @@ export function useWorkItemCommands() {
           projectWorkflow.open("refinement", command.story.id);
           return;
         case "story.assignDriver":
-          projectWorkflow.open("assignDriver", command.story.id);
+          if (command.story.scope === "household" && command.story.status === "backlog") {
+            continueStoryLifecycle(command.story, "activate");
+          } else {
+            projectWorkflow.open("assignDriver", command.story.id);
+          }
           return;
         case "story.editOutcome":
           projectWorkflow.open("editOutcome", command.story.id);

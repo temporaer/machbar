@@ -1803,6 +1803,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Die verantwortliche Person kann in diesem Projektstatus nicht entfernt werden.",
     project_driver_required:
       "Das Projekt braucht zuerst eine verantwortliche Person.",
+    project_backlog_owner_forbidden:
+      "Ein Haushaltsprojekt im Backlog kann keine verantwortliche Person haben. Aktiviere es, um eine Person festzulegen.",
     project_activation_not_ready:
       "Füge vor dem Start einen ausführbaren nächsten Schritt oder einen gesunden Wartepfad hinzu.",
     project_commitment_resolution_required:

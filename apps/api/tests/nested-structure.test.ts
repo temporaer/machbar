@@ -11,6 +11,9 @@ describe("phase 6a parent-preserving structure", () => {
   const post = (url: string, payload: object) => ctx.app.inject({ method: "POST", url, payload });
   const get = async (url: string) => (await ctx.app.inject({ method: "GET", url })).json();
   const rows = () => ctx.handle.db.select().from(schema.workItems).all();
+  const setProjectDriver = (id: number, ownerMemberId: number) => ctx.handle.sqlite
+    .prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?")
+    .run(ownerMemberId, id);
   async function project(title: string, parentId: number | null = null) {
     return (await post("/api/projects", { title, parentId })).json();
   }
@@ -25,10 +28,11 @@ describe("phase 6a parent-preserving structure", () => {
   it.each(["project", "task"])("converts a task under a %s and back with its identity, placement, material, ownership and descendants", async (role) => {
     const member = (await post("/api/members", { name: "Mira" })).json();
     const parent = role === "project"
-      ? (await post("/api/projects", { title: "Parent", ownerMemberId: member.id })).json()
+      ? (await post("/api/projects", { title: "Parent" })).json()
       : (await post("/api/tasks", { title: "Parent", status: "actionable", ownerMemberId: member.id, ownerInheritanceMode: "explicit" })).json();
+    if (role === "project") setProjectDriver(parent.id, member.id);
     const destination = role === "project" ? { projectId: parent.id } : { parentTaskId: parent.id };
-    const child = (await post("/api/tasks", { title: "Child", notes: "Authored material", status: "someday", ...destination })).json();
+    const child = (await post("/api/tasks", { title: "Child", notes: "Authored material", status: "someday", ownerMemberId: member.id, ownerInheritanceMode: "explicit", ...destination })).json();
     const sibling = (await post("/api/tasks", { title: "Sibling", status: "someday", ...destination })).json();
     const grandchild = (await post(`/api/tasks/${child.id}/children`, { title: "Existing step" })).json();
     const before = rows().find((row) => row.id === child.id)!;
@@ -103,8 +107,9 @@ describe("phase 6a parent-preserving structure", () => {
 
   it("collects activation decisions inside a committed subtree move", async () => {
     const member = (await post("/api/members", { name: "Mira" })).json();
-    const source = (await post("/api/projects", { title: "Moving", ownerMemberId: member.id })).json();
-    await post("/api/tasks", { title: "Dated step", projectId: source.id, scheduledDate: "2026-12-01" });
+    const source = (await post("/api/projects", { title: "Moving" })).json();
+    const datedStep = (await post("/api/tasks", { title: "Dated step", projectId: source.id })).json();
+    ctx.handle.sqlite.prepare("UPDATE work_items SET scheduled_date = '2026-12-01' WHERE id = ?").run(datedStep.id);
     const target = await project("Destination");
     const input = await moveInput(source.id, target.id);
     const before = rows();
@@ -168,7 +173,7 @@ describe("phase 6a parent-preserving structure", () => {
 
   it("activates a required project ancestor across an intervening task parent", async () => {
     const member = (await post("/api/members", { name: "Mira" })).json();
-    const outer = (await post("/api/projects", { title: "Outer", ownerMemberId: member.id })).json();
+    const outer = (await post("/api/projects", { title: "Outer" })).json();
     const parent = (await post("/api/tasks", { title: "Task parent", projectId: outer.id, status: "someday" })).json();
     const task = (await post(`/api/tasks/${parent.id}/children`, { title: "Convert nested child" })).json();
     const snapshot = await get(`/api/tasks/${task.id}`);
@@ -178,7 +183,7 @@ describe("phase 6a parent-preserving structure", () => {
     expect(required.statusCode, required.body).toBe(409);
     expect(required.json().error.code).toBe("project_commitment_resolution_required");
     expect(rows()).toEqual(before);
-    const response = await post(`/api/tasks/${task.id}/convert-to-story`, { ...input, activationResolution: { expectedProjects: required.json().error.details.expectedProjects, drivers: [], nextActionTitle: "Reviewed next step" } });
+    const response = await post(`/api/tasks/${task.id}/convert-to-story`, { ...input, activationResolution: { expectedProjects: required.json().error.details.expectedProjects, drivers: required.json().error.details.projects.map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })), nextActionTitle: "Reviewed next step" } });
     expect(response.statusCode, response.body).toBe(201);
     expect((await get(`/api/projects/${outer.id}`)).status).toBe("active");
     expect(response.json().ancestors.map((entry: { id: number }) => entry.id)).toEqual([outer.id, parent.id]);

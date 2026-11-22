@@ -2,7 +2,10 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
-import { activateCommittedProjectChain } from "../domain/commitmentActivation.js";
+import {
+  activateCommittedProjectChain,
+  projectActivationDecisionSnapshot,
+} from "../domain/commitmentActivation.js";
 import { updateProject } from "../domain/storyCrud.js";
 import { convertTaskToStory } from "../domain/roleConversion.js";
 import { getTaskOrThrow } from "../domain/taskCrud.js";
@@ -73,7 +76,7 @@ export function beginCommitmentConversion(
     deferActivation: true,
   }, context);
   let projectRevision = project.revision;
-  if (driverMemberId !== null && project.ownerMemberId !== driverMemberId) {
+  if (task.scope === "work" && driverMemberId !== null && project.ownerMemberId !== driverMemberId) {
     const updated = updateProject(db, project.id, {
       ownerMemberId: driverMemberId,
       expectedRevision: projectRevision,
@@ -92,11 +95,24 @@ export function finishCommitmentConversion(
   if (!conversion.requiresActivation) {
     return;
   }
-  const project = db.select({ status: schema.workItems.status })
+  const project = db.select({ status: schema.workItems.status, scope: schema.workItems.scope })
     .from(schema.workItems).where(eq(schema.workItems.id, conversion.projectId)).get();
   if (project?.status !== "backlog") return;
   // Use the canonical commitment transition so missing-driver/progress-path
   // decisions include the server's current requirements and roll back the
   // entire conversion when they are unresolved.
-  activateCommittedProjectChain(db, conversion.projectId, context, activationResolution);
+  let resolution = activationResolution;
+  if (project.scope === "household" && conversion.driverMemberId !== null) {
+    const snapshot = projectActivationDecisionSnapshot(db, conversion.projectId, "commitment", context);
+    const drivers = [...(activationResolution?.drivers ?? [])];
+    if (!drivers.some((driver) => driver.projectId === conversion.projectId)) {
+      drivers.push({ projectId: conversion.projectId, ownerMemberId: conversion.driverMemberId });
+    }
+    resolution = {
+      expectedProjects: activationResolution?.expectedProjects ?? snapshot.expectedProjects,
+      drivers,
+      ...(activationResolution?.nextActionTitle ? { nextActionTitle: activationResolution.nextActionTitle } : {}),
+    };
+  }
+  activateCommittedProjectChain(db, conversion.projectId, context, resolution);
 }

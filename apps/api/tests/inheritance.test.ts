@@ -22,6 +22,11 @@ describe("effective owner and typed-tag inheritance", () => {
       .get();
   }
 
+  function makeProjectActiveWithOwner(projectId: number, ownerMemberId: number) {
+    ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?")
+      .run(ownerMemberId, projectId);
+  }
+
   it("inherits owner and typed tags down a project -> task -> subtask chain", async () => {
     const owner = createMember("Anna");
     const tag = (
@@ -38,11 +43,11 @@ describe("effective owner and typed-tag inheritance", () => {
         url: "/api/projects",
         payload: {
           title: "Testprojekt",
-          ownerMemberId: owner.id,
           tagIds: [tag.id],
         },
       })
     ).json();
+    makeProjectActiveWithOwner(project.id, owner.id);
 
     const parentTask = (
       await ctx.app.inject({
@@ -79,9 +84,10 @@ describe("effective owner and typed-tag inheritance", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Lastenrad überholen", ownerMemberId: owner.id },
+        payload: { title: "Lastenrad überholen" },
       })
     ).json();
+    makeProjectActiveWithOwner(project.id, owner.id);
 
     const direct = (
       await ctx.app.inject({
@@ -158,9 +164,10 @@ describe("effective owner and typed-tag inheritance", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Projekt mit Override", ownerMemberId: projectOwner.id },
+        payload: { title: "Projekt mit Override" },
       })
     ).json();
+    makeProjectActiveWithOwner(project.id, projectOwner.id);
 
     const parentTask = (
       await ctx.app.inject({
@@ -195,9 +202,10 @@ describe("effective owner and typed-tag inheritance", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Projekt", ownerMemberId: owner.id },
+        payload: { title: "Projekt" },
       })
     ).json();
+    makeProjectActiveWithOwner(project.id, owner.id);
 
     const otherOwner = createMember("Mia");
     const explicitTask = (

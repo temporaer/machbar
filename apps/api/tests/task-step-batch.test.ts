@@ -438,7 +438,6 @@ describe("atomic task step batches", () => {
       const project = await createProject({
         title: "Kellerboden",
         status: "backlog",
-        ownerMemberId: member.id,
       });
       const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
       const parent = await createTask({
@@ -446,18 +445,12 @@ describe("atomic task step batches", () => {
         projectId: project.id,
         status: "actionable",
       });
-      const activated = await ctx.app.inject({
-        method: "POST",
-        url: `/api/projects/${project.id}/activate`,
-        headers,
-        payload: { expectedRevision: project.revision },
-      });
-      expect(activated.statusCode, activated.body).toBe(200);
+      ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?").run(member.id, project.id);
       const planned = await ctx.app.inject({
         method: "PATCH",
         url: `/api/projects/${project.id}`,
         headers,
-        payload: { dueDate: "2027-12-31", expectedRevision: activated.json().revision },
+        payload: { dueDate: "2027-12-31", expectedRevision: project.revision },
       });
       expect(planned.statusCode, planned.body).toBe(200);
       return { project, existingAction, parent };
@@ -544,7 +537,6 @@ describe("atomic task step batches", () => {
       const project = await createProject({
         title: "Kellerboden",
         status: "backlog",
-        ownerMemberId: member.id,
       });
       const existingAction = await createTask({ title: "Laufende Aufgabe", projectId: project.id, status: "actionable" });
       const parent = await createTask({
@@ -552,18 +544,12 @@ describe("atomic task step batches", () => {
         projectId: project.id,
         status: "actionable",
       });
-      const activated = await ctx.app.inject({
-        method: "POST",
-        url: `/api/projects/${project.id}/activate`,
-        headers,
-        payload: { expectedRevision: project.revision },
-      });
-      expect(activated.statusCode, activated.body).toBe(200);
+      ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?").run(member.id, project.id);
       const planned = await ctx.app.inject({
         method: "PATCH",
         url: `/api/projects/${project.id}`,
         headers,
-        payload: { dueDate: "2027-12-31", expectedRevision: activated.json().revision },
+        payload: { dueDate: "2027-12-31", expectedRevision: project.revision },
       });
       expect(planned.statusCode, planned.body).toBe(200);
       return { project, existingAction, parent };

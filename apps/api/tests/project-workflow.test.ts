@@ -13,7 +13,7 @@ import {
   reopenProject,
   returnProjectToBacklog,
 } from "../src/domain/storyWorkflow.js";
-import { createTask } from "../src/domain/taskCrud.js";
+import { createTask, updateTask } from "../src/domain/taskCrud.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 function createProject(
@@ -129,6 +129,65 @@ describe("project workflow (HTTP routes)", () => {
       { actorMemberId: anna.id, viewerMemberId: anna.id },
     );
     expect(privateBacklog).toMatchObject({ status: "backlog", scope: "work", ownerMemberId: anna.id });
+  });
+
+  it("cascades a project scope change atomically and clears only backlog project drivers", async () => {
+    const anna = await createMemberRoute("Anna");
+    const ben = await createMemberRoute("Ben");
+    const root = createProject(ctx.handle.db, {
+      title: "Private root", scope: "work", status: "active", ownerMemberId: anna.id,
+    }, { actorMemberId: anna.id, viewerMemberId: anna.id });
+    const backlog = createProjectMutation(ctx.handle.db, {
+      title: "Parked child", parentId: root.id, ownerMemberId: ben.id,
+    }, { actorMemberId: anna.id, viewerMemberId: anna.id });
+    const active = createProject(ctx.handle.db, {
+      title: "Active child", parentId: root.id, status: "active", ownerMemberId: ben.id,
+    }, { actorMemberId: anna.id, viewerMemberId: anna.id });
+    const task = createTask(ctx.handle.db, {
+      title: "Owned action", projectId: backlog.id, ownerMemberId: ben.id,
+      ownerInheritanceMode: "explicit", status: "actionable",
+    }, { actorMemberId: anna.id, viewerMemberId: anna.id });
+
+    updateProject(ctx.handle.db, root.id, { scope: "household", expectedRevision: root.revision }, {
+      actorMemberId: anna.id, viewerMemberId: anna.id,
+    });
+
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, backlog.id)).get())
+      .toMatchObject({ scope: "household", ownerMemberId: null, revision: backlog.revision + 1 });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, active.id)).get())
+      .toMatchObject({ scope: "household", ownerMemberId: ben.id, revision: active.revision + 1 });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get())
+      .toMatchObject({ scope: "household", ownerMemberId: ben.id, revision: task.revision + 1 });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, root.id)).get())
+      .toMatchObject({ scope: "household", ownerMemberId: anna.id });
+  });
+
+  it("clears an owned backlog root when its scope changes to household", async () => {
+    const owner = await createMemberRoute("Owner");
+    const root = createProjectMutation(ctx.handle.db, { title: "Private parked", scope: "work", ownerMemberId: owner.id });
+    const updated = updateProject(ctx.handle.db, root.id, { scope: "household", expectedRevision: root.revision });
+    expect(updated).toMatchObject({ scope: "household", status: "backlog", ownerMemberId: null });
+  });
+
+  it("preserves task owners when a root task scope cascades", async () => {
+    const owner = await createMemberRoute("Owner");
+    const root = createTask(ctx.handle.db, {
+      title: "Private task", scope: "work", ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit", status: "actionable",
+    }, { actorMemberId: owner.id, viewerMemberId: owner.id });
+    const child = createTask(ctx.handle.db, {
+      title: "Private child", parentTaskId: root.id, ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit", status: "actionable",
+    }, { actorMemberId: owner.id, viewerMemberId: owner.id });
+
+    updateTask(ctx.handle.db, root.id, { scope: "household", expectedRevision: root.revision }, {
+      actorMemberId: owner.id, viewerMemberId: owner.id,
+    });
+
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, root.id)).get())
+      .toMatchObject({ scope: "household", ownerMemberId: owner.id });
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, child.id)).get())
+      .toMatchObject({ scope: "household", ownerMemberId: owner.id });
   });
 
   it("activates the dated task's backlog project and its ancestors as one transition", async () => {

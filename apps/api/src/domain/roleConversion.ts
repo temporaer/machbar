@@ -17,11 +17,15 @@ import {
 import { getProjectOrThrow } from "./storyCrud.js";
 import { getTaskOrThrow, nextPositionForGroup } from "./taskCrud.js";
 import { insertTaskRow, storedTaskStatus } from "./taskRowInsert.js";
-import { activateCommittedProjectChain } from "./commitmentActivation.js";
+import {
+  activateCommittedProjectChain,
+  projectActivationDecisionSnapshot,
+} from "./commitmentActivation.js";
 import { hasExecutionCommitment } from "./commitmentTransition.js";
 import { assertHierarchySnapshot } from "./structuralMoves.js";
 import { getAncestorIds } from "../repo/treeRepo.js";
 import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
+import { getEffectiveOwners } from "../repo/effectiveRepo.js";
 import {
   MutationContext,
   actor,
@@ -190,6 +194,15 @@ export function convertTaskToStoryInTransaction(
       }
     }
     const descendants = repoGetDescendantIds(txDb, taskId);
+    const descendantEffectiveOwners = getEffectiveOwners(txDb);
+    const inheritedDescendants = descendants.length === 0 ? [] : txDb.select({
+      id: schema.workItems.id,
+      ownerInheritanceMode: schema.workItems.ownerInheritanceMode,
+      role: schema.workItems.role,
+    }).from(schema.workItems).where(inArray(schema.workItems.id, descendants)).all()
+      .filter((row) => row.role === "task" && row.ownerInheritanceMode === "inherit")
+      .map((row) => ({ id: row.id, ownerMemberId: descendantEffectiveOwners.get(row.id)?.ownerId ?? null }))
+      .filter((row) => row.ownerMemberId !== null);
     if (input.expectedHierarchyRevisions) assertHierarchySnapshot(txDb, [taskId, ...descendants, ...getAncestorIds(txDb, taskId)], input.expectedHierarchyRevisions);
     if (input.expectedDescendantRevisions !== undefined) {
       const revisions = new Map(input.expectedDescendantRevisions.map(({ taskId: id, revision }) => [id, revision]));
@@ -240,6 +253,9 @@ export function convertTaskToStoryInTransaction(
         reminders: task.reminders,
       }) || task.repeatAfterDays !== null || task.allowedDeviationDays !== null;
     const targetStatus = executionCommitment || input.status === "active" ? "backlog" : input.status;
+    const stagedOwnerMemberId = targetStatus === "backlog" && task.scope === "household"
+      ? null
+      : ownerMemberId;
 
     txDb.update(schema.workItems)
       .set({
@@ -251,7 +267,7 @@ export function convertTaskToStoryInTransaction(
         status: targetStatus,
         archivedAt: null,
         needsClarification: false,
-        ownerMemberId,
+        ownerMemberId: stagedOwnerMemberId,
         scheduledDate: null,
         availabilityRule: null,
         revisitAt: externalWait ? null : task.revisitAt,
@@ -270,6 +286,23 @@ export function convertTaskToStoryInTransaction(
       })
       .where(eq(schema.workItems.id, taskId))
       .run();
+
+    // If a household backlog container must be ownerless, descendant tasks
+    // cannot keep inheriting their former responsibility through that row.
+    // Materialize only the already-effective non-null task owners as explicit
+    // task assignments; explicit and deliberately unassigned descendants stay
+    // untouched.
+    if (task.scope === "household" && targetStatus === "backlog") {
+      const updatedAt = nowIso();
+      for (const descendant of inheritedDescendants) {
+        txDb.update(schema.workItems).set({
+          ownerMemberId: descendant.ownerMemberId,
+          ownerInheritanceMode: "explicit",
+          revision: sql`${schema.workItems.revision} + 1`,
+          updatedAt,
+        }).where(eq(schema.workItems.id, descendant.id)).run();
+      }
+    }
 
     for (const tag of task.effectiveTags) {
       txDb.insert(schema.workItemTags).values({ workItemId: taskId, tagId: tag.id }).onConflictDoNothing().run();
@@ -293,8 +326,12 @@ export function convertTaskToStoryInTransaction(
         notes: task.notes,
         status: "actionable",
         scope: task.scope,
-        ownerMemberId: task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null,
-        ownerInheritanceMode: task.ownerInheritanceMode === "explicit" ? "explicit" : task.ownerInheritanceMode,
+        ownerMemberId: task.ownerInheritanceMode === "explicit"
+          ? task.ownerMemberId
+          : task.effectiveOwnerId,
+        ownerInheritanceMode: task.ownerInheritanceMode === "explicit" || task.effectiveOwnerId !== null
+          ? "explicit"
+          : task.ownerInheritanceMode,
         physicalContextInheritanceMode: task.contextInheritanceMode,
         dueDate: reminderNeedsDeadline || task.repeatAfterDays !== null ? task.dueDate : null,
         scheduledDate: task.scheduledDate,
@@ -408,16 +445,22 @@ export function convertTaskToStoryInTransaction(
       .run();
     if (!input.deferActivation && (executionCommitment || input.status === "active")) {
       try {
-        const activationResolution = input.activationResolution
-          ? {
-              ...input.activationResolution,
-              expectedProjects: input.activationResolution.expectedProjects.map((entry) =>
-                entry.projectId === taskId && entry.revision === task.revision
-                  ? { ...entry, revision: task.revision + 1 }
-                  : entry,
-              ),
-            }
-          : undefined;
+        const snapshot = projectActivationDecisionSnapshot(txDb, project.id, "commitment", context);
+        const activationResolution = {
+          expectedProjects: input.activationResolution?.expectedProjects.map((entry) =>
+            entry.projectId === taskId && entry.revision === task.revision
+              ? { ...entry, revision: task.revision + 1 }
+              : entry,
+          ) ?? snapshot.expectedProjects,
+          drivers: [...(input.activationResolution?.drivers ?? [])],
+          ...(input.activationResolution?.nextActionTitle
+            ? { nextActionTitle: input.activationResolution.nextActionTitle }
+            : {}),
+        };
+        if (task.scope === "household" && ownerMemberId !== null &&
+          !activationResolution.drivers.some((driver) => driver.projectId === project.id)) {
+          activationResolution.drivers.push({ projectId: project.id, ownerMemberId });
+        }
         activateCommittedProjectChain(txDb, project.id, context, activationResolution);
       } catch (error) {
         if (error instanceof AppError && error.code === "project_commitment_resolution_required") {

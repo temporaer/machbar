@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createProject as createProjectMutation } from "../src/domain/storyCrud.js";
+import { createTask as createTaskMutation } from "../src/domain/taskCrud.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 describe("household member create / rename / delete", () => {
@@ -131,13 +133,7 @@ describe("household member create / rename / delete", () => {
 
   it("deletes a member who owns a project, nulling the project's owner but keeping the project", async () => {
     const member = (await createMember("Projekt-Besitzerin")).json();
-    const project = (
-      await ctx.app.inject({
-        method: "POST",
-        url: "/api/projects",
-        payload: { title: "Ein Projekt", ownerMemberId: member.id },
-      })
-    ).json();
+    const project = createProjectMutation(ctx.handle.db, { title: "Ein Projekt", scope: "work", ownerMemberId: member.id });
 
     const res = await ctx.app.inject({ method: "DELETE", url: `/api/members/${member.id}` });
     expect(res.statusCode).toBe(204);
@@ -146,9 +142,8 @@ describe("household member create / rename / delete", () => {
     const listRes = await ctx.app.inject({ method: "GET", url: "/api/members" });
     expect(listRes.json().map((m: { id: number }) => m.id)).not.toContain(member.id);
 
-    const projectRes = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
-    expect(projectRes.statusCode).toBe(200);
-    expect(projectRes.json().ownerMemberId).toBeNull();
+    expect(ctx.handle.sqlite.prepare("SELECT owner_member_id AS ownerMemberId FROM work_items WHERE id = ?").get(project.id))
+      .toMatchObject({ ownerMemberId: null });
   });
 
   it("rejects deleting the driver of an active project", async () => {
@@ -157,7 +152,7 @@ describe("household member create / rename / delete", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Aktives Projekt", ownerMemberId: member.id },
+        payload: { title: "Aktives Projekt" },
       })
     ).json();
     await ctx.app.inject({
@@ -168,6 +163,7 @@ describe("household member create / rename / delete", () => {
     await ctx.app.inject({
       method: "POST",
       url: `/api/projects/${project.id}/activate`,
+      payload: { ownerMemberId: member.id },
     });
 
     const response = await ctx.app.inject({
@@ -231,59 +227,39 @@ describe("household member create / rename / delete", () => {
 
   it("clears every reference (project owner, task owner, task creator) in one atomic transaction", async () => {
     const member = (await createMember("Vielfach Verknüpft")).json();
-    const project = (
-      await ctx.app.inject({
-        method: "POST",
-        url: "/api/projects",
-        payload: { title: "Gemeinsames Projekt", ownerMemberId: member.id },
-      })
-    ).json();
-    const task = (
-      await ctx.app.inject({
-        method: "POST",
-        url: "/api/tasks",
-        payload: {
-          title: "Aufgabe mit doppelter Zuordnung",
-          projectId: project.id,
-          ownerMemberId: member.id,
-          ownerInheritanceMode: "explicit",
-          createdByMemberId: member.id,
-        },
-      })
-    ).json();
+    const project = createProjectMutation(ctx.handle.db, { title: "Gemeinsames Projekt", scope: "work", ownerMemberId: member.id });
+    const task = createTaskMutation(ctx.handle.db, {
+      title: "Aufgabe mit doppelter Zuordnung",
+      projectId: project.id,
+      ownerMemberId: member.id,
+      ownerInheritanceMode: "explicit",
+      createdByMemberId: member.id,
+    });
 
     const res = await ctx.app.inject({ method: "DELETE", url: `/api/members/${member.id}` });
     expect(res.statusCode).toBe(204);
 
-    const projectRes = (
-      await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })
-    ).json();
-    expect(projectRes.ownerMemberId).toBeNull();
+    expect(ctx.handle.sqlite.prepare("SELECT owner_member_id AS ownerMemberId FROM work_items WHERE id = ?").get(project.id))
+      .toMatchObject({ ownerMemberId: null });
 
-    const taskRes = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json();
-    expect(taskRes.ownerMemberId).toBeNull();
-    expect(taskRes.createdByMemberId).toBeNull();
+    const taskRow = ctx.handle.sqlite.prepare(`
+      SELECT owner_member_id AS ownerMemberId, created_by_member_id AS createdByMemberId,
+        parent_id AS parentId
+      FROM work_items WHERE id = ?
+    `).get(task.id);
+    expect(taskRow).toMatchObject({ ownerMemberId: null, createdByMemberId: null, parentId: project.id });
     // The task itself, and its project link, both survive the deletion.
-    expect(taskRes.projectId).toBe(project.id);
   });
 
   it("leaves everything untouched (transactionally) when deleting a member that doesn't exist", async () => {
     const member = (await createMember("Bleibt bestehen")).json();
-    const project = (
-      await ctx.app.inject({
-        method: "POST",
-        url: "/api/projects",
-        payload: { title: "Unberührtes Projekt", ownerMemberId: member.id },
-      })
-    ).json();
+    const project = createProjectMutation(ctx.handle.db, { title: "Unberührtes Projekt", scope: "work", ownerMemberId: member.id });
 
     const res = await ctx.app.inject({ method: "DELETE", url: "/api/members/999999" });
     expect(res.statusCode).toBe(404);
 
-    const projectRes = (
-      await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })
-    ).json();
-    expect(projectRes.ownerMemberId).toBe(member.id);
+    expect(ctx.handle.sqlite.prepare("SELECT owner_member_id AS ownerMemberId FROM work_items WHERE id = ?").get(project.id))
+      .toMatchObject({ ownerMemberId: member.id });
 
     const listRes = await ctx.app.inject({ method: "GET", url: "/api/members" });
     expect(listRes.json().map((m: { id: number }) => m.id)).toContain(member.id);

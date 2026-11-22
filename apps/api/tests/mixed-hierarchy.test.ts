@@ -90,10 +90,10 @@ describe("mixed task/project hierarchy regressions", () => {
 
   async function nestedConversion() {
     const member = await create("/api/members", { name: "Mira" });
-    const outer = await create("/api/projects", { title: "Outer", ownerMemberId: member.id });
+    const outer = await create("/api/projects", { title: "Outer" });
     const parent = await create("/api/tasks", { title: "Container P", projectId: outer.id });
     const child = await create(`/api/tasks/${parent.id}/children`, { title: "Step C" });
-    await create(`/api/projects/${outer.id}/activate`, { expectedRevision: outer.revision });
+    await create(`/api/projects/${outer.id}/activate`, { expectedRevision: outer.revision, ownerMemberId: member.id });
     expect(Graph.load(ctx.handle.db).nextActionFor(outer.id)?.id).toBe(child.id);
     const converted = await create(`/api/tasks/${child.id}/convert-to-story`, { status: "active", expectedRevision: child.revision });
     const detail = await get(`/api/projects/${converted.id}`);
