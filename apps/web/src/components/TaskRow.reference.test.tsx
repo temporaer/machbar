@@ -65,7 +65,7 @@ describe("TaskRow – reference presentation", () => {
     expect(await screen.findByText("Direkt am See")).toBeInTheDocument();
   });
 
-  it("does not render the successor '+' affordance for a reference even in an organizable outline", async () => {
+  it("does not offer positional insertion for a reference in an organizable outline", async () => {
     const reference = makeTask({
       id: 1,
       kind: "reference",
@@ -76,9 +76,11 @@ describe("TaskRow – reference presentation", () => {
     );
 
     await screen.findByText("Camping Wang");
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     expect(
-      screen.queryByRole("button", { name: "Aufgabe danach hinzufügen" }),
+      screen.queryByRole("button", { name: "Aufgabe danach einfügen" }),
     ).not.toBeInTheDocument();
+    expect(document.querySelector(".task-row-successor-slot")).toBeNull();
   });
 
 

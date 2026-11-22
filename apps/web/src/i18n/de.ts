@@ -1075,7 +1075,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   structureMove: "Verschieben …",
   structureConvertToProject: "In Projekt umwandeln",
   structureEditOutcome: "Ergebnis bearbeiten",
-  insertSuccessorLabel: "Aufgabe danach hinzufügen",
+  insertSuccessorLabel: "Aufgabe danach einfügen",
   /**
    * Verb-phrased labels for the action-tile grid in Task/Project detail
    * views (see `ActionTileGrid`) -- covers only the genuinely uncommon

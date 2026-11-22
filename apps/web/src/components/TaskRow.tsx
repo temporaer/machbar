@@ -155,6 +155,8 @@ export function TaskRow({
     task.status !== "cancelled";
 
   const organizeEnabled = organize?.enabled ?? false;
+  const canInsertSuccessor = organizeEnabled && !isReference;
+  const railActions = taskRailActions(task, showTodayRevisitActions);
   const isDragged = organize?.activeId === taskProp.id;
   const isMoving = organize?.pendingId === taskProp.id;
   // While dragging, the row itself previews the projected level so the drop
@@ -301,6 +303,14 @@ export function TaskRow({
   };
 
   const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
+  const openSuccessorComposer = () => {
+    scope.setOpenRail(null);
+    setSuccessorComposerOpen(true);
+  };
+  const closeSuccessorComposer = () => {
+    setSuccessorComposerOpen(false);
+    requestAnimationFrame(() => kebabButtonRef.current?.focus());
+  };
 
   return (
     <>
@@ -581,13 +591,13 @@ export function TaskRow({
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}
 
-      {chipsOpen ? (
+      {chipsOpen && (railActions.length > 0 || !canInsertSuccessor) ? (
         <WorkItemActionRail
           kind="task"
           disabled={busy}
           groupLabel={strings.moreActions}
           emptyLabel={strings.railEmpty}
-          actions={taskRailActions(task, showTodayRevisitActions).map((action) => ({
+          actions={railActions.map((action) => ({
             id: action.intent,
             label: strings.railLabels[action.intent],
             accessibleLabel: strings.railAccessibleLabels[action.intent],
@@ -595,6 +605,19 @@ export function TaskRow({
             onSelect: () => runRailCommand(action),
           }))}
         />
+      ) : null}
+      {chipsOpen && canInsertSuccessor ? (
+        <div className="task-row-insert-successor-action">
+          <button
+            type="button"
+            aria-label={strings.insertSuccessorLabel}
+            disabled={busy}
+            onClick={openSuccessorComposer}
+          >
+            <span aria-hidden="true">+</span>
+            {strings.insertSuccessorLabel}
+          </button>
+        </div>
       ) : null}
       {lifecycleOpen ? (
         <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
@@ -676,24 +699,13 @@ export function TaskRow({
         </ul>
       ) : null}
     </li>
-    {organizeEnabled && !isReference ? (
+    {canInsertSuccessor && successorComposerOpen ? (
       <li className="task-row-successor-slot" style={{ listStyle: "none" }}>
-        {successorComposerOpen ? (
-          <InlineSuccessorComposer
-            predecessorId={task.id}
-            onCancel={() => setSuccessorComposerOpen(false)}
-            onCreated={() => setSuccessorComposerOpen(false)}
-          />
-        ) : (
-          <button
-            type="button"
-            className="task-row-add-successor"
-            aria-label={strings.insertSuccessorLabel}
-            onClick={() => setSuccessorComposerOpen(true)}
-          >
-            +
-          </button>
-        )}
+        <InlineSuccessorComposer
+          predecessorId={task.id}
+          onCancel={closeSuccessorComposer}
+          onCreated={closeSuccessorComposer}
+        />
       </li>
     ) : null}
     </>

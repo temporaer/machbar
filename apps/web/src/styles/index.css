@@ -4127,28 +4127,34 @@ details[open] > .disclosure-summary::after {
   width: 100%;
 }
 
-/*
- * The contextual successor "+" — only rendered by `TaskRow` inside an
- * `organizable` outline (see `useOutlineOrganizeRow()`), directly under
- * the row it follows, at every depth.
- */
-.task-row-add-successor {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 44px;
-  border: 1px dashed var(--color-border);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 1rem;
-  line-height: 1;
+.task-row-insert-successor-action {
+  padding: 6px 10px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--color-danger) 18%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-alt));
 }
 
-.task-row-add-successor:hover {
+.task-row-insert-successor-action button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+}
+
+.task-row-insert-successor-action button:hover:not(:disabled) {
   background: var(--color-surface-alt);
+}
+
+.task-row-insert-successor-action button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
 .task-row-error {

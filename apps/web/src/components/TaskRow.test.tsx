@@ -567,7 +567,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(within(dialog).getByLabelText("Geplant für")).toBeInTheDocument();
   });
 
-  it("adds a successor from the '+' affordance inside an organizable outline and returns focus to the task", async () => {
+  it("offers positional insertion in the organizable task rail and keeps closed rows compact", async () => {
     const task = makeTask({
       id: 11,
       title: "Angebot einholen",
@@ -578,7 +578,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
       makeTask({ id: 12, title: "Termin vereinbaren", projectId: 2 }),
     );
     mockedApi.getTask.mockResolvedValue(task);
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <div>
         <TaskOutline tasks={[task]} emptyMessage="Nichts da" organizable />
         <TaskWorkflowHost />
@@ -586,30 +586,92 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
     await screen.findByText("Angebot einholen");
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Aufgabe danach hinzufügen" }),
-    );
-    await userEvent.type(
-      screen.getByPlaceholderText("Nächster Schritt"),
-      "Termin vereinbaren",
-    );
+    expect(container.querySelector(".task-row-successor-slot")).toBeNull();
+    expect(container.querySelector(".task-row-add-successor")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    expect(within(rail).getByRole("button", { name: "Planen" })).toBeVisible();
+    const insert = screen.getByRole("button", { name: "Aufgabe danach einfügen" });
+    expect(insert).toBeVisible();
+    await userEvent.click(insert);
+
+    const row = container.querySelector('[data-workitem-id="11"]')!;
+    const composerSlot = row.nextElementSibling;
+    expect(composerSlot).toHaveClass("task-row-successor-slot");
+    expect(row.parentElement).toBe(composerSlot?.parentElement);
+    expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+    const input = screen.getByPlaceholderText("Nächster Schritt");
+    expect(input).toHaveFocus();
+    await userEvent.type(input, "Termin vereinbaren");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
-      expect(mockedApi.createTaskSuccessor).toHaveBeenCalledWith(
-        11,
-        expect.objectContaining({ title: "Termin vereinbaren" }),
-      ),
+      expect(mockedApi.createTaskSuccessor).toHaveBeenCalledTimes(1),
+    );
+    expect(mockedApi.createTaskSuccessor).toHaveBeenCalledWith(
+      11,
+      expect.objectContaining({ title: "Termin vereinbaren" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Weitere Aktionen" })).toHaveFocus(),
     );
   });
 
-  it("does not offer the successor '+' affordance outside an organizable outline", async () => {
+  it("inserts after a nested sibling and cancel restores focus without creating", async () => {
+    const nested = makeTask({ id: 31, title: "Unteraufgabe", position: 1 });
+    const parent = makeTask({
+      id: 30,
+      title: "Elternaufgabe",
+      children: [nested, makeTask({ id: 32, title: "Nächste Unteraufgabe", position: 2 })],
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[parent]} emptyMessage="Nichts da" organizable />,
+    );
+    await screen.findByText("Unteraufgabe");
+
+    const nestedRow = container.querySelector('[data-workitem-id="31"]')!;
+    await userEvent.click(within(nestedRow as HTMLElement).getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufgabe danach einfügen" }));
+
+    const composerSlot = nestedRow.nextElementSibling;
+    expect(composerSlot).toHaveClass("task-row-successor-slot");
+    expect(composerSlot?.parentElement).toHaveClass("task-row-children");
+    expect(composerSlot?.nextElementSibling).toHaveAttribute("data-workitem-id", "32");
+    expect(screen.getByPlaceholderText("Nächster Schritt")).toHaveFocus();
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+
+    expect(container.querySelector(".task-row-successor-slot")).toBeNull();
+    expect(mockedApi.createTaskSuccessor).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(within(nestedRow as HTMLElement).getByRole("button", { name: "Weitere Aktionen" })).toHaveFocus(),
+    );
+  });
+
+  it.each(["done", "cancelled"] as const)(
+    "allows positional insertion after a %s task without an empty rail message",
+    async (status) => {
+      const task = makeTask({ id: 40, title: `Terminal ${status}`, status });
+      renderWithProviders(
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" organizable />,
+      );
+      await screen.findByText(`Terminal ${status}`);
+
+      await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+      expect(document.querySelector(".rail-empty")).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Aufgabe danach einfügen" }));
+      expect(screen.getByPlaceholderText("Nächster Schritt")).toHaveFocus();
+    },
+  );
+
+  it("does not show positional insertion in a non-organizable outline", async () => {
     const task = makeTask({ id: 90, title: "Kein Organisieren", status: "actionable" });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Kein Organisieren");
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
     expect(
-      screen.queryByRole("button", { name: "Aufgabe danach hinzufügen" }),
+      screen.queryByRole("button", { name: "Aufgabe danach einfügen" }),
     ).not.toBeInTheDocument();
   });
 });

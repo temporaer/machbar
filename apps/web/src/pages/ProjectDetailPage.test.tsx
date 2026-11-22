@@ -1013,7 +1013,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
-  it("keeps successor entry reachable after a long project outline", async () => {
+  it("keeps positional successor entry reachable after a long project outline", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({ id: 42, title: "Long project" }),
       tasks: Array.from({ length: 20 }, (_, index) => makeTask({
@@ -1023,8 +1023,9 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
     const heading = await screen.findByRole("heading", { name: strings.taskSummary });
     const section = heading.closest("details")!;
-    const successors = within(section).getAllByRole("button", { name: strings.insertSuccessorLabel });
-    await userEvent.click(successors.at(-1)!);
+    const lastTaskRow = section.querySelectorAll("[data-workitem-id]").item(19) as HTMLElement;
+    await userEvent.click(within(lastTaskRow).getByRole("button", { name: strings.moreActions }));
+    await userEvent.click(within(section).getByRole("button", { name: strings.insertSuccessorLabel }));
     const successor = within(section).getByRole("form", { name: strings.addSuccessor });
     expect(within(successor).getByPlaceholderText(strings.successorPlaceholder)).toBeVisible();
     await userEvent.click(within(successor).getByRole("button", { name: strings.cancel }));
