@@ -176,6 +176,7 @@ export type ApiErrorCode =
   | "physical_context_not_found"
   | "project_driver_locked"
   | "project_driver_required"
+  | "project_backlog_owner_forbidden"
   | "project_activation_not_ready"
   | "project_commitment_resolution_required"
   | "project_commitments_prevent_parking"
