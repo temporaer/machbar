@@ -37,7 +37,6 @@ canonical candidate per project and does not treat a reached revisit as
 executable work. For a dependency path, a reached revisit on a container is
 healthy only when its canonical unfinished subtree has a healthy descendant
 path; future container revisits remain intentional pauses.
-
 ## AI clarification and reviewed application
 
 `canBreakDownTask` in the shared intake contract owns target eligibility for
@@ -77,8 +76,7 @@ the proposal to editable state; repeated Apply cannot duplicate steps.
 Regeneration refreshes source context and the snapshot, requiring a new review.
 
 Typed refinement changes can also set or clear a task's scheduled date,
-deadline, revisit instant, and reminders. Omitted fields preserve existing
-values; provider null-envelope placeholders are removed before proposal
+deadline, revisit instant, and reminders. Omitted fields preserve existingvalues; provider null-envelope placeholders are removed before proposal
 validation, while explicit date clears and an empty reminder list remain
 reviewable user-selected changes. New actions use canonical task creation
 defaults. The review displays current and proposed planning values, uses the
@@ -97,7 +95,8 @@ starts mutating work.
 
 ## Goals and advisory coach proposals
 
-Goals and interventions are an owner-scoped journal, not work-item roles.Manual writes and accepted coach proposals share the domain mutations in
+Goals and interventions are an owner-scoped journal, not work-item roles.
+Manual writes and accepted coach proposals share the domain mutations in
 `apps/api/src/domain/goals.ts`; no `goal_id` is added to work items and goals
 remain outside Review.
 
@@ -116,8 +115,7 @@ application, see [deployment](deployment.md) and
 [status and limitations](status-and-limitations.md).
 
 For normative contributor and coding-agent rules, canonical implementation
-paths, and required architecture checks, see
-[Architecture rules](architecture-rules.md).
+paths, and required architecture checks, see[Architecture rules](architecture-rules.md).
 
 ## 1. Package Boundaries
 
@@ -156,8 +154,7 @@ inference. The existing task-create endpoint persists each entry immediately and
 the ordinary Inbox handles subsequent clarification. There is no new backend
 persistence, classification, AI dependency, or backlog.
 
-Selection draws one card lazily at the history frontier (a one-card batch).
-Each cycle covers every area once, choosing randomly among unseen areas and
+Selection draws one card lazily at the history frontier (a one-card batch).Each cycle covers every area once, choosing randomly among unseen areas and
 preferring a different thematic group from the previous card whenever possible.
 Cycles continue seamlessly, with no finish screen, count, progress, or batch UI.
 Each area exhausts its unused prompt IDs before rotating again; pool boundaries
@@ -235,8 +232,7 @@ Quick Add / SharePage
                                 └─ configured writable calendar entity
 ```
 
-The paired Machbar custom integration must be upgraded together with the
-server. Protocol version **2** is required; there is no v1 compatibility
+The paired Machbar custom integration must be upgraded together with theserver. Protocol version **2** is required; there is no v1 compatibility
 path. Home Assistant must have a configured, attachment-capable `ai_task.*`
 entity for image/PDF intake and a writable `calendar.*` entity. Both are
 selected in the integration's options flow. An uploaded `.txt` file
@@ -275,7 +271,6 @@ Ordinary `/plan` and `/apply` reject typed-refinement jobs with
 refinements use only their dedicated review/Apply endpoints. Ordinary draft
 projection, retry context, and interrupted ordinary-Apply claim recovery also
 exclude typed-refinement jobs, including legacy rows containing ordinary JSON.
-
 `existingProjectId` is optional (old stored plans remain valid) and belongs only
 to a proposal root action. Descendants inherit through proposal-local `parentKey`.
 The generated draft binds `existingProjectRevision` at analysis completion;
@@ -295,7 +290,8 @@ Apply checks every pending destination before external effects, after file reads
 and again before any work writes in the existing SQLite transaction. Ledger-confirmed
 work is skipped on partial replay. Canonical transactional task creation disables
 commitment activation only for these existing-destination subtrees, preserving
-backlog lifecycle and Today eligibility; new-project creation is unchanged.If destination validation fails after source retention but before any work/calendar
+backlog lifecycle and Today eligibility; new-project creation is unchanged.
+If destination validation fails after source retention but before any work/calendar
 has committed, review becomes editable again. The uploaded-source ledger is retained,
 acceptance is cleared, and the draft keeps its stale reviewed destination revisions:
 the user must explicitly reselect or remove the association. Saving and applying the
@@ -314,8 +310,7 @@ independent of server deployment.
 ### Shared household AI context
 
 The optional household AI context is durable background information, not an
-editable system prompt. `household_ai_context` stores one shared household
-resource with a household description, long-term direction, and optional
+editable system prompt. `household_ai_context` stores one shared householdresource with a household description, long-term direction, and optional
 suggestion guidance. `GET/PUT /api/settings/ai-context` trims and length-limits
 plain text, converts blank fields to `null`, and keeps Machbar's schemas,
 validation, safety rules, and deterministic workflow rules authoritative.
@@ -354,8 +349,7 @@ deletions do not require reconstructing history from current hierarchy alone.
 
 ### Persistence, expiry, and idempotency
 
-`intake_jobs`, `intake_attachments`, and `home_assistant_requests` are
-operational state for one intake. Uploaded files are kept below
+`intake_jobs`, `intake_attachments`, and `home_assistant_requests` areoperational state for one intake. Uploaded files are kept below
 `<DATA_DIR>/intake` and the job, request rows, and files expire after **24
 hours**; cleanup removes them automatically. This is temporary review state,
 not durable household history. Source retention is optional and is offered
@@ -433,8 +427,7 @@ WorkItem(role=story) ─── WorkItem(role=task)
   executable work; `role = 'story'` means an outcome planned through child
   progress. Stories may contain stories and/or tasks at arbitrary depth.
 - **Besprechen is a shared nomination.** The `discussion_requested` boolean
-  lives on `work_items` for both roles and is changed only through the
-  canonical task/project update mutations. `GET /api/discussion` projects
+  lives on `work_items` for both roles and is changed only through the  canonical task/project update mutations. `GET /api/discussion` projects
   only viewer-visible work; the More page reuses the normal task/project row
   workflows. The flag does not affect status, agenda, review acknowledgement,
   or any other work property.
@@ -474,7 +467,6 @@ WorkItem(role=story) ─── WorkItem(role=task)
 ### Inheritance chains
 
 Two kinds of values cascade down the task tree:
-
 | Field | Resolved as `effective*` |
 |-------|--------------------------|
 | `ownerMemberId` | First non-null value walking up: task → parent task/story → … → nearest story |
@@ -493,6 +485,7 @@ ancestor/project union *before this task's own exclusions are applied*, so the
 UI can keep inherited tags visible and reversible even while they are currently
 excluded from `effectiveTags`. Physical contexts are Home Assistant-owned
 entities rather than a tag kind.
+
 Tag selection is a reusable compact chip picker in both task and project
 editors. Every flexible, non-exclusive tag has one primary kind: Bereich,
 Person, or Normal. The picker creates a missing tag with the
@@ -512,7 +505,6 @@ and projects without a qualifying area appear under **Ohne Bereich**.
 ---
 
 ## 4. Compiled / Resolved Views
-
 The API computes several derived fields before returning tasks to the client:
 
 | Field | Computed as |
@@ -552,8 +544,7 @@ Projects additionally carry:
 | `availableActions` | Workflow transitions legal for the current status (see §6) — the single source of truth for which buttons the UI renders |
 | `activationReadiness` | Canonical driver, executable-progress, and healthy-future-waiting evaluation used by activation UI |
 | `notes` | Free-form project context, independent from completion criteria |
-| `acceptanceCriteria` | Ordered “Erledigt, wenn …” rows with `checked` state |
-| `openCount` / `doneCount` | Task rollups |
+| `acceptanceCriteria` | Ordered “Erledigt, wenn …” rows with `checked` state || `openCount` / `doneCount` | Task rollups |
 | `nextAction` | First currently available actionable, unblocked, *leaf* task in canonical outline order; a reached ordinary revisit qualifies, a future revisit stays deferred, and a task with any open (not `done`/`cancelled`) child is skipped in favor of its subtree |
 | `stuckReason` | Diagnosis for `active` projects only (see §6) |
 
@@ -631,8 +622,7 @@ There are three distinct source attention dates for a card:
 - `dueDate` = deadline or constraint;
 - `revisitAt` = follow-up or decision instant, including the follow-up for a
   direct external wait.
-`revisitAt` is stored as an ISO timestamp and projected into the household
-timezone for date-based views. It is not a separate task status or workflow
+`revisitAt` is stored as an ISO timestamp and projected into the householdtimezone for date-based views. It is not a separate task status or workflow
 store.
 
 From these task dates, `projectWeekAttention` (in `@machbar/shared`, used by the
@@ -671,8 +661,7 @@ propagate to descendants.
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`; a backlog project's
 `revisitAt` is a Wiedervorlage and does not surface active project attention.
-Reached backlog Wiedervorlagen surface in Review for an activation/defer/archive
-decision. Project dates never become task dates.
+Reached backlog Wiedervorlagen surface in Review for an activation/defer/archivedecision. Project dates never become task dates.
 
 ---
 
@@ -691,7 +680,8 @@ decision. Project dates never become task dates.
   (see §9) so activity history, tags, contexts, and notifications survive
   untouched. Task → project conversion preserves task-only work plans,
   reminders, external waits, recurrence history and dependencies by moving
-  them to a retained action step, with optional per-dependency assignment to  an existing open action. It preserves the project deadline and existing
+  them to a retained action step, with optional per-dependency assignment to
+  an existing open action. It preserves the project deadline and existing
   children. Reverse conversion retains task descendants, the existing task
   identity, tags/contexts, planning dates, external waits, reminders,
   recurrence state, occurrence history, and criteria. Criteria remain
@@ -710,8 +700,7 @@ decision. Project dates never become task dates.
 - Tasks and projects carry monotonic revisions. Metadata PATCHes compare the client's rendered revision inside the write transaction and reject stale saves with HTTP 409.
 - The database file lives in `DATA_DIR` (default `/data`). The path is `${DATA_DIR}/${DATABASE_FILE}`.
 
-After a successful mutating API response commits, the single application
-process publishes a coarse invalidation through an authenticated SSE stream.
+After a successful mutating API response commits, the single applicationprocess publishes a coarse invalidation through an authenticated SSE stream.
 Each browser tab identifies its own writes to avoid duplicate invalidation.
 Other tabs/devices refetch through the existing frontend refresh bus.
 `useAsync` now presents native TanStack Query results: successful data remains
@@ -751,7 +740,6 @@ commit/rejection, independently of the gate that still covers read settlement.
 The typed `onCommitted` callback runs after a successful write and captured
 invalidation starts, before awaiting reads. Only write rejection enters
 mutation error handling.
-
 Each accessible view has two independent owners: `useViewTaskCommandEligibility`
 owns the read/access-scoped command capability, while `ViewCompletionNotice`
 owns feedback registration and notice lifetime. The capability stays inactive
@@ -829,8 +817,7 @@ No frontend rebuild is required for a proxy sub-path.
 
 ### OIDC authentication
 
-OIDC is an optional runtime mode configured by issuer, client ID/secret, and
-one explicit public HTTPS origin. All required variables must be present or
+OIDC is an optional runtime mode configured by issuer, client ID/secret, andone explicit public HTTPS origin. All required variables must be present or
 startup fails; with none present, local development retains the browser-local
 member picker.
 
@@ -869,7 +856,6 @@ routes use Bearer authentication and cannot substitute for browser sessions.
 `Graph` resolves stable requirements; Today and Waiting alone evaluate
 member-specific availability. Unknown or telemetry older than 30 minutes fails
 open and never changes structural blocker or project-health derivations.
-
 ### Copilot / MCP
 
 The remote MCP endpoint is mounted at `/api/mcp` inside the Fastify process
@@ -889,7 +875,8 @@ fixed `machbar:mcp:household` scope, then maps the immutable `(issuer, sub)`
 pair to an already-linked member. OAuth is household-only and never provisions
 or updates a member; work access remains limited to explicit agent
 credentials. `apps/api/src/auth/routes.ts` is the common credential boundary,
-while `apps/api/src/mcp/tools.ts` remains independent of the credentialmechanism.
+while `apps/api/src/mcp/tools.ts` remains independent of the credential
+mechanism.
 
 Protected-resource metadata is permanent resource-server behavior. The
 Machbar authorization-server metadata and `/api/mcp/oauth/authorize` route are
@@ -908,7 +895,6 @@ routes. MCP must not become a second mutation architecture.
 ## 7. Status Lifecycle
 
 ### Tasks
-
 ```
 captured ──► actionable ──► done
                  │
@@ -948,8 +934,7 @@ Tasks in `done` or `cancelled` are retained in the database and visible in searc
 
 ### Projects
 
-`ProjectStatus`: `backlog → active → completed`, with `archived` reachable
-from any non-archived state. Completed work reopens to active. `backlog` is
+`ProjectStatus`: `backlog → active → completed`, with `archived` reachablefrom any non-archived state. Completed work reopens to active. `backlog` is
 the one reversible "later" state; `archived` is terminal retirement and only
 returns through `backlog`, so the same driver/progress-path checks apply
 before it can be active again.
@@ -1032,8 +1017,7 @@ either executable progress or an intentional healthy future-waiting path:
 Quick project capture creates title-only backlog work and opens the project.
 Adding work and starting are separate explicit actions there. Conversion opens
 the resulting project after its existing mapping/commitment decisions; no extra
-post-conversion task-entry dialog remains. Explicit Start uses the server's
-activation snapshot and the canonical activation command, collecting only missing
+post-conversion task-entry dialog remains. Explicit Start uses the server'sactivation snapshot and the canonical activation command, collecting only missing
 decisions before confirmation. Proposed task creation/planning uses a rollback-only
 preview of that same canonical mutation to account for the actual proposed graph.
 The canonical `ProjectWorkflowHost` read supplies the activation sheet.
@@ -1072,8 +1056,7 @@ responsible person; the clarification service flags them urgently.
 stories are not "stuck" — they are simply not started).
 
 | Reason | Condition |
-|--------|-----------|
-| `no_next_action` | No healthy actionable path exists and no more specific blocker diagnosis explains it (including an empty project or open work that is only captured/someday) |
+|--------|-----------|| `no_next_action` | No healthy actionable path exists and no more specific blocker diagnosis explains it (including an empty project or open work that is only captured/someday) |
 | `completion_review` | Project has tasks but **zero open** ones — everything is `done`/`cancelled`, so the story is ready to be completed or extended |
 | `waiting_without_followup` | An external blocker path has no Wiedervorlage |
 | `blocked_without_clear_path` | A dependency path ends in captured/someday/non-operational work, a missing task, or a corrupt cycle |
@@ -1092,6 +1075,7 @@ same distinction to avoid framing "ready to complete" as a blocked project.
 A reached external-wait revisit remains a task-level attention signal and
 returns to Today. It does not make an otherwise valid waiting project
 structurally stuck.
+
 Shared tasks without an effective owner are valid actionable work. They do not
 make their project structurally stuck.
 
@@ -1111,8 +1095,7 @@ take over.
 ### Entering successive tasks
 
 `StepComposer` is the shared authored step-entry component used for inline
-successors, task splitting, and explicit project task entry. Inline
-**Nächsten Schritt danach hinzufügen** still creates one actionable sibling at
+successors, task splitting, and explicit project task entry. Inline**Nächsten Schritt danach hinzufügen** still creates one actionable sibling at
 the same outline level and makes it depend on its source task;
 `POST /api/tasks/:id/successors` performs creation and dependency insertion in
 one SQLite transaction. It may include the optional plan or deadline collected
@@ -1151,8 +1134,7 @@ from outline order and eligibility.
 ### Derived Review — `/more/review`
 
 `apps/api/src/domain/reviewItems.ts` is the single deterministic maintenance
-projection. It derives compact project/task diagnoses from the graph and an
-injected calendar date; there is no Review table or workflow status.
+projection. It derives compact project/task diagnoses from the graph and aninjected calendar date; there is no Review table or workflow status.
 
 Review contains structural decisions: missing project driver or progress path,
 due-without-plan, malformed waiting, broken blocker paths, XL work without
@@ -1230,8 +1212,7 @@ plan from memory.
   boundary: the Home Assistant result fields are optional and nullable, so an
   incomplete entry reaches this validator and becomes one `schema_invalid`
   warning (the round turns `partial`) instead of failing the whole response.
-- **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
-  operational state (24-hour expiry, purged with intake jobs); a
+- **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary  operational state (24-hour expiry, purged with intake jobs); a
   `home_assistant_requests` row belongs to either an intake job or a round.
 - **Resolution**: AI results never mutate work items by themselves; every
   change needs an explicit user confirmation. “Hinten anstellen” reuses the
@@ -1270,8 +1251,7 @@ plan from memory.
     is already the confirmation), `task.plan`/`story.defer` (rhythm/revisit,
     no date prefilled), `task.structure` (“Öffnen und strukturieren”) and
     `story.planWork` (opens the project’s next-action focus), and “Öffnen und als Information prüfen” for reference
-    suggestions. There is no canonical action → reference conversion
-    (`makeTaskAction` only promotes references), so Machbar does not add a
+    suggestions. There is no canonical action → reference conversion    (`makeTaskAction` only promotes references), so Machbar does not add a
     parallel one.
   - no extra button, when the surface only reaches the plain item view that
     the card's own “Öffnen” already covers.
@@ -1290,7 +1270,8 @@ Home Assistant components answer the new request kind with
 
 Alles evolves the existing Search implementation. It composes `getProjects()`
 with `searchTasks()` and `SearchFilterBar`; it does not introduce another
-storage or indexing model. With no filters, every non-deleted project is afirst-class entry and standalone task trees cover all lifecycle/blocker states.
+storage or indexing model. With no filters, every non-deleted project is a
+first-class entry and standalone task trees cover all lifecycle/blocker states.
 Project descendants are reached through project detail rather than duplicated
 beside the project. Active search/filtering may return a matching nested task
 directly and searches project title/notes as well as tasks.
@@ -1309,8 +1290,7 @@ nicht aktiv** section, and completed/archived stories remain folded.
   healthy future wait. Focused preflight opens `MemberSelectionSheet` or the
   existing task composer for the missing decision and then uses the canonical
   project action.
-- Completion is intercepted centrally by `lifecyclePrerequisite()` in
-  `lib/projectWorkflow.ts`, not by special-casing individual buttons: unchecked
+- Completion is intercepted centrally by `lifecyclePrerequisite()` in  `lib/projectWorkflow.ts`, not by special-casing individual buttons: unchecked
   acceptance criteria open `CompleteWithCriteriaSheet` (the focused checklist,
   never the structural `StoryCriteriaSheet`/`editOutcome` editor), and — once
   criteria are satisfied or absent — remaining open child tasks open
@@ -1350,7 +1330,6 @@ nicht aktiv** section, and completed/archived stories remain folded.
 `statusAccent(story)` collapses status + `stuckReason` into six values — `backlog | active | review | stuck | completed | archived` — and every colour-carrying element keys off that one class (`.story-row-accent-*`, `.story-row-status-badge--*`, `.story-row-primary--*`, and the primary swipe background). An `active` story with a `stuckReason` therefore reads as a warning, not as healthy progress, except `completion_review`, which renders as the distinct `review` accent — ready to complete, not stuck — and `backlog` is deliberately not green.
 
 The four targeted actions render as icon-only 44 px buttons (`.story-row-chip-icon`) with inline, `aria-hidden`/`focusable="false"` SVG glyphs; the German `aria-label` **and** `title` carry the accessible name, so nothing is conveyed by the glyph alone. Workflow transitions stay labelled text chips.
-
 The row shows **one** progress bar — task completion, marked up as a real `role="progressbar"` with `aria-valuenow/min/max` and `aria-valuetext` (`2/4`). Acceptance-criteria progress is core outcome content instead: `ProjectDetailPage` renders a visible **Ergebnis** checklist with its `done/total` count, direct check/uncheck, and an explicit `story.editOutcome` entry into the structural editor.
 
 ### Status disclosure and explicit transition buttons
@@ -1428,7 +1407,6 @@ Focused sheets may own drafts and user intent, but not a second mutation
 implementation. Task metadata and external-wait execution flow through
 `useTaskActions`; project metadata and lifecycle changes flow through
 `useProjectActions`. `ProjectDetailPage` is the sole project-notes editor.
-
 ### One canonical mutation path
 
 Shared domain semantics live in small explicit modules rather than a generic
@@ -1469,7 +1447,6 @@ results refetch independently. This trades immediate cross-view consistency for
 less client coordination while leaving backend authority unchanged.
 
 ### Focused quick sheets
-
 Interactions target one field at a time instead of opening the full detail sheet:
 
 | Component | Purpose |
@@ -1488,7 +1465,8 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `TaskPlanningSheet` | Owns the shared scheduled/recurrence/reminders/waiting/revisit/deadline draft; composes the draft-only `TaskRemindersEditor` and delegates one revision-safe atomic update, pending state, errors, and refresh to `useTaskActions` |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |
 
-Assignment surfaces read members from `useIdentity`, so tests mounting themmust wrap in `IdentityProvider` and mock `api.getMembers`.
+Assignment surfaces read members from `useIdentity`, so tests mounting them
+must wrap in `IdentityProvider` and mock `api.getMembers`.
 
 ### Assignment pickers are tap chips, not selects
 
@@ -1507,7 +1485,6 @@ owner/driver workflow; inherited task ownership identifies the parent-task or
 project source from `effectiveOwnerSource`. Project ancestry appears once in
 clickable breadcrumbs, not as a second ownership/property control. Scheduled dates
 and deadlines have separate buttons and target the same planning draft.
-
 `DetailPropertyPill` remains the shared current-value control. Detail summary
 CSS makes it quiet and wraps long values while keeping 44px touch targets;
 focused editors retain their existing presentation. Every current value opens
@@ -1547,7 +1524,6 @@ task's original `createdAt`, and ranks matches only against known members,
 tags, and active Home Assistant contexts. `CaptionHintSuggestions` renders at
 most three matches inside the existing plan, owner, tag, context, or start-wait
 sheet; there is no parsing dialog and capture syntax is unchanged.
-
 Suggestion acceptance remains part of the owning workflow. Planning stages
 accepted spans until **Fertig**; owner, tag, and context acceptance sends the
 structured field plus cleaned title through the existing revision-safe task
@@ -1627,7 +1603,6 @@ never hides a path to open work: a terminal task with a still-open descendant
 stays visible so that descendant remains reachable. Freshly completed children
 follow this same rule immediately, without a retention exception. The parent's `done/total`
 progress count is always computed against the full, unpruned `children` array.
-
 **Details that are easy to get wrong, and are covered by tests:**
 
 - Window `pointermove`/`up`/`cancel`/`keydown` listeners are installed through *stable* dispatchers that forward to a ref, so a re-render mid-drag cannot leave a stale listener attached.
@@ -1666,8 +1641,7 @@ outside planning remains an immediate domain command.
 
 Ending a wait in the shared draft does not silently discard a scheduled date or
 revisit. The API applies the existing lifecycle rules in the same transaction,
-and the UI blocks invalid date combinations before commit while preserving the
-draft for correction.
+and the UI blocks invalid date combinations before commit while preserving thedraft for correction.
 
 Task reminders and recurrence use this same planning draft and commit. The
 reusable `TaskRemindersEditor` only edits reminder inputs; it does not write to
@@ -1686,7 +1660,8 @@ The obsolete `TaskAvailabilitySheet` and `TaskPlanSheet` compatibility wrappers
 were removed; availability entry, DST and caption-hint coverage exercise
 `TaskPlanningSheet` directly.
 
-Planning starts with compact value summaries and small add actions. The expandedsections are presentation state; collapsed date/reminder controls remain mounted
+Planning starts with compact value summaries and small add actions. The expanded
+sections are presentation state; collapsed date/reminder controls remain mounted
 to retain authored text and pending inputs. Reminder control IDs are scoped to
 each editor instance so retained and foreground forms cannot collide. Direct targets expand only their
 editor, scroll and focus it. Invalid input and same-field conflicts reveal their
@@ -1705,8 +1680,7 @@ dependency commit, as does recording a wait follow-up. Unresolved prerequisites
 appear first; resolved links are behind an explicit disclosure. The workflow
 owner permits one active real-task planner and one read-only prerequisite
 inspection. The inspection keeps the planner mounted and its local draft intact,
-but exposes no planning, classification, notes, child-completion,
-keyboard-mutation, or other canonical editing entry points. Closing the
+but exposes no planning, classification, notes, child-completion,keyboard-mutation, or other canonical editing entry points. Closing the
 inspection returns directly to the planner.
 
 The owner observes router location changes once through `TaskWorkflowHost`.
@@ -1745,7 +1719,6 @@ projection back from Markdown into ordered attachment references. Images become
 The same projection feeds detail attachment strips, attachment-aware notes
 summaries, and the single subdued thumbnail shown by shared task rows. No
 attachment metadata is persisted outside notes.
-
 `MarkdownAttachmentSheet` owns camera/file/search resolution and supports both
 cursor insertion in an authored notes draft and immediate append through
 `useTaskActions`/`useProjectActions`. Once a file upload resolves, a failed
@@ -1824,8 +1797,7 @@ stories and tasks.
 
 **Identity-preserving role conversion.** `convertTaskToStory` /
 `convertStoryToTask` (`apps/api/src/domain/roleConversion.ts`) replace the old,
-identity-destroying `promoteTaskToProject`: converting a task to a story
-(or back) reuses the same numeric id (enabled by the shared identity
+identity-destroying `promoteTaskToProject`: converting a task to a story(or back) reuses the same numeric id (enabled by the shared identity
 above) and re-points `activity_events`/`notification_events`/
 `contribution_events` in place, so activity history, tags, and contexts
 survive the conversion instead of starting fresh. A root standalone task may
@@ -1864,8 +1836,7 @@ explicit acceptance.
 **Semantic commands.** `apps/web/src/lib/commands.ts` defines a pure,
 React-free `WorkItemCommand` union (`task.*`, `story.*`, `outline.*`,
 `navigate.*`, `capture.open`) — one vocabulary of user intent that mouse
-clicks, swipes, row buttons, and keyboard shortcuts all dispatch into
-identically. `apps/web/src/lib/useWorkItemCommands.ts` is the one dispatch
+clicks, swipes, row buttons, and keyboard shortcuts all dispatch intoidentically. `apps/web/src/lib/useWorkItemCommands.ts` is the one dispatch
 surface: it routes `task.*` into the existing `useTaskActions()`, `story.*`
 into `useProjectActions()`, `task.open` into `useTaskDetail()`, and
 `outline.collapse`/`outline.expand` into the interaction scope's collapse
@@ -1884,7 +1855,8 @@ Project Wiedervorlage never routes through Week; it uses `story.defer`.
 React-independent descriptor layer for labels, groups, keys, and availability.
 It does not execute commands; `useWorkItemCommands()` remains the execution
 path. The descriptor registry derives keyboard help and `g` prefix hints, so
-shortcut documentation is not maintained as a second handwritten table.`Ctrl/Cmd+K` command palette UI is intentionally deferred until it can reuse
+shortcut documentation is not maintained as a second handwritten table.
+`Ctrl/Cmd+K` command palette UI is intentionally deferred until it can reuse
 the same descriptors without introducing a separate combobox/action framework.
 
 **Interaction scopes and the logical active item.**
@@ -1903,7 +1875,6 @@ state. Each eligible outline registers its own mover and item-ownership check;
 unmount or capability changes retire only that registration. Keyboard moves
 select the registered outline containing the active rendered row, and a retired mover
 cannot dispatch. Drag sessions and pending-move UI remain local to the outline.
-
 **Keyboard navigation.** `apps/web/src/lib/useWorkItemKeyboardNav.ts`
 (mounted per page as `<WorkItemKeyboardNavMount />`, inside that page's
 scope) reads `[data-workitem-id]` elements in live DOM order for `j/k`
@@ -1943,8 +1914,7 @@ people to row-tap details and right-swipe status; it creates no synthetic action
 Task precedence is terminal/reference → no intervention; captured or needing
 clarification → explicit clarification acknowledgement, clarification deferral, structure;
 external wait → follow-up and planning; dependency-blocked → first unresolved
-prerequisite and planning (planning alone if no dependency target is available).
-Ready Today revisit prompts offer start today, availability and planning;
+prerequisite and planning (planning alone if no dependency target is available).Ready Today revisit prompts offer start today, availability and planning;
 Someday offers planning alone; otherwise ready actions offer planning, splitting
 and starting an external wait (recurring actions remain leaves and omit splitting). A follow-up opens `task.waitingLifecycle`, the
 existing waiting card inside `TaskPlanningSheet`, focused on the follow-up outcome.
@@ -2022,7 +1992,6 @@ The current migration set starts with a squashed `0000_baseline.sql` for fresh
 installs, including the preserved default tag seed data from the historical
 migration chain. New migrations must be forward-only; never edit the baseline
 for an already-deployed compatibility fix.
-
 `0001_work_items_merge.sql` is the physical WorkItem cutover. It rebuilds the
 identity-only `work_items` table into the unified table, copies every legacy
 task/project row exactly once, maps legacy task/story statuses into the shared
@@ -2062,8 +2031,7 @@ focuses the visible Apply alert.
 
 ### Phase 6a: nested role conversion and project reparenting
 
-`roleConversion.ts` remains the identity-preserving transaction for both roles.
-A task below a project or task becomes a child project by changing its role,
+`roleConversion.ts` remains the identity-preserving transaction for both roles.A task below a project or task becomes a child project by changing its role,
 keeping `parentId`, `position`, identity and descendant edges. Effective task
 ownership/tags/contexts become explicit project values; task-only obligations
 continue to use the existing retained action and dependency mappings. A nested
@@ -2082,6 +2050,7 @@ Source and destination ancestry are reviewed along with the source subtree.
 Committed moves and nested conversions use `activateCommittedProjectChain`
 inside their original transaction. That adapter walks through intervening task
 parents and presents the nearest project parent to the pure commitment rules.
+
 `story.move` dispatches only through `useWorkItemCommands` / `ProjectWorkflowHost`
 to `MoveProjectSheet`. It reuses `DestinationPicker`, recents, and
 `ProjectActivationDecisionFields`. Conflict keeps the destination and authored
@@ -2101,8 +2070,7 @@ Open projects block task ancestors from candidacy; completed, cancelled or
 archived project subtrees stop traversal. Its projection supplies the same
 open-project container IDs to `Graph.taskContainsOpenProject`, ordinary Today
 selection (including standalone tasks) and lifecycle guards. Child projects keep
-their own normal next-action lane. Task lifecycle descendant collection skips
-terminal project subtrees entirely, preserving their statuses, revisions and
+their own normal next-action lane. Task lifecycle descendant collection skipsterminal project subtrees entirely, preserving their statuses, revisions and
 history while allowing the containing task to complete or cancel.
 
 
@@ -2141,8 +2109,7 @@ their stored positions would reverse branch traversal. Original positions and
 parent IDs remain intact, and full outlines still sort actual sibling groups.
 
 `TaskOutline` renders current server membership, including nested rows.
-Completion-triggered removal and regrouping take effect on the next read.
-Today keys every outline by member/scope selection so local fold/interaction
+Completion-triggered removal and regrouping take effect on the next read.Today keys every outline by member/scope selection so local fold/interaction
 state cannot survive a logical selection change. No removed-row ownership or
 retention timer participates in eligibility.
 
@@ -2220,8 +2187,7 @@ so shared-container lifecycle commands cannot mutate another owner's private wor
 
 ### Notes append and latest-context previews (#227)
 
-`useTaskActions.appendNotes` and `useProjectActions.appendNotes` own web append
-execution through the existing POST notes endpoints. `NotesAppend` is a shared
+`useTaskActions.appendNotes` and `useProjectActions.appendNotes` own web appendexecution through the existing POST notes endpoints. `NotesAppend` is a shared
 draft-only Markdown composer. It is disabled during full-document editing so
 an unsaved correction cannot be overwritten by an append/refetch. Errors retain
 the append draft; ordinary completion and lifecycle state are unaffected.
@@ -2260,8 +2226,7 @@ the existing lower-right assignment position.
 
 ### Shared Markdown editor (CodeMirror)
 
-`MarkdownEditor` is the single short-note editor for capture, full task/project
-notes, intake editing and quick append. CodeMirror 6 owns input, composition,
+`MarkdownEditor` is the single short-note editor for capture, full task/projectnotes, intake editing and quick append. CodeMirror 6 owns input, composition,
 selection and history; `@codemirror/lang-markdown` uses CommonMark plus GFM.
 The supported Markdown commands continue lists/quotes, reset new task items to
 unchecked and handle markup-aware Backspace. `nonTightLists: false` makes an
@@ -2280,7 +2245,8 @@ previous textarea keydown/beforeinput/execCommand continuation path is removed.
 
 Callers must pass asynchronous save/mutation state explicitly through
 `MarkdownEditor.disabled`; contenteditable does not inherit a disabled fieldset.
-Task/project notes and Capture lock input during submission; quick appendcombines its own pending state with the caller lock. Intake content edits are
+Task/project notes and Capture lock input during submission; quick append
+combines its own pending state with the caller lock. Intake content edits are
 synchronous draft edits inside a modal, with no asynchronous field save.
 
 ### Navigation chrome (#238)
@@ -2299,8 +2265,7 @@ programmatic focus, so opening the inventory does not summon a mobile keyboard.
 The redundant inventory link is removed from More; other sections keep their
 existing names and grouping.
 
-Task right-swipe dispatches `task.primaryAction`: captured tasks retain their
-clarification step, open tasks use guarded completion, and done/cancelled tasks
+Task right-swipe dispatches `task.primaryAction`: captured tasks retain theirclarification step, open tasks use guarded completion, and done/cancelled tasks
 reopen. Pointer, keyboard, and explicit buttons share the existing commands and
 completion guards. The swipe settings context, options, and storage reader/writer
 are removed; previously stored preferences are ignored without migration.
@@ -2339,8 +2304,7 @@ Manual mobile release checks (real keyboard required; DOM mocks cannot verify
 keyboard geometry):
 - Android Chrome and installed PWA: open Inbox Quick Add, focus title, type,
   scroll to Erstellen and submit without dismissing the keyboard.
-- Expand modifiers/suggestions and use long notes; verify all controls remain
-  reachable by scrolling and safe-area padding remains visible.
+- Expand modifiers/suggestions and use long notes; verify all controls remain  reachable by scrolling and safe-area padding remains visible.
 - Dismiss/reopen the keyboard, rotate with it open, close/reopen Quick Add;
   check sheet bounds recover without a stale gap or clipped bottom.
 - Open a nested picker, return to the underlying form, and suspend/resume a
@@ -2418,8 +2382,7 @@ and the start consequence before the final mutation. The preview reuses the
 canonical domain function inside a rollback-only transaction (including all
 activity/contribution writes), rather than approximating the proposed graph
 in the UI. Canonical revisions, permissions and validation also apply on the
-final request; stale failures keep drafts. Preview responses suppress the
-mutation notification hook.
+final request; stale failures keep drafts. Preview responses suppress themutation notification hook.
 
 Mobile Chromium verification for #248 used a 390px viewport reduced to 320px
 visible height: the two-task submit control remained reachable by scrolling,
@@ -2459,7 +2422,6 @@ Chromium and Pixel emulation. It caught the missing InteractionScopeProvider in
 DiscussionPage: ordinary populated rows crashed despite component fixtures
 supplying the provider. The page now owns the same scope as other list pages.
 The browser suite tests the real mount tree, not the convenient test wrapper.
-
 Review hardening for creation/activation boundaries: CaptureForm, ProjectsPage
 and SharePage own an explicit CreationIntent passed to the API transport. The
 transport holds only that caller's key/fingerprint, rotates it when the draft
@@ -2479,6 +2441,7 @@ the project projection after role conversion and returns project_not_found
 instead of 200/null. Migration 0031 includes its chained schema snapshot; the
 schema-drift regression invokes the installed generator against a temporary copy
 and requires that it produces no additional SQL migration.
+
 The early stale project-deadline branch also passes viewer context to
 projectActivationDecisionSnapshot. That builder authorizes every project in
 both its requirements and revision arrays before returning an error snapshot.
@@ -2497,7 +2460,6 @@ identity and a separate occurrence key (for example an ISO year/week).
 inferred. The HA client checks authenticated `GET /tasks/sync` for
 `occurrenceKeys: true` before posting, so old/unreachable servers cannot silently
 accept the new field as ordinary reconciliation.
-
 The existing `syncExternalTask` transaction looks up an occurrence receipt first,
 rejects unseen older/same-day occurrences, then finds open tasks among both the
 stable link, durable routine membership and all historical receipts. An open instance is retained unchanged
@@ -2537,8 +2499,7 @@ feedback appears at the initiating control or confirmation dialog through query
 settlement. Refresh errors do not replay a committed write. Task authored-text
 callbacks share a live-query revision check: append, attachment insertion and
 title/notes saves prefer any newer published detail text over their older write
-response. A confirmed write still supplies local authored text if refresh failed.
-No query data is patched. Subsequent editors and revision-checked writes retain
+response. A confirmed write still supplies local authored text if refresh failed.No query data is patched. Subsequent editors and revision-checked writes retain
 the newer content rather than silently replacing another person's addition.
 
 Both details use `DetailNotesPreview` inside a lightly tinted, padded notes
