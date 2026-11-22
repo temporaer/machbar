@@ -1240,6 +1240,7 @@ describe("MCP integration", () => {
     const owner = await createMember("Alex");
     const project = insertTestProject(ctx.handle.db, {
       title: "Owned project",
+      status: "active",
       ownerMemberId: owner.id,
     });
     const parent = insertTestTask(ctx.handle.db, {
@@ -1843,6 +1844,7 @@ describe("MCP integration", () => {
       .get();
     const ownedParent = insertTestProject(ctx.handle.db, {
       title: "Owned parent",
+      status: "active",
       ownerMemberId: owner.id,
     });
     const { client, server } = await connectMcp(authenticated.id);
