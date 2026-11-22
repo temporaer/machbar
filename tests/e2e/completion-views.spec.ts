@@ -109,7 +109,7 @@ const views = [
 ] as const;
 
 for (const view of views) {
-  test(`${view.name} confirms a committed completion without retaining its row`, async ({ page, isMobile }) => {
+  test(`${view.name} shows the completion acknowledgement in its source view`, async ({ page, isMobile }) => {
     const { task, path } = await view.setup(page);
     await page.clock.install();
     await page.goto(path);
@@ -127,7 +127,7 @@ for (const view of views) {
     if (inlineAcknowledgement) {
       const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
       await expect(source.locator(".task-row-title")).toHaveClass(/done/);
-      await expect(notice).not.toHaveText(`„${task.title}“ erledigt.`);
+      await expect(notice).toHaveCount(0);
     } else {
       await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
       await expect(notice).toBeInViewport();
@@ -148,7 +148,7 @@ for (const view of views) {
     }
     if (inlineAcknowledgement) {
       await page.clock.runFor(3_000);
-      await expect(notice).not.toHaveText(`„${task.title}“ erledigt.`);
+      await expect(notice).toHaveCount(0);
       if (view.name === "Inbox") await expect(page.locator(`[data-workitem-id="${task.id}"]`)).toHaveCount(0);
     } else await expect(notice).toHaveCount(1);
   });
@@ -165,8 +165,9 @@ test("a swipe completion stays struck through inside a narrow Today row", async 
   const title = source.locator(".task-row-title");
   await completeRow(page, task.id, true);
   await expect(title).toHaveClass(/done/);
-  await expect(source.getByRole("button", { name: "Wieder öffnen", exact: true })).toBeDisabled();
-  await expect(page.locator(".view-completion-notice")).not.toContainText(task.title);
+  await expect(source.locator(".task-row-checkbox")).toBeDisabled();
+  await expect(source.getByRole("status")).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
   const bounds = await source.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -261,8 +262,8 @@ test("Inbox row and detail share one completion notice", async ({ page }) => {
   const detail = page.getByRole("dialog", { name: "Details", exact: true });
   await detail.getByRole("button", { name: /^Status / }).click();
   await detail.getByRole("button", { name: "Aufgabe abschließen", exact: true }).click();
-  const notice = page.locator(".view-completion-notice");
-  await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(source.getByRole("status")).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
   await expect(notice).toHaveCount(1);
   await expect(notice).toBeInViewport();
 });
@@ -302,13 +303,15 @@ test("committed Inbox completion with failed refresh keeps stale task rows inert
     if (committed && failRefresh) await route.abort("failed");
     else await route.continue();
   });
+  await page.clock.install();
   await page.goto("/#/inbox");
   const source = page.locator(`[data-workitem-id="${task.id}"]`);
   await expect(source).toBeVisible();
   failRefresh = true;
   await completeRow(page, task.id, isMobile);
-  const notice = page.locator(".view-completion-notice");
-  await expect(notice).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(source.getByRole("status")).toHaveText(`„${task.title}“ erledigt.`);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
+  await page.clock.runFor(3_000);
   await expect(page.locator(".inbox-page > .error-state")).toBeVisible();
   await expect(source.locator("xpath=ancestor::div[@inert]")).toHaveCount(1);
   expect(writes).toBe(1);
@@ -326,11 +329,13 @@ test("a recurring task confirms an occurrence rather than terminal completion", 
     allowedDeviationDays: 0,
     scheduledDate: new Date().toISOString().slice(0, 10),
   });
+  await page.clock.install();
   await page.goto("/#/more/all");
   await completeRow(page, task.id, isMobile);
-  await expect(page.locator(".view-completion-notice")).toHaveText(
-    `Durchgang von „${task.title}“ erledigt.`,
-  );
+  const source = page.locator(`[data-workitem-id="${task.id}"]`).first();
+  await expect(source.locator(".task-row-title")).toHaveClass(/done/);
+  await expect(source.getByRole("status")).toHaveText(`Durchgang von „${task.title}“ erledigt.`);
+  await expect(page.locator(".view-completion-notice")).toHaveCount(0);
   expect((await (await page.request.get(`/api/tasks/${task.id}`)).json()).status).toBe("actionable");
 });
 
