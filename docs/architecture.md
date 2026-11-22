@@ -37,6 +37,7 @@ canonical candidate per project and does not treat a reached revisit as
 executable work. For a dependency path, a reached revisit on a container is
 healthy only when its canonical unfinished subtree has a healthy descendant
 path; future container revisits remain intentional pauses.
+
 ## AI clarification and reviewed application
 
 `canBreakDownTask` in the shared intake contract owns target eligibility for
@@ -276,6 +277,7 @@ Ordinary `/plan` and `/apply` reject typed-refinement jobs with
 refinements use only their dedicated review/Apply endpoints. Ordinary draft
 projection, retry context, and interrupted ordinary-Apply claim recovery also
 exclude typed-refinement jobs, including legacy rows containing ordinary JSON.
+
 `existingProjectId` is optional (old stored plans remain valid) and belongs only
 to a proposal root action. Descendants inherit through proposal-local `parentKey`.
 The generated draft binds `existingProjectRevision` at analysis completion;
@@ -395,6 +397,7 @@ chooses and runs the AI provider and owns the calendar event; Machbar owns the
 review and the resulting household work.
 
 ## Historical reflection export
+
 `GET /api/reflection/briefing` remains the sole source for historical reflection
 facts. `ReflectionStartPage` selects its reporting window and scope, previews
 the complete content, and only then enables native share, clipboard, or file
@@ -514,6 +517,7 @@ and projects without a qualifying area appear under **Ohne Bereich**.
 ---
 
 ## 4. Compiled / Resolved Views
+
 The API computes several derived fields before returning tasks to the client:
 
 | Field | Computed as |
@@ -873,6 +877,7 @@ routes use Bearer authentication and cannot substitute for browser sessions.
 `Graph` resolves stable requirements; Today and Waiting alone evaluate
 member-specific availability. Unknown or telemetry older than 30 minutes fails
 open and never changes structural blocker or project-health derivations.
+
 ### Copilot / MCP
 
 The remote MCP endpoint is mounted at `/api/mcp` inside the Fastify process
@@ -912,6 +917,7 @@ routes. MCP must not become a second mutation architecture.
 ## 7. Status Lifecycle
 
 ### Tasks
+
 ```
 captured ──► actionable ──► done
                  │
@@ -1024,11 +1030,6 @@ either executable progress or an intentional healthy future-waiting path:
   `project_driver_locked` unless the project is in `backlog`. Reassigning to a
   different member is always allowed. Individual task ownership remains
   independent.
-- Household-scope projects in `backlog` have no project driver. Creating or
-  assigning one with an owner is rejected; returning a household project to
-  backlog clears its driver atomically. Work-scope projects retain their owner
-  because ownership also governs access. A migration clears legacy violations
-  and SQLite triggers enforce this rule.
 - Member deletion fails with `member_active_projects_conflict` while that
   person still drives an active project. The project must be reassigned or
   returned to backlog first.
@@ -1436,6 +1437,7 @@ Focused sheets may own drafts and user intent, but not a second mutation
 implementation. Task metadata and external-wait execution flow through
 `useTaskActions`; project metadata and lifecycle changes flow through
 `useProjectActions`. `ProjectDetailPage` is the sole project-notes editor.
+
 ### One canonical mutation path
 
 Shared domain semantics live in small explicit modules rather than a generic
@@ -1515,6 +1517,7 @@ owner/driver workflow; inherited task ownership identifies the parent-task or
 project source from `effectiveOwnerSource`. Project ancestry appears once in
 clickable breadcrumbs, not as a second ownership/property control. Scheduled dates
 and deadlines have separate buttons and target the same planning draft.
+
 `DetailPropertyPill` remains the shared current-value control. Detail summary
 CSS makes it quiet and wraps long values while keeping 44px touch targets;
 focused editors retain their existing presentation. Every current value opens
@@ -1554,6 +1557,7 @@ task's original `createdAt`, and ranks matches only against known members,
 tags, and active Home Assistant contexts. `CaptionHintSuggestions` renders at
 most three matches inside the existing plan, owner, tag, context, or start-wait
 sheet; there is no parsing dialog and capture syntax is unchanged.
+
 Suggestion acceptance remains part of the owning workflow. Planning stages
 accepted spans until **Fertig**; owner, tag, and context acceptance sends the
 structured field plus cleaned title through the existing revision-safe task
@@ -1753,6 +1757,7 @@ projection back from Markdown into ordered attachment references. Images become
 The same projection feeds detail attachment strips, attachment-aware notes
 summaries, and the single subdued thumbnail shown by shared task rows. No
 attachment metadata is persisted outside notes.
+
 `MarkdownAttachmentSheet` owns camera/file/search resolution and supports both
 cursor insertion in an authored notes draft and immediate append through
 `useTaskActions`/`useProjectActions`. Once a file upload resolves, a failed
@@ -1912,6 +1917,7 @@ state. Each eligible outline registers its own mover and item-ownership check;
 unmount or capability changes retire only that registration. Keyboard moves
 select the registered outline containing the active rendered row, and a retired mover
 cannot dispatch. Drag sessions and pending-move UI remain local to the outline.
+
 **Keyboard navigation.** `apps/web/src/lib/useWorkItemKeyboardNav.ts`
 (mounted per page as `<WorkItemKeyboardNavMount />`, inside that page's
 scope) reads `[data-workitem-id]` elements in live DOM order for `j/k`
@@ -2031,6 +2037,7 @@ The current migration set starts with a squashed `0000_baseline.sql` for fresh
 installs, including the preserved default tag seed data from the historical
 migration chain. New migrations must be forward-only; never edit the baseline
 for an already-deployed compatibility fix.
+
 `0001_work_items_merge.sql` is the physical WorkItem cutover. It rebuilds the
 identity-only `work_items` table into the unified table, copies every legacy
 task/project row exactly once, maps legacy task/story statuses into the shared
@@ -2510,6 +2517,7 @@ identity and a separate occurrence key (for example an ISO year/week).
 inferred. The HA client checks authenticated `GET /tasks/sync` for
 `occurrenceKeys: true` before posting, so old/unreachable servers cannot silently
 accept the new field as ordinary reconciliation.
+
 The existing `syncExternalTask` transaction looks up an occurrence receipt first,
 rejects unseen older/same-day occurrences, then finds open tasks among both the
 stable link, durable routine membership and all historical receipts. An open instance is retained unchanged
