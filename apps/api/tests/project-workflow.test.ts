@@ -904,6 +904,42 @@ describe("project workflow (HTTP routes)", () => {
     );
   });
 
+  it("drops inherited household task responsibility while parked and uses the newly selected driver on activation", async () => {
+    const anna = await createMemberRoute("Anna");
+    const ben = await createMemberRoute("Ben");
+    const project = await createProjectRoute();
+    const task = await addProgressTask(project.id);
+
+    const activatedForAnna = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/activate`,
+      payload: { ownerMemberId: anna.id },
+    });
+    expect(activatedForAnna.statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().effectiveOwnerId).toBe(anna.id);
+
+    const returned = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/return-to-backlog`,
+      payload: { expectedRevision: activatedForAnna.json().revision },
+    });
+    expect(returned.statusCode).toBe(200);
+    expect(returned.json().ownerMemberId).toBeNull();
+    const parkedTask = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json();
+    expect(parkedTask.ownerInheritanceMode).toBe("inherit");
+    expect(parkedTask.effectiveOwnerId).toBeNull();
+
+    const activatedForBen = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/activate`,
+      payload: { ownerMemberId: ben.id },
+    });
+    expect(activatedForBen.statusCode).toBe(200);
+    const reassignedTask = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json();
+    expect(reassignedTask.ownerInheritanceMode).toBe("inherit");
+    expect(reassignedTask.effectiveOwnerId).toBe(ben.id);
+  });
+
   it("requires a fresh driver when activating a household backlog project", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute({ ownerMemberId: anna.id });
