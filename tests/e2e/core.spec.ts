@@ -426,15 +426,23 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
   });
   expect(projectResponse.status()).toBe(201);
   const project = await projectResponse.json();
+  const activated = await page.request.post(`/api/projects/${project.id}/activate`, {
+    data: {
+      expectedRevision: project.revision,
+      ownerMemberId: memberId,
+      activationResolution: {
+        expectedProjects: [{ projectId: project.id, revision: project.revision }],
+        drivers: [{ projectId: project.id, ownerMemberId: memberId }],
+        nextActionTitle: "Projektstart vorbereiten",
+      },
+    },
+  });
+  expect(activated.ok(), await activated.text()).toBe(true);
   const item = await task(page, {
     projectId: project.id, ownerInheritanceMode: "inherit", repeatAfterDays: 7, allowedDeviationDays: 0,
     scheduledDate: "2099-05-10",
     title: `Eine ausführlich beschriebene Aufgabe ${randomUUID()}`,
   });
-  const activated = await page.request.post(`/api/projects/${project.id}/activate`, {
-    data: { expectedRevision: project.revision, ownerMemberId: memberId },
-  });
-  expect(activated.ok(), await activated.text()).toBe(true);
   await page.goto(`/#/tasks/${item.id}`);
   await expect(page.getByText("Vom Projekt geerbt", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Aufgabenverantwortung/ })).toBeVisible();
