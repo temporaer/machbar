@@ -10,7 +10,7 @@ import { getIntake, updateIntakeDraft } from "../src/intake/jobs.js";
 import { HomeAssistantRequestSignal } from "../src/integrations/homeAssistantRequests.js";
 import { writeAttachment } from "../src/intake/storage.js";
 import type { PaperlessClient } from "../src/paperless/client.js";
-import { createProject } from "../src/domain/storyCrud.js";
+import { createProject as createProjectMutation } from "../src/domain/storyCrud.js";
 import { createTask } from "../src/domain/taskCrud.js";
 import {
   closeTestContext,
@@ -19,6 +19,19 @@ import {
 } from "./helpers.js";
 
 const env = (dataDir: string) => ({ dataDir } as never);
+
+function createProject(db: TestContext["handle"]["db"], input: Parameters<typeof createProjectMutation>[1], context?: Parameters<typeof createProjectMutation>[2]) {
+  const ownerMemberId = input.ownerMemberId ?? null;
+  const householdBacklogWithOwner = (input.scope ?? "household") === "household" &&
+    (input.status ?? "backlog") === "backlog" && ownerMemberId !== null;
+  const needsFixtureActivation = input.status === "active" || householdBacklogWithOwner;
+  const project = createProjectMutation(db, needsFixtureActivation
+    ? { ...input, status: "backlog", ownerMemberId: null }
+    : input, context);
+  if (!needsFixtureActivation) return project;
+  db.update(schema.workItems).set({ status: "active", ownerMemberId }).where(eq(schema.workItems.id, project.id)).run();
+  return { ...project, status: "active" as const, ownerMemberId };
+}
 
 describe("intake apply", () => {
   let ctx: TestContext;
@@ -109,12 +122,12 @@ describe("intake apply", () => {
 
   it("adds mixed new work and nested actions to existing active/backlog destinations without activation or Today leakage", async () => {
     const setup = await prepare();
-    const active = createProject(ctx.handle.db, { title: "Active", ownerMemberId: setup.member.id });
-    const backlog = createProject(ctx.handle.db, { title: "Backlog", ownerMemberId: setup.member.id });
+    const active = createProject(ctx.handle.db, { title: "Active" });
+    const backlog = createProject(ctx.handle.db, { title: "Backlog" });
     const waiting = createTask(ctx.handle.db, { title: "Already waiting", projectId: active.id, status: "actionable" });
     ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: waiting.id, waitingFor: "Permit", revisitDate: "2099-01-01" }).run();
     const originalWait = ctx.handle.db.select().from(schema.taskExternalWaits).all();
-    ctx.handle.db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, active.id)).run();
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: setup.member.id }).where(eq(schema.workItems.id, active.id)).run();
     const d = draft([
       action("active-step", { existingProjectId: active.id, existingProjectRevision: active.revision }),
       action("backlog-step", { existingProjectId: backlog.id, existingProjectRevision: backlog.revision, scheduledDate: "2020-01-01" }),
@@ -155,7 +168,7 @@ describe("intake apply", () => {
     "rejects %s destinations through the real API without partial work or title disclosure", async (failure) => {
       const setup = await prepare();
       const valid = createProject(ctx.handle.db, { title: "Eligible" });
-      const target = createProject(ctx.handle.db, { title: "DO NOT DISCLOSE", ownerMemberId: setup.member.id,
+      const target = createProject(ctx.handle.db, { title: "DO NOT DISCLOSE", status: "active", ownerMemberId: setup.member.id,
         ...(failure === "other-work" || failure === "out-of-scope" ? { scope: "work" as const } : {}) });
       const patch = failure === "private" ? { privacyOwnerMemberId: setup.member.id }
         : failure === "done" || failure === "cancelled" ? { status: failure }
@@ -268,7 +281,7 @@ describe("intake apply", () => {
   it.each(["household", "work"] as const)("preserves owner-only private %s destinations and nested child visibility", async (scope) => {
     const setup = await prepare();
     const other = ctx.handle.db.insert(schema.members).values({ name: "Other", color: "#123456" }).returning().get();
-    const project = createProject(ctx.handle.db, { title: "Private", scope, ownerMemberId: setup.member.id });
+    const project = createProject(ctx.handle.db, { title: "Private", scope, status: "active", ownerMemberId: setup.member.id });
     ctx.handle.db.update(schema.workItems).set({ privacyOwnerMemberId: setup.member.id }).where(eq(schema.workItems.id, project.id)).run();
     ctx.handle.db.update(schema.intakeJobs).set({ scope }).where(eq(schema.intakeJobs.id, setup.id)).run();
     const d = draft([
@@ -815,7 +828,7 @@ describe("intake apply", () => {
 
   it("retries an immutable legacy project date after committed work without duplicate work or changed external payloads", async () => {
     const setup = await prepare();
-    const project = createProject(ctx.handle.db, { title: "Committed project", ownerMemberId: setup.member.id }, { actorMemberId: setup.member.id });
+    const project = createProject(ctx.handle.db, { title: "Committed project", status: "active", ownerMemberId: setup.member.id }, { actorMemberId: setup.member.id });
     const d = draft([{ key: "project", kind: "project", title: "Committed project", notes: null, parentKey: null,
       ownerMemberId: setup.member.id, dueDate: null, scheduledDate: "2026-10-16", revisitAt: null,
       notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false,
@@ -1261,7 +1274,7 @@ describe("intake apply", () => {
     expect(refs[0]!.externalId).toBe("calendar.family:uid-1");
     expect(refs[0]!.metadataJson).toContain("rec-1");
     expect(disabledTask).toBeUndefined();
-    expect(project.ownerMemberId).toBe(setup.member.id);
+    expect(project.ownerMemberId).toBeNull();
     expect(project.dueDate).toBeNull();
     const projectDetail = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
     expect(projectDetail.json().externalRefs).toHaveLength(1);

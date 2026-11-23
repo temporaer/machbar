@@ -152,11 +152,11 @@ describe("intake lifecycle", () => {
     const owner = ctx.handle.db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
     const other = ctx.handle.db.insert(schema.members).values({ name: "Other", color: "#123456" }).returning().get();
     const shared = createProject(ctx.handle.db, { title: "Shared backlog" });
-    const waiting = createProject(ctx.handle.db, { title: "Active waiting", ownerMemberId: owner.id });
+    const waiting = createProject(ctx.handle.db, { title: "Active waiting" });
     const secretTask = createTask(ctx.handle.db, { title: "NEVER SEND THIS OUTLINE", projectId: waiting.id, status: "actionable" });
     ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: secretTask.id, waitingFor: "Permit", revisitDate: "2099-01-01" }).run();
-    ctx.handle.db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, waiting.id)).run();
-    const privateProject = createProject(ctx.handle.db, { title: "Private household", ownerMemberId: owner.id });
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: owner.id }).where(eq(schema.workItems.id, waiting.id)).run();
+    const privateProject = createProject(ctx.handle.db, { title: "Private household" });
     ctx.handle.db.update(schema.workItems).set({ privacyOwnerMemberId: owner.id }).where(eq(schema.workItems.id, privateProject.id)).run();
     const work = createProject(ctx.handle.db, { title: "Owner work", scope: "work", ownerMemberId: owner.id });
     const otherWork = createProject(ctx.handle.db, { title: "Other work", scope: "work", ownerMemberId: other.id });

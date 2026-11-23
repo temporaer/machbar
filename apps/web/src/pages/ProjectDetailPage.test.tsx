@@ -1669,6 +1669,15 @@ describe("ProjectDetailPage task explanations", () => {
     await waitFor(() => expect(control).toHaveFocus());
   });
 
+  it("routes a household backlog driver repair link through activation", async () => {
+    const project = { ...makeProject({ id: 42, title: "Parked shared project", status: "backlog", scope: "household", ownerMemberId: null }), tasks: [] };
+    mockedApi.getProject.mockResolvedValue(project);
+    renderProjectRoute("/projects/42?focus=driver");
+
+    expect(await screen.findByRole("dialog", { name: strings.activateStory })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: `${strings.assignDriver}: ${project.title}` })).not.toBeInTheDocument();
+  });
+
   it("routes a completion repair link to unmet criteria before completing", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({

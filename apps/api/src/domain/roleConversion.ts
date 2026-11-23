@@ -17,7 +17,10 @@ import {
 import { getProjectOrThrow } from "./storyCrud.js";
 import { getTaskOrThrow, nextPositionForGroup } from "./taskCrud.js";
 import { insertTaskRow, storedTaskStatus } from "./taskRowInsert.js";
-import { activateCommittedProjectChain } from "./commitmentActivation.js";
+import {
+  activateCommittedProjectChain,
+  projectActivationDecisionSnapshot,
+} from "./commitmentActivation.js";
 import { hasExecutionCommitment } from "./commitmentTransition.js";
 import { assertHierarchySnapshot } from "./structuralMoves.js";
 import { getAncestorIds } from "../repo/treeRepo.js";
@@ -240,6 +243,9 @@ export function convertTaskToStoryInTransaction(
         reminders: task.reminders,
       }) || task.repeatAfterDays !== null || task.allowedDeviationDays !== null;
     const targetStatus = executionCommitment || input.status === "active" ? "backlog" : input.status;
+    const stagedOwnerMemberId = targetStatus === "backlog" && task.scope === "household"
+      ? null
+      : ownerMemberId;
 
     txDb.update(schema.workItems)
       .set({
@@ -251,7 +257,7 @@ export function convertTaskToStoryInTransaction(
         status: targetStatus,
         archivedAt: null,
         needsClarification: false,
-        ownerMemberId,
+        ownerMemberId: stagedOwnerMemberId,
         scheduledDate: null,
         availabilityRule: null,
         revisitAt: externalWait ? null : task.revisitAt,
@@ -294,7 +300,7 @@ export function convertTaskToStoryInTransaction(
         status: "actionable",
         scope: task.scope,
         ownerMemberId: task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null,
-        ownerInheritanceMode: task.ownerInheritanceMode === "explicit" ? "explicit" : task.ownerInheritanceMode,
+        ownerInheritanceMode: task.ownerInheritanceMode,
         physicalContextInheritanceMode: task.contextInheritanceMode,
         dueDate: reminderNeedsDeadline || task.repeatAfterDays !== null ? task.dueDate : null,
         scheduledDate: task.scheduledDate,
@@ -408,16 +414,22 @@ export function convertTaskToStoryInTransaction(
       .run();
     if (!input.deferActivation && (executionCommitment || input.status === "active")) {
       try {
-        const activationResolution = input.activationResolution
-          ? {
-              ...input.activationResolution,
-              expectedProjects: input.activationResolution.expectedProjects.map((entry) =>
-                entry.projectId === taskId && entry.revision === task.revision
-                  ? { ...entry, revision: task.revision + 1 }
-                  : entry,
-              ),
-            }
-          : undefined;
+        const snapshot = projectActivationDecisionSnapshot(txDb, project.id, "commitment", context);
+        const activationResolution = {
+          expectedProjects: input.activationResolution?.expectedProjects.map((entry) =>
+            entry.projectId === taskId && entry.revision === task.revision
+              ? { ...entry, revision: task.revision + 1 }
+              : entry,
+          ) ?? snapshot.expectedProjects,
+          drivers: [...(input.activationResolution?.drivers ?? [])],
+          ...(input.activationResolution?.nextActionTitle
+            ? { nextActionTitle: input.activationResolution.nextActionTitle }
+            : {}),
+        };
+        if (task.scope === "household" && ownerMemberId !== null &&
+          !activationResolution.drivers.some((driver) => driver.projectId === project.id)) {
+          activationResolution.drivers.push({ projectId: project.id, ownerMemberId });
+        }
         activateCommittedProjectChain(txDb, project.id, context, activationResolution);
       } catch (error) {
         if (error instanceof AppError && error.code === "project_commitment_resolution_required") {

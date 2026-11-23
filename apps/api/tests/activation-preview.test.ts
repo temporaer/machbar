@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import { createProject } from "../src/domain/storyCrud.js";
 import { createTask } from "../src/domain/taskCrud.js";
 import { previewActivation } from "../src/domain/activationPreview.js";
@@ -11,9 +12,12 @@ describe("canonical activation previews", () => {
   const notified = vi.fn();
   beforeEach(() => { const notifier = new ChangeNotifier(); notifier.subscribe(notified); ctx = createTestContext({ changeNotifier: notifier }); notified.mockClear(); });
   afterEach(async () => closeTestContext(ctx));
-  const preview = (url: string, payload: object, method: "POST" | "PATCH" = "POST") => ctx.app.inject({ method, url, payload, headers: { "x-machbar-preview": "activation" } });
+  const preview = (url: string, payload: object, method: "POST" | "PATCH" = "POST", actorId?: number) => ctx.app.inject({ method, url, payload, headers: { "x-machbar-preview": "activation", ...(actorId ? { [ACTIVITY_ACTOR_HEADER]: String(actorId) } : {}) } });
   async function project(ownerMemberId?: number) {
-    return (await ctx.app.inject({ method: "POST", url: "/api/projects", payload: { title: "Project", ...(ownerMemberId ? { ownerMemberId } : {}) } })).json();
+    const created = (await ctx.app.inject({ method: "POST", url: "/api/projects", payload: { title: "Project" } })).json();
+    if (!ownerMemberId) return created;
+    ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?").run(ownerMemberId, created.id);
+    return { ...created, status: "active", ownerMemberId };
   }
   function snapshot() {
     const tables = ctx.handle.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>;
@@ -41,7 +45,7 @@ describe("canonical activation previews", () => {
     const before = snapshot(); notified.mockClear();
     const result = await preview("/api/tasks", input);
     expect(result.statusCode, result.body).toBe(200);
-    expect(result.json()).toMatchObject({ decision: null, activatingProjects: [{ id: target.id }] });
+    expect(result.json()).toMatchObject({ decision: null, activatingProjects: [] });
     expect(snapshot()).toEqual(before); expect(notified).not.toHaveBeenCalled();
     const saved = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: input });
     expect(saved.statusCode, saved.body).toBe(201);
@@ -98,14 +102,14 @@ describe("canonical activation previews", () => {
   });
   it("returns the same canonical 409 for an unnecessary driver assignment", async () => {
     const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
-    const target = await project(member.id);
+    const target = createProject(ctx.handle.db, { title: "Project", scope: "work", ownerMemberId: member.id });
     const input = { title: "Dated", projectId: target.id, scheduledDate: "2027-01-15", activationResolution: {
       expectedProjects: [{ projectId: target.id, revision: target.revision }],
       drivers: [{ projectId: target.id, ownerMemberId: member.id }],
     } };
     const before = snapshot();
-    const response = await preview("/api/tasks", input);
-    const canonical = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: input });
+    const response = await preview("/api/tasks", input, "POST", member.id);
+    const canonical = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: input, headers: { [ACTIVITY_ACTOR_HEADER]: String(member.id) } });
     expect(response.statusCode).toBe(409);
     expect(response.json()).toEqual(canonical.json());
     expect(response.json().error.details).toEqual({ reason: "invalid_project_decision" });

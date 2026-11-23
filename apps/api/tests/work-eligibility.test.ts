@@ -31,7 +31,6 @@ describe("working-system task eligibility", () => {
         url: "/api/projects",
         payload: {
           title: "Später vorbereiten",
-          ownerMemberId: member.id,
         },
       })
     ).json();
@@ -49,6 +48,10 @@ describe("working-system task eligibility", () => {
       title: "Vorbereiteter nächster Schritt",
       status: "actionable",
       scheduledDate: today,
+      activationResolution: {
+        expectedProjects: [{ projectId: project.id, revision: project.revision }],
+        drivers: [{ projectId: project.id, ownerMemberId: member.id }],
+      },
     });
     const waiting = await createTask({
       title: "Vorbereitete Rückmeldung",

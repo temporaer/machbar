@@ -183,12 +183,16 @@ describe("week planning agenda", () => {
   });
 
   it("places explicitly dated tasks from backlog stories without adding their unscheduled siblings to the planning pool", async () => {
-    const owner = await createMember("Mira");
-    const story = await createProject({ title: "All-Hands planen", ownerMemberId: owner.id });
+    const story = await createProject({ title: "All-Hands planen" });
+    const driver = await createMember("Mira");
     const scheduled = await createTask({
       title: "Fuer All-Hands anmelden",
       projectId: story.id,
       scheduledDate: tuesday,
+      activationResolution: {
+        expectedProjects: [{ projectId: story.id, revision: story.revision }],
+        drivers: [{ projectId: story.id, ownerMemberId: driver.id }],
+      },
     });
     await createTask({
       title: "Unterkunft irgendwann klaeren",

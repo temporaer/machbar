@@ -32,6 +32,7 @@ import {
   activateCommittedProjectChain,
   projectActivationDecisionSnapshot,
 } from "./commitmentActivation.js";
+import { cascadeDescendantScope } from "./scopeCascade.js";
 
 // ---------------------------------------------------------------------------
 // Projects
@@ -47,6 +48,27 @@ function projectStatusToStored(status: ProjectStatus): "backlog" | "active" | "d
     case "archived":
       return "backlog";
   }
+}
+
+function withSelectedActivationDriver(
+  db: Db,
+  projectId: number,
+  ownerMemberId: number | null | undefined,
+  resolution: ProjectActivationResolution | undefined,
+  context?: MutationContext,
+): ProjectActivationResolution | undefined {
+  if (ownerMemberId == null) return resolution;
+  const base = resolution ?? {
+    expectedProjects: projectActivationDecisionSnapshot(db, projectId, "commitment", context).expectedProjects,
+    drivers: [],
+  };
+  return {
+    ...base,
+    drivers: [
+      ...base.drivers.filter((driver) => driver.projectId !== projectId),
+      { projectId, ownerMemberId },
+    ],
+  };
 }
 
 function projectStatusFromStored(
@@ -122,11 +144,26 @@ export function createProject(
     const parent = parentId !== null ? getProjectOrThrow(txDb, parentId) : null;
     const scope: WorkItemScope =
       parent !== null ? (parent.scope as WorkItemScope) : input.scope ?? "household";
+    const requestedStatus = input.status ?? "backlog";
+    const activatesForDeadline =
+      scope === "household" && requestedStatus === "backlog" &&
+      input.ownerMemberId != null && input.dueDate != null;
+    if (
+      scope === "household" &&
+      requestedStatus === "backlog" &&
+      input.ownerMemberId != null && !activatesForDeadline
+    ) {
+      throw AppError.badRequest(
+        "project_backlog_owner_forbidden",
+        "A household project in the backlog cannot have an owner. Activate it to assign a driver.",
+      );
+    }
     // A "work" project is always owner-only; a root project with nobody set
     // as owner would be invisible to everyone including whoever just
     // created it, so default the owner to the creator when none was given.
-    const ownerMemberId =
+    const requestedOwnerMemberId =
       input.ownerMemberId ?? (scope === "work" ? actor(context) : null);
+    const ownerMemberId = activatesForDeadline ? null : requestedOwnerMemberId;
     const maxPosition = getDirectChildren(txDb, parentId)
       .reduce((max, item) => Math.max(max, item.position), -1);
 
@@ -176,7 +213,13 @@ export function createProject(
         txDb,
         project.id,
         context,
-        input.activationResolution,
+        withSelectedActivationDriver(
+          txDb,
+          project.id,
+          activatesForDeadline ? requestedOwnerMemberId : undefined,
+          input.activationResolution,
+          context,
+        ),
       );
     }
     const activityEventId = recordActivity(txDb, {
@@ -253,6 +296,19 @@ export function updateProject(
         { projectId: id },
       );
     }
+    const nextScope = input.scope ?? project.scope;
+    if (
+      project.status === "backlog" &&
+      nextScope === "household" &&
+      input.ownerMemberId != null &&
+      (input.dueDate == null || input.activationResolution === undefined)
+    ) {
+      throw AppError.conflict(
+        "project_backlog_owner_forbidden",
+        "A household project in the backlog cannot have an owner. Activate it to assign a driver.",
+        { projectId: id, currentStatus: project.status, scope: nextScope },
+      );
+    }
     if (input.ownerMemberId === null && project.status !== "backlog") {
       throw AppError.conflict(
         "project_driver_locked",
@@ -279,7 +335,12 @@ export function updateProject(
       // The transaction keeps the date draft and any activation decisions
       // atomic. Readiness is evaluated before writing the date because a
       // project deadline is not itself a progress path.
-      activateCommittedProjectChain(txDb, id, context, input.activationResolution);
+      activateCommittedProjectChain(
+        txDb,
+        id,
+        context,
+        withSelectedActivationDriver(txDb, id, input.ownerMemberId, input.activationResolution, context),
+      );
     }
     const patch: Partial<typeof schema.workItems.$inferInsert> = {};
     const changedFields: string[] = [];
@@ -330,6 +391,16 @@ export function updateProject(
       }
       patch.scope = input.scope;
       changedFields.push("scope");
+      if (input.scope === "household") {
+        if (
+          project.status === "backlog" &&
+          project.ownerMemberId !== null &&
+          input.ownerMemberId === undefined
+        ) {
+          patch.ownerMemberId = null;
+          if (!changedFields.includes("ownerMemberId")) changedFields.push("ownerMemberId");
+        }
+      }
       // A "work" project is always owner-only; default the owner to the
       // acting member if converting to "work" leaves nobody owning it.
       if (
@@ -377,12 +448,7 @@ export function updateProject(
     }
     if (patch.scope !== undefined) {
       const descendantIds = repoGetDescendantIds(txDb, id);
-      if (descendantIds.length > 0) {
-        tx.update(schema.workItems)
-          .set({ scope: patch.scope, updatedAt: nowIso() })
-          .where(inArray(schema.workItems.id, descendantIds))
-          .run();
-      }
+      cascadeDescendantScope(txDb, descendantIds, patch.scope);
     }
 
     if (tagsChanged) {

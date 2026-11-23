@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { AvailabilityRule, Task } from "@machbar/shared";
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import { Graph } from "../src/domain/graph.js";
 import { buildAgenda } from "../src/domain/agenda.js";
 import * as schema from "../src/db/schema.js";
@@ -1030,6 +1031,119 @@ describe("task <-> story role conversion", () => {
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${activeChild.id}` })).json().status).toBe("actionable");
     const activeAgenda = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2030-06-01" })).json();
     expect(activeAgenda.unscheduled.map((task: { id: number }) => task.id)).toContain(activeChild.id);
+  });
+
+  it("keeps inherited task responsibility dynamic when converting into household backlog or active projects", async () => {
+    const anna = (await post("/api/members", { name: "Anna" })).json();
+    const ben = (await post("/api/members", { name: "Ben" })).json();
+
+    const sourceProject = (await post("/api/projects", { title: "Ausgangsprojekt", status: "backlog" })).json();
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: anna.id, ownerInheritanceMode: "explicit" })
+      .where(eq(schema.workItems.id, sourceProject.id)).run();
+    const root = (await post("/api/tasks", {
+      title: "Zu parken",
+      projectId: sourceProject.id,
+      status: "someday",
+      ownerInheritanceMode: "inherit",
+    })).json();
+    const child = (await post(`/api/tasks/${root.id}/children`, { title: "Unteraufgabe", status: "actionable" })).json();
+    const grandchild = (await post(`/api/tasks/${child.id}/children`, { title: "Verschachtelt", status: "actionable" })).json();
+    const explicitlyOwned = (await post(`/api/tasks/${child.id}/children`, {
+      title: "Explizit Ben",
+      ownerMemberId: ben.id,
+      ownerInheritanceMode: "explicit",
+    })).json();
+
+    for (const id of [root.id, child.id, grandchild.id]) {
+      expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${id}` })).json().effectiveOwnerId).toBe(anna.id);
+    }
+    const parked = await post(`/api/tasks/${root.id}/convert-to-story`, {
+      status: "backlog",
+    });
+    expect(parked.statusCode, JSON.stringify(parked.json())).toBe(201);
+    expect(parked.json()).toMatchObject({ id: root.id, status: "backlog", ownerMemberId: null });
+
+    for (const id of [child.id, grandchild.id]) {
+      expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${id}` })).json())
+        .toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: null });
+    }
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${explicitlyOwned.id}` })).json())
+      .toMatchObject({ ownerInheritanceMode: "explicit", ownerMemberId: ben.id, effectiveOwnerId: ben.id });
+
+    const activation = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${root.id}/activate`,
+      payload: { ownerMemberId: ben.id },
+    });
+    expect(activation.statusCode, JSON.stringify(activation.json())).toBe(200);
+    for (const id of [child.id, grandchild.id]) {
+      expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${id}` })).json())
+        .toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: ben.id });
+    }
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${explicitlyOwned.id}` })).json().effectiveOwnerId).toBe(ben.id);
+
+    const directSource = (await post("/api/projects", { title: "Aktiver Ursprung", status: "backlog" })).json();
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: anna.id, ownerInheritanceMode: "explicit" })
+      .where(eq(schema.workItems.id, directSource.id)).run();
+    const directTask = (await post("/api/tasks", {
+      title: "Direkt aktivieren",
+      projectId: directSource.id,
+      status: "actionable",
+      ownerInheritanceMode: "inherit",
+    })).json();
+    const directChild = (await post(`/api/tasks/${directTask.id}/children`, { title: "Erbt weiter" })).json();
+    const direct = await post(`/api/tasks/${directTask.id}/convert-to-story`, { status: "active" });
+    expect(direct.statusCode, JSON.stringify(direct.json())).toBe(201);
+    expect(direct.json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${directChild.id}` })).json())
+      .toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: anna.id });
+
+    const retainedSource = (await post("/api/projects", { title: "Ursprung für retained step", status: "backlog" })).json();
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: anna.id, ownerInheritanceMode: "explicit" })
+      .where(eq(schema.workItems.id, retainedSource.id)).run();
+    const retainedTask = (await post("/api/tasks", {
+      title: "Wiederkehrender Schritt", projectId: retainedSource.id, status: "actionable",
+      ownerInheritanceMode: "inherit",
+    })).json();
+    const retainedConversion = await post(`/api/tasks/${retainedTask.id}/convert-to-story`, { status: "active" });
+    expect(retainedConversion.statusCode, JSON.stringify(retainedConversion.json())).toBe(201);
+    const retainedProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${retainedTask.id}` })).json();
+    const retainedStepId = retainedProject.tasks[0].id;
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${retainedStepId}` })).json())
+      .toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: anna.id });
+    const returned = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${retainedTask.id}/return-to-backlog`,
+      payload: { expectedRevision: retainedProject.revision },
+    });
+    expect(returned.statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${retainedStepId}` })).json())
+      .toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: null });
+    const reactivated = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${retainedTask.id}/activate`, payload: { ownerMemberId: ben.id },
+    });
+    expect(reactivated.statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${retainedStepId}` })).json())
+      .toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: ben.id });
+  });
+
+  it("preserves inherited ownership through conversion of a work-scope task", async () => {
+    const anna = (await post("/api/members", { name: "Anna" })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(anna.id) };
+    const root = (await ctx.app.inject({
+      method: "POST", url: "/api/tasks", headers,
+      payload: { title: "Privater Schritt", scope: "work", status: "someday", ownerMemberId: anna.id, ownerInheritanceMode: "explicit" },
+    })).json();
+    const child = (await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${root.id}/children`, headers, payload: { title: "Privat geerbt" },
+    })).json();
+
+    const converted = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${root.id}/convert-to-story`, headers, payload: { status: "backlog" },
+    });
+    expect(converted.statusCode, JSON.stringify(converted.json())).toBe(201);
+    expect(converted.json()).toMatchObject({ scope: "work", ownerMemberId: anna.id, status: "backlog" });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}`, headers })).json())
+      .toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: anna.id });
   });
 
   it("preserves the original project completion timestamp after later edits", async () => {

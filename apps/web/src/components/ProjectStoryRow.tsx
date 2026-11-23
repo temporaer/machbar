@@ -98,7 +98,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const busy = isPending(story.id);
 
   const driver = story.ownerMemberId ? members.find((m) => m.id === story.ownerMemberId) : null;
-  const showDriverAssignment = story.ownerMemberId !== null || story.status === "backlog";
+  const showDriverAssignment = story.ownerMemberId !== null || (story.scope === "work" && story.status === "backlog");
   const driverLabel = story.ownerMemberId === null ? strings.chooseUnassignedProjectDriver : `${strings.assignDriver}: ${driver?.name ?? strings.unknownMember}`;
   const criteria = story.acceptanceCriteria ?? [];
   const criteriaChecked = criteria.filter((c) => c.checked).length;

@@ -47,6 +47,7 @@ describe("web/API activation contract", () => {
 
   it("uses the server's conversion progress-path and driver decisions without losing the authored next step", async () => {
     const member = await api.createMember({ name: "Mira" });
+    setRequestActorMemberId(member.id);
     const task = await api.createTask({ title: "Captured project", status: "captured" }, {});
     const input = { status: "active" as const, expectedRevision: task.revision, expectedDescendantRevisions: [], dependencyMappings: [] };
     const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
@@ -65,23 +66,25 @@ describe("web/API activation contract", () => {
 
   it("parses a ready preview without inventing required decisions", async () => {
     const member = await api.createMember({ name: "Mira" });
-    const project = await api.createProject({ title: "Ready", ownerMemberId: member.id }, {});
+    setRequestActorMemberId(member.id);
+    const project = await api.createProject({ title: "Ready", scope: "work", ownerMemberId: member.id }, {});
     const preview = await api.previewTaskCreation({ title: "Next", projectId: project.id, scheduledDate: "2027-01-15" });
     expect(preview).toEqual({ decision: null, activatingProjects: [{ id: project.id, title: project.title }] });
     expect(projectActivationPromptFromSnapshot(preview.decision).projects).toEqual([]);
-    expect((await api.getProject(project.id)).tasks).toEqual([]);
+    expect(ctx.handle.sqlite.prepare("SELECT COUNT(*) AS count FROM work_items WHERE parent_id = ?").get(project.id)).toMatchObject({ count: 0 });
   });
 
   it("keeps real non-snapshot conflicts distinct from decision prompts", async () => {
     const member = await api.createMember({ name: "Mira" });
-    const project = await api.createProject({ title: "Owned", ownerMemberId: member.id }, {});
+    setRequestActorMemberId(member.id);
+    const project = await api.createProject({ title: "Owned", scope: "work", ownerMemberId: member.id }, {});
     const error = await api.previewTaskCreation({ title: "Next", projectId: project.id, scheduledDate: "2027-01-15", activationResolution: {
       expectedProjects: [{ projectId: project.id, revision: project.revision }], drivers: [{ projectId: project.id, ownerMemberId: member.id }],
     } }).catch(error => error);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 409, code: "project_commitment_resolution_required", details: { reason: "invalid_project_decision" } });
     expect(projectActivationPromptFromError(error)).toBeNull();
-    expect((await api.getProject(project.id)).tasks).toEqual([]);
+    expect(ctx.handle.sqlite.prepare("SELECT COUNT(*) AS count FROM work_items WHERE parent_id = ?").get(project.id)).toMatchObject({ count: 0 });
   });
 
   it("recognizes a real stale revision and can retry after refreshing without a duplicate", async () => {

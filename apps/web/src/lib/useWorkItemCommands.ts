@@ -483,7 +483,11 @@ export function useWorkItemCommands() {
           projectWorkflow.open("refinement", command.story.id);
           return;
         case "story.assignDriver":
-          projectWorkflow.open("assignDriver", command.story.id);
+          if (command.story.scope === "household" && command.story.status === "backlog") {
+            continueStoryLifecycle(command.story, "activate");
+          } else {
+            projectWorkflow.open("assignDriver", command.story.id);
+          }
           return;
         case "story.editOutcome":
           projectWorkflow.open("editOutcome", command.story.id);

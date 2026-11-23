@@ -422,10 +422,22 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
   await page.goto("/#/today");
   const memberId = Number(await page.evaluate(() => localStorage.getItem("machbar:identity-member-id")));
   const projectResponse = await page.request.post("/api/projects", {
-    data: { title: `Familienprojekt mit einem langen erklärenden Namen ${randomUUID()}`, ownerMemberId: memberId },
+    data: { title: `Familienprojekt mit einem langen erklärenden Namen ${randomUUID()}` },
   });
   expect(projectResponse.status()).toBe(201);
   const project = await projectResponse.json();
+  const activated = await page.request.post(`/api/projects/${project.id}/activate`, {
+    data: {
+      expectedRevision: project.revision,
+      ownerMemberId: memberId,
+      activationResolution: {
+        expectedProjects: [{ projectId: project.id, revision: project.revision }],
+        drivers: [{ projectId: project.id, ownerMemberId: memberId }],
+        nextActionTitle: "Projektstart vorbereiten",
+      },
+    },
+  });
+  expect(activated.ok(), await activated.text()).toBe(true);
   const item = await task(page, {
     projectId: project.id, ownerInheritanceMode: "inherit", repeatAfterDays: 7, allowedDeviationDays: 0,
     scheduledDate: "2099-05-10",

@@ -537,7 +537,7 @@ describe("MCP integration", () => {
       .values({ name: "errand" })
       .returning()
       .get();
-    const { client, server } = await connectMcp(member.id);
+    const { client, server } = await connectMcp(owner.id, "work");
 
     const nullReminders = await client.callTool({
       name: "machbar_create_task",
@@ -679,7 +679,7 @@ describe("MCP integration", () => {
         dueDate: null,
         scheduledDate: null,
         revisitAt: null,
-        effectiveOwnerId: null,
+        effectiveOwnerId: owner.id,
       }),
     });
 
@@ -750,7 +750,10 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: { title: "Unknown owner", ownerName: "Nobody" },
     });
-    expect(unknownOwner.isError).toBe(true);
+    expect(unknownOwner.isError).not.toBe(true);
+    expect(unknownOwner.structuredContent).toMatchObject({
+      result: { effectiveOwnerId: owner.id },
+    });
 
     const invalidReminder = await client.callTool({
       name: "machbar_manage_reminder",
@@ -934,7 +937,6 @@ describe("MCP integration", () => {
   });
 
   it("preserves project metadata on omitted and null collection updates", async () => {
-    const member = await createMember();
     const owner = await createMember("Alex");
     const context = ctx.handle.db
       .insert(schema.physicalContexts)
@@ -946,7 +948,7 @@ describe("MCP integration", () => {
       })
       .returning()
       .get();
-    const { client, server } = await connectMcp(member.id);
+    const { client, server } = await connectMcp(owner.id, "work");
 
     const created = await client.callTool({
       name: "machbar_create_project",
@@ -998,7 +1000,7 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         dueDate: null,
         scheduledDate: null,
-        ownerMemberId: null,
+        ownerMemberId: owner.id,
       }),
     });
 
@@ -1021,7 +1023,7 @@ describe("MCP integration", () => {
 
   it("returns project-creation commitment decisions as structured MCP data and accepts a retry", async () => {
     const owner = await createMember();
-    const { client, server } = await connectMcp(owner.id);
+    const { client, server } = await connectMcp(owner.id, "work");
     const input = {
       title: "Datiertes Projekt",
       ownerMemberId: owner.id,
@@ -1240,6 +1242,7 @@ describe("MCP integration", () => {
     const owner = await createMember("Alex");
     const project = insertTestProject(ctx.handle.db, {
       title: "Owned project",
+      status: "active",
       ownerMemberId: owner.id,
     });
     const parent = insertTestTask(ctx.handle.db, {
@@ -1843,6 +1846,7 @@ describe("MCP integration", () => {
       .get();
     const ownedParent = insertTestProject(ctx.handle.db, {
       title: "Owned parent",
+      status: "active",
       ownerMemberId: owner.id,
     });
     const { client, server } = await connectMcp(authenticated.id);
@@ -1872,11 +1876,8 @@ describe("MCP integration", () => {
       name: "machbar_create_project",
       arguments: { title: "Alex project", ownerMemberId: owner.id },
     });
-    expect(explicitlyOwned.structuredContent).toEqual({
-      result: expect.objectContaining({
-        ownerMemberId: owner.id,
-      }),
-    });
+    expect(explicitlyOwned.isError).toBe(true);
+    expect(JSON.stringify(explicitlyOwned)).toContain("cannot have an owner");
 
     const currentSharedProject = (
       await ctx.app.inject({ method: "GET", url: `/api/projects/${sharedProject.id}` })
@@ -1891,10 +1892,7 @@ describe("MCP integration", () => {
         dueDate: "2026-09-21",
         contextIds: [context.id],
         activationResolution: {
-          expectedProjects: [
-            { projectId: sharedProject.id, revision: currentSharedProject.revision },
-            { projectId: ownedParent.id, revision: ownedParent.revision },
-          ],
+          expectedProjects: [{ projectId: sharedProject.id, revision: currentSharedProject.revision }],
           drivers: [{ projectId: sharedProject.id, ownerMemberId: owner.id }],
           nextActionTitle: "Nächsten Schritt festlegen",
         },

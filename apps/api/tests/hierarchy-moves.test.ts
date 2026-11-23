@@ -367,11 +367,8 @@ describe("canonical hierarchy moves", () => {
     const owner = createMember("Anna");
     const captured = await createTask({ title: "Ungeklärte Aufgabe" });
     const project = await createProject("Ziel-Projekt");
-    await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/projects/${project.id}`,
-      payload: { ownerMemberId: owner.id, expectedRevision: project.revision },
-    });
+    ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?")
+      .run(owner.id, project.id);
 
     const res = await ctx.app.inject({
       method: "POST",

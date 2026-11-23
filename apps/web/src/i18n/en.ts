@@ -1853,6 +1853,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     project_driver_locked:
       "The project lead cannot be removed in this project status.",
     project_driver_required: "The project needs a lead first.",
+    project_backlog_owner_forbidden:
+      "A household project in the backlog cannot have an owner. Activate it to assign a lead.",
     project_activation_not_ready:
       "Add an executable next step or a healthy waiting path before starting.",
     project_commitment_resolution_required:

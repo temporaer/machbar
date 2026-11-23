@@ -33,11 +33,48 @@ import { attachmentPath } from "./storage.js";
 import { normalizeStoredIntakeDraft, recoverExpiredApplyClaim } from "./jobs.js";
 import { applyBreakdown, assertBreakdownDraft } from "./breakdown.js";
 import { assertIntakeDestinations } from "./existingProjects.js";
+import { projectActivationDecisionSnapshot } from "../domain/commitmentActivation.js";
 
 const APPLY_CLAIM_MS = 10 * 60 * 1000;
 
 function parse<T>(value: string | null): T | null {
   return value === null ? null : JSON.parse(value) as T;
+}
+
+function projectAncestorId(db: Db, parentId: number | null): number | null {
+  let currentId = parentId;
+  while (currentId !== null) {
+    const parent = db.select({ role: schema.workItems.role, parentId: schema.workItems.parentId })
+      .from(schema.workItems).where(eq(schema.workItems.id, currentId)).get();
+    if (!parent) return null;
+    if (parent.role === "story") return currentId;
+    currentId = parent.parentId;
+  }
+  return null;
+}
+
+function intakeActivationResolution(
+  db: Db,
+  projectId: number,
+  supplied: ProjectActivationResolution | undefined,
+  selectedDrivers: Map<number, number | null>,
+): ProjectActivationResolution {
+  const snapshot = projectActivationDecisionSnapshot(db, projectId, "commitment");
+  const expected = new Map(snapshot.expectedProjects.map((entry) => [entry.projectId, entry]));
+  for (const entry of supplied?.expectedProjects ?? []) expected.set(entry.projectId, entry);
+  const drivers = [...(supplied?.drivers ?? [])];
+  for (const requirement of snapshot.projects) {
+    if (!requirement.required.includes("driver") || drivers.some((driver) => driver.projectId === requirement.projectId)) continue;
+    const ownerMemberId = selectedDrivers.get(requirement.projectId);
+    if (ownerMemberId !== undefined && ownerMemberId !== null) {
+      drivers.push({ projectId: requirement.projectId, ownerMemberId });
+    }
+  }
+  return {
+    expectedProjects: [...expected.values()],
+    drivers,
+    ...(supplied?.nextActionTitle ? { nextActionTitle: supplied.nextActionTitle } : {}),
+  };
 }
 
 function failApplyClaim(
@@ -336,7 +373,8 @@ export async function applyIntake(
       if (!progressed) throw AppError.badRequest("intake_draft_invalid", "The enabled work hierarchy is cyclic.");
     }
     const ids = new Map(results.work.map((item) => [item.key, item.workItemId]));
-    const pendingProjectDeadlines: Array<{ projectId: number; dueDate: string }> = [];
+    const selectedProjectDrivers = new Map<number, number | null>();
+    const pendingProjectDeadlines: Array<{ projectId: number; dueDate: string; ownerMemberId: number | null }> = [];
     const paperlessDocs = results.paperlessDocumentIds.map((documentId) => ({ id: documentId, title: "", originalFileName: "", mimeType: null } as PaperlessDocumentSummary));
     let retentionTarget: number | null = null;
     for (const item of sorted) {
@@ -359,11 +397,12 @@ export async function applyIntake(
         const driverMemberId = item.ownerMemberId ?? (
           isRoot ? input.projectDriverMemberId ?? null : null
         );
+        const stagedDriverMemberId = jobNow.scope === "work" ? driverMemberId : null;
         const project = createProject(tx as unknown as Db, {
           title: item.title,
           notes,
           parentId: parent?.kind === "project" ? parentId : null,
-          ...(driverMemberId === null ? {} : { ownerMemberId: driverMemberId }),
+          ...(stagedDriverMemberId === null ? {} : { ownerMemberId: stagedDriverMemberId }),
           // The complete accepted tree is built below. Apply the project's
           // own deadline after its child actions exist so readiness is
           // evaluated against the final atomic graph.
@@ -371,8 +410,9 @@ export async function applyIntake(
           revisitAt: planning.revisitAt,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         }, context);
+        selectedProjectDrivers.set(project.id, driverMemberId);
         if (item.dueDate !== null) {
-          pendingProjectDeadlines.push({ projectId: project.id, dueDate: item.dueDate });
+          pendingProjectDeadlines.push({ projectId: project.id, dueDate: item.dueDate, ownerMemberId: driverMemberId });
         }
         created = { id: project.id, title: project.title, role: "story" };
       } else {
@@ -397,10 +437,27 @@ export async function applyIntake(
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         };
         const options = { activateCommitment: existingProjectId === null };
+        const parentProjectId = parentId === null
+          ? null
+          : parent?.kind === "project"
+            ? parentId
+            : projectAncestorId(tx as unknown as Db, parentId);
+        const activationProjectId = existingProjectId ?? parentProjectId;
+        const taskInput = item.kind === "action" && activationProjectId !== null
+          ? {
+              ...base,
+              activationResolution: intakeActivationResolution(
+                tx as unknown as Db,
+                activationProjectId,
+                input.activationResolution,
+                selectedProjectDrivers,
+              ),
+            }
+          : base;
         const task = parent?.kind === "action" && parentId !== null
-          ? createChildTaskInTransaction(tx as unknown as Db, parentId, base, context, options)
+          ? createChildTaskInTransaction(tx as unknown as Db, parentId, taskInput, context, options)
           : createTaskInTransaction(tx as unknown as Db, {
-            ...base, projectId: existingProjectId ?? (parent?.kind === "project" ? parentId : null),
+            ...taskInput, projectId: existingProjectId ?? (parent?.kind === "project" ? parentId : null),
           }, context, options);
         created = { id: task.id, title: task.title, kind: item.kind, role: "task" };
       }
@@ -408,8 +465,12 @@ export async function applyIntake(
       results.work.push({ key: item.key, kind: item.kind, workItemId: created.id, role: created.role === "story" ? "story" : "task" });
       retentionTarget ??= isRoot ? created.id : null;
     }
-    for (const { projectId, dueDate } of pendingProjectDeadlines) {
-      updateProject(tx as unknown as Db, projectId, { dueDate }, context);
+    for (const { projectId, dueDate, ownerMemberId } of pendingProjectDeadlines) {
+      selectedProjectDrivers.set(projectId, ownerMemberId);
+      updateProject(tx as unknown as Db, projectId, {
+        dueDate,
+        activationResolution: intakeActivationResolution(tx as unknown as Db, projectId, input.activationResolution, selectedProjectDrivers),
+      }, context);
     }
     if (draft.retainSourceInPaperless && retentionTarget !== null && paperlessDocs.length > 0) {
       const row = tx.select({ role: schema.workItems.role, notes: schema.workItems.notes })

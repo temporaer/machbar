@@ -29,9 +29,10 @@ describe("activation preview authorization contract", () => {
     const project = createProject(ctx.handle.db, {
       title: "Confidential project title", scope: scope === "work" ? "work" : "household",
       // Privacy and driver are deliberately different for durable private work.
-      ownerMemberId: scope === "private" ? other.id : owner.id,
+      ...(scope === "work" ? { ownerMemberId: owner.id } : {}),
     });
     if (scope === "private") ctx.handle.sqlite.prepare("UPDATE work_items SET privacy_owner_member_id = ? WHERE id = ?").run(owner.id, project.id);
+    if (scope !== "work") ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?").run(scope === "private" ? other.id : owner.id, project.id);
     const task = createTask(ctx.handle.db, { title: "Confidential task title", projectId: project.id });
     const actor = viewer === "owner" ? owner.id : viewer === "other" ? other.id : undefined;
     const headers = actor === undefined ? {} : { [ACTIVITY_ACTOR_HEADER]: String(actor) };

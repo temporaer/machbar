@@ -20,15 +20,16 @@ describe("capture query views", () => {
     ...args: Parameters<typeof createProjectMutation>
   ): ReturnType<typeof createProjectMutation> {
     const [db, input, context] = args;
-    const requestedActive = input.status === "active";
+    const requestedActive = input.status === "active" ||
+      (input.status === undefined && input.scope !== "work" && input.ownerMemberId != null);
     const project = createProjectMutation(
       db,
-      requestedActive ? { ...input, status: "backlog" } : input,
+      requestedActive ? { ...input, status: "backlog", ownerMemberId: null } : input,
       context,
     );
     if (!requestedActive) return project;
     db.update(schema.workItems)
-      .set({ status: "active" })
+      .set({ status: "active", ownerMemberId: input.ownerMemberId ?? null })
       .where(eq(schema.workItems.id, project.id))
       .run();
     return { ...project, status: "active" };

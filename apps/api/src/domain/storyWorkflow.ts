@@ -204,6 +204,7 @@ export function returnProjectToBacklog(
     tx.update(schema.workItems)
       .set({
         status: "backlog",
+        ...(project.scope === "household" ? { ownerMemberId: null } : {}),
         ...(withdrawCommitments ? { dueDate: null } : {}),
         archivedAt: null,
         revisitAt: project.status === "archived" ? null : revisitAt ?? null,
@@ -213,7 +214,7 @@ export function returnProjectToBacklog(
       .where(eq(schema.workItems.id, id))
       .run();
     const updated = getProjectOrThrow(txDb, id);
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
       entityType: "project",
@@ -222,8 +223,19 @@ export function returnProjectToBacklog(
       metadata: {
         previousStatus: project.status as ProjectStatus,
         nextStatus: "backlog",
+        ...(project.scope === "household" && project.ownerMemberId !== null
+          ? { changedFields: ["ownerMemberId"], previousOwnerMemberId: project.ownerMemberId, ownerMemberId: null }
+          : {}),
       },
     });
+    if (project.scope === "household" && project.ownerMemberId !== null) {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "project_driver_assigned",
+        entityType: "project",
+        entityId: id,
+      });
+    }
     return updated;
   });
 }

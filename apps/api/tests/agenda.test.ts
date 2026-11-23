@@ -953,17 +953,18 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
   }
 
   async function createProject(payload: Record<string, unknown>) {
-    const requestedActive = payload.status === "active";
+    const requestedActive = payload.status === "active" ||
+      (payload.status === undefined && payload.scope !== "work" && payload.ownerMemberId != null);
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload: requestedActive ? { ...payload, status: "backlog" } : payload,
+      payload: requestedActive ? { ...payload, status: "backlog", ownerMemberId: null } : payload,
     });
     const project = res.json();
     if (requestedActive) {
       ctx.handle.sqlite
-        .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
-        .run(project.id);
+        .prepare("UPDATE work_items SET status = 'active', owner_member_id = ? WHERE id = ?")
+        .run(payload.ownerMemberId ?? null, project.id);
     }
     return project;
   }
@@ -1406,13 +1407,13 @@ describe("Heute agenda: compiled project prompts", () => {
     const response = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload: createPayload,
+      payload: { ...createPayload, ownerMemberId: null },
     });
     expect(response.statusCode).toBe(201);
     const project = response.json();
     ctx.handle.sqlite
-      .prepare("UPDATE work_items SET status = 'active', due_date = ? WHERE id = ?")
-      .run(dueDate ?? null, project.id);
+      .prepare("UPDATE work_items SET status = 'active', due_date = ?, owner_member_id = ? WHERE id = ?")
+      .run(dueDate ?? null, payload.ownerMemberId ?? null, project.id);
     return project;
   }
 

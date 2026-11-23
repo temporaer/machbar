@@ -20,7 +20,7 @@ describe("hidden work-item writes are rejected before mutation", () => {
   it.each(cases)("$scope / $viewer / $operation", async ({ scope, viewer, operation }) => {
     const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
     const owner = member("Owner"), other = member("Other");
-    const project = createProject(ctx.handle.db, { title: "Hidden", scope: scope === "work" ? "work" : "household", ownerMemberId: owner.id });
+    const project = createProject(ctx.handle.db, { title: "Hidden", scope: scope === "work" ? "work" : "household", ownerMemberId: scope === "work" ? owner.id : null });
     if (scope === "private") ctx.handle.sqlite.prepare("UPDATE work_items SET privacy_owner_member_id = ? WHERE id = ?").run(owner.id, project.id);
     const task = createTask(ctx.handle.db, { title: "Hidden child", projectId: project.id });
     const publicTask = createTask(ctx.handle.db, { title: "Public source" });

@@ -359,7 +359,7 @@ describe("notification event creation", () => {
   it("does not emit project assignment pushes when assigning a project", () => {
     const hannes = addMember(ctx, "Hannes");
     const sarah = addMember(ctx, "Sarah");
-    const project = createProject(ctx.handle.db, { title: "Kinderzimmer" });
+    const project = createProject(ctx.handle.db, { title: "Kinderzimmer", scope: "work" });
     createTask(ctx.handle.db, { title: "Streichen", projectId: project.id });
     createTask(ctx.handle.db, { title: "Möbel", projectId: project.id });
     ctx.handle.db.delete(schema.notificationEvents).run();
@@ -378,6 +378,7 @@ describe("notification event creation", () => {
     const sarah = addMember(ctx, "Sarah");
     const project = createProject(ctx.handle.db, {
       title: "Kinderzimmer",
+      scope: "work",
       ownerMemberId: sarah.id,
     });
     ctx.handle.db.delete(schema.notificationEvents).run();
