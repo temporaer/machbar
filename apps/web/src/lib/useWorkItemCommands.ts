@@ -226,7 +226,7 @@ export function useWorkItemCommands() {
     [projectActions, projectWorkflow, resolveStoryPrerequisite],
   );
 
-  const requestTaskCompletion = useCallback((task: Task) => {
+  const requestTaskCompletion = useCallback((task: Task, inlineCompletion = false) => {
     if (task.status === "done" || task.status === "cancelled") {
       taskActions.requestToggle(task);
       return;
@@ -236,7 +236,7 @@ export function useWorkItemCommands() {
       taskWorkflow.open("completeWithCriteria", task.id, undefined, originDetail);
       return;
     }
-    taskActions.requestToggle(task);
+    taskActions.requestToggle(task, undefined, undefined, inlineCompletion);
   }, [taskActions, taskDetail, taskWorkflow]);
 
   const dispatch = useCallback(
@@ -368,7 +368,7 @@ export function useWorkItemCommands() {
           return;
         }
         case "task.toggleDone":
-          requestTaskCompletion(command.task);
+          requestTaskCompletion(command.task, command.inlineCompletion);
           return;
         case "task.toggleAdditionalNextAction": {
           const nextValue = !command.task.additionalNextAction;
@@ -380,7 +380,7 @@ export function useWorkItemCommands() {
         }
         case "task.primaryAction":
           if (command.task.status === "captured") void taskActions.clarify(command.task);
-          else requestTaskCompletion(command.task);
+          else requestTaskCompletion(command.task, command.inlineCompletion ?? false);
           return;
         case "task.makeAction":
           void taskActions.makeAction(command.task);
