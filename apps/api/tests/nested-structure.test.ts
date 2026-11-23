@@ -42,7 +42,12 @@ describe("phase 6a parent-preserving structure", () => {
     expect(response.json()).toMatchObject({ id: child.id, parentId: parent.id, position: before.position, notes: before.notes });
     const converted = await get(`/api/projects/${child.id}`);
     expect(converted.ancestors.map((item: { id: number }) => item.id)).toContain(parent.id);
-    expect(converted.tasks[0]).toMatchObject({ id: grandchild.id, projectId: child.id, effectiveOwnerId: member.id });
+    expect(converted.tasks[0]).toMatchObject({
+      id: grandchild.id,
+      projectId: child.id,
+      ownerInheritanceMode: "inherit",
+      effectiveOwnerId: null,
+    });
     if (role === "task") {
       const parentDetail = await get(`/api/tasks/${parent.id}`);
       expect(parentDetail.childStories.map((item: { id: number }) => item.id)).toContain(child.id);
