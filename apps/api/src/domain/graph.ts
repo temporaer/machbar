@@ -48,7 +48,7 @@ import {
   type TaskBlockerAnalysis,
 } from "./blockers.js";
 import { evaluateProjectActivationReadiness } from "./projectReadiness.js";
-import { effectiveProjectStatuses, isTaskInWorkingSystem } from "./workEligibility.js";
+import { effectiveProjectStatuses } from "./workEligibility.js";
 
 function householdTimezone(db: Db): string {
   const row = db
@@ -1135,7 +1135,7 @@ export class Graph {
   nextActionFor(projectId: number): TaskRecord | null {
     for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
       const task = this.tasksById.get(id);
-      if (task && !task.blocked && isTaskInWorkingSystem(task, this.workingProjectStatuses)) return task;
+      if (task && !task.blocked) return task;
     }
     return null;
   }

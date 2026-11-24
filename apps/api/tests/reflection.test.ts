@@ -29,6 +29,49 @@ describe("historical reflection briefing", () => {
     }).run();
   }
 
+  it("does not describe work beneath a backlog ancestor as an active commitment", () => {
+    const mira = member("Mira");
+    const old = "2024-01-01T00:00:00.000Z";
+    const parked = insertTestProject(ctx.handle.db, { title: "Parked", createdAt: old });
+    const intermediate = insertTestTask(ctx.handle.db, { title: "Intermediate", projectId: parked.id });
+    const nested = insertTestProject(ctx.handle.db, { title: "Nested", parentId: intermediate.id, status: "active", createdAt: old });
+    const waiting = insertTestTask(ctx.handle.db, { title: "Waiting", projectId: nested.id, createdAt: old });
+    const next = insertTestTask(ctx.handle.db, { title: "Next", projectId: nested.id, createdAt: old });
+    const active = insertTestProject(ctx.handle.db, { title: "Active", status: "active", createdAt: old });
+    const otherWaiting = insertTestTask(ctx.handle.db, { title: "Other waiting", projectId: active.id, createdAt: old });
+    ctx.handle.db.insert(schema.taskExternalWaits).values([
+      { taskId: waiting.id, waitingFor: "Response" },
+      { taskId: otherWaiting.id, waitingFor: "Other response" },
+    ]).run();
+    const area = ctx.handle.db.insert(schema.tags).values({ name: "Area", kind: "area" }).returning().get();
+    ctx.handle.db.insert(schema.workItemTags).values([
+      { workItemId: nested.id, tagId: area.id },
+      { workItemId: waiting.id, tagId: area.id },
+      { workItemId: active.id, tagId: area.id },
+    ]).run();
+    const briefing = () => buildReflectionBriefing(ctx.handle.db, {
+      subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z"),
+    });
+    const deferred = briefing();
+    expect(deferred.current.activeProjects.map((item) => item.id)).toContain(active.id);
+    expect(deferred.current.activeProjects.map((item) => item.id)).not.toContain(nested.id);
+    expect(deferred.current.waitingItems.map((item) => item.id)).toContain(otherWaiting.id);
+    expect(deferred.current.waitingItems.map((item) => item.id)).not.toContain(waiting.id);
+    expect(deferred.current.areaCommitments.map((item) => item.id)).toContain(active.id);
+    expect(deferred.current.areaCommitments.map((item) => item.id)).not.toContain(nested.id);
+    expect(deferred.current.areaCommitments.map((item) => item.id)).not.toContain(waiting.id);
+    expect(deferred.history.inactiveWork.map((item) => item.id)).not.toContain(nested.id);
+    expect(deferred.current.executableNextActions.map((item) => item.id)).not.toContain(next.id);
+
+    ctx.handle.db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, parked.id)).run();
+    const reactivated = briefing();
+    expect(reactivated.current.activeProjects.map((item) => item.id)).toContain(nested.id);
+    expect(reactivated.current.waitingItems.map((item) => item.id)).toContain(waiting.id);
+    expect(reactivated.current.areaCommitments.map((item) => item.id)).toContain(nested.id);
+    expect(reactivated.history.inactiveWork.map((item) => item.id)).toContain(nested.id);
+    expect(reactivated.current.executableNextActions.map((item) => item.id)).toContain(next.id);
+  });
+
   it("returns stable household facts with timezone boundaries, completions, postponements, waits and recurrence separated", () => {
     const mira = member("Mira");
     ctx.handle.db.insert(schema.householdSettings).values({ key: "timezone", value: "America/Los_Angeles" }).onConflictDoUpdate({ target: schema.householdSettings.key, set: { value: "America/Los_Angeles" } }).run();

@@ -103,6 +103,8 @@ describe("viewer-aware project next actions", () => {
           },
         ])
         .run();
+      ctx.handle.db.update(schema.workItems).set({ status: "active" })
+        .where(eq(schema.workItems.id, project.id)).run();
 
       const before = createHash("sha256")
         .update(ctx.handle.sqlite.serialize())
