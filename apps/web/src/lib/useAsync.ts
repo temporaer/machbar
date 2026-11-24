@@ -11,6 +11,7 @@ export interface AsyncState<T> {
   error: string | null;
   refreshError: string | null;
   reload: () => void;
+  reloadWithResult: () => Promise<T | undefined>;
 }
 
 export type ReadAccessResource =
@@ -38,6 +39,14 @@ export function useAsync<T>(
   const hasData = query.data !== undefined;
   const message = query.error === null ? null : localizedErrorMessage(query.error, strings);
   const queryObject = client.getQueryCache().find({ queryKey: ["read", readId, ...deps], exact: true });
+  const reloadWithResult = useCallback(async () => {
+    if (!queryObject) return undefined;
+    const previousUpdates = queryObject.state.dataUpdateCount;
+    await invalidateReads(client, false, queryObject);
+    if (!queryObject.isActive() || queryObject.state.error || queryObject.state.isInvalidated ||
+        queryObject.state.dataUpdateCount <= previousUpdates) return undefined;
+    return queryObject.state.data as T | undefined;
+  }, [client, queryObject]);
   const reload = useCallback(() => {
     if (!queryObject) return;
     void invalidateReads(client, false, queryObject);
@@ -50,5 +59,6 @@ export function useAsync<T>(
     error: hasData ? null : message,
     refreshError: hasData ? message : null,
     reload,
+    reloadWithResult,
   };
 }

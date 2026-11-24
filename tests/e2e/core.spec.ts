@@ -1111,16 +1111,21 @@ test("a stale project deadline can reload after an outage without replaying the 
   await expect(date).toHaveValue("15.12.2099");
   expect(writes).toBe(1);
   offline = false;
+  const successfulReload = page.waitForResponse(response =>
+    new URL(response.url()).pathname === path && response.request().method() === "GET" && response.status() === 200,
+  );
   await retry.click();
-  await expect(retry).toHaveCount(0);
+  await successfulReload;
+  await expect(retry).toBeEnabled();
   expect(writes).toBe(1);
   await expect(date).toHaveValue("15.12.2099");
-  await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
+  await retry.click();
   await expect.poll(async () => {
     const saved = await (await page.request.get(path)).json();
     return { dueDate: saved.dueDate, status: saved.status };
   }).toEqual({ dueDate: "2099-12-15", status: "backlog" });
   expect(writes).toBe(2);
+  await expect(retry).toHaveCount(0);
 });
 
 test("a superseded dependency search cannot discard the current planning draft", async ({ page }) => {

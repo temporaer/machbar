@@ -9,26 +9,47 @@ export function ProjectDeadlineSheet({ story, onClose, onSave, onFailure, onRefr
   story: Project;
   onClose: () => void;
   onFailure?: (cause: unknown) => void;
-  onRefresh?: () => void;
+  onRefresh?: () => Promise<Project | undefined>;
   refreshing?: boolean;
   refreshError?: string | null;
-  onSave: (patch: { dueDate: string | null }) => Promise<void>;
+  onSave: (patch: { dueDate: string | null; expectedRevision?: number }) => Promise<void>;
 }) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState(story.dueDate ?? "");
   const [staleRevision, setStaleRevision] = useState<number | null>(null);
-  const needsRefresh = staleRevision !== null && story.revision === staleRevision;
+  const [refreshedRevision, setRefreshedRevision] = useState<number | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const needsRefresh = staleRevision !== null && refreshedRevision === null;
+  const refresh = async () => {
+    if (!onRefresh) return;
+    setRecovering(true);
+    try {
+      const current = await onRefresh();
+      if (current) setRefreshedRevision(current.revision);
+    } finally { setRecovering(false); }
+  };
   const commit = async (date: string | null) => {
-    if (saving || refreshing || needsRefresh) return;
+    if (saving || refreshing || recovering || needsRefresh) return;
     setSaving(true);
     setError(null);
-    try { await onSave({ dueDate: date }); }
+    try {
+      await onSave({
+        dueDate: date,
+        ...(refreshedRevision !== null && story.revision < refreshedRevision ? { expectedRevision: refreshedRevision } : {}),
+      });
+      setStaleRevision(null);
+      setRefreshedRevision(null);
+    }
     catch (cause) {
       onFailure?.(cause);
       setError(localizedErrorMessage(cause, strings));
-      if (isStaleWriteConflict(cause)) { setStaleRevision(story.revision); onRefresh?.(); }
+      if (isStaleWriteConflict(cause)) {
+        setStaleRevision(story.revision);
+        setRefreshedRevision(null);
+        void refresh();
+      }
     } finally { setSaving(false); }
   };
   return <BottomSheet title={strings.projectDeadlineTitle} onClose={() => { if (!saving) onClose(); }} labelledBy="project-deadline-title">
@@ -36,11 +57,11 @@ export function ProjectDeadlineSheet({ story, onClose, onSave, onFailure, onRefr
       <p className="text-muted">{story.title}</p>
       <div className="field">
         <label htmlFor="story-due">{strings.due}</label>
-        <HumanDateInput id="story-due" value={dueDate} onChange={(date) => { setDueDate(date ?? ""); void commit(date); }} disabled={saving || needsRefresh} />
+        <HumanDateInput id="story-due" value={dueDate} onChange={(date) => { setDueDate(date ?? ""); void commit(date); }} disabled={saving || refreshing || recovering || needsRefresh} />
       </div>
       {refreshError && needsRefresh ? <p role="alert">{refreshError}</p> : null}
-      {error ? <><p role="alert" style={{ color: "var(--color-danger)" }}>{error}</p><button type="button" className="btn" disabled={saving || refreshing || (needsRefresh && !refreshError)} onClick={() => {
-        if (needsRefresh) onRefresh?.();
+      {error ? <><p role="alert" style={{ color: "var(--color-danger)" }}>{error}</p><button type="button" className="btn" disabled={saving || refreshing || recovering} onClick={() => {
+        if (needsRefresh) void refresh();
         else void commit(dueDate || null);
       }}>{strings.retry}</button></> : null}
       <button type="button" className="btn" onClick={onClose} disabled={saving}>{strings.cancel}</button>

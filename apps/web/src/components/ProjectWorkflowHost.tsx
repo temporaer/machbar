@@ -95,6 +95,7 @@ function ProjectWorkflowContent({
     error: projectError,
     refreshError: projectRefreshError,
     reload,
+    reloadWithResult,
   } = useAsync(
     async (signal) => {
       try {
@@ -223,7 +224,11 @@ function ProjectWorkflowContent({
           story={story}
           onClose={close}
           onFailure={endOnDenied}
-          onRefresh={reload}
+          onRefresh={async () => {
+            if (!isCurrent() || ended.current) return undefined;
+            const refreshed = await reloadWithResult();
+            return isCurrent() && !ended.current ? refreshed ?? undefined : undefined;
+          }}
           refreshing={projectRefreshing}
           refreshError={projectRefreshError}
           onSave={async (patch) => {
