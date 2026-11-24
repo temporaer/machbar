@@ -135,8 +135,6 @@ export function createAgendaSelection(
     matchesScope(task);
   const isDeadlineAttentionTask = (task: TaskRecord) =>
     isAttentionTask(task) &&
-    !(task.repeatAfterDays !== null &&
-      (graph.isEffectivelyDeferred(task.id) || task.status === "captured")) &&
     (task.status === "actionable" ||
       (task.status === "captured" && task.dueDate !== null) ||
       (task.status === "someday" && graph.isEffectivelyDeferred(task.id))) &&
@@ -149,10 +147,11 @@ export function createAgendaSelection(
         reminders: task.reminders,
       }) ||
       (task.externalWait !== null && task.revisitAt !== null));
-  const isReconsiderationAttentionTask = (task: TaskRecord) =>
-    isAttentionTask(task) && task.revisitAt !== null;
   const isAgendaTask = (task: TaskRecord) =>
     task.status === "actionable" && isDeadlineAttentionTask(task) && isOperationalTask(task);
+  const isReconsiderationAttentionTask = (task: TaskRecord) =>
+    task.revisitAt !== null &&
+    (graph.isEffectivelyDeferred(task.id) ? isAttentionTask(task) : isAgendaTask(task));
   const isExecutionSuggestion = (task: TaskRecord) =>
     isAgendaTask(task) && task.executable && isExecutionAvailable(task) &&
     isScheduledDateEligible(task) &&

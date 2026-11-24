@@ -255,15 +255,15 @@ export class Graph {
     ProjectActivationReadiness
   >();
   private readonly childStoryIdsByParent = new Map<number | null, number[]>();
-  private readonly deferredWorkItemIds = new Set<number>();
-  private readonly opaqueWorkItemIds = new Set<number>();
+  private readonly deferralByWorkItem = new Map<number, boolean | null>();
 
   isEffectivelyDeferred(id: number): boolean {
-    return this.deferredWorkItemIds.has(id);
+    return this.effectiveDeferralFor(id) !== false;
   }
 
   effectiveDeferralFor(id: number): boolean | null {
-    return this.opaqueWorkItemIds.has(id) ? null : this.isEffectivelyDeferred(id);
+    const state = this.deferralByWorkItem.get(id);
+    return state === undefined ? false : state;
   }
 
   private constructor(
@@ -381,16 +381,19 @@ export class Graph {
       return workItemVisibleToViewer(row, viewerMemberId, effectiveOwners.get(row.id)?.ownerId ?? null);
     });
     const visibleIds = new Set(workItemRows.map((row) => row.id));
-    const deferredById = new Map<number, boolean>();
-    const deferralCache = new Map<number, boolean | null>();
     const deferral = (id: number, stopBefore?: number): boolean | null => {
       const visited = new Set<number>();
       const path: typeof allWorkItemRows = [];
       let row = rowsById.get(id);
       let state: boolean | null = false;
       while (row && row.id !== stopBefore) {
-        if (stopBefore === undefined && deferralCache.has(row.id)) {
-          state = deferralCache.get(row.id)!;
+        // Selected-project readiness stops at that project, so full-ancestry
+        // results must neither be reused nor replaced by the hypothetical.
+        const cached = stopBefore === undefined
+          ? graph.deferralByWorkItem.get(row.id)
+          : undefined;
+        if (cached !== undefined) {
+          state = cached;
           break;
         }
         if (visited.has(row.id)) {
@@ -406,16 +409,12 @@ export class Graph {
         state = state === null || !visibleIds.has(item.id)
           ? null
           : state || (item.status === "backlog" && item.archivedAt === null);
-        if (stopBefore === undefined) deferralCache.set(item.id, state);
+        if (stopBefore === undefined) graph.deferralByWorkItem.set(item.id, state);
       }
       return state;
     };
     for (const row of allWorkItemRows) {
-      const state = deferral(row.id);
-      const deferred = state !== false;
-      deferredById.set(row.id, deferred);
-      if (deferred) graph.deferredWorkItemIds.add(row.id);
-      if (state === null) graph.opaqueWorkItemIds.add(row.id);
+      deferral(row.id);
     }
     const reminderRows = db.select().from(schema.taskReminders).all();
     const remindersByTask = new Map<number, TaskReminder[]>();
@@ -648,7 +647,7 @@ export class Graph {
           title: task.title,
           status: task.status,
           projectId: task.projectId,
-          effectivelyDeferred: deferredById.get(task.id) ?? false,
+          effectivelyDeferred: graph.isEffectivelyDeferred(task.id),
           scheduledDate: task.scheduledDate,
           revisitAt:
             task.revisitAt ??

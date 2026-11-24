@@ -40,7 +40,8 @@ describe("effective deferral read projections", () => {
     const agenda = buildAgenda(graph, { today, now });
     expect(agenda.planned.map((t) => t.id)).not.toContain(child.id);
     expect(agenda.dueToday.map((t) => t.id)).toContain(deadline.id);
-    expect(agenda.revisit.map((t) => t.id)).toEqual(expect.arrayContaining([waiting.id, reconsider.id, clarify.id, recurringRevisit.id]));
+    expect(agenda.revisit.map((t) => t.id)).toEqual(expect.arrayContaining([waiting.id, reconsider.id, clarify.id]));
+    expect(agenda.dueToday.map((t) => t.id)).toContain(recurringRevisit.id);
     expect([...agenda.shared, ...agenda.unscheduled].map((t) => t.id)).toContain(independent.id);
     expect(buildWaitingEntries(graph, { scope: "all", contextAvailability: available }).map((entry) => entry.task.id)).not.toContain(waiting.id);
     const review = buildReviewItems(graph, { today, now });
@@ -167,7 +168,7 @@ describe("effective deferral read projections", () => {
     expect(await read()).toEqual(unknownAcknowledged);
   });
 
-  it("keeps actual deadlines and reconsideration, but not recurring occurrence boundaries or past plans", () => {
+  it("keeps actual deadlines and reconsideration, but not past one-off plans", () => {
     const db = ctx.handle.db;
     const parkedProject = db.insert(schema.workItems).values({ role: "story", title: "Parked due", status: "backlog", dueDate: today, revisitAt: now }).returning().get();
     const parkedTask = db.insert(schema.workItems).values({ role: "task", title: "Parked task due", status: "backlog", dueDate: today }).returning().get();
@@ -184,16 +185,84 @@ describe("effective deferral read projections", () => {
     expect(agenda.projects.find((entry) => entry.project.id === parkedProject.id)?.project.effectivelyDeferred).toBe(true);
     expect(agenda.dueToday.map((task) => task.id)).toContain(parkedTask.id);
     expect(agenda.dueToday.find((task) => task.id === parkedTask.id)?.effectivelyDeferred).toBe(true);
-    expect(agenda.dueToday.map((task) => task.id)).not.toContain(recurring.id);
+    expect(agenda.dueToday.map((task) => task.id)).toContain(recurring.id);
     expect(agenda.planned.map((task) => task.id)).not.toContain(past.id);
     expect(agenda.shared.map((task) => task.id)).toContain(past.id);
     expect([...agenda.planned, ...agenda.shared].map((task) => task.id)).not.toContain(future.id);
     expect(buildReviewItems(graph, { today, now }).map((item) => item.reason)).toContain("backlog_revisit_reached");
     const week = buildWeekAgenda(graph, { start: today, today });
-    expect(week.days.flatMap((day) => day.items).map((item) => item.id)).not.toContain(recurring.id);
+    expect(week.days[0]!.items).toContainEqual(expect.objectContaining({ id: recurring.id, placement: "due", executable: false }));
     expect(week.days[0]!.items.map((item) => item.id)).not.toContain(past.id);
     expect(week.unplanned.map((item) => item.id)).toContain(past.id);
     expect(week.days[1]!.items.map((item) => item.id)).toContain(future.id);
+  });
+
+  it("retains recurring deadlines under direct and inherited deferral without exposing execution", () => {
+    const db = ctx.handle.db;
+    const parent = db.insert(schema.workItems).values({ role: "story", title: "Parked", status: "backlog" }).returning().get();
+    const cases = [
+      { title: "Direct overdue", status: "backlog" as const, dueDate: "2026-09-06", bucket: "overdue" as const },
+      { title: "Inherited today", status: "active" as const, parentId: parent.id, dueDate: today, bucket: "dueToday" as const },
+      { title: "Inherited soon", status: "active" as const, parentId: parent.id, dueDate: "2026-09-08", bucket: "dueSoon" as const },
+      { title: "Captured recurring", status: "captured" as const, needsClarification: true, parentId: parent.id, dueDate: "2026-09-09", bucket: "dueSoon" as const },
+    ].map(({ bucket, ...values }) => ({
+      bucket,
+      dueDate: values.dueDate,
+      row: db.insert(schema.workItems).values({ role: "task", ...values, scheduledDate: "2026-09-10", repeatAfterDays: 7, allowedDeviationDays: 0 }).returning().get(),
+    }));
+    const before = ctx.handle.sqlite.serialize();
+    const graph = Graph.load(db, today, undefined, now);
+    const agenda = buildAgenda(graph, { today, now });
+    const week = buildWeekAgenda(graph, { start: today, today });
+    const weekItems = week.days.flatMap(day => day.items);
+    for (const { row, bucket, dueDate } of cases) {
+      expect(agenda[bucket].filter(task => task.id === row.id)).toEqual([
+        expect.objectContaining({ id: row.id, dueDate: row.dueDate, executable: false, effectivelyDeferred: true }),
+      ]);
+      expect([...agenda.planned, ...agenda.revisit, ...agenda.shared, ...agenda.unscheduled].map(task => task.id)).not.toContain(row.id);
+      expect(weekItems.filter(item => item.id === row.id)).toEqual([
+        expect.objectContaining({ id: row.id, placement: "due", attentionDate: dueDate < today ? today : dueDate, executable: false }),
+      ]);
+      expect(week.unplanned.map(item => item.id)).not.toContain(row.id);
+    }
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it("preserves baseline nondeferred revisit eligibility while retaining deferred reconsideration", () => {
+    const db = ctx.handle.db;
+    const parked = db.insert(schema.workItems).values({ role: "story", title: "Parked", status: "backlog" }).returning().get();
+    const activeProject = db.insert(schema.workItems).values({ role: "story", title: "Active", status: "active" }).returning().get();
+    const captured = db.insert(schema.workItems).values({ role: "task", title: "Captured", status: "captured", revisitAt: now }).returning().get();
+    const clarification = db.insert(schema.workItems).values({ role: "task", title: "Needs clarification", status: "active", needsClarification: true, parentId: activeProject.id, revisitAt: now }).returning().get();
+    const ordinary = db.insert(schema.workItems).values({ role: "task", title: "Ordinary", status: "active", revisitAt: now }).returning().get();
+    const future = db.insert(schema.workItems).values({ role: "task", title: "Future plan", status: "active", revisitAt: now, scheduledDate: "2026-09-08" }).returning().get();
+    const wait = db.insert(schema.workItems).values({ role: "task", title: "Wait", status: "active", needsClarification: true, revisitAt: now, scheduledDate: "2026-09-08" }).returning().get();
+    db.insert(schema.taskExternalWaits).values({ taskId: wait.id, waitingFor: "Response" }).run();
+    const deferredCaptured = db.insert(schema.workItems).values({ role: "task", title: "Deferred captured", status: "captured", needsClarification: true, parentId: parked.id, revisitAt: now, scheduledDate: "2026-09-08" }).returning().get();
+    const unavailableWindow = { kind: "weekly" as const, match: "inside" as const, windows: [{ weekdays: [1], start: "00:00", end: "01:00" }] };
+    const deferredActive = db.insert(schema.workItems).values({ role: "task", title: "Deferred active", status: "active", needsClarification: true, parentId: parked.id, revisitAt: now, scheduledDate: "2026-09-08", availabilityRule: unavailableWindow }).returning().get();
+    const deferredWait = db.insert(schema.workItems).values({ role: "task", title: "Deferred wait", status: "active", parentId: parked.id, revisitAt: now, scheduledDate: "2026-09-08" }).returning().get();
+    db.insert(schema.taskExternalWaits).values({ taskId: deferredWait.id, waitingFor: "Response" }).run();
+    const window = db.insert(schema.workItems).values({ role: "task", title: "Unavailable", status: "active", revisitAt: now, availabilityRule: unavailableWindow }).returning().get();
+    const capturedDue = db.insert(schema.workItems).values({ role: "task", title: "Captured with deadline", status: "captured", dueDate: "2026-09-08", revisitAt: now }).returning().get();
+    const graph = Graph.load(db, today, undefined, now);
+    const agenda = buildAgenda(graph, { today, now });
+    const revisitIds = agenda.revisit.map(task => task.id);
+    expect(revisitIds).toEqual(expect.arrayContaining([ordinary.id, wait.id, deferredCaptured.id, deferredActive.id, deferredWait.id]));
+    for (const id of [captured.id, capturedDue.id, clarification.id, future.id, window.id]) {
+      expect(revisitIds).not.toContain(id);
+    }
+    const week = buildWeekAgenda(graph, { start: today, today });
+    const weekItems = week.days.flatMap(day => day.items);
+    expect(weekItems.map(item => item.id)).not.toContain(captured.id);
+    expect(weekItems.map(item => item.id)).not.toContain(clarification.id);
+    expect(weekItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: deferredCaptured.id, placement: "revisit", executable: false }),
+      expect.objectContaining({ id: deferredActive.id, placement: "revisit", executable: false }),
+      expect.objectContaining({ id: deferredWait.id, placement: "revisit", executable: false }),
+      expect.objectContaining({ id: wait.id, placement: "revisit" }),
+      expect.objectContaining({ id: capturedDue.id, placement: "due", attentionDate: "2026-09-08" }),
+    ]));
   });
 
   it("does not count a parked dependency as healthy target readiness", () => {

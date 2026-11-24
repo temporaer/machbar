@@ -36,7 +36,7 @@ function isWeekDatedTask(
   graph: Graph,
   selection: ReturnType<typeof createAgendaSelection>,
 ): boolean {
-  if (selection.isReconsiderationAttentionTask(task)) return true;
+  if (graph.isEffectivelyDeferred(task.id) && selection.isReconsiderationAttentionTask(task)) return true;
   if (task.status === "captured") return selection.isDeadlineAttentionTask(task);
   if (
     task.kind !== "action" ||
@@ -203,9 +203,9 @@ export function buildWeekAgenda(
             (task.repeatAfterDays === null && task.scheduledDate !== null && task.scheduledDate < today)
             ? null : task.scheduledDate,
           revisitDate:
-            calendarDateForInstant(task.revisitAt, options.householdTimezone) ?? null,
-        dueDate: (deferred || task.status === "captured") && task.repeatAfterDays !== null
-          ? null : task.dueDate,
+            task.status === "captured" && !deferred
+              ? null : calendarDateForInstant(task.revisitAt, options.householdTimezone) ?? null,
+        dueDate: task.dueDate,
       },
       today,
     );
