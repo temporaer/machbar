@@ -78,7 +78,7 @@ describe("WorkRefinementReview", () => {
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
     const conversionCard = screen.getByText("In ein Projekt umwandeln").closest("article");
     expect(conversionCard).toHaveTextContent("Kita-Formular → Kita-Unterlagen zusammenstellen");
-    expect(conversionCard).toHaveTextContent("Wird Backlog-Projekt.");
+    expect(conversionCard).toHaveTextContent("Wird unter Später eingeordnet.");
     expect(screen.getAllByText("Formular bei Sarah abholen")).toHaveLength(1);
   });
 
