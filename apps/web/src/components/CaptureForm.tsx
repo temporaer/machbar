@@ -22,13 +22,6 @@ import {
 } from "../lib/captureSyntax";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
-import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
-import {
-  projectActivationPromptFromSnapshot, projectActivationPromptFromError,
-  projectActivationResolutionFromPrompt,
-  type ProjectActivationPrompt,
-} from "../lib/projectActivationResolution";
-import type { ProjectActivationResolution } from "@machbar/shared";
 
 export type CaptureResult =
   | {
@@ -113,7 +106,6 @@ export function CaptureForm({
   const [saving, setSaving] = useState(false);
   const focusAfterSave = useRef<number | undefined | null>(null);
   const [error, setError] = useState<{ message: string; draftKey: number | undefined } | null>(null);
-  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [projectDestinationOverride, setProjectDestinationOverride] = useState<
     number | null | undefined
   >(undefined);
@@ -195,7 +187,6 @@ export function CaptureForm({
     kind: TaskKind,
     needsClarification: boolean,
     preparedNotes: string,
-    activationResolution?: ProjectActivationResolution,
   ): CreateTaskInput => isThought ? ({
     title: title.trim(),
     createdByMemberId: currentMemberId,
@@ -217,7 +208,6 @@ export function CaptureForm({
     createdByMemberId: currentMemberId,
     status: needsClarification ? "captured" : "actionable",
     ...(defaultScope ? { scope: defaultScope } : {}),
-    ...(activationResolution ? { activationResolution } : {}),
     dueDate: syntaxMetadata.dueDate ?? dueDate,
     scheduledDate: syntaxMetadata.scheduledDate ?? null,
     ...(syntaxMetadata.size !== undefined ? { size: syntaxMetadata.size } : {}),
@@ -234,18 +224,6 @@ export function CaptureForm({
 
   const needsClarification =
     isThought || (effectiveProjectId === null && (parentTaskId ?? null) === null);
-  const requestFingerprint = JSON.stringify(
-    taskInput("action", needsClarification, notes),
-  );
-  const currentActivationPrompt =
-    activationPrompt?.requestFingerprint === requestFingerprint ? activationPrompt : null;
-
-  useEffect(() => {
-    if (activationPrompt && activationPrompt.requestFingerprint !== requestFingerprint) {
-      setActivationPrompt(null);
-    }
-  }, [activationPrompt, requestFingerprint]);
-
   const createTask = async (kind: TaskKind = "action") => {
     if (!capturedTitle || saving) return;
     if (kind === "reference" && referenceHasUnsupportedModifiers) {
@@ -264,28 +242,13 @@ export function CaptureForm({
     setSaving(true);
     onSavingChange?.(true);
     setError(null);
-    if (kind === "reference") setActivationPrompt(null);
     try {
       const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
       const input = taskInput(
           kind,
           needsClarification,
           preparedNotes,
-          kind === "action" && currentActivationPrompt?.projects.length
-            ? projectActivationResolutionFromPrompt(currentActivationPrompt) ?? undefined
-            : undefined,
         );
-      if (
-        kind === "action" &&
-        !currentActivationPrompt &&
-        (effectiveProjectId !== null || parentTaskId != null)
-      ) {
-        const preview = await api.previewTaskCreation(input);
-        if (preview.activatingProjects.length) {
-          setActivationPrompt({ ...projectActivationPromptFromSnapshot(preview.decision), requestFingerprint });
-          return;
-        }
-      }
       const task = await api.createTask(input, intent);
       if (kind === "reference") materialCreationIntent.current = null;
       else creationIntents.current.delete(intentKey);
@@ -294,10 +257,6 @@ export function CaptureForm({
         focusAfterSave.current = thoughtDraft?.key;
       }
     } catch (cause) {
-      const refreshedPrompt = projectActivationPromptFromError(cause, currentActivationPrompt);
-      if (refreshedPrompt) {
-        setActivationPrompt({ ...refreshedPrompt, requestFingerprint });
-      }
       setError({ message: localizedErrorMessage(cause, strings), draftKey: thoughtDraft?.key });
     } finally {
       setSaving(false);
@@ -359,8 +318,7 @@ export function CaptureForm({
       type="submit"
       className="btn btn-primary"
       aria-label={isThought ? strings.guidedCaptureSave : strings.create}
-      disabled={saving || !capturedTitle || !dueDateValid ||
-        (currentActivationPrompt !== null && projectActivationResolutionFromPrompt(currentActivationPrompt) === null)}
+      disabled={saving || !capturedTitle || !dueDateValid}
     >
       {isThought ? strings.guidedCaptureSave : strings.create}
     </button>
@@ -602,13 +560,6 @@ export function CaptureForm({
             onValidityChange={setDueDateValid}
           />
         </div>
-      ) : null}
-      {currentActivationPrompt ? (
-        <ProjectActivationDecisionFields
-          prompt={currentActivationPrompt}
-          disabled={saving}
-          onChange={setActivationPrompt}
-        />
       ) : null}
       {error && error.draftKey === thoughtDraft?.key ? <p className="capture-error" role="alert">{error.message}</p> : null}
       <div className={`capture-actions${primaryActionFirst ? " capture-actions-quick-add" : ""}`}>

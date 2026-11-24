@@ -2,14 +2,12 @@ import { useEffect, useState } from "react";
 import { api, type ProjectDetail, type ProjectWithActions } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
-import { hasApiErrorCode, localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
-import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
+import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
 import { rememberDestination } from "../lib/recentDestinations";
 import { BottomSheet } from "./BottomSheet";
 import { DestinationPicker } from "./DestinationPicker";
-import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
-/** Focused story.move workflow: selection and activation decisions remain local until one commit. */
+/** Focused story.move workflow. */
 export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => true }: {
   story: ProjectWithActions; onClose: () => void; onFailure?: (cause: unknown) => void; isCurrent?: () => boolean;
 }) {
@@ -22,7 +20,6 @@ export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => 
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState<ProjectActivationPrompt | null>(null);
   const load = async () => {
     const [current, choices] = await Promise.all([api.getProject(story.id), api.getProjects()]);
     setSource(current);
@@ -44,20 +41,17 @@ export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => 
     }).catch((cause) => { if (!cancelled) { onFailure?.(cause); setError(localizedErrorMessage(cause, strings)); } });
     return () => { cancelled = true; };
   }, [parentId, strings]);
-  const resolution = prompt ? projectActivationResolutionFromPrompt(prompt) : null;
   const submit = async () => {
     if (!source || busy || (parentId !== null && !destination)) return;
     setBusy(true);
     setError(null);
     try {
       const revisions = new Map((source.hierarchyRevisions ?? []).map((entry) => [entry.id, entry.revision]));
-      // Destination ancestors are affected by commitment activation; unrelated descendants are not.
       for (const entry of [destination, ...(destination?.ancestors ?? [])]) {
         if (entry?.revision !== undefined) revisions.set(entry.id, entry.revision);
       }
       await api.moveProject(story.id, { parentId, expectedRevision: source.revision,
-        expectedHierarchyRevisions: [...revisions].map(([id, revision]) => ({ id, revision })),
-        ...(resolution ? { activationResolution: resolution } : {}) });
+        expectedHierarchyRevisions: [...revisions].map(([id, revision]) => ({ id, revision })) });
       bump();
       if (!isCurrent()) return;
       rememberDestination("project", parentId);
@@ -65,9 +59,7 @@ export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => 
     } catch (cause) {
       if (!isCurrent()) return;
       onFailure?.(cause);
-      const requiredPrompt = projectActivationPromptFromError(cause);
-      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
-        setPrompt(null);
+      if (isStaleWriteConflict(cause)) {
         bump();
         try {
           await load();
@@ -76,7 +68,6 @@ export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => 
             if (!isCurrent()) return;
             setDestination(latest);
           }
-          if (requiredPrompt && isCurrent()) setPrompt(requiredPrompt);
         } catch (refreshCause) { onFailure?.(refreshCause); }
       }
       setError(localizedErrorMessage(cause, strings));
@@ -89,11 +80,9 @@ export function MoveProjectSheet({ story, onClose, onFailure, isCurrent = () => 
       <p className="text-muted">{strings.projectSubtreeHint}</p>
       {!loading ? <DestinationPicker kind="project" label={strings.selectProject}
         options={projects.filter((project) => project.scope === story.scope && !excluded.has(project.id)).map(({ id, title }) => ({ id, title }))}
-        disabled={busy} value={parentId} onChange={(id) => { setParentId(id); setPrompt(null); }} noneLabel={strings.noProject} /> : null}
-      {source?.status === "active" && destination?.status === "backlog" ? <p className="text-muted">{strings.projectMoveActivationHint}</p> : null}
-      {prompt ? <ProjectActivationDecisionFields prompt={prompt} disabled={busy} onChange={setPrompt} /> : null}
+        disabled={busy} value={parentId} onChange={setParentId} noneLabel={strings.noProject} /> : null}
       {error ? <p role="alert">{strings.moveFailed}: {error}</p> : null}
-      <button type="button" className="btn btn-primary" disabled={busy || loading || !source || (parentId !== null && !destination) || (!!prompt && !resolution)} onClick={() => void submit()}>{strings.moveHere}</button>
+      <button type="button" className="btn btn-primary" disabled={busy || loading || !source || (parentId !== null && !destination)} onClick={() => void submit()}>{strings.moveHere}</button>
       <button type="button" className="btn" disabled={busy} onClick={onClose}>{strings.cancel}</button>
     </div>
   </BottomSheet>;

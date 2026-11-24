@@ -178,7 +178,7 @@ describe("task <-> story role conversion", () => {
     expect(actionableStory.statusCode).toBe(201);
     expect(actionableStory.json()).toMatchObject({
       id: actionable.id,
-      status: "active",
+      status: "backlog",
       title: "Actionable wird Projekt",
     });
     expect(somedayStory.statusCode).toBe(201);
@@ -239,11 +239,11 @@ describe("task <-> story role conversion", () => {
     expect(converted.statusCode).toBe(201);
     expect(converted.json()).toMatchObject({
       id: root.id,
-      revision: root.revision + 2,
+      revision: root.revision + 1,
       title: "Keller organisieren",
       notes: "Regale und Kisten",
-      status: "active",
-      ownerMemberId: member.id,
+      status: "backlog",
+      ownerMemberId: null,
       dueDate: "2026-10-10",
       scheduledDate: null,
       tags: [expect.objectContaining({ id: tag.id })],
@@ -325,14 +325,14 @@ describe("task <-> story role conversion", () => {
       },
     );
 
-    expect(activePromotion.statusCode).toBe(409);
-    expect(activePromotion.json().error.code).toBe("project_commitment_resolution_required");
+    expect(activePromotion.statusCode).toBe(400);
+    expect(activePromotion.json().error.code).toBe("project_driver_required");
     expect(
       await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
     ).toMatchObject({ statusCode: 200 });
   });
 
-  it("rolls back a staged preservation step when activation decisions are missing", async () => {
+  it("preserves a dated action in backlog without requiring activation decisions", async () => {
     const source = (await post("/api/tasks", {
       title: "Datiertes Vorhaben",
       status: "actionable",
@@ -344,12 +344,12 @@ describe("task <-> story role conversion", () => {
       expectedRevision: source.revision,
     });
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("project_commitment_resolution_required");
+    expect(response.statusCode).toBe(201);
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, source.id)).get()).toMatchObject({
-      role: "task", status: "active", scheduledDate: "2026-10-20",
+      role: "story", status: "backlog", scheduledDate: null, revision: source.revision + 1,
     });
-    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, source.id)).all())
+      .toEqual([expect.objectContaining({ title: source.title, status: "active", scheduledDate: "2026-10-20" })]);
   });
 
   it("preserves an active conversion as a child action atomically", async () => {
@@ -367,10 +367,6 @@ describe("task <-> story role conversion", () => {
       {
         status: "active",
         expectedRevision: root.revision,
-        activationResolution: {
-          expectedProjects: [{ projectId: root.id, revision: root.revision }],
-          drivers: [],
-        },
       },
     );
     expect(response.statusCode).toBe(201);
@@ -398,10 +394,6 @@ describe("task <-> story role conversion", () => {
     const response = await post(`/api/tasks/${root.id}/convert-to-story`, {
       status: "active",
       expectedRevision: root.revision,
-      activationResolution: {
-        expectedProjects: [{ projectId: root.id, revision: root.revision }],
-        drivers: [],
-      },
     });
 
     expect(response.statusCode).toBe(201);
@@ -433,7 +425,7 @@ describe("task <-> story role conversion", () => {
     });
   });
 
-  it("requires activation decisions for nested tasks and rejects unsupported terminal states", async () => {
+  it("converts nested tasks to backlog and rejects unsupported terminal states", async () => {
     const root = (
       await post("/api/tasks", { title: "Root", status: "actionable" })
     ).json();
@@ -481,14 +473,10 @@ describe("task <-> story role conversion", () => {
       { status: "backlog", expectedRevision: cancelled.revision },
     );
 
-    expect(childConversion.statusCode).toBe(409);
-    expect(childConversion.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-    });
-    expect(storyContainedConversion.statusCode).toBe(409);
-    expect(storyContainedConversion.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-    });
+    expect(childConversion.statusCode).toBe(201);
+    expect(childConversion.json()).toMatchObject({ id: child.id, status: "backlog" });
+    expect(storyContainedConversion.statusCode).toBe(201);
+    expect(storyContainedConversion.json()).toMatchObject({ id: insideStory.id, status: "backlog" });
     expect(doneConversion.statusCode).toBe(409);
     expect(doneConversion.json().error).toMatchObject({
       code: "role_conversion_invalid",
@@ -619,15 +607,6 @@ describe("task <-> story role conversion", () => {
       const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
         status: "backlog",
         expectedRevision: current.revision,
-        activationResolution: {
-          expectedProjects: [{ projectId: source.id, revision: current.revision }],
-          drivers: [],
-          ...(source.id === dependencyTask.id
-            ? { nextActionTitle: "Voraussetzung bearbeiten" }
-            : source.id === waiting.id
-              ? { nextActionTitle: "Rückmeldung nachfassen" }
-              : {}),
-        },
         ...(source.id === dependencyTask.id ? {
           dependencyMappings: [{
             dependencyId: outgoingDependencyId,
@@ -637,7 +616,7 @@ describe("task <-> story role conversion", () => {
         } : {}),
       });
       expect(response.statusCode).toBe(201);
-      expect(response.json()).toMatchObject({ id: source.id, status: "active" });
+      expect(response.json()).toMatchObject({ id: source.id, status: "backlog" });
       const converted = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
       expect(converted.tasks).toEqual(expect.arrayContaining([
         expect.objectContaining({ title: source.title, status: "actionable" }),
@@ -733,9 +712,10 @@ describe("task <-> story role conversion", () => {
     const before = ctx.handle.db.select().from(schema.workItems).all();
     const eventsBefore = ctx.handle.db.select().from(schema.activityEvents).all();
     const result = await post(`/api/tasks/${source.id}/convert-to-story`, {
-      status: "backlog", expectedRevision: source.revision + (reason === "stale" ? 1 : 0),
+      status: reason === "activation" ? "active" : "backlog", expectedRevision: source.revision + (reason === "stale" ? 1 : 0),
     });
-    expect(result.statusCode).toBe(409);
+    expect(result.statusCode).toBe(reason === "activation" ? 400 : 409);
+    if (reason === "activation") expect(result.json().error.code).toBe("project_driver_required");
     expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(before);
     expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(eventsBefore);
     const retained = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${source.id}` })).json();
@@ -760,7 +740,7 @@ describe("task <-> story role conversion", () => {
     const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${source.id}` })).json();
     const preserved = project.tasks.find((step: { title: string }) => step.title === source.title);
     expect(preserved).toMatchObject({
-      status: "actionable",
+      status: "someday",
       revisitAt: "2030-06-01T09:00:00.000Z",
       reminders: [expect.objectContaining({ kind: "absolute", at: "2030-05-31T09:00:00.000Z" })],
     });
@@ -785,10 +765,6 @@ describe("task <-> story role conversion", () => {
     const response = await post(`/api/tasks/${source.id}/convert-to-story`, {
       status: "backlog",
       expectedRevision: source.revision,
-      activationResolution: {
-        expectedProjects: [{ projectId: source.id, revision: source.revision }],
-        drivers: [],
-      },
     });
 
     expect(response.statusCode).toBe(201);
@@ -864,7 +840,7 @@ describe("task <-> story role conversion", () => {
     expect(reverted.json()).toMatchObject({
       id: project.id,
       title: "Wieder zur Aufgabe",
-      status: "actionable",
+      status: "someday",
       dueDate: "2026-10-10",
       scheduledDate: "2026-09-15",
     });
@@ -924,7 +900,7 @@ describe("task <-> story role conversion", () => {
     expect(converted.statusCode).toBe(201);
     expect(converted.json()).toMatchObject({
       id: project.id,
-      status: "actionable",
+      status: "someday",
       repeatAfterDays: 30,
       allowedDeviationDays: 3,
       reminders: [expect.objectContaining({ id: reminder.id, at: "2027-03-12T08:00:00.000Z" })],
@@ -1006,7 +982,7 @@ describe("task <-> story role conversion", () => {
 
     expect(converted.statusCode, JSON.stringify(converted.json())).toBe(201);
     expect(converted.json()).toMatchObject({ id: source.id, status: "someday" });
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${unplanned.id}` })).json().status).toBe("someday");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${unplanned.id}` })).json().status).toBe("actionable");
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${dated.id}` })).json()).toMatchObject({
       status: "actionable",
       scheduledDate: "2030-06-01",
@@ -1016,7 +992,7 @@ describe("task <-> story role conversion", () => {
     expect(beforeDate.planned.map((task: { id: number }) => task.id)).not.toContain(dated.id);
     expect(beforeDate.unscheduled.map((task: { id: number }) => task.id)).not.toContain(unplanned.id);
     const onDate = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2030-06-01" })).json();
-    expect(onDate.planned.map((task: { id: number }) => task.id)).toContain(dated.id);
+    expect(onDate.planned.map((task: { id: number }) => task.id)).not.toContain(dated.id);
     expect(onDate.unscheduled.map((task: { id: number }) => task.id)).not.toContain(unplanned.id);
 
     const active = (await post("/api/projects", { title: "Aktives Projekt", status: "backlog" })).json();
@@ -1192,7 +1168,7 @@ describe("task <-> story role conversion", () => {
     expect(planningConversion.statusCode).toBe(201);
     expect(planningConversion.json()).toMatchObject({
       id: planned.id,
-      status: "actionable",
+      status: "someday",
       scheduledDate: "2027-02-01",
       revisitAt: "2027-01-15T09:00:00.000Z",
     });

@@ -324,8 +324,7 @@ describe("Home Assistant physical contexts", () => {
     const updated = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${id}`, payload: { ownerMemberId: owner.id, ownerInheritanceMode: "explicit", expectedRevision: 1 } });
     expect(updated.statusCode, updated.body).toBe(200);
     const conversion = await post(`/api/tasks/${id}/convert-to-story`, {
-      status: "active", expectedRevision: updated.json().revision,
-      activationResolution: { expectedProjects: [{ projectId: id, revision: updated.json().revision }], drivers: [] },
+      status: "backlog", expectedRevision: updated.json().revision,
     });
     expect(conversion.statusCode, conversion.body).toBe(201);
     const before = ctx.handle.sqlite.serialize();

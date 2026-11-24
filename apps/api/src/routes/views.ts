@@ -250,7 +250,14 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
           // while leaving its lifecycle/agenda commitments untouched.
           !(task.clarificationRevisitDate && task.clarificationRevisitDate > householdToday) &&
           !(task.revisitAt && Date.parse(task.revisitAt) > Date.now()) &&
-          isTaskInWorkingSystem(task, projectStatusById) &&
+          ((!graph.isEffectivelyDeferred(task.id) &&
+            isTaskInWorkingSystem(task, projectStatusById)) ||
+            (task.clarificationRevisitDate !== null &&
+              task.clarificationRevisitDate <= householdToday &&
+              (task.projectId === null ||
+                !["completed", "archived"].includes(
+                  projectStatusById.get(task.projectId) ?? "",
+                )))) &&
           selection.matchesScope(task) &&
           selection.matchesOwner(task),
       );

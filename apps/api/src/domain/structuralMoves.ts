@@ -1,7 +1,6 @@
 /**
  * Canonical task and project hierarchy moves on the unified parent edge.
  */
-import type { ProjectActivationResolution } from "@machbar/shared";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -17,8 +16,6 @@ import {
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { assertParentAcceptsChildren, getTaskOrThrow } from "./taskCrud.js";
-import { activateCommittedProjectChain } from "./commitmentActivation.js";
-import { hasExecutionCommitment } from "./commitmentTransition.js";
 import { getEffectiveOwners } from "../repo/effectiveRepo.js";
 import { Graph } from "./graph.js";
 import {
@@ -130,18 +127,12 @@ export function moveTask(
         }
       }
     }
-    // Filing a captured, unclassified inbox item into a project/parent is
-    // the refile flow: it is not "just a move" (the item is not yet a
-    // legal task anywhere), so it atomically classifies the item into the
-    // normal actionable state in the same transaction as the reparent below,
-    // instead of requiring a separate promotion step first.
     const refilesCapturedInboxItem =
       task.kind === "action" &&
       task.status === "captured" &&
       task.projectId === null &&
       task.parentTaskId === null &&
       (newParentTaskId !== null || newProjectId !== null);
-
     const sourceHadNextAction =
       task.projectId === null
         ? true
@@ -309,7 +300,6 @@ export interface MoveProjectInput {
   parentId: number | null;
   expectedRevision: number;
   expectedHierarchyRevisions: Array<{ id: number; revision: number }>;
-  activationResolution?: ProjectActivationResolution;
 }
 
 /** Canonical project reparenting, preserving the whole subtree and obligations. */
@@ -339,41 +329,6 @@ export function moveProject(db: Db, projectId: number, input: MoveProjectInput, 
     const ownersAfter = getEffectiveOwners(txDb);
     if (subtreeIds.some((id) => ownersBefore.get(id)?.ownerId !== ownersAfter.get(id)?.ownerId)) {
       throw AppError.conflict("project_transition_invalid", "Choose a destination that preserves this project's ownership.");
-    }
-    const graph = Graph.load(txDb);
-    const committed = project.status !== "completed" && project.status !== "archived" && (
-      project.status === "active" ||
-      hasExecutionCommitment({ kind: "action", dueDate: project.dueDate, scheduledDate: project.scheduledDate, revisitAt: project.revisitAt, reminders: [] }) ||
-      descendants.some((id) => {
-        const task = graph.tasksById.get(id);
-        const childProject = graph.projectsById.get(id);
-        if (task) return task.status !== "done" && task.status !== "cancelled" && (hasExecutionCommitment(task) || task.repeatAfterDays !== null);
-        return childProject?.status === "active" || (childProject?.status === "backlog" && (!!childProject.dueDate || !!childProject.scheduledDate));
-      })
-    );
-    if (committed) {
-      // Evaluate the moved project's whole new chain. Its existing active
-      // progress path satisfies its new ancestors without inventing a step.
-      const resolution = input.activationResolution ? {
-        ...input.activationResolution,
-        expectedProjects: input.activationResolution.expectedProjects.map((entry) =>
-          entry.projectId === projectId && entry.revision === project.revision
-            ? { ...entry, revision: project.revision + 1 }
-            : entry),
-      } : undefined;
-      try {
-        activateCommittedProjectChain(txDb, projectId, context, resolution);
-      } catch (error) {
-        if (error instanceof AppError && error.code === "project_commitment_resolution_required") {
-          const details = error.details as Record<string, unknown> | undefined;
-          if (details && Array.isArray(details.expectedProjects)) {
-            details.expectedProjects = (details.expectedProjects as Array<{ projectId: number; revision: number }>).map((entry) =>
-              entry.projectId === projectId ? { ...entry, revision: project.revision } : entry);
-            if (details.targetRevision === project.revision + 1) details.targetRevision = project.revision;
-          }
-        }
-        throw error;
-      }
     }
     recordActivity(txDb, { actorMemberId: actor(context), kind: "project_updated", entityType: "project", entityTitle: project.title, projectId,
       metadata: { changedFields: ["parentId"], relatedProjectIds: input.parentId === null ? [] : [input.parentId] } });

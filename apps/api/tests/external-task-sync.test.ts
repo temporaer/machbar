@@ -51,7 +51,6 @@ describe("Home Assistant external task reconciliation", () => {
     const task = updateTask(handle.db, taskId, { ownerMemberId: memberId, ownerInheritanceMode: "explicit" });
     convertTaskToStory(handle.db, taskId, {
       status: "active", expectedRevision: task.revision,
-      activationResolution: { expectedProjects: [{ projectId: task.id, revision: task.revision }], drivers: [] },
     });
   };
 

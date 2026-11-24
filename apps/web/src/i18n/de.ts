@@ -489,6 +489,8 @@ const base = {
   inherited: "Geerbt",
   actionable: "Machbar",
   someday: "Irgendwann",
+  attentionDeferred: "Zurückgestellt",
+  attentionUnavailable: "Verfügbarkeit unklar",
   done: "Erledigt",
   cancelled: "Verworfen",
   clarify: "Klären",
@@ -854,7 +856,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   moveHere: "Hierher verschieben",
   subtreeHint: "Verschiebt die Aufgabe inklusive aller Teilaufgaben.",
   changeParentTitle: "Neue übergeordnete Aufgabe",
-  projectMoveActivationHint: "Aktive Arbeit aktiviert das Ziel und nötige übergeordnete Projekte. Fehlende Entscheidungen werden hier abgefragt.",
   projectSubtreeHint: "Verschiebt das Projekt mit allen Unterprojekten und Aufgaben.",
   moveProjectTitle: "In anderes Projekt verschieben",
   currentProject: "Aktuelles Projekt",
@@ -890,7 +891,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     noDate: "Kein Datum",
   },
   projectDeferQuestion: "Bis wann zurückstellen?",
-  withdrawProjectCommitments: "Pläne, Deadlines, Wiederholungen und Erinnerungen für dieses Projekt zurückziehen",
   projectDeferWithoutRevisit: "Ohne Wiedervorlage",
   projectDeferShortcutLabels: {
     tomorrow: "Morgen",
@@ -1033,7 +1033,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   refinementConvert: "In ein Projekt umwandeln",
   aiProjectWillBeActive: "Wird aktives Projekt – bleibt in deiner aktiven Arbeit.",
   aiProjectWillBeBacklog: "Wird Backlog-Projekt.",
-  aiProjectActivationResolvedOnApply: "Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.",
+  aiProjectActivationResolvedOnApply: "Wird als zurückgestelltes Projekt angelegt.",
   aiProjectDriverLabel: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?",
   aiProjectDriverHint: "Die verantwortliche Person koordiniert und schützt den Fortschritt; sie muss nicht alle Schritte selbst ausführen.",
   aiProjectDriverRequired: "Wähle eine verantwortliche Person für das Projekt.",
@@ -1201,6 +1201,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     "Dieses Backlog-Projekt hat bereits geplante oder ausführbare Arbeit — das widerspricht dem Backlog-Status.",
   reviewReasonBacklogRevisitReached:
     "Die Wiedervorlage dieses Backlog-Projekts ist erreicht.",
+  reviewReasonProjectRevisitReached: "Die Wiedervorlage dieses Projekts ist erreicht.",
   reviewReasonTaskScheduledBeforeResurface:
     "Diese Aufgabe ist vor der Wiedervorlage des Projekts eingeplant.",
   reviewReasonTaskDueBeforeResurface:
@@ -1221,7 +1222,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
 
   // --- Project clarification -------------------------------------------
   activateStory: "Projekt starten",
-  activationDecisionHint: "Prüfe die aktuellen Voraussetzungen und bestätige deine Auswahl.",
   activationRequirementsChanged: "Der Eintrag wurde geändert. Prüfe die aktuellen Angaben und bestätige erneut.",
   activationProgressRequired:
     "Füge zuerst einen ausführbaren nächsten Schritt hinzu oder plane bewusst einen gesunden Wartepfad.",
@@ -1229,8 +1229,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   driver: "Verantwortlich",
   assignDriver: "Verantwortliche Person zuweisen",
   assignDriverToActivateHint: "Für die Aktivierung muss zuerst eine verantwortliche Person zugewiesen werden.",
-  commitmentResolutionTitle: "Vor dem Start noch entscheiden",
-  commitmentResolutionHint: "Dein Entwurf bleibt erhalten. Wähle fehlende Verantwortliche und formuliere bei Bedarf einen konkreten nächsten Schritt.",
   commitmentDriverFor: (title: string) => `Verantwortlich für „${title}“`,
   commitmentNextActionLabel: "Welcher konkrete nächste Schritt bringt das Projekt voran?",
   driverLockedHint:
@@ -1807,10 +1805,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Ein Haushaltsprojekt im Backlog kann keine verantwortliche Person haben. Aktiviere es, um eine Person festzulegen.",
     project_activation_not_ready:
       "Füge vor dem Start einen ausführbaren nächsten Schritt oder einen gesunden Wartepfad hinzu.",
-    project_commitment_resolution_required:
-      "Für diesen verbindlichen Plan fehlen noch eine verantwortliche Person oder ein ausführbarer nächster Schritt. Deine Änderungen wurden nicht gespeichert.",
-    project_commitments_prevent_parking:
-      "Dieses Projekt enthält noch verbindliche Termine oder Erinnerungen. Entscheide im Zurückstellen-Dialog ausdrücklich, ob sie zurückgezogen werden sollen.",
     project_completion_resolution_required:
       "Lege zuerst für jeden offenen Aufgabenbereich fest, ob er verworfen oder in den Eingang verschoben wird.",
     project_completion_resolution_invalid:
@@ -2147,7 +2141,6 @@ export const de = {
   projectTasksTitle: "Aufgaben hinzufügen",
   oneTaskPerLine: "Eine Aufgabe pro Zeile",
   projectTaskDraftHint: "Nicht gespeicherte Zeilen bleiben beim Schließen als Entwurf erhalten.",
-  activationWillStart: "Mit dem Bestätigen werden die betroffenen Projekte gestartet.",
   addProjectTaskCount: (count: number) => count <= 1 ? "Aufgabe hinzufügen" : `${count} Aufgaben hinzufügen`,
   projectReviewOn: "Wieder ansehen am",
   projectAddReviewOn: "Wieder ansehen am …",

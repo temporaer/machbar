@@ -1,5 +1,4 @@
 import { createWithReceipt } from "../domain/creationReceipt.js";
-import { previewActivation } from "../domain/activationPreview.js";
 import { assertWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
@@ -46,7 +45,6 @@ import {
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
-import { projectActivationDecisionSnapshot } from "../domain/commitmentActivation.js";
 import { createTaskStepBatchForProject } from "../domain/taskStepBatch.js";
 import { taskStepBatchSchema } from "../schemas.js";
 
@@ -117,15 +115,8 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         ...(task.children ? { children: task.children.map(attachRefs) } : {}),
       };
     }
-    const activationDecisionSnapshot = projectActivationDecisionSnapshot(db, id);
-    // A readable child may have a hidden ancestor. Keep its own document
-    // readable, but do not expose a partial/misleading commitment snapshot.
-    const snapshotVisible = [...activationDecisionSnapshot.expectedProjects, ...activationDecisionSnapshot.projects]
-      .every(entry => graph.projectsById.has(entry.projectId));
     return {
       ...project,
-      ...(snapshotVisible ? { activationDecisionSnapshot } : {}),
-      directActivationDecisionSnapshot: projectActivationDecisionSnapshot(db, id, "explicit_activation", { viewerMemberId: viewerMemberId(request) ?? null }),
       externalRefs: listExternalWorkItemRefs(db, project.id),
       tasks: (graph.rootsByProject.get(id) ?? []).map(attachRefs),
     };
@@ -138,10 +129,6 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       ...body,
       ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
     }, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
-    if (request.headers["x-machbar-preview"] === "activation") {
-      reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate, viewerMemberId(request), [id]);
-    }
     const result = mutate();
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(201);
@@ -238,8 +225,6 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
         body.expectedRevision,
         body.revisitAt,
-        body.withdrawCommitments,
-        body.expectedTaskRevisions,
       );
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
@@ -274,7 +259,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
         body.expectedRevision,
         body.ownerMemberId,
-        body.activationResolution,
+        body.nextActionTitle,
       );
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);

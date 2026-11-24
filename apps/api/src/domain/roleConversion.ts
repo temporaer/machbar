@@ -5,7 +5,7 @@
  * notifications, and activity history stay attached to the same row.
  */
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
-import type { ProjectActivationResolution, TaskStatus } from "@machbar/shared";
+import type { TaskStatus } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -17,11 +17,6 @@ import {
 import { getProjectOrThrow } from "./storyCrud.js";
 import { getTaskOrThrow, nextPositionForGroup } from "./taskCrud.js";
 import { insertTaskRow, storedTaskStatus } from "./taskRowInsert.js";
-import {
-  activateCommittedProjectChain,
-  projectActivationDecisionSnapshot,
-} from "./commitmentActivation.js";
-import { hasExecutionCommitment } from "./commitmentTransition.js";
 import { assertHierarchySnapshot } from "./structuralMoves.js";
 import { getAncestorIds } from "../repo/treeRepo.js";
 import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
@@ -29,6 +24,7 @@ import {
   MutationContext,
   actor,
   assertExpectedRevision,
+  assertProjectActivationReady,
   nowIso,
   projectHasNextAction,
   projectHasTaskPlan,
@@ -68,11 +64,8 @@ export interface ConvertTaskToStoryInput {
   /** Per-edge overrides; omitted dependencies map to the preserved action. */
   dependencyMappings?: Array<{ dependencyId: number; targetTaskId: number; sourceEndpoint: "task" | "dependsOnTask" }>;
   expectedDescendantRevisions?: Array<{ taskId: number; revision: number }>;
-  activationResolution?: ProjectActivationResolution;
   expectedRevision?: number;
   expectedHierarchyRevisions?: Array<{ id: number; revision: number }>;
-  /** Internal compound operations may add their own reviewed child graph before activation. */
-  deferActivation?: boolean;
 }
 
 type TaskToStoryInvalidReason =
@@ -218,7 +211,7 @@ export function convertTaskToStoryInTransaction(
       .where(and(inArray(schema.workItems.id, descendants), eq(schema.workItems.role, "task")))
       .all()
       .filter((candidate) => candidate.taskKind === "action" && candidate.status !== "done" && candidate.status !== "cancelled");
-    const preserveAsStep = hasTaskOnlyObligation || (!input.deferActivation && task.status === "actionable" && eligibleTargets.length === 0);
+    const preserveAsStep = hasTaskOnlyObligation || (task.status === "actionable" && eligibleTargets.length === 0);
     for (const mapping of input.dependencyMappings ?? []) {
       if (!eligibleTargets.some((candidate) => candidate.id === mapping.targetTaskId)) {
         reject("invalid_dependency_mapping", "Dependencies can only be mapped to an open action inside the converted project.", {
@@ -234,15 +227,7 @@ export function convertTaskToStoryInTransaction(
     const ownerMemberId =
       task.effectiveOwnerId;
 
-    const executionCommitment = task.status === "actionable" ||
-      hasExecutionCommitment({
-        kind: task.kind,
-        dueDate: task.dueDate,
-        scheduledDate: task.scheduledDate,
-        revisitAt: task.revisitAt,
-        reminders: task.reminders,
-      }) || task.repeatAfterDays !== null || task.allowedDeviationDays !== null;
-    const targetStatus = executionCommitment || input.status === "active" ? "backlog" : input.status;
+    const targetStatus = input.status;
     const stagedOwnerMemberId = targetStatus === "backlog" && task.scope === "household"
       ? null
       : ownerMemberId;
@@ -297,7 +282,7 @@ export function convertTaskToStoryInTransaction(
         parentId: project.id,
         title: preservedStepTitle,
         notes: task.notes,
-        status: "actionable",
+        status: task.status,
         scope: task.scope,
         ownerMemberId: task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null,
         ownerInheritanceMode: task.ownerInheritanceMode,
@@ -412,38 +397,6 @@ export function convertTaskToStoryInTransaction(
       })
       .where(eq(schema.workItems.id, taskId))
       .run();
-    if (!input.deferActivation && (executionCommitment || input.status === "active")) {
-      try {
-        const snapshot = projectActivationDecisionSnapshot(txDb, project.id, "commitment", context);
-        const activationResolution = {
-          expectedProjects: input.activationResolution?.expectedProjects.map((entry) =>
-            entry.projectId === taskId && entry.revision === task.revision
-              ? { ...entry, revision: task.revision + 1 }
-              : entry,
-          ) ?? snapshot.expectedProjects,
-          drivers: [...(input.activationResolution?.drivers ?? [])],
-          ...(input.activationResolution?.nextActionTitle
-            ? { nextActionTitle: input.activationResolution.nextActionTitle }
-            : {}),
-        };
-        if (task.scope === "household" && ownerMemberId !== null &&
-          !activationResolution.drivers.some((driver) => driver.projectId === project.id)) {
-          activationResolution.drivers.push({ projectId: project.id, ownerMemberId });
-        }
-        activateCommittedProjectChain(txDb, project.id, context, activationResolution);
-      } catch (error) {
-        if (error instanceof AppError && error.code === "project_commitment_resolution_required") {
-          const details = error.details as Record<string, unknown> | undefined;
-          if (details && Array.isArray(details.expectedProjects)) {
-            details.expectedProjects = (details.expectedProjects as Array<{ projectId: number; revision: number }>).map((entry) =>
-              entry.projectId === taskId ? { ...entry, revision: task.revision } : entry,
-            );
-            if (details.targetRevision === task.revision + 1) details.targetRevision = task.revision;
-          }
-        }
-        throw error;
-      }
-    }
     txDb.update(schema.notificationEvents)
       .set({ entityType: "project" })
       .where(
@@ -464,6 +417,9 @@ export function convertTaskToStoryInTransaction(
       )
       .run();
 
+    if (targetStatus === "active") {
+      assertProjectActivationReady(txDb, project.id, project.ownerMemberId);
+    }
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "work_item_role_converted",
@@ -489,7 +445,6 @@ export interface ConvertStoryToTaskInput {
   notes?: string;
   expectedRevision?: number;
   expectedHierarchyRevisions?: Array<{ id: number; revision: number }>;
-  activationResolution?: ProjectActivationResolution;
 }
 
 export function convertStoryToTask(
@@ -567,64 +522,8 @@ export function convertStoryToTask(
         : project.status === "completed"
           ? "done"
           : "someday";
-    const executionCommitment = hasExecutionCommitment({
-      kind: "action",
-      dueDate: project.dueDate,
-      scheduledDate: project.scheduledDate,
-      revisitAt: project.revisitAt,
-      reminders: txDb.select({ id: schema.taskReminders.id })
-        .from(schema.taskReminders)
-        .where(eq(schema.taskReminders.taskId, projectId))
-        .all(),
-    }) || sourceRow.repeatAfterDays !== null;
-    const status = project.status === "backlog" && executionCommitment
-      ? "actionable"
-      : mappedStatus;
+    const status = mappedStatus;
     const position = project.position;
-
-    // A backlog project parks its ordinary open outline. When its root becomes
-    // a Someday task, keep that effective state for unplanned descendants too;
-    // concrete dates, reminders, recurrence and external waits remain active.
-    if (project.status === "backlog" && status === "someday" && descendants.length > 0) {
-      const descendantRows = txDb.select().from(schema.workItems)
-        .where(and(inArray(schema.workItems.id, descendants), eq(schema.workItems.role, "task")))
-        .all();
-      const remindersByTask = new Map<number, typeof schema.taskReminders.$inferSelect[]>();
-      for (const reminder of txDb.select().from(schema.taskReminders)
-        .where(inArray(schema.taskReminders.taskId, descendants)).all()) {
-        const rows = remindersByTask.get(reminder.taskId) ?? [];
-        rows.push(reminder);
-        remindersByTask.set(reminder.taskId, rows);
-      }
-      const externalWaitTaskIds = new Set(txDb.select({ taskId: schema.taskExternalWaits.taskId })
-        .from(schema.taskExternalWaits)
-        .where(inArray(schema.taskExternalWaits.taskId, descendants))
-        .all()
-        .map(({ taskId }) => taskId));
-      for (const child of descendantRows) {
-        if (child.status !== storedTaskStatus("actionable") || child.taskKind !== "action") continue;
-        const keepsCommitment = hasExecutionCommitment({
-          kind: "action",
-          dueDate: child.dueDate,
-          scheduledDate: child.scheduledDate,
-          revisitAt: child.revisitAt,
-          reminders: remindersByTask.get(child.id) ?? [],
-        }) || child.repeatAfterDays !== null || externalWaitTaskIds.has(child.id) || child.additionalNextAction;
-        if (keepsCommitment) continue;
-        txDb.update(schema.workItems)
-          .set({ status: storedTaskStatus("someday"), revision: sql`${schema.workItems.revision} + 1`, updatedAt: nowIso() })
-          .where(eq(schema.workItems.id, child.id))
-          .run();
-        recordActivity(txDb, {
-          actorMemberId: actor(context),
-          kind: "task_status_changed",
-          entityType: "task",
-          entityTitle: child.title,
-          taskId: child.id,
-          metadata: { changedFields: ["status"], before: { status: "actionable" }, after: { status: "someday" } },
-        });
-      }
-    }
 
     tx.update(schema.workItems)
       .set({
@@ -669,9 +568,6 @@ export function convertStoryToTask(
       .run();
 
     const task = getTaskOrThrow(txDb, projectId);
-    if (task.projectId !== null && status === "actionable") {
-      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution);
-    }
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "work_item_role_converted",

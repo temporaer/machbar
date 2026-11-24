@@ -57,6 +57,11 @@ export function ProjectAgendaRow({
       <Link className="project-agenda-row-link" to={`/projects/${project.id}`}>
         {project.title}
       </Link>
+      {project.effectivelyDeferred === true || project.effectivelyDeferred === null ? (
+        <span className="badge">
+          {project.effectivelyDeferred ? strings.attentionDeferred : strings.attentionUnavailable}
+        </span>
+      ) : null}
       {accessibleDate ? (
         <span
           className="project-agenda-row-date"

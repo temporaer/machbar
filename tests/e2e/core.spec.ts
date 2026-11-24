@@ -430,11 +430,7 @@ test("detail documents retain heading actions, ownership and breadcrumb navigati
     data: {
       expectedRevision: project.revision,
       ownerMemberId: memberId,
-      activationResolution: {
-        expectedProjects: [{ projectId: project.id, revision: project.revision }],
-        drivers: [{ projectId: project.id, ownerMemberId: memberId }],
-        nextActionTitle: "Projektstart vorbereiten",
-      },
+      nextActionTitle: "Projektstart vorbereiten",
     },
   });
   expect(activated.ok(), await activated.text()).toBe(true);
@@ -1071,6 +1067,7 @@ test("a confirmed split consumes its submitted draft across identity replacement
     await expect(page.getByPlaceholder("Schritt …")).toHaveCount(1);
     await expect(page.getByPlaceholder("Schritt …").nth(0)).toHaveValue("");
     const stored = await (await page.request.get(`/api/tasks/${item.id}`)).json();
+    expect(stored.status).toBe("actionable");
     expect(stored.children.map((child: { title: string }) => child.title)).toEqual([
       "Already created first step", "Already created second step",
     ]);
@@ -1079,7 +1076,7 @@ test("a confirmed split consumes its submitted draft across identity replacement
   }
 });
 
-test("a stale project deadline can reload requirements after an outage without replaying the save", async ({ page }) => {
+test("a stale project deadline can reload after an outage without replaying the save", async ({ page }) => {
   const created = await page.request.post("/api/projects", { data: { title: `Deadline retry ${randomUUID()}` } });
   expect(created.status()).toBe(201);
   const project = await created.json();
@@ -1114,17 +1111,21 @@ test("a stale project deadline can reload requirements after an outage without r
   await expect(date).toHaveValue("15.12.2099");
   expect(writes).toBe(1);
   offline = false;
+  const successfulReload = page.waitForResponse(response =>
+    new URL(response.url()).pathname === path && response.request().method() === "GET" && response.status() === 200,
+  );
   await retry.click();
-  const driver = dialog.getByLabel(`Verantwortlich für „${project.title}“`, { exact: true });
-  await expect(driver).toHaveValue("");
+  await successfulReload;
+  await expect(retry).toBeEnabled();
   expect(writes).toBe(1);
   await expect(date).toHaveValue("15.12.2099");
-  const memberId = await page.evaluate(() => localStorage.getItem("machbar:identity-member-id"));
-  await driver.selectOption(memberId!);
-  await dialog.getByLabel("Welcher konkrete nächste Schritt bringt das Projekt voran?", { exact: true }).fill("Reconfirm the deadline");
-  await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
-  await expect.poll(async () => (await (await page.request.get(path)).json()).dueDate).toBe("2099-12-15");
+  await retry.click();
+  await expect.poll(async () => {
+    const saved = await (await page.request.get(path)).json();
+    return { dueDate: saved.dueDate, status: saved.status };
+  }).toEqual({ dueDate: "2099-12-15", status: "backlog" });
   expect(writes).toBe(2);
+  await expect(retry).toHaveCount(0);
 });
 
 test("a superseded dependency search cannot discard the current planning draft", async ({ page }) => {
@@ -1525,14 +1526,7 @@ test("project activation ends on denial and an explicit reopen starts with empty
   expect(created.status()).toBe(201);
   const project = await created.json();
   const initialDetail = await (await page.request.get(`/api/projects/${project.id}`)).json();
-  expect(initialDetail.directActivationDecisionSnapshot).toMatchObject({
-    projects: [{
-      projectId: project.id,
-      required: ["driver", "progressPath"],
-    }],
-    expectedProjects: [{ projectId: project.id, revision: initialDetail.revision }],
-    targetRevision: initialDetail.revision,
-  });
+  expect(initialDetail.activationReadiness.requiredDecisions).toEqual(expect.arrayContaining(["driver", "progressPath"]));
 
   await page.goto(`/#/projects/${project.id}`);
   await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
@@ -1565,8 +1559,8 @@ test("project activation ends on denial and an explicit reopen starts with empty
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel(/Verantwortlich für/)).toBeVisible();
   const memberId = await page.evaluate(() => localStorage.getItem("machbar:identity-member-id"));
-  await dialog.locator('select[id^="commitment-driver-"]').selectOption(memberId!);
-  await dialog.locator("#commitment-next-action").fill("Confirm the insurance details");
+  await dialog.locator("#activation-driver").selectOption(memberId!);
+  await dialog.locator("#activation-next-action").fill("Confirm the insurance details");
 
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect.poll(() => requests).toBeGreaterThan(1);
@@ -1588,13 +1582,13 @@ test("project activation ends on denial and an explicit reopen starts with empty
   await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Status ändern", exact: true }).click();
   await page.locator('[data-workflow-action="activate"]').click();
-  await expect(dialog.locator('select[id^="commitment-driver-"]')).toHaveValue("");
-  await expect(dialog.locator("#commitment-next-action")).toHaveValue("");
+  await expect(dialog.locator("#activation-driver")).toHaveValue("");
+  await expect(dialog.locator("#activation-next-action")).toHaveValue("");
   expect(activationWrites).toBe(0);
   expect((await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("backlog");
 
-  await dialog.locator('select[id^="commitment-driver-"]').selectOption(memberId!);
-  await dialog.locator("#commitment-next-action").fill("Confirm the insurance details");
+  await dialog.locator("#activation-driver").selectOption(memberId!);
+  await dialog.locator("#activation-next-action").fill("Confirm the insurance details");
   await dialog.getByRole("button", { name: "Projekt starten", exact: true }).click();
   await expect.poll(async () => (await (await page.request.get(`/api/projects/${project.id}`)).json()).status).toBe("active");
   expect(activationWrites).toBe(1);

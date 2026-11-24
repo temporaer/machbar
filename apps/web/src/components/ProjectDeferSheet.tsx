@@ -30,7 +30,7 @@ export function ProjectDeferSheet({
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { revisitAt: string | null; withdrawCommitments: boolean }) => Promise<void>;
+  onSave: (patch: { revisitAt: string | null }) => Promise<void>;
   onRefresh?: () => void;
 }) {
   const strings = useStrings();
@@ -45,7 +45,6 @@ export function ProjectDeferSheet({
   );
   const [dateValid, setDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [withdrawCommitments, setWithdrawCommitments] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = () =>
     calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
@@ -65,7 +64,7 @@ export function ProjectDeferSheet({
     setSaving(true);
     setError(null);
     try {
-      await onSave({ ...patch, withdrawCommitments });
+      await onSave(patch);
       onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -177,15 +176,6 @@ export function ProjectDeferSheet({
             </div>
           ) : null}
         </div>
-
-        {story.status === "active" || story.status === "archived" ? (
-          <div className="criteria-checklist-row">
-            <label>
-              <input type="checkbox" checked={withdrawCommitments} disabled={saving} onChange={(event) => setWithdrawCommitments(event.target.checked)} />
-              <span>{strings.withdrawProjectCommitments}</span>
-            </label>
-          </div>
-        ) : null}
 
         {saving ? <p role="status">{strings.saving}</p> : null}
         {error ? (

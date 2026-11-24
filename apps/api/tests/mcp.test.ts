@@ -1021,7 +1021,7 @@ describe("MCP integration", () => {
     await server.close();
   });
 
-  it("returns project-creation commitment decisions as structured MCP data and accepts a retry", async () => {
+  it("creates dated projects in backlog and preserves task and project revisit metadata on edits", async () => {
     const owner = await createMember();
     const { client, server } = await connectMcp(owner.id, "work");
     const input = {
@@ -1030,27 +1030,18 @@ describe("MCP integration", () => {
       dueDate: "2026-12-01",
     };
     const first = await client.callTool({ name: "machbar_create_project", arguments: input });
-    const details = (first.structuredContent as { result: {
-      error: { code: string; details: { expectedProjects: Array<{ projectId: number; revision: number }> } };
-    } }).result.error;
-    expect(details.code).toBe("project_commitment_resolution_required");
-    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'story'").all()).toHaveLength(0);
-
-    const retried = await client.callTool({
-      name: "machbar_create_project",
-      arguments: {
-        ...input,
-        activationResolution: {
-          expectedProjects: details.details.expectedProjects,
-          drivers: [],
-          nextActionTitle: "Ersten Schritt festlegen",
-        },
-      },
+    expect(first.isError).not.toBe(true);
+    expect(first.structuredContent).toMatchObject({
+      result: { title: "Datiertes Projekt", status: "backlog", dueDate: "2026-12-01" },
     });
-    expect(retried.isError).not.toBe(true);
-    expect(retried.structuredContent).toMatchObject({
-      result: { title: "Datiertes Projekt", status: "active" },
-    });
+    const project = insertTestProject(ctx.handle.db, { title: "Later project", scope: "work", ownerMemberId: owner.id, revisitAt: "2027-01-01T10:00:00.000Z" });
+    const task = insertTestTask(ctx.handle.db, { title: "Later task", status: "someday", scope: "work", ownerMemberId: owner.id, ownerInheritanceMode: "explicit", revisitAt: "2027-01-02T10:00:00.000Z" });
+    const updatedProject = await client.callTool({ name: "machbar_update_project", arguments: { projectId: project.id, expectedRevision: project.revision, title: "Renamed project" } });
+    const updatedTask = await client.callTool({ name: "machbar_update_task", arguments: { taskId: task.id, expectedRevision: task.revision, title: "Renamed task" } });
+    expect(updatedProject.isError).not.toBe(true);
+    expect(updatedTask.isError).not.toBe(true);
+    expect(ctx.handle.sqlite.prepare("SELECT revisit_at AS revisitAt, status FROM work_items WHERE id = ?").get(project.id)).toMatchObject({ revisitAt: "2027-01-01T10:00:00.000Z", status: "backlog" });
+    expect(ctx.handle.sqlite.prepare("SELECT revisit_at AS revisitAt, status FROM work_items WHERE id = ?").get(task.id)).toMatchObject({ revisitAt: "2027-01-02T10:00:00.000Z", status: "backlog" });
     await client.close();
     await server.close();
   });
@@ -1674,7 +1665,7 @@ describe("MCP integration", () => {
         };
       }).result,
     ).toMatchObject({
-      status: "actionable",
+      status: "captured",
       reminders: [{ kind: "absolute", at: "2026-09-21T08:00:00.000Z" }],
     });
 
@@ -1883,19 +1874,20 @@ describe("MCP integration", () => {
       await ctx.app.inject({ method: "GET", url: `/api/projects/${sharedProject.id}` })
     ).json();
 
+    const activated = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${sharedProject.id}/activate`,
+      payload: { expectedRevision: currentSharedProject.revision, ownerMemberId: owner.id, nextActionTitle: "Nächsten Schritt festlegen" },
+    });
+    expect(activated.statusCode, activated.body).toBe(200);
     const updated = await client.callTool({
       name: "machbar_update_project",
       arguments: {
         projectId: sharedProject.id,
-        expectedRevision: currentSharedProject.revision,
+        expectedRevision: activated.json().revision,
         ownerMemberId: owner.id,
         dueDate: "2026-09-21",
         contextIds: [context.id],
-        activationResolution: {
-          expectedProjects: [{ projectId: sharedProject.id, revision: currentSharedProject.revision }],
-          drivers: [{ projectId: sharedProject.id, ownerMemberId: owner.id }],
-          nextActionTitle: "Nächsten Schritt festlegen",
-        },
       },
     });
     expect(updated.structuredContent).toEqual({

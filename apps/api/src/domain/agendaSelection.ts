@@ -122,11 +122,22 @@ export function createAgendaSelection(
     (scope !== "all" || item.privacyOwnerMemberId == null) &&
     (scope === "work" ? item.scope === "work" : item.scope !== "work");
   const isOperationalTask = (task: TaskRecord) =>
+    !graph.isEffectivelyDeferred(task.id) &&
     isTaskInWorkingSystem(task, projectStatusById);
-  const isAgendaTask = (task: TaskRecord) =>
+  const isAttentionTask = (task: TaskRecord) =>
     task.kind === "action" &&
     isOpenTask(task) &&
-    task.status === "actionable" &&
+    (isTaskInWorkingSystem(task, projectStatusById) ||
+      (graph.isEffectivelyDeferred(task.id) &&
+        (task.projectId === null ||
+          !["completed", "archived"].includes(projectStatusById.get(task.projectId) ?? "")))) &&
+    matchesOwner(task) &&
+    matchesScope(task);
+  const isDeadlineAttentionTask = (task: TaskRecord) =>
+    isAttentionTask(task) &&
+    (task.status === "actionable" ||
+      (task.status === "captured" && task.dueDate !== null) ||
+      (task.status === "someday" && graph.isEffectivelyDeferred(task.id))) &&
     (!task.needsClarification ||
       hasExecutionCommitment({
         kind: task.kind,
@@ -135,10 +146,12 @@ export function createAgendaSelection(
         revisitAt: task.revisitAt,
         reminders: task.reminders,
       }) ||
-      (task.externalWait !== null && task.revisitAt !== null)) &&
-    isOperationalTask(task) &&
-    matchesOwner(task) &&
-    matchesScope(task);
+      (task.externalWait !== null && task.revisitAt !== null));
+  const isAgendaTask = (task: TaskRecord) =>
+    task.status === "actionable" && isDeadlineAttentionTask(task) && isOperationalTask(task);
+  const isReconsiderationAttentionTask = (task: TaskRecord) =>
+    task.revisitAt !== null &&
+    (graph.isEffectivelyDeferred(task.id) ? isAttentionTask(task) : isAgendaTask(task));
   const isExecutionSuggestion = (task: TaskRecord) =>
     isAgendaTask(task) && task.executable && isExecutionAvailable(task) &&
     isScheduledDateEligible(task) &&
@@ -174,13 +187,15 @@ export function createAgendaSelection(
     isAgendaTask(task) && task.blocked && task.externalWait !== null;
   const availableWork = (
     excludedIds: ReadonlySet<number> = new Set(),
+    today?: string,
   ): AgendaAvailableWork => {
     const available = graph
       .allTasks()
       .filter(
         (task) =>
           !excludedIds.has(task.id) &&
-          !task.scheduledDate &&
+          (task.scheduledDate === null ||
+            (today !== undefined && task.repeatAfterDays === null && task.scheduledDate < today)) &&
           isExecutableWork(task),
       )
       .sort(sortByPriorityTitleId);
@@ -204,6 +219,8 @@ export function createAgendaSelection(
     matchesOwner,
     matchesScope,
     isOperationalTask,
+    isDeadlineAttentionTask,
+    isReconsiderationAttentionTask,
     isAgendaTask,
     isExecutableWork,
     isSelectedOrdinaryWork,
@@ -238,7 +255,8 @@ export function selectCurrentAvailableWork(
       selection.isContextAvailable(task) &&
       ((task.status === "actionable" &&
         !!task.scheduledDate &&
-        task.scheduledDate <= options.today && selection.isWindowAvailable(task)) ||
+        (task.scheduledDate === options.today ||
+          (task.repeatAfterDays !== null && task.scheduledDate < options.today)) && selection.isWindowAvailable(task)) ||
         (!!task.dueDate && task.dueDate <= soonLimit))
     ) {
       takenByCurrentAttention.add(task.id);
@@ -248,5 +266,5 @@ export function selectCurrentAvailableWork(
     }
   }
 
-  return selection.availableWork(takenByCurrentAttention);
+  return selection.availableWork(takenByCurrentAttention, options.today);
 }

@@ -216,6 +216,8 @@ function ReviewPageContent({
         return strings.reviewReasonBacklogPlannedWork;
       case "backlog_revisit_reached":
         return strings.reviewReasonBacklogRevisitReached;
+      case "project_revisit_reached":
+        return strings.reviewReasonProjectRevisitReached;
       case "task_scheduled_before_resurface":
         return strings.reviewReasonTaskScheduledBeforeResurface;
       case "task_due_before_resurface":

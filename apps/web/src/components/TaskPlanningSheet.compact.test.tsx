@@ -15,7 +15,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 
 vi.mock("../lib/api", () => ({ api: {
-  previewTaskUpdate: vi.fn(),
   getMembers: vi.fn(), getTags: vi.fn(), getTask: vi.fn(), updateTask: vi.fn(), getActivity: vi.fn(),
   getTaskRecurrenceHistory: vi.fn(), searchTasks: vi.fn(), addDependency: vi.fn(), removeDependency: vi.fn(),
 } }));
@@ -35,7 +34,6 @@ function Harness({ fromDetail = false }: { fromDetail?: boolean }) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocked.previewTaskUpdate.mockResolvedValue({ decision: null, activatingProjects: [] });
   mocked.getMembers.mockResolvedValue([]);
   mocked.getTags.mockResolvedValue([]);
   mocked.getActivity.mockResolvedValue([] as never);

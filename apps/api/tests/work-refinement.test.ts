@@ -14,24 +14,14 @@ import {
   unacceptedWorkRefinementProposal,
   workRefinementProposalSchema,
 } from "@machbar/shared";
-import type { IntakeDraft, ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
+import type { IntakeDraft, WorkRefinementProposal } from "@machbar/shared";
+
 import { closeTestContext, createTestContext, insertTestProject, type TestContext } from "./helpers.js";
 
 describe("AI work refinement proposals", () => {
   let ctx: TestContext;
   beforeEach(() => { ctx = createTestContext(); });
   afterEach(async () => closeTestContext(ctx));
-
-  function resolutionFor(error: unknown, driverMemberId: number, nextActionTitle = "") : ProjectActivationResolution {
-    const details = (error as { details?: { projects?: Array<{ projectId: number; required: string[] }>; expectedProjects?: ProjectActivationResolution["expectedProjects"] } }).details;
-    if (!details?.projects || !details.expectedProjects) throw new Error("activation requirements were not returned");
-    return {
-      expectedProjects: details.expectedProjects,
-      drivers: details.projects.filter((project) => project.required.includes("driver"))
-        .map((project) => ({ projectId: project.projectId, ownerMemberId: driverMemberId })),
-      ...(details.projects.some((project) => project.required.includes("progressPath")) ? { nextActionTitle } : {}),
-    };
-  }
 
   function prepareModeBoundaryJob(targetType: "task" | "project") {
     const target = targetType === "task"
@@ -744,8 +734,7 @@ describe("AI work refinement proposals", () => {
     expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
   });
 
-  it("collects activation decisions for a dated child and retries atomically without duplicate work or reminders", () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Project driver", color: "#456789" }).returning().get();
+  it("adds a dated child without activating its backlog project or duplicating reminders", () => {
     const project = insertTestProject(ctx.handle.db, { title: "Laternenbasteln", status: "backlog" });
     const snapshot = buildRefinementSnapshot(ctx.handle.db, "project", project.id, null).snapshot;
     const id = randomUUID();
@@ -760,22 +749,18 @@ describe("AI work refinement proposals", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
     }).run();
 
-    let requirements: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
-    expect(requirements).toMatchObject({ code: "project_commitment_resolution_required" });
-    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, project.id)).all()).toHaveLength(0);
-    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
-
-    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id, "Behälter vorbereiten"));
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
+    expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow();
     const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, project.id)).get()!;
     expect(child).toMatchObject({ title: "Behälter am Dienstag mitbringen", status: "active", scheduledDate: "2026-10-13" });
     expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, child.id)).all()).toHaveLength(1);
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, project.id)).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, project.id)).get())
+      .toMatchObject({ status: "backlog", revision: project.revision });
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
-  it("activates an actionable conversion with the selected driver without assigning children to that driver", () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+  it("converts actionable work to backlog without assigning a driver or child owner", () => {
     const task = createTask(ctx.handle.db, { title: "Sommerfest", status: "actionable" });
     const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
     const id = randomUUID();
@@ -793,19 +778,16 @@ describe("AI work refinement proposals", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
     }).run();
 
-    let requirements: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
-    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id));
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
     const converted = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
     const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).get()!;
     expect(converted.role).toBe("story");
-    expect(converted.status).toBe("active");
-    expect(converted.ownerMemberId).toBe(driver.id);
+    expect(converted.status).toBe("backlog");
+    expect(converted.ownerMemberId).toBeNull();
     expect(child.ownerMemberId).toBeNull();
   });
 
-  it("activates conversion for a commitment on a proposed grandchild and retries without duplicates", () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Nested driver", color: "#987654" }).returning().get();
+  it("keeps a conversion with a dated grandchild in backlog without duplicates", () => {
     const task = createTask(ctx.handle.db, { title: "Kita-Termin vorbereiten", status: "someday" });
     const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
     const id = randomUUID();
@@ -825,26 +807,19 @@ describe("AI work refinement proposals", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
     }).run();
 
-    let requirements: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
-    expect(requirements).toMatchObject({ code: "project_commitment_resolution_required" });
-    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ kind: "action", status: "someday", children: [] });
-    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toHaveLength(0);
-    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
-
-    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id, "Kita-Termin abstimmen"));
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
+    expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow();
     const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
     const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).get()!;
     const grandchild = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, child.id)).get()!;
-    expect(project).toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+    expect(project).toMatchObject({ role: "story", status: "backlog", ownerMemberId: null });
     expect(grandchild).toMatchObject({ title: "Unterlagen am Mittwoch mitbringen", status: "active", scheduledDate: "2026-10-14" });
     expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, grandchild.id)).all()).toHaveLength(1);
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()).toHaveLength(1);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
-  it("uses an existing captured-task execution commitment to request a driver during typed conversion", () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Refinement driver", color: "#234567" }).returning().get();
+  it("preserves an existing captured-task deadline during backlog conversion", () => {
     const task = createTask(ctx.handle.db, { title: "Prepare the move", status: "captured" });
     ctx.handle.db.update(schema.workItems).set({ dueDate: "2030-12-01" }).where(eq(schema.workItems.id, task.id)).run();
     const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
@@ -863,17 +838,9 @@ describe("AI work refinement proposals", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
     }).run();
 
-    expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow(expect.objectContaining({
-      code: "project_commitment_resolution_required",
-    }));
-    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ kind: "action", status: "captured", dueDate: "2030-12-01", children: [] });
-    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
-
-    let requirements: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
-    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id));
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
     const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
-    expect(project).toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+    expect(project).toMatchObject({ role: "story", status: "backlog", ownerMemberId: null, dueDate: "2030-12-01" });
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all())
       .toEqual(expect.arrayContaining([expect.objectContaining({ title: "Confirm the moving date" })]));
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
@@ -881,7 +848,6 @@ describe("AI work refinement proposals", () => {
   });
 
   it("uses canonical conversion to preserve revisit, reminders, external waits, and dependencies", () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
     const prerequisite = createTask(ctx.handle.db, { title: "Get the documents", status: "actionable" });
     const task = createTask(ctx.handle.db, {
       title: "Insurance follow-up", status: "actionable", revisitAt: "2027-04-03T09:00:00.000Z",
@@ -906,9 +872,7 @@ describe("AI work refinement proposals", () => {
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
     }).run();
 
-    let requirements: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
-    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id));
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
     const preserved = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
       .find((child) => child.title === task.title)!;
     expect(preserved.revisitAt).toBe("2027-04-03T09:00:00.000Z");
@@ -917,7 +881,7 @@ describe("AI work refinement proposals", () => {
     expect(ctx.handle.db.select().from(schema.taskDependencies).where(eq(schema.taskDependencies.taskId, preserved.id)).get()?.dependsOnTaskId).toBe(prerequisite.id);
   });
 
-  it("collects a progress-path decision for typed conversion and retries atomically", () => {
+  it("converts to backlog without requiring a progress-path decision", () => {
     const driver = ctx.handle.db.insert(schema.members).values({ name: "Project driver", color: "#345678" }).returning().get();
     const task = createTask(ctx.handle.db, {
       title: "Haustür montieren",
@@ -938,33 +902,15 @@ describe("AI work refinement proposals", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
     }).run();
 
-    let requirements: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
-    expect(requirements).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: { projects: [{ projectId: task.id, required: ["progressPath"] }] },
-    });
-    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ status: "actionable", ownerMemberId: driver.id, children: [] });
-    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
-
-    const staleResolution = resolutionFor(requirements, driver.id, "Nächsten Schritt festlegen");
-    staleResolution.expectedProjects = staleResolution.expectedProjects.map((project) => ({ ...project, revision: project.revision + 1 }));
-    let staleError: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}, staleResolution); } catch (error) { staleError = error; }
-    expect(staleError).toMatchObject({ code: "project_commitment_resolution_required", details: { reason: "project_snapshot_stale" } });
-    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ status: "actionable", children: [] });
-    expect(getIntake(ctx.handle.db, id, null)).toMatchObject({ status: "ready", revision: 1 });
-
-    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id, "Montage-Termin abstimmen"));
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get())
-      .toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+      .toMatchObject({ role: "story", status: "backlog", ownerMemberId: null, revision: task.revision + 1 });
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
-      .filter((child) => child.title === "Montage-Termin abstimmen")).toHaveLength(1);
+      .filter((child) => child.title === task.title)).toHaveLength(1);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
   it("preserves supported recurrence configuration and occurrence history through AI conversion", () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
     const task = createTask(ctx.handle.db, { title: "Monthly maintenance", status: "actionable" });
     ctx.handle.db.update(schema.workItems).set({ repeatAfterDays: 30, allowedDeviationDays: 3 })
       .where(eq(schema.workItems.id, task.id)).run();
@@ -986,9 +932,7 @@ describe("AI work refinement proposals", () => {
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
     }).run();
 
-    let requirements: unknown;
-    try { applyWorkRefinement(ctx.handle.db, id, null, 1, {}); } catch (error) { requirements = error; }
-    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, resolutionFor(requirements, driver.id));
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {});
     const preserved = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
       .find((child) => child.title === task.title)!;
     expect(preserved).toMatchObject({ repeatAfterDays: 30, allowedDeviationDays: 3 });

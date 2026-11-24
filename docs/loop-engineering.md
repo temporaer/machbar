@@ -115,23 +115,17 @@ production bugs or complete failure-class coverage from them.
 
 ## Failure-class verification
 
-The fast loop now includes three complementary contracts:
+The fast loop includes complementary contracts:
 
-- `apps/api/tests/activation-preview.permissions.test.ts` is the preview route
-  matrix: task create, planning, task batch, project batch and conversion ×
-  household/work/durable-private scope × owner/other/unknown viewer. Fixtures
-  separate durable privacy ownership from the project driver. This matrix uses
-  activity-actor identity with OIDC disabled; session/OAuth authentication remains
-  covered by its own existing suites. Each case compares
-  source GET visibility with preview visibility, checks hidden-title suppression,
-  hashes the entire SQLite snapshot to prove rollback, and checks notifications.
-  Extend the operation table when adding a supported preview operation.
+- `apps/api/tests/effective-deferral.test.ts` exercises mixed task/project
+  ancestry, selected-project readiness, privacy-sensitive projections, and
+  deadline and reconsideration attention under deferral.
 - `tests/contracts/activation.test.ts` exercises the real web API transport and
-  decision/error adapters against the full Fastify app with migrated, isolated
+  stale-write handling against the full Fastify app with migrated, isolated
   SQLite databases. Only `fetch` is bridged to `app.inject`; there are no canned
-  HTTP responses or mocked domain functions. It covers ready and missing-driver
-  previews, direct conflict/snapshot parity, conversion requiring a progress path,
-  non-snapshot conflicts, stale refresh/retry and actor headers. Run it with
+  HTTP responses or mocked domain functions. It covers explicit activation,
+  unchanged parked data, reminders, recurrence, conversion and stale
+  refresh/retry. Run it with
   `npm run test:contracts`. The existing web Vitest run includes a Node contract
   project using the API's shared migration template setup. Cross-package tests
   live outside production sources and have `tests/contracts/tsconfig.json`,
@@ -203,8 +197,6 @@ across a page reload are not claimed as covered retry contracts.
 
 Review follow-up contracts also cover caller-owned retry identity (including
 reverse-order retries and a new identical form while another result is unknown),
-hidden project activation snapshots on final writes, role-converted receipt
-results, and migration snapshot drift. The creation APIs require an explicit
+role-converted receipt results, and migration snapshot drift. The creation APIs require an explicit
 CreationIntent at compile time, so new production callers must choose their
-operation lifetime rather than inheriting an implicit payload queue. Activation
-fixtures deliberately give task, project and ancestor different owners.
+operation lifetime rather than inheriting an implicit payload queue.

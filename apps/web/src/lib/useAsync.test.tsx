@@ -122,6 +122,57 @@ describe("useAsync", () => {
     await waitFor(() => expect(result.current.data).toBe("new"));
   });
 
+  it("returns only an active successful reload result, including unchanged data", async () => {
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockResolvedValueOnce("same")
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce("same")
+      .mockResolvedValueOnce("new");
+    const { result } = renderHook(() => useAsync(fetcher), { wrapper });
+    await waitFor(() => expect(result.current.data).toBe("same"));
+    let value: string | undefined;
+    await act(async () => { value = await result.current.reloadWithResult(); });
+    expect(value).toBeUndefined();
+    await waitFor(() => expect(result.current.refreshError).toBe("offline"));
+    await act(async () => { value = await result.current.reloadWithResult(); });
+    expect(value).toBe("same");
+    await act(async () => { value = await result.current.reloadWithResult(); });
+    expect(value).toBe("new");
+  });
+
+  it("does not return a result for a retired query", async () => {
+    const delayed = deferred<string>();
+    const fetcher = vi.fn<() => Promise<string>>().mockResolvedValueOnce("old").mockReturnValueOnce(delayed.promise);
+    const { result, unmount } = renderHook(() => useAsync(fetcher), { wrapper });
+    await waitFor(() => expect(result.current.data).toBe("old"));
+    let pending!: Promise<string | undefined>;
+    act(() => { pending = result.current.reloadWithResult(); });
+    unmount();
+    await act(async () => delayed.resolve("retired"));
+    expect(await pending).toBeUndefined();
+  });
+
+  it("waits for the trailing authoritative read when a reload overlaps an earlier read", async () => {
+    const early = deferred<string>();
+    const trailing = deferred<string>();
+    const fetcher = vi.fn<() => Promise<string>>()
+      .mockResolvedValueOnce("initial")
+      .mockReturnValueOnce(early.promise)
+      .mockReturnValueOnce(trailing.promise);
+    const { result } = renderHook(() => useAsync(fetcher), { wrapper });
+    await waitFor(() => expect(result.current.data).toBe("initial"));
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.refreshing).toBe(true));
+    let completed = false;
+    let pending!: Promise<string | undefined>;
+    act(() => { pending = result.current.reloadWithResult().then(value => { completed = true; return value; }); });
+    await act(async () => early.resolve("old"));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(completed).toBe(false);
+    await act(async () => trailing.resolve("current"));
+    expect(await pending).toBe("current");
+  });
+
   it("does not expose data from the previous logical query", async () => {
     const second = deferred<string>();
     const fetcher = vi.fn((query: string) =>

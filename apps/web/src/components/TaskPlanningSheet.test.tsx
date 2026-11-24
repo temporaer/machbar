@@ -14,7 +14,6 @@ import type { TaskPlanningTarget } from "../lib/commands";
 
 vi.mock("../lib/api", () => ({
   api: {
-    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),
@@ -869,36 +868,10 @@ describe("TaskPlanningSheet", () => {
     });
   });
 
-  it("recollects activation decisions when a planning draft changes and retries the full draft", async () => {
+  it("saves a parked task plan without activation decisions", async () => {
     const user = userEvent.setup();
     const task = makeTask({ id: 312, revision: 2, status: "someday", projectId: 45, scheduledDate: null, reminders: [] });
-    const missingDriver = () => Object.assign(new Error("decision required"), {
-      name: "ApiError",
-      code: "project_commitment_resolution_required",
-      details: {
-        projects: [{ projectId: 45, title: "Heizung", revision: 8, ownerMemberId: null, required: ["driver"] }],
-        expectedProjects: [{ projectId: 45, revision: 8 }],
-        targetRevision: 8,
-      },
-    });
-    const requiredPreview = {
-      activatingProjects: [{ id: 45, title: "Heizung" }],
-      decision: {
-        projects: [{ projectId: 45, title: "Heizung", revision: 8, ownerMemberId: null, required: ["driver" as const] }],
-        expectedProjects: [{ projectId: 45, revision: 8 }],
-        targetRevision: 8,
-      },
-    };
-    mockedApi.previewTaskUpdate
-      .mockResolvedValueOnce({ decision: null, activatingProjects: [] })
-      .mockResolvedValueOnce(requiredPreview)
-      .mockResolvedValueOnce({ decision: null, activatingProjects: [] })
-      .mockResolvedValueOnce(requiredPreview);
-    mockedApi.getMembers.mockResolvedValue([{ id: 9, name: "Rae" }] as never);
-    mockedApi.updateTask
-      .mockRejectedValueOnce(missingDriver())
-      .mockRejectedValueOnce(missingDriver())
-      .mockResolvedValueOnce({ ...task, status: "actionable", revision: 3 } as never);
+    mockedApi.updateTask.mockResolvedValueOnce({ ...task, revision: 3 } as never);
     renderWithProviders(<TaskPlanningSheet task={task} initialTarget="recurrence" onClose={vi.fn()} />);
 
     await user.click(within(card("Geplant für")).getByRole("checkbox", { name: "Wiederholung" }));
@@ -907,31 +880,15 @@ describe("TaskPlanningSheet", () => {
     fireEvent.blur(firstDate);
     await user.click(screen.getByRole("button", { name: "Speichern" }));
 
-    const driver = await screen.findByLabelText("Verantwortlich für „Heizung“");
-    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
-    await user.selectOptions(driver, "9");
-    expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
-    const interval = within(card("Geplant für")).getByLabelText("Wiederholen nach Tagen");
-    await user.clear(interval);
-    await user.type(interval, "14");
-    expect(screen.queryByLabelText("Verantwortlich für „Heizung“")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Speichern" }));
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
-    expect(mockedApi.updateTask.mock.calls[1]?.[1]).not.toHaveProperty("activationResolution");
-
-    await user.selectOptions(await screen.findByLabelText("Verantwortlich für „Heizung“"), "9");
-    await user.click(screen.getByRole("button", { name: "Speichern" }));
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(3));
-    const finalPatch = mockedApi.updateTask.mock.calls[2]?.[1] as Record<string, unknown>;
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
+    const finalPatch = mockedApi.updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(finalPatch).toMatchObject({
       scheduledDate: "2026-12-01",
-      repeatAfterDays: 14,
+      repeatAfterDays: 7,
       allowedDeviationDays: 0,
-      activationResolution: {
-        expectedProjects: [{ projectId: 45, revision: 8 }],
-        drivers: [{ projectId: 45, ownerMemberId: 9 }],
-      },
     });
+    expect(finalPatch).not.toHaveProperty("activationResolution");
+    expect(finalPatch).not.toHaveProperty("status");
   });
 
   it("keeps a concurrent schedule and deadline when retrying a reminder-only edit", async () => {

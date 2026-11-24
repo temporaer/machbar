@@ -10,7 +10,7 @@ import { closeTestContext, createTestContext, type TestContext } from "./helpers
 
 const cases = [true, false].flatMap(ancestorVisible => ["read", "stale-deadline", "fresh-deadline"].map(operation => ({ ancestorVisible, operation })));
 
-describe("project activation snapshot visibility at every public exit", () => {
+describe("project reads and direct writes under visible and hidden ancestors", () => {
   let ctx: TestContext;
   afterEach(async () => closeTestContext(ctx));
   it.each(cases)("$operation with ancestor visible: $ancestorVisible", async ({ ancestorVisible, operation }) => {
@@ -27,18 +27,23 @@ describe("project activation snapshot visibility at every public exit", () => {
     const response = await ctx.app.inject(operation === "read"
       ? { method: "GET", url: `/api/projects/${source.id}`, headers }
       : { method: "PATCH", url: `/api/projects/${source.id}`, headers, payload: { dueDate: "2027-01-15", expectedRevision: source.revision + (operation === "stale-deadline" ? 5 : 0) } });
-    expect(response.statusCode, response.body).toBe(operation === "read" ? 200 : ancestorVisible ? 409 : 404);
+    expect(response.statusCode, response.body).toBe(operation === "stale-deadline" ? 409 : 200);
     if (!ancestorVisible) expect(response.body).not.toContain(ancestor.title);
     if (operation === "read") {
-      if (ancestorVisible) expect(response.json().activationDecisionSnapshot.expectedProjects).toEqual(expect.arrayContaining([{ projectId: ancestor.id, revision: ancestor.revision }]));
-      else expect(response.json()).not.toHaveProperty("activationDecisionSnapshot");
-      expect(response.json().directActivationDecisionSnapshot.expectedProjects).toEqual([{ projectId: source.id, revision: source.revision }]);
-    } else if (ancestorVisible) {
-      expect(response.json().error.code).toBe("project_commitment_resolution_required");
-      expect(response.json().error.details.expectedProjects).toEqual(expect.arrayContaining([{ projectId: ancestor.id, revision: ancestor.revision }]));
+      expect(response.json()).not.toHaveProperty("activationDecisionSnapshot");
+      expect(response.json()).not.toHaveProperty("directActivationDecisionSnapshot");
+    } else if (operation === "stale-deadline") {
+      expect(response.json().error.code).toBe("stale_write_conflict");
+    } else {
+      expect(response.json()).toMatchObject({ dueDate: "2027-01-15", status: "backlog" });
+      expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, ancestor.id)).get())
+        .toMatchObject({ revision: ancestor.revision, status: "backlog" });
+      expect(notified).toHaveBeenCalled();
     }
-    expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
-    expect(notified).not.toHaveBeenCalled();
+    if (operation !== "fresh-deadline") {
+      expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
+      expect(notified).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -83,6 +88,8 @@ describe("viewer-aware project next actions", () => {
         title: "Later executable action",
         projectId: project.id,
       });
+      ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: owner.id })
+        .where(eq(schema.workItems.id, project.id)).run();
       const readinessProject = createProject(ctx.handle.db, {
         title: "Project with only hidden prerequisite work",
       });
@@ -181,9 +188,7 @@ describe("viewer-aware project next actions", () => {
         expect(readinessBody.activationReadiness.hasViableProgressPath).toBe(
           viewer.canSeePrerequisite,
         );
-        expect(readinessBody.nextAction?.id ?? null).toBe(
-          viewer.canSeePrerequisite ? readinessDependent.id : null,
-        );
+        expect(readinessBody.nextAction).toBeNull();
         const readinessTaskInTree = readinessBody.tasks.find(
           (task: { id: number }) => task.id === readinessDependent.id,
         );
@@ -213,6 +218,7 @@ describe("viewer-aware project next actions", () => {
 
   it("keeps reached ordinary revisits available and future pauses deferred", async () => {
     ctx = createTestContext();
+    const owner = ctx.handle.db.insert(schema.members).values({ name: "Owner", color: "#111111" }).returning().get();
     const reachedProject = createProject(ctx.handle.db, {
       title: "Reached revisit project",
     });
@@ -226,6 +232,8 @@ describe("viewer-aware project next actions", () => {
       title: "Later executable action",
       projectId: reachedProject.id,
     });
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: owner.id })
+      .where(eq(schema.workItems.id, reachedProject.id)).run();
 
     const reachedResponse = await ctx.app.inject({
       method: "GET",
@@ -259,6 +267,8 @@ describe("viewer-aware project next actions", () => {
       title: "Available action",
       projectId: pausedProject.id,
     });
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ownerMemberId: owner.id })
+      .where(eq(schema.workItems.id, pausedProject.id)).run();
     const pausedResponse = await ctx.app.inject({
       method: "GET",
       url: `/api/projects/${pausedProject.id}`,

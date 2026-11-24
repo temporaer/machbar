@@ -20,6 +20,7 @@ export interface BlockerTaskInput {
   title: string;
   status: TaskStatus;
   projectId: number | null;
+  effectivelyDeferred?: boolean;
   scheduledDate: string | null;
   notBeforeAt?: string | null;
   notBeforeDate?: string | null;
@@ -109,6 +110,13 @@ export function analyzeTaskBlockers(
 
     const path = [...stack, taskId];
     const revisitAt = task.revisitAt ?? null;
+    if (task.effectivelyDeferred) {
+      return {
+        healthy: false,
+        attentionDate: null,
+        diagnoses: [{ reason: "someday", targetTaskId: task.id, path }],
+      };
+    }
     const projectStatus =
       task.projectId === null ? null : projectStatuses.get(task.projectId);
     if (projectStatus === "backlog") {
@@ -229,6 +237,7 @@ export function analyzeTaskBlockers(
       blocked,
       executable:
         task.status === "actionable" &&
+        !task.effectivelyDeferred &&
         !blocked &&
         task.revisitAt === null,
       healthyProgressPath: path.healthy,

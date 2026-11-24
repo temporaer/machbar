@@ -12,9 +12,9 @@ import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useAsync } from "../lib/useAsync";
-import { api, type UpdateTaskInput } from "../lib/api";
+import { api } from "../lib/api";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
-import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { hasApiErrorCode } from "../lib/errorMessage";
 import {
   extractCaptionHints,
@@ -42,15 +42,9 @@ import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
-import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import { TaskRemindersEditor, type TaskRemindersEditorHandle } from "./TaskRemindersEditor";
 import { sortDependencyCandidates } from "../lib/sortOrder";
 import { recencyRankLookup } from "../lib/recentlyViewed";
-import {
-  projectActivationPromptFromSnapshot,
-  projectActivationResolutionFromPrompt,
-  type ProjectActivationPrompt,
-} from "../lib/projectActivationResolution";
 import { useBeforeUnload, useBlocker } from "react-router-dom";
 
 type DateField = "scheduled" | "availability" | "deadline";
@@ -151,7 +145,6 @@ export function TaskPlanningSheet({
   const [repeatAfterDays, setRepeatAfterDays] = useState<number | null>(baselineTask.repeatAfterDays);
   const [allowedDeviationDays, setAllowedDeviationDays] = useState<number | null>(baselineTask.allowedDeviationDays);
   const [reminders, setReminders] = useState<TaskReminderInput[]>(() => baselineTask.reminders);
-  const [activationState, setActivationState] = useState<{ fingerprint: string; prompt: ProjectActivationPrompt } | null>(null);
   const hasExistingWait = baselineTask.externalWait !== null;
   const canAddWaiting =
     baselineTask.kind === "action" &&
@@ -328,25 +321,6 @@ export function TaskPlanningSheet({
     baselineTask.title,
     Object.values(acceptedHints).flatMap((hint) => (hint ? [hint.removalSpan] : [])),
   );
-  const draftFingerprint = JSON.stringify({
-    scheduledDate,
-    dueDate,
-    notBeforeDate,
-    notBeforeTime,
-    availabilityEdited,
-    availabilityRule,
-    waitingFor,
-    waitingEnded,
-    repeatAfterDays,
-    allowedDeviationDays,
-    reminders,
-    cleanedTitle,
-  });
-  const activationPrompt = activationState?.fingerprint === draftFingerprint
-    ? activationState.prompt
-    : null;
-  const activationDecisionReady = activationPrompt === null ||
-    projectActivationResolutionFromPrompt(activationPrompt) !== null;
   const nextAvailability = notBeforeDate
     ? taskAvailabilityForLocalDate(
         notBeforeDate,
@@ -711,7 +685,6 @@ export function TaskPlanningSheet({
     }
     if (!localTitle) setAcceptedHints({});
     setPlanningConflicts(conflicts);
-    setActivationState(null);
   };
 
   const changeDependency = async (dependsOnTaskId: number, remove: boolean) => {
@@ -870,7 +843,6 @@ export function TaskPlanningSheet({
     }
     const nextRemindersChanged = JSON.stringify(plannedReminders) !== JSON.stringify(baselineTask.reminders);
     const priorBaseline = baselineTask;
-    let attemptedPatch: UpdateTaskInput | null = null;
     setSaving(true);
     setError(null);
     try {
@@ -891,25 +863,9 @@ export function TaskPlanningSheet({
         ...(externalWait !== undefined ? { externalWait } : {}),
         ...(titleChanged ? { title: cleanedTitle } : {}),
       };
-      attemptedPatch = patch;
-      const activationResolution = activationPrompt
-        ? projectActivationResolutionFromPrompt(activationPrompt)
-        : null;
-      if (activationPrompt && !activationResolution) {
-        setError(strings.commitmentResolutionHint);
-        return false;
-      }
-      if (!activationPrompt && baselineTask.projectId !== null) {
-        const preview = await api.previewTaskUpdate(baselineTask.id, { ...patch, expectedRevision: baselineTask.revision });
-        if (preview.activatingProjects.length) {
-          setActivationState({ fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision) });
-          return false;
-        }
-      }
-      const apiPatch = activationPrompt?.projects.length && activationResolution ? { ...patch, activationResolution } : patch;
       await taskActions.update(
         baselineTask,
-        apiPatch,
+        patch,
         true,
       );
       if (afterSuccess) afterSuccess();
@@ -920,22 +876,6 @@ export function TaskPlanningSheet({
       const latestTask = await refreshTaskAfterConflict(cause, baselineTask.id, onFailure);
       if (latestTask !== null) {
         reconcilePlanningDraft(latestTask, priorBaseline);
-      }
-      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
-        setActivationState(null);
-        if (attemptedPatch !== null) {
-          try {
-            const preview = await api.previewTaskUpdate(baselineTask.id, {
-              ...attemptedPatch,
-              expectedRevision: latestTask?.revision ?? baselineTask.revision,
-            });
-            if (preview.activatingProjects.length) setActivationState({
-              fingerprint: draftFingerprint, prompt: projectActivationPromptFromSnapshot(preview.decision),
-            });
-          } catch (refreshCause) {
-            onFailure?.(refreshCause);
-          }
-        }
       }
       setError(localizedErrorMessage(cause, strings));
       return false;
@@ -1686,14 +1626,6 @@ export function TaskPlanningSheet({
           </div>
         </section>
 
-        {activationPrompt ? (
-          <ProjectActivationDecisionFields
-            prompt={activationPrompt}
-            disabled={saving}
-            onChange={(prompt) => setActivationState({ fingerprint: draftFingerprint, prompt })}
-          />
-        ) : null}
-
         {error ? (
           <div className="task-row-error" role="alert">
             <span>{strings.error}</span>
@@ -1715,7 +1647,6 @@ export function TaskPlanningSheet({
               dateConflict ||
               recurrenceInvalid ||
               planningConflicts.length > 0 ||
-              !activationDecisionReady ||
               !dirty
             }
           >

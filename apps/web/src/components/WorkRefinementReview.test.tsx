@@ -638,7 +638,7 @@ describe("WorkRefinementReview", () => {
     expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
   });
 
-  it("collects a server-required next action for a typed conversion and retries Apply", async () => {
+  it("retains a typed conversion after a failed apply and retries without activation decisions", async () => {
     const current = record();
     current.text = JSON.stringify({
       id: 4, title: "Haustür montieren", status: "actionable", ownerMemberId: 1,
@@ -647,34 +647,19 @@ describe("WorkRefinementReview", () => {
     current.refinement!.proposal!.changes = [
       { kind: "convert_task_to_project", targetId: 4, rationale: "Make the next action visible.", accepted: false },
     ];
-    const activationError = Object.assign(new Error("This commitment needs a viable next action."), {
-      code: "project_commitment_resolution_required",
-      details: {
-        projects: [{ projectId: 4, title: "Haustür montieren", ownerMemberId: 1, revision: 2, required: ["progressPath"] }],
-        expectedProjects: [{ projectId: 4, revision: 2 }],
-      },
-    });
     mockedApi.updateWorkRefinement.mockImplementation(async (_id, body) => ({
       ...current, revision: 3, refinement: { ...current.refinement!, proposal: body.proposal },
     } as IntakeRecord));
-    mockedApi.applyWorkRefinement.mockRejectedValueOnce(activationError as never)
+    mockedApi.applyWorkRefinement.mockRejectedValueOnce(new Error("Offline") as never)
       .mockResolvedValueOnce({ ...current, status: "applied", revision: 4 } as IntakeRecord);
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
 
     await userEvent.click(screen.getByRole("checkbox"));
     await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
-    const nextAction = await screen.findByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?");
-    expect(document.activeElement).toHaveAttribute("tabindex", "-1");
-    await userEvent.type(nextAction, "Montage-Termin abstimmen");
+    expect(await screen.findByRole("alert")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
     await waitFor(() => expect(mockedApi.applyWorkRefinement).toHaveBeenCalledTimes(2));
-    expect(mockedApi.applyWorkRefinement.mock.calls[1]?.[1]).toMatchObject({
-      activationResolution: {
-        expectedProjects: [{ projectId: 4, revision: 2 }],
-        drivers: [],
-        nextActionTitle: "Montage-Termin abstimmen",
-      },
-    });
+    expect(mockedApi.applyWorkRefinement.mock.calls[1]?.[1]).toEqual({ expectedRevision: 3 });
   });
 
   it.each(["captured", "someday"] as const)("does not warn about preserved metadata for a %s conversion", (status) => {

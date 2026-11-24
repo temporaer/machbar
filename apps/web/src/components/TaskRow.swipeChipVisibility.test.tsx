@@ -14,9 +14,6 @@ import "../styles/index.css";
 
 vi.mock("../lib/api", () => ({
   api: {
-    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),

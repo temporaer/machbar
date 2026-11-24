@@ -77,7 +77,7 @@ describe("fixed-day recurring tasks", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       id: task.id,
-      status: "actionable",
+      status: "someday",
       scheduledDate: "2026-12-01",
       repeatAfterDays: 14,
       allowedDeviationDays: 2,

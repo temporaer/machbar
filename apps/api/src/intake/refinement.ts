@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { IntakeApplyResults, ProjectActivationResolution, WorkRefinementProposal } from "@machbar/shared";
+import type { IntakeApplyResults, WorkRefinementProposal } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -12,13 +12,10 @@ import { addDependency, resolveExternalWait, upsertExternalWait } from "../domai
 import { cancelTask } from "../domain/taskWorkflow.js";
 import {
   beginCommitmentConversion,
-  finishCommitmentConversion,
 } from "./commitmentPreservingConversion.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { workRefinementProposalSchema, workRefinementSelectionConflict } from "@machbar/shared";
-import { activateCommittedProjectChain } from "../domain/commitmentActivation.js";
-import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
 
 function idsFromSnapshot(snapshot: unknown, result = new Map<number, number>()): Map<number, number> {
   if (!snapshot || typeof snapshot !== "object") return result;
@@ -257,7 +254,6 @@ export function applyWorkRefinement(
   viewerId: number | null,
   expectedRevision: number,
   context: MutationContext,
-  activationResolution?: ProjectActivationResolution,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -288,21 +284,8 @@ export function applyWorkRefinement(
     changes.filter((change) => change.kind === "create_child").forEach(emitChild);
     const orderedChanges = [...changes].sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99) || (a.kind === "create_child" && b.kind === "create_child" ? orderedChildren.indexOf(a) - orderedChildren.indexOf(b) : 0));
     const conversions = new Map<number, ReturnType<typeof beginCommitmentConversion>>();
-    const projectsToActivate = new Set<number>();
     const createdIdsByKey = new Map<string, number>();
     const fieldWrites = new Map<string, string>();
-    const proposedRootParent = (creation: Extract<WorkRefinementProposal["changes"][number], { kind: "create_child" }>) => {
-      let current = creation;
-      const seen = new Set<string>();
-      while (current.parentProposalKey) {
-        if (seen.has(current.parentProposalKey)) return null;
-        seen.add(current.parentProposalKey);
-        const parent = childByKey.get(current.parentProposalKey);
-        if (!parent) return null;
-        current = parent;
-      }
-      return current.parentTaskId ?? null;
-    };
     for (const change of orderedChanges) {
       const writes: Array<[number, string, unknown]> = [];
       if (change.kind === "update_task" || change.kind === "update_project") {
@@ -369,8 +352,7 @@ export function applyWorkRefinement(
             }, context);
           } else {
             if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task target.");
-            const taskBefore = getTaskOrThrow(txDb, task.id);
-            const updated = updateTask(txDb, task.id, {
+            updateTask(txDb, task.id, {
               ...(change.title !== undefined ? { title: change.title } : {}),
               ...(change.notes !== undefined ? { notes: change.notes ?? "" } : {}),
               ...(change.scheduledDate !== undefined ? { scheduledDate: change.scheduledDate } : {}),
@@ -378,8 +360,7 @@ export function applyWorkRefinement(
               ...(change.revisitAt !== undefined ? { revisitAt: change.revisitAt } : {}),
               ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
               expectedRevision: task.revision,
-            }, context, { activateCommitment: false });
-            if (updated.projectId !== null && !hasExecutionCommitment(taskBefore) && hasExecutionCommitment(updated)) projectsToActivate.add(updated.projectId);
+            }, context);
           }
           break;
         }
@@ -393,16 +374,9 @@ export function applyWorkRefinement(
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
-          const additionalCommitment = orderedChanges.some((candidate) => candidate.kind === "create_child" && proposedRootParent(candidate) === task.id && hasExecutionCommitment({
-            kind: "action",
-            dueDate: candidate.dueDate ?? null,
-            scheduledDate: candidate.scheduledDate ?? null,
-            revisitAt: candidate.revisitAt ?? null,
-            reminders: candidate.reminders ?? [],
-          }));
           conversions.set(
             task.id,
-            beginCommitmentConversion(txDb, task.id, undefined, additionalCommitment, viewerId, context),
+            beginCommitmentConversion(txDb, task.id, context),
           );
           break;
         }
@@ -422,10 +396,9 @@ export function applyWorkRefinement(
             ...(change.reminders !== undefined ? { reminders: change.reminders } : {}),
           };
           const created = parent.role === "story"
-            ? createTaskInTransaction(txDb, { ...input, projectId: parent.id }, context, { activateCommitment: false })
-            : createChildTaskInTransaction(txDb, parent.id, input, context, { activateCommitment: false });
+            ? createTaskInTransaction(txDb, { ...input, projectId: parent.id }, context)
+            : createChildTaskInTransaction(txDb, parent.id, input, context);
           if (change.proposalKey) createdIdsByKey.set(change.proposalKey, created.id);
-          if (created.projectId !== null && hasExecutionCommitment(created)) projectsToActivate.add(created.projectId);
           break;
         }
         case "move_task": {
@@ -468,16 +441,6 @@ export function applyWorkRefinement(
         case "advisory": break;
       }
     }
-    for (const conversion of conversions.values()) {
-      const current = txDb.select({ revision: schema.workItems.revision }).from(schema.workItems)
-        .where(eq(schema.workItems.id, conversion.projectId)).get();
-      finishCommitmentConversion(txDb, {
-        ...conversion,
-        projectRevision: current?.revision ?? conversion.projectRevision,
-      }, context, activationResolution);
-      projectsToActivate.delete(conversion.projectId);
-    }
-    for (const projectId of projectsToActivate) activateCommittedProjectChain(txDb, projectId, context, activationResolution);
     const target = tx.select({
       role: schema.workItems.role,
     }).from(schema.workItems).where(eq(schema.workItems.id, job.refinementTargetId!)).get();

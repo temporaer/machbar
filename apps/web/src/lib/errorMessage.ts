@@ -83,9 +83,6 @@ export function localizedApiErrorMessage(
   if (code === "project_completion_resolution_required") {
     return strings.completeWithOpenTasksHint;
   }
-  if (code === "project_commitments_prevent_parking") {
-    return strings.withdrawProjectCommitments;
-  }
   if (code === "role_conversion_invalid") {
     const reason = stringDetail(details, "reason");
     if (["nested_projects", "archived_status_requires_restore"].includes(reason ?? "")) {

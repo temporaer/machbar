@@ -13,6 +13,19 @@ describe("ProjectAgendaRow", () => {
     vi.useRealTimers();
   });
 
+  it.each([
+    [true, "Zurückgestellt"],
+    [null, "Verfügbarkeit unklar"],
+  ] as const)("labels deadline availability without exposing hidden ancestors (%s)", (effectivelyDeferred, label) => {
+    render(<MemoryRouter><ProjectAgendaRow entry={{
+      project: makeProject({ id: 42, title: "Parked", dueDate: "2026-08-28", effectivelyDeferred }),
+      qualification: "due", attentionBucket: "dueSoon", nextAction: null,
+      nextActionContextAvailability: null, additionalNextActions: [], stuck: null,
+    }} /></MemoryRouter>);
+    expect(screen.getByText(label)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Parked" })).toHaveAttribute("href", "/projects/42");
+  });
+
   it("renders a single-line row with title link and the due date for a due-date bucket", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 7, 25, 12));

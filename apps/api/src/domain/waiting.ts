@@ -55,6 +55,7 @@ export function buildWaitingEntries(
       (task) =>
         task.kind === "action" &&
         task.status === "actionable" &&
+        !graph.isEffectivelyDeferred(task.id) &&
         isTaskInWorkingSystem(task, projectStatusById) &&
         matchesOwnerScope(task, options.memberId, options.scope) &&
         matchesItemScope(task, options.scope),

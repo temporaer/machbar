@@ -457,7 +457,11 @@ export function TaskRow({
               type="button"
               className="task-row-main"
               ref={mainButtonRef}
-              aria-label={task.title}
+              aria-label={task.effectivelyDeferred === true
+                ? `${task.title} — ${strings.attentionDeferred}`
+                : task.effectivelyDeferred === null
+                  ? `${task.title} — ${strings.attentionUnavailable}`
+                  : task.title}
               aria-describedby={checklistProgress ? checklistProgressDescriptionId : undefined}
               disabled={outlineRefreshing}
               onClick={() => dispatch({ type: "task.open", taskId: task.id })}
@@ -478,6 +482,11 @@ export function TaskRow({
                   </div>
                 </div>
                 <div className="task-row-meta">
+                  {task.effectivelyDeferred === true || task.effectivelyDeferred === null ? (
+                    <span className="task-row-meta-item">
+                      {task.effectivelyDeferred ? strings.attentionDeferred : strings.attentionUnavailable}
+                    </span>
+                  ) : null}
                   {isCompact ? null : nextActionBadge ? (
                     <span
                       className={`task-row-meta-item task-row-next-action-badge task-row-next-action-${nextActionBadge}`}

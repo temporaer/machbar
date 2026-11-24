@@ -153,6 +153,7 @@ function loadFilteredOpenTasks(
   const rows = allTasks.filter((t) => {
     if (!isOpenStatus(t.status)) return false;
     if (!isTaskInWorkingSystem(t, projectStatusById)) return false;
+    if (graph.isEffectivelyDeferred(t.id)) return false;
     if (filters?.projectId !== undefined && t.projectId !== filters.projectId) {
       return false;
     }
@@ -254,6 +255,7 @@ export function getRefinementTasks(
     .filter((task) => {
       if (!isOpenStatus(task.status)) return false;
       if (!isTaskInWorkingSystem(task, projectStatusById)) return false;
+      if (graph.isEffectivelyDeferred(task.id)) return false;
       if (
         filters?.projectId !== undefined &&
         task.projectId !== filters.projectId

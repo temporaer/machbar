@@ -61,8 +61,7 @@ planning, waiting, move, cancellation, and dependency changes remain separate
 and are rejected when selected with that conversion. Conflicting selected
 changes are identified in review before saving or applying. Failed saves and
 applies retain the proposal and local edits, show a localized error in the
-foreground review, and focus it for correction. Missing activation decisions
-are brought into view as well.
+foreground review, and focus it for correction.
 
 Machbar is built around a simple problem: household work is shared, but
 responsibility and next steps are often not.
@@ -165,12 +164,8 @@ actionable task remains an active commitment; the same operation asks for a
 driver or an authored next action when project readiness needs one. A failed,
 cancelled or stale conversion leaves the task and its relations unchanged.
 
-When creation would also activate a project chain, the server evaluates the
-transition and returns any missing decisions. The composer displays those
-requirements and retries the same create operation with the explicit choices;
-the initial attempt rolls back, so collecting decisions does not leave a
-partial task behind. The capture UI presents server requirements but does not
-reconstruct activation rules or project ancestry.
+Creating or planning work does not activate its containing project or
+ancestors. Starting a project is a separate lifecycle decision.
 
 The title field accepts optional short syntax for faster capture, for example
 `~morgen` for a planned date, `!15.9` for a deadline, `@Hanna` for an owner,
@@ -234,8 +229,8 @@ An inbox item leaves clarification through one explicit classification:
 - **Irgendwann** keeps it as a task outside the current action lists.
 - **Backlog** converts it to a backlog project/story and opens a handoff sheet
   showing the project's steps as a persistent, always-visible list. Added steps
-  are submitted as one revision-checked batch, so either every row and any
-  required activation transition is committed or none is. Starting the project ("Aktivieren")
+  are submitted as one revision-checked batch, so either every row is committed
+  or none is. Starting the project ("Aktivieren")
   remains a strictly later, explicit decision made once it has a driver and a
   viable progress or future-waiting path: a raw Inbox capture can never
   satisfy that precondition immediately (no driver is inherited by default,
@@ -298,20 +293,20 @@ the existing planning or revisit workflow, follow up on an external wait, or
 end that wait. Merely viewing details, editing notes, or changing a title does
 not acknowledge or clear a revisit.
 
-An execution plan, deadline, or execution reminder makes an open Inbox or
-Someday task actionable. When that commitment is inside a backlog project,
-Machbar starts the affected project and any necessary backlog ancestors in the
-same transaction. Existing actionable work, a reached ordinary revisit on an
-actionable, unblocked leaf, a healthy external wait, or a deliberate future
-revisit can provide the progress path; a deadline by itself cannot. If a
-driver or concrete next action is missing, the focused editor keeps the user's
-draft while collecting those decisions. Nothing is saved until the complete
-operation is ready. A revisit and a notification attached to that
-reconsideration do not promote the task. A reached ordinary revisit counts only
-as currently available project progress; reads leave it unchanged. A future
-revisit remains an intentional pause and does not activate the task. Activation
-changes project lifecycle only; a task scheduled for a future date remains out
-of Heute until its normal agenda eligibility is reached.
+Backlog is a lifecycle status, not a second store of work. A task or project is
+effectively deferred when it or any task or project ancestor is in backlog.
+Changing a plan, deadline, reminder, or other property does not activate it or
+its ancestors. Explicit activation changes only the selected item; a parked
+ancestor still gates execution, and independently parked descendants remain
+parked. Deadlines and reconsideration remain attention signals while work is
+deferred. Explicitly configured reminders remain effective, and recurring
+tasks retain their completion-relative schedule.
+
+Starting a project requires a driver and a viable progress path or intentional
+healthy future waiting point. A reached ordinary revisit can count as project
+progress without being cleared by a read. A task scheduled for a future date
+remains out of execution suggestions until its normal agenda eligibility is
+reached.
 
 The compact **Meine | Alle** toggle can broaden this to the whole household
 without changing who is signed in or who is recorded as making changes.
@@ -336,14 +331,13 @@ a separate page per date or an hourly calendar. The same compact list holds
 the scheduled, due, and direct external-wait revisit chips for tasks. It uses
 the same agenda eligibility rules as Heute;
 unlike Heute's "today" framing, Week's window can be paged forward/back, but
-like Heute it carries unfinished attention forward: a scheduled date, due
-date, or direct external-wait revisit date that has already passed is projected
-onto today's column instead of disappearing off the front of the visible
-window. The stored source date is never mutated by this projection and stays
-visible on the card as metadata. Explicit dates on tasks inside open backlog
-projects still appear in Week because they are intentional planning signals;
-unscheduled backlog-project tasks stay out of **Ohne Planung** until the project
-is active.
+like Heute it carries overdue deadlines and reached reconsideration dates forward
+instead of losing those attention signals. A past one-off planned date does not
+become an execution backlog; recurring occurrences retain their normal
+completion-relative behavior. The stored source date is never mutated by this
+projection and stays visible on the card as metadata. Effective deferral excludes
+scheduled execution and unplanned work, while real deadlines and reconsideration
+remain visible.
 
 Each task has distinct temporal semantics: `scheduledDate` ("Geplant für …")
 records when the household intends to work on it, `revisitAt` records a
@@ -521,14 +515,10 @@ refreshed task.
 
 **Backlog** is the one reversible "later / not active" state; normal
 activation rules apply whenever a backlog project is picked back up.
-Returning an active project to backlog preserves its task dates, deadlines,
-recurrence and reminders by default. When any such execution commitments are
-present, the project remains active until the person explicitly selects
-"commitments zurückziehen" in the same defer flow; that choice clears the
-project deadline and the affected task plans, recurrence and reminders
-atomically while keeping task identities, history, wait state and revisit
-information. A project revisit notification alone does not count as an
-execution commitment.
+Returning an active project to backlog preserves dates, recurrence, reminders,
+waits, history, and descendant statuses. Household projects still release their
+driver when parked. Later activation affects only the selected project, not
+its ancestors or independently parked descendants.
 **Archived** means retired: abandoned or historical work that is not expected
 to return to activity. A completed project may still be archived. Restoring an
 archived project always returns it to backlog first — there is no direct
@@ -555,10 +545,14 @@ revision-checked transaction commits. Cycles, scope changes and stale source,
 descendant or ancestor revisions reject the whole operation.
 
 Task → Project conversion works inside a project and below a task without
-detaching first. Existing effective ownership, tags and physical contexts
-become the project's explicit values so retained work keeps its responsibility
-and material. Task-only obligations, including execution windows, use the
-existing retained-action mapping.
+detaching first. Effective tags and physical contexts become explicit project
+values. An active project's driver uses the task's effective owner; a household
+backlog project has no driver. Retained actions and descendants keep their
+ownership modes: tasks inheriting from the project may temporarily be unassigned
+in backlog, then follow the selected driver and later driver changes. Nested
+tasks inherit through their task parent, respecting explicit and unassigned
+overrides. Explicit assignments remain unchanged. Task-only obligations,
+including execution windows, use the existing retained-action mapping.
 A child project below a task is reachable from that task's detail steps and has
 mixed-role hierarchy breadcrumbs. Project → Task preserves the direct parent
 and position when all descendants are tasks; task descendants and structured
@@ -568,9 +562,8 @@ project descendants. Move those child projects out first. A task containing open
 child projects likewise requires moving them out before its task
 completion/cancellation cascade. Completed or archived project subtrees stay
 untouched when their containing task completes or is cancelled. Archived projects
-and the existing incompatible recurrence/wait mappings remain guarded. Active
-nested conversion and committed project moves resolve required project ancestor
-activation inside the originating transaction. No merge or compound undo is
+and the existing incompatible recurrence/wait mappings remain guarded. Nested
+conversion and project moves do not activate ancestors. No merge or compound undo is
 included in this slice (issue #167 phase 6a, original cases 59–61 and 63).
 
 Mixed task/project sibling groups share one direct-parent order. Creation,

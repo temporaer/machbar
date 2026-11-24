@@ -8,7 +8,7 @@ import { ProjectTaskEntrySheet } from "./ProjectTaskEntrySheet";
 import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({ api: {
-  getMembers: vi.fn(), getProject: vi.fn(), createTaskStepBatchForProject: vi.fn(), previewProjectSteps: vi.fn(),
+  getMembers: vi.fn(), getProject: vi.fn(), createTaskStepBatchForProject: vi.fn(),
 } }));
 const mocked = vi.mocked(api);
 const base = makeProject({ id: 42, title: "Project", status: "backlog" });
@@ -21,7 +21,6 @@ describe("explicit project task entry", () => {
     vi.clearAllMocks(); current = { ...base, tasks: [] };
     mocked.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mocked.getProject.mockImplementation(async () => current);
-    mocked.previewProjectSteps.mockResolvedValue({ decision: null, activatingProjects: [] });
     mocked.createTaskStepBatchForProject.mockImplementation(async (_id, input) => {
       const tasks = input.steps.map((step, i) => makeTask({ ...step, id: 100 + i, projectId: 42 }));
       current = { ...current, revision: current.revision + 1, tasks: [...current.tasks, ...tasks] };
@@ -56,23 +55,14 @@ describe("explicit project task entry", () => {
     expect(mocked.createTaskStepBatchForProject).toHaveBeenCalledTimes(2);
     expect(screen.getByPlaceholderText("Schritt …")).toHaveValue("");
   });
-  it("collects the missing driver for the proposed dated task before any creation, without asking for an extra path", async () => {
-    mocked.previewProjectSteps.mockResolvedValue({ activatingProjects: [{ id: 42, title: "Project" }], decision: {
-      targetRevision: 1, expectedProjects: [{ projectId: 42, revision: 1 }],
-      projects: [{ projectId: 42, title: "Project", revision: 1, ownerMemberId: null, required: ["driver"] }],
-    } });
-    open(); await title("Existing proposed path");
+  it("creates a dated task without an activation decision", async () => {
+    open(); await title("Dated task");
     await userEvent.click(screen.getByText(strings.stepPlanningOptional));
     fireEvent.change(screen.getByLabelText(strings.due), { target: { value: "2027-01-15" } });
     await userEvent.click(screen.getByRole("button", { name: "Aufgabe hinzufügen" }));
-    const driver = await screen.findByLabelText(strings.commitmentDriverFor("Project"));
-    expect(mocked.createTaskStepBatchForProject).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText(strings.commitmentNextActionLabel)).not.toBeInTheDocument();
-    expect(screen.getByText(strings.activationWillStart)).toBeVisible();
-    await userEvent.selectOptions(driver, "1");
-    await userEvent.click(screen.getByRole("button", { name: "Aufgabe hinzufügen" }));
     await waitFor(() => expect(mocked.createTaskStepBatchForProject).toHaveBeenCalledTimes(1));
-    expect(mocked.createTaskStepBatchForProject.mock.calls[0]![1].activationResolution).toEqual({ expectedProjects: [{ projectId: 42, revision: 1 }], drivers: [{ projectId: 42, ownerMemberId: 1 }] });
+    expect(mocked.createTaskStepBatchForProject.mock.calls[0]![1]).not.toHaveProperty("activationResolution");
+    expect(screen.queryByLabelText(strings.commitmentDriverFor("Project"))).not.toBeInTheDocument();
   });
   it("refreshes stale project revisions while preserving rows and creates only the retry", async () => {
     mocked.createTaskStepBatchForProject.mockImplementationOnce(async () => {
@@ -86,20 +76,8 @@ describe("explicit project task entry", () => {
     await userEvent.click(screen.getByRole("button", { name: "Aufgabe hinzufügen" }));
     await screen.findByText("Keep across stale refresh");
     expect(mocked.createTaskStepBatchForProject).toHaveBeenCalledTimes(2);
-    expect(mocked.createTaskStepBatchForProject.mock.calls[1]![1]).toMatchObject({ expectedRevision: 2, expectedProjectRevisions: [{ projectId: 42, revision: 2 }], steps: [{ title: "Keep across stale refresh" }] });
+    expect(mocked.createTaskStepBatchForProject.mock.calls[1]![1]).toMatchObject({ expectedRevision: 2, steps: [{ title: "Keep across stale refresh" }] });
     expect(current.tasks).toHaveLength(1);
   });
 
-  it("confirms a ready implicit start without inventing extra decisions", async () => {
-    mocked.previewProjectSteps.mockResolvedValue({ decision: null, activatingProjects: [{ id: 42, title: "Project" }] });
-    open(); await title("Dated work");
-    await userEvent.click(screen.getByText(strings.stepPlanningOptional));
-    fireEvent.change(screen.getByLabelText(strings.due), { target: { value: "2027-01-15" } });
-    await userEvent.click(screen.getByRole("button", { name: "Aufgabe hinzufügen" }));
-    await screen.findByText(strings.activationWillStart);
-    expect(mocked.createTaskStepBatchForProject).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "Aufgabe hinzufügen" }));
-    await waitFor(() => expect(mocked.createTaskStepBatchForProject).toHaveBeenCalledTimes(1));
-    expect(mocked.createTaskStepBatchForProject.mock.calls[0]![1].activationResolution).toBeUndefined();
-  });
 });

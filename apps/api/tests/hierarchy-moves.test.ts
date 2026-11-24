@@ -274,6 +274,7 @@ describe("canonical hierarchy moves", () => {
     expect(moved.needsClarification).toBe(false);
     expect(moved.projectId).toBe(project.id);
     expect(moved.parentTaskId).toBeNull();
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
   });
 
   it("refiles a captured inbox item under a parent task inside a project", async () => {

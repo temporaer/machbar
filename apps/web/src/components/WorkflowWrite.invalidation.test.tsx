@@ -13,7 +13,7 @@ import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
 
 vi.mock("../lib/api", () => ({ api: {
   getMembers: vi.fn(), getProjects: vi.fn(), getProject: vi.fn(), getTask: vi.fn(),
-  previewTaskConversion: vi.fn(), convertTaskToStory: vi.fn(), convertStoryToTask: vi.fn(), moveProject: vi.fn(),
+  convertTaskToStory: vi.fn(), convertStoryToTask: vi.fn(), moveProject: vi.fn(),
 } }));
 const mockedApi = vi.mocked(api);
 
@@ -21,7 +21,6 @@ describe("retired workflow success invalidation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
-    mockedApi.previewTaskConversion.mockResolvedValue({ decision: null, activatingProjects: [] });
   });
 
   it.each(["task conversion", "project conversion", "project move"] as const)(

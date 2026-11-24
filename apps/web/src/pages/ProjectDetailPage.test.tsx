@@ -35,11 +35,6 @@ vi.mock("../lib/api", () => ({
   paperlessDocumentThumbnailUrl: (id: number) =>
     `/api/integrations/paperless/documents/${id}/thumbnail`,
   api: {
-    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewProjectSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     createTaskStepBatchForProject: vi.fn(),
     getMembers: vi.fn(),
     getProject: vi.fn(),
@@ -746,7 +741,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.queryByRole("button", { name: strings.projectTasksTitle })).not.toBeInTheDocument();
   });
 
-  it.each(["active", "archived"] as const)("defers a %s project through the atomic lifecycle command with explicit withdrawal", async (status) => {
+  it.each(["active", "archived"] as const)("defers a %s project without withdrawing commitments", async (status) => {
     const child = makeTask({ id: 73, revision: 4, projectId: 42, scheduledDate: "2026-10-27" });
     const project = { ...makeProject({ id: 42, title: "Commitments", status, ownerMemberId: 1, revision: 3 }), tasks: [child] };
     mockedApi.getProject.mockResolvedValue(project);
@@ -757,13 +752,11 @@ describe("ProjectDetailPage task explanations", () => {
     await userEvent.click(screen.getByRole("button", { name: status === "active" ? strings.returnToBacklogStory : strings.restoreProjectToBacklog }));
     const dialog = await screen.findByRole("dialog", { name: status === "active" ? strings.deferProject : strings.restoreProjectToBacklog });
     expect(within(dialog).getByText(strings.projectDeferQuestion)).toBeVisible();
-    const withdraw = within(dialog).getByRole("checkbox", { name: strings.withdrawProjectCommitments });
-    expect(withdraw).not.toBeChecked();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
     expect(mockedApi.returnProjectToBacklog).not.toHaveBeenCalled();
-    await userEvent.click(withdraw);
     await userEvent.click(within(dialog).getByRole("button", { name: strings.projectDeferWithoutRevisit }));
     await waitFor(() => expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(42, {
-      expectedRevision: 3, revisitAt: null, withdrawCommitments: true, expectedTaskRevisions: [{ taskId: 73, revision: 4 }],
+      expectedRevision: 3, revisitAt: null,
     }));
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
@@ -1009,7 +1002,6 @@ describe("ProjectDetailPage task explanations", () => {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(opener).toHaveFocus());
     expect(mockedApi.createTaskStepBatchForProject).not.toHaveBeenCalled();
-    expect(mockedApi.previewProjectSteps).not.toHaveBeenCalled();
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 

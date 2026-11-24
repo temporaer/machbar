@@ -110,24 +110,18 @@ describe("phase 6a parent-preserving structure", () => {
     expect(rows()).toEqual(before);
   });
 
-  it("collects activation decisions inside a committed subtree move", async () => {
-    const member = (await post("/api/members", { name: "Mira" })).json();
+  it("moves committed backlog work without activating either project", async () => {
     const source = (await post("/api/projects", { title: "Moving" })).json();
     const datedStep = (await post("/api/tasks", { title: "Dated step", projectId: source.id })).json();
     ctx.handle.sqlite.prepare("UPDATE work_items SET scheduled_date = '2026-12-01' WHERE id = ?").run(datedStep.id);
     const target = await project("Destination");
     const input = await moveInput(source.id, target.id);
-    const before = rows();
     const response = await post(`/api/projects/${source.id}/move`, input);
-    expect(response.statusCode, response.body).toBe(409);
-    expect(response.json().error.code).toBe("project_commitment_resolution_required");
-    expect(rows()).toEqual(before);
-    const snapshot = response.json().error.details;
-    expect(snapshot.projects.every((entry: { required: string[] }) => !entry.required.includes("progressPath"))).toBe(true);
-    const accepted = await post(`/api/projects/${source.id}/move`, { ...input, activationResolution: { expectedProjects: snapshot.expectedProjects, drivers: snapshot.projects.map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })) } });
-    expect(accepted.statusCode, accepted.body).toBe(200);
-    expect((await get(`/api/projects/${target.id}`)).status).toBe("active");
+    expect(response.statusCode, response.body).toBe(200);
+    expect((await get(`/api/projects/${target.id}`)).status).toBe("backlog");
+    expect((await get(`/api/projects/${source.id}`)).status).toBe("backlog");
     expect((await get(`/api/projects/${source.id}`)).parentId).toBe(target.id);
+    expect((await get(`/api/tasks/${datedStep.id}`)).scheduledDate).toBe("2026-12-01");
   });
 
   it("preserves nested recurrence, reminders, dependency direction and inherited material", async () => {
@@ -148,14 +142,73 @@ describe("phase 6a parent-preserving structure", () => {
     expect(converted.statusCode, converted.body).toBe(201);
     const detail = await get(`/api/projects/${task.id}`);
     const retained = detail.tasks[0];
-    expect(detail).toMatchObject({ parentId: parent.id, ownerMemberId: member.id, tags: [expect.objectContaining({ id: tag.id })], contexts: [expect.objectContaining({ id: context.id })] });
-    expect(retained).toMatchObject({ availabilityRule, dueDate: "2026-09-17", scheduledDate: "2026-09-15", repeatAfterDays: 7, effectiveOwnerId: member.id, reminders: [expect.objectContaining({ id: task.reminders[0].id })] });
+    expect(detail).toMatchObject({ parentId: parent.id, ownerMemberId: null, tags: [expect.objectContaining({ id: tag.id })], contexts: [expect.objectContaining({ id: context.id })] });
+    expect(retained).toMatchObject({ availabilityRule, dueDate: "2026-09-17", scheduledDate: "2026-09-15", repeatAfterDays: 7, reminders: [expect.objectContaining({ id: task.reminders[0].id })] });
+    const activated = await post(`/api/projects/${task.id}/activate`, { expectedRevision: detail.revision, ownerMemberId: member.id });
+    expect(activated.statusCode, activated.body).toBe(200);
+    expect((await get(`/api/tasks/${retained.id}`)).effectiveOwnerId).toBe(member.id);
     expect(ctx.handle.db.select().from(schema.taskRecurrenceOccurrences).where(eq(schema.taskRecurrenceOccurrences.taskId, retained.id)).all()).toHaveLength(1);
     expect((await get(`/api/tasks/${dependent.id}`)).dependencies[0].dependsOnTaskId).toBe(retained.id);
     const before = rows();
     const cycle = await post(`/api/tasks/${parent.id}/move`, { projectId: task.id, parentTaskId: null, expectedRevision: (await get(`/api/tasks/${parent.id}`)).revision });
     expect(cycle.statusCode).toBe(409);
     expect(rows()).toEqual(before);
+  });
+
+  it.each(["inherit", "explicit", "none"] as const)("preserves %s ownership through backlog conversion and driver changes", async (mode) => {
+    const anna = (await post("/api/members", { name: "Anna" })).json();
+    const ben = (await post("/api/members", { name: "Ben" })).json();
+    const parent = (await post("/api/tasks", { title: "Parent", status: "actionable", ownerMemberId: anna.id, ownerInheritanceMode: "explicit" })).json();
+    const sourceResponse = await post("/api/tasks", {
+      title: "Scheduled", parentTaskId: parent.id, status: "actionable", scheduledDate: "2026-09-15",
+      ownerInheritanceMode: mode, ...(mode === "explicit" ? { ownerMemberId: anna.id } : {}),
+    });
+    expect(sourceResponse.statusCode, sourceResponse.body).toBe(201);
+    const source = sourceResponse.json();
+    const children = await Promise.all([
+      post(`/api/tasks/${source.id}/children`, { title: "Inherited child", ownerInheritanceMode: "inherit" }),
+      post(`/api/tasks/${source.id}/children`, { title: "Assigned child", ownerInheritanceMode: "explicit", ownerMemberId: anna.id }),
+      post(`/api/tasks/${source.id}/children`, { title: "Unassigned child", ownerInheritanceMode: "none" }),
+    ]);
+    for (const child of children) expect(child.statusCode, child.body).toBe(201);
+    const [inherited, assigned, unassigned] = children.map((child) => child.json());
+    const grandchildren = await Promise.all([inherited, assigned, unassigned].map((parent) =>
+      post(`/api/tasks/${parent.id}/children`, { title: "Inherited grandchild", ownerInheritanceMode: "inherit" })));
+    for (const child of grandchildren) expect(child.statusCode, child.body).toBe(201);
+    const [inheritedGrandchild, assignedGrandchild, unassignedGrandchild] = grandchildren.map((child) => child.json());
+    const snapshot = await get(`/api/tasks/${source.id}`);
+    expect(snapshot.effectiveOwnerId).toBe(mode === "none" ? null : anna.id);
+    const converted = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog", expectedRevision: snapshot.revision, expectedHierarchyRevisions: snapshot.hierarchyRevisions,
+    });
+    expect(converted.statusCode, converted.body).toBe(201);
+    const projectDetail = await get(`/api/projects/${source.id}`);
+    expect(projectDetail).toMatchObject({ status: "backlog", ownerMemberId: null, stuckReason: null });
+    const retained = projectDetail.tasks.find((task: { title: string }) => task.title === "Scheduled");
+    expect(retained).toBeDefined();
+
+    const assertOwners = async (driver: number | null) => {
+      expect(await get(`/api/tasks/${retained.id}`)).toMatchObject({
+        ownerInheritanceMode: mode,
+        effectiveOwnerId: mode === "inherit" ? driver : mode === "explicit" ? anna.id : null,
+      });
+      expect(await get(`/api/tasks/${inherited.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: driver });
+      expect(await get(`/api/tasks/${assigned.id}`)).toMatchObject({ ownerInheritanceMode: "explicit", effectiveOwnerId: anna.id });
+      expect(await get(`/api/tasks/${unassigned.id}`)).toMatchObject({ ownerInheritanceMode: "none", effectiveOwnerId: null });
+      expect(await get(`/api/tasks/${inheritedGrandchild.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: driver });
+      expect(await get(`/api/tasks/${assignedGrandchild.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: anna.id });
+      expect(await get(`/api/tasks/${unassignedGrandchild.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: null });
+    };
+    await assertOwners(null);
+    const firstActivation = await post(`/api/projects/${source.id}/activate`, { expectedRevision: projectDetail.revision, ownerMemberId: ben.id });
+    expect(firstActivation.statusCode, firstActivation.body).toBe(200);
+    await assertOwners(ben.id);
+    const parked = await post(`/api/projects/${source.id}/return-to-backlog`, { expectedRevision: firstActivation.json().revision });
+    expect(parked.statusCode, parked.body).toBe(200);
+    await assertOwners(null);
+    const secondActivation = await post(`/api/projects/${source.id}/activate`, { expectedRevision: parked.json().revision, ownerMemberId: anna.id });
+    expect(secondActivation.statusCode, secondActivation.body).toBe(200);
+    await assertOwners(anna.id);
   });
 
   it("rejects stale nested conversion ancestry and new descendants before writing", async () => {
@@ -176,21 +229,26 @@ describe("phase 6a parent-preserving structure", () => {
     expect(rows()).toEqual(changed);
   });
 
-  it("activates a required project ancestor across an intervening task parent", async () => {
+  it("activates only a converted project beneath a parked task and project", async () => {
     const member = (await post("/api/members", { name: "Mira" })).json();
     const outer = (await post("/api/projects", { title: "Outer" })).json();
     const parent = (await post("/api/tasks", { title: "Task parent", projectId: outer.id, status: "someday" })).json();
-    const task = (await post(`/api/tasks/${parent.id}/children`, { title: "Convert nested child" })).json();
+    const task = (await post(`/api/tasks/${parent.id}/children`, { title: "Convert nested child", status: "actionable" })).json();
     const snapshot = await get(`/api/tasks/${task.id}`);
     const before = rows();
     const input = { status: "active", expectedRevision: snapshot.revision, expectedHierarchyRevisions: snapshot.hierarchyRevisions };
     const required = await post(`/api/tasks/${task.id}/convert-to-story`, input);
-    expect(required.statusCode, required.body).toBe(409);
-    expect(required.json().error.code).toBe("project_commitment_resolution_required");
+    expect(required.statusCode, required.body).toBe(400);
+    expect(required.json().error.code).toBe("project_driver_required");
     expect(rows()).toEqual(before);
-    const response = await post(`/api/tasks/${task.id}/convert-to-story`, { ...input, activationResolution: { expectedProjects: required.json().error.details.expectedProjects, drivers: required.json().error.details.projects.map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })), nextActionTitle: "Reviewed next step" } });
+    const assigned = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { expectedRevision: task.revision, ownerMemberId: member.id, ownerInheritanceMode: "explicit" } });
+    expect(assigned.statusCode, assigned.body).toBe(200);
+    const updated = await get(`/api/tasks/${task.id}`);
+    const response = await post(`/api/tasks/${task.id}/convert-to-story`, { status: "active", expectedRevision: updated.revision, expectedHierarchyRevisions: updated.hierarchyRevisions });
     expect(response.statusCode, response.body).toBe(201);
-    expect((await get(`/api/projects/${outer.id}`)).status).toBe("active");
+    expect((await get(`/api/projects/${outer.id}`)).status).toBe("backlog");
+    expect((await get(`/api/tasks/${parent.id}`)).status).toBe("someday");
+    expect(response.json().status).toBe("active");
     expect(response.json().ancestors.map((entry: { id: number }) => entry.id)).toEqual([outer.id, parent.id]);
   });
 

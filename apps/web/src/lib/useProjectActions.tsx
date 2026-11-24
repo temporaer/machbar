@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, type ReactNode } from "react";
 import { api } from "./api";
-import type { ProjectActivationResolution } from "@machbar/shared";
 import type { ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
 import { useItemMutations } from "./useItemMutations";
 
@@ -8,7 +7,7 @@ function useProjectActionsState() {
   const { run, ...feedback } = useItemMutations();
   const runAction = useCallback((
     story: ProjectWithActions, action: ProjectWorkflowAction, ownerMemberId?: number | null,
-    activationResolution?: ProjectActivationResolution, throwOnError = false,
+    nextActionTitle?: string, throwOnError = false,
     expectedRevision?: number, workflowInput?: Partial<ProjectWorkflowInput>,
   ) => run({
     id: story.id, throwOnError,
@@ -17,7 +16,7 @@ function useProjectActionsState() {
       const activation = {
         ...input,
         ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
-        ...(activationResolution ? { activationResolution } : {}),
+        ...(nextActionTitle ? { nextActionTitle } : {}),
       };
       switch (action) {
         case "activate": return api.activateProject(story.id, activation);
@@ -28,8 +27,8 @@ function useProjectActionsState() {
       }
     },
   }), [run]);
-  const activate = useCallback((story: ProjectWithActions, ownerMemberId?: number | null, activationResolution?: ProjectActivationResolution) =>
-    runAction(story, "activate", ownerMemberId, activationResolution), [runAction]);
+  const activate = useCallback((story: ProjectWithActions, ownerMemberId?: number | null, nextActionTitle?: string) =>
+    runAction(story, "activate", ownerMemberId, nextActionTitle), [runAction]);
   const archive = useCallback((story: ProjectWithActions) => runAction(story, "archive"), [runAction]);
   const update = useCallback((story: ProjectWithActions, patch: UpdateProjectInput, throwOnError = false) =>
     run({ id: story.id, mutate: () => api.updateProject(story.id, { ...patch, expectedRevision: patch.expectedRevision ?? story.revision }), throwOnError }), [run]);
@@ -39,13 +38,11 @@ function useProjectActionsState() {
     update(story, { ownerMemberId }, true), [update]);
   const schedule = useCallback((story: ProjectWithActions, patch: UpdateProjectInput) => update(story, patch, true), [update]);
   const returnToBacklog = useCallback((
-    story: ProjectWithActions, revisitAt: string | null, withdrawCommitments = false,
-    expectedTaskRevisions?: Array<{ taskId: number; revision: number }>,
+    story: ProjectWithActions, revisitAt: string | null,
   ) => run({
     id: story.id, throwOnError: true,
     mutate: () => api.returnProjectToBacklog(story.id, {
-      expectedRevision: story.revision, revisitAt, withdrawCommitments,
-      ...(expectedTaskRevisions !== undefined ? { expectedTaskRevisions } : {}),
+      expectedRevision: story.revision, revisitAt,
     }),
   }), [run]);
   const setContexts = useCallback((story: ProjectWithActions, contextIds: number[]) =>

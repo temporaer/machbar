@@ -3,9 +3,7 @@ import { api, type ProjectDetail, type ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
-import { hasApiErrorCode, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
-import { projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
-import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
+import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 import { ErrorState, LoadingState } from "./AsyncStates";
 
@@ -35,8 +33,6 @@ export function ProjectConvertToTaskSheet({
   const baseline = useRef({ title: story.title, notes: story.notes ?? "" });
   const [conflicts, setConflicts] = useState<Array<"title" | "notes">>([]);
   const [freshProject, setFreshProject] = useState<ProjectDetail | null>(null);
-  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
-  const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const {
@@ -82,7 +78,6 @@ export function ProjectConvertToTaskSheet({
         ...(titleEdited ? { title } : {}),
         ...(notesEdited ? { notes } : {}),
         expectedRevision: currentProject.revision,
-        ...(activationResolution ? { activationResolution } : {}),
         ...(currentProject.hierarchyRevisions ? { expectedHierarchyRevisions: currentProject.hierarchyRevisions } : {}),
       });
       bump();
@@ -92,14 +87,11 @@ export function ProjectConvertToTaskSheet({
     } catch (cause) {
       if (!isCurrent()) return;
       onFailure?.(cause);
-      const requiredPrompt = projectActivationPromptFromError(cause);
-      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
-        setActivationPrompt(null);
+      if (isStaleWriteConflict(cause)) {
         try {
           const latest = await api.getProject(story.id);
           if (!isCurrent()) return;
           setFreshProject(latest);
-          if (requiredPrompt) setActivationPrompt(requiredPrompt);
           const nextConflicts: Array<"title" | "notes"> = [];
           if (!titleEdited || latest.title === title) {
             baseline.current.title = latest.title;
@@ -214,11 +206,10 @@ export function ProjectConvertToTaskSheet({
                     </div>
                   ) : null}
                 </label>
-                {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy || title.trim() === "" || !canConvert || conflicts.length > 0 || (!!activationPrompt && !activationResolution)}
+                  disabled={busy || title.trim() === "" || !canConvert || conflicts.length > 0}
                   onClick={() => void convert()}
                 >
                   {strings.convertProjectToTask}

@@ -190,7 +190,7 @@ describe("project workflow (HTTP routes)", () => {
       .toMatchObject({ scope: "household", ownerMemberId: owner.id });
   });
 
-  it("activates the dated task's backlog project and its ancestors as one transition", async () => {
+  it("creates dated work without activating its backlog project or ancestors", async () => {
     const member = await createMemberRoute("Mira");
     const parent = await createProjectRoute({ title: "Haus", ownerMemberId: member.id });
     const child = await createProjectRoute({
@@ -198,18 +198,6 @@ describe("project workflow (HTTP routes)", () => {
       parentId: parent.id,
       ownerMemberId: member.id,
     });
-    const initial = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        projectId: child.id,
-        title: "Material ausmessen",
-        status: "someday",
-        scheduledDate: "2026-12-01",
-      },
-    });
-    expect(initial.statusCode).toBe(409);
-    const decisions = initial.json().error.details;
     const taskResponse = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
@@ -218,20 +206,12 @@ describe("project workflow (HTTP routes)", () => {
         title: "Material ausmessen",
         status: "someday",
         scheduledDate: "2026-12-01",
-        activationResolution: {
-          expectedProjects: decisions.expectedProjects,
-          drivers: [
-            { projectId: parent.id, ownerMemberId: member.id },
-            { projectId: child.id, ownerMemberId: member.id },
-          ],
-        },
       },
     });
-
     expect(taskResponse.statusCode).toBe(201);
-    expect(taskResponse.json().status).toBe("actionable");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json().status).toBe("active");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json().status).toBe("active");
+    expect(taskResponse.json().status).toBe("someday");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json().status).toBe("backlog");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json().status).toBe("backlog");
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${taskResponse.json().id}` })).json().scheduledDate)
       .toBe("2026-12-01");
     const today = (await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2026-10-11" })).json();
@@ -239,45 +219,22 @@ describe("project workflow (HTTP routes)", () => {
     expect(today.unscheduled.map((task: { id: number }) => task.id)).not.toContain(taskResponse.json().id);
   });
 
-  it("returns missing driver decisions without persisting a committed task, then applies the retry atomically", async () => {
-    const member = await createMemberRoute("Rae");
+  it("persists a dated task without assigning a driver or activating the project", async () => {
     const project = await createProjectRoute({ title: "Steuer", ownerMemberId: null });
     const body = {
       projectId: project.id,
       title: "Unterlagen zusammenstellen",
       scheduledDate: "2026-12-01",
     };
-    const rejected = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: body });
-    expect(rejected.statusCode).toBe(409);
-    expect(rejected.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: {
-        projects: [{ projectId: project.id, required: ["driver"] }],
-        expectedProjects: [{ projectId: project.id, revision: project.revision }],
-      },
-    });
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
-    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(0);
-
-    const retried = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        ...body,
-        activationResolution: {
-          expectedProjects: [{ projectId: project.id, revision: project.revision }],
-          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
-        },
-      },
-    });
+    const retried = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: body });
     expect(retried.statusCode).toBe(201);
     expect(retried.json().status).toBe("actionable");
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json())
-      .toMatchObject({ status: "active", ownerMemberId: member.id });
+      .toMatchObject({ status: "backlog", ownerMemberId: null, revision: project.revision });
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(1);
   });
 
-  it("collects a missing project driver before atomically enabling recurrence", async () => {
-    const member = await createMemberRoute("Rae");
+  it("enables recurrence without assigning a project driver or activating parked work", async () => {
     const project = await createProjectRoute({ title: "Heizung", ownerMemberId: null });
     const created = await ctx.app.inject({
       method: "POST",
@@ -293,45 +250,26 @@ describe("project workflow (HTTP routes)", () => {
       allowedDeviationDays: 2,
     };
 
-    const required = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: commitment });
-    expect(required.statusCode).toBe(409);
-    expect(required.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: { projects: [{ projectId: project.id, required: ["driver"] }] },
-    });
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({
-      status: "someday",
-      scheduledDate: null,
-      repeatAfterDays: null,
-      dueDate: null,
-    });
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
-
     const retried = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
-      payload: {
-        ...commitment,
-        activationResolution: {
-          expectedProjects: required.json().error.details.expectedProjects,
-          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
-        },
-      },
+      payload: commitment,
     });
     expect(retried.statusCode).toBe(200);
     expect(retried.json()).toMatchObject({
-      status: "actionable",
+      status: "someday",
       scheduledDate: "2026-12-01",
       repeatAfterDays: 14,
       dueDate: "2026-12-03",
     });
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json()).toMatchObject({
-      status: "active",
-      ownerMemberId: member.id,
+      status: "backlog",
+      ownerMemberId: null,
+      revision: project.revision,
     });
   });
 
-  it("requires decisions before persisting a newly created project deadline, then creates the next action and activates atomically", async () => {
+  it("persists a new project deadline and requires explicit activation with a progress path", async () => {
     const member = await createMemberRoute("Mira");
     const payload = {
       title: "Keller renovieren",
@@ -341,52 +279,29 @@ describe("project workflow (HTTP routes)", () => {
       .prepare("SELECT COUNT(*) AS count FROM work_items WHERE role = 'story'")
       .get() as { count: number };
 
-    const rejected = await ctx.app.inject({ method: "POST", url: "/api/projects", payload });
-    expect(rejected.statusCode).toBe(409);
-    expect(rejected.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: {
-        projects: [{ title: "Keller renovieren", required: ["driver", "progressPath"] }],
-        expectedProjects: [{ revision: expect.any(Number) }],
-      },
+    const created = await ctx.app.inject({ method: "POST", url: "/api/projects", payload });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ title: "Keller renovieren", status: "backlog", dueDate: "2026-12-15" });
+    const activated = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${created.json().id}/activate`,
+      payload: { expectedRevision: created.json().revision, ownerMemberId: member.id, nextActionTitle: "Maße aufnehmen" },
     });
-    expect(ctx.handle.sqlite
-      .prepare("SELECT COUNT(*) AS count FROM work_items WHERE role = 'story'")
-      .get()).toEqual(before);
-
-    const decision = rejected.json().error.details;
-    const retried = await ctx.app.inject({
-      method: "POST",
-      url: "/api/projects",
-      payload: {
-        ...payload,
-        activationResolution: {
-          expectedProjects: decision.expectedProjects,
-          drivers: [{ projectId: decision.projects[0].projectId, ownerMemberId: member.id }],
-          nextActionTitle: "Maße aufnehmen",
-        },
-      },
-    });
-    expect(retried.statusCode).toBe(201);
-    expect(retried.json()).toMatchObject({ title: "Keller renovieren", status: "active" });
-    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${retried.json().id}` })).json();
+    expect(activated.statusCode, activated.body).toBe(200);
+    expect(activated.json().status).toBe("active");
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${created.json().id}` })).json();
     expect(project.tasks.map((task: { title: string }) => task.title)).toContain("Maße aufnehmen");
     expect(ctx.handle.sqlite
       .prepare("SELECT COUNT(*) AS count FROM work_items WHERE role = 'story'")
       .get()).toEqual({ count: before.count + 1 });
   });
 
-  it("returns refreshed project decisions when a project changes while a commitment is being reviewed", async () => {
-    const member = await createMemberRoute("Mira");
+  it("creates dated work after the containing project changes without activating it", async () => {
     const project = await createProjectRoute({ title: "Haus", ownerMemberId: null });
     const request = {
       projectId: project.id,
       title: "Fenster ausmessen",
       dueDate: "2026-12-01",
     };
-    const initial = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: request });
-    expect(initial.statusCode).toBe(409);
-
     const changed = await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${project.id}`,
@@ -394,47 +309,15 @@ describe("project workflow (HTTP routes)", () => {
     });
     expect(changed.statusCode).toBe(200);
 
-    const retried = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        ...request,
-        activationResolution: {
-          expectedProjects: [{ projectId: project.id, revision: project.revision }],
-          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
-        },
-      },
-    });
-    expect(retried.statusCode).toBe(409);
-    expect(retried.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: {
-        reason: "project_snapshot_stale",
-        projects: [{ projectId: project.id, title: "Haus", required: ["driver"] }],
-        expectedProjects: [{ projectId: project.id, revision: changed.json().revision }],
-      },
-    });
-    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(0);
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json())
-      .toMatchObject({ status: "backlog", ownerMemberId: null, notes: "Kontext geändert" });
-
-    const refreshed = retried.json().error.details.expectedProjects;
-    const accepted = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        ...request,
-        activationResolution: {
-          expectedProjects: refreshed,
-          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
-        },
-      },
-    });
+    const accepted = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: request });
     expect(accepted.statusCode).toBe(201);
+    expect(accepted.json()).toMatchObject({ title: request.title, dueDate: request.dueDate });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json())
+      .toMatchObject({ status: "backlog", ownerMemberId: null, notes: "Kontext geändert", revision: changed.json().revision });
     expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(1);
   });
 
-  it("refreshes the decision chain when an ancestor is activated during review", async () => {
+  it("does not activate a child project when its ancestor is explicitly activated", async () => {
     const member = await createMemberRoute("Mira");
     const parent = await createProjectRoute({ title: "Haus", ownerMemberId: member.id });
     const child = await createProjectRoute({ title: "Küche", parentId: parent.id, ownerMemberId: null });
@@ -443,52 +326,23 @@ describe("project workflow (HTTP routes)", () => {
       title: "Arbeitsfläche ausmessen",
       dueDate: "2026-12-01",
     };
-    const initial = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: request });
-    expect(initial.statusCode).toBe(409);
-    expect(initial.json().error.details.expectedProjects).toHaveLength(2);
-
-    // Simulate a concurrent canonical activation changing both status and
-    // revision while the user is choosing the child project's driver.
-    ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', revision = revision + 1 WHERE id = ?")
-      .run(parent.id);
-    const staleRetry = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        ...request,
-        activationResolution: {
-          expectedProjects: initial.json().error.details.expectedProjects,
-          drivers: [{ projectId: child.id, ownerMemberId: member.id }],
-        },
-      },
+    const activated = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${parent.id}/activate`,
+      payload: { expectedRevision: parent.revision, ownerMemberId: member.id, nextActionTitle: "Haus planen" },
     });
-    expect(staleRetry.statusCode).toBe(409);
-    expect(staleRetry.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: {
-        reason: "project_snapshot_stale",
-        expectedProjects: [{ projectId: child.id, revision: child.revision }],
-      },
-    });
-    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(0);
-
+    expect(activated.statusCode, activated.body).toBe(200);
     const accepted = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
-      payload: {
-        ...request,
-        activationResolution: {
-          expectedProjects: staleRetry.json().error.details.expectedProjects,
-          drivers: [{ projectId: child.id, ownerMemberId: member.id }],
-        },
-      },
+      payload: request,
     });
     expect(accepted.statusCode).toBe(201);
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json().status).toBe("active");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json())
+      .toMatchObject({ status: "backlog", revision: child.revision });
   });
 
-  it("creates a user-authored progress path and activates when a project deadline is the commitment", async () => {
+  it("creates a user-authored progress path only on explicit project activation", async () => {
     const member = await createMemberRoute("Lena");
     const project = await createProjectRoute({ title: "Keller", ownerMemberId: member.id });
     const response = await ctx.app.inject({
@@ -497,30 +351,23 @@ describe("project workflow (HTTP routes)", () => {
       payload: {
         expectedRevision: project.revision,
         dueDate: "2026-12-20",
-        activationResolution: {
-          expectedProjects: [{ projectId: project.id, revision: project.revision }],
-          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
-          nextActionTitle: "Kellerregal ausmessen",
-        },
       },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
+    expect(response.json()).toMatchObject({ status: "backlog", dueDate: "2026-12-20" });
+    expect(ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task'").all()).toEqual([]);
+    const activation = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/activate`,
+      payload: { expectedRevision: response.json().revision, ownerMemberId: member.id, nextActionTitle: "Kellerregal ausmessen" },
+    });
+    expect(activation.statusCode, activation.body).toBe(200);
+    expect(activation.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
     const tasks = ctx.handle.sqlite.prepare("SELECT title, status FROM work_items WHERE role = 'task'").all();
     expect(tasks).toEqual([{ title: "Kellerregal ausmessen", status: "active" }]);
   });
 
-  it("refreshes the project deadline draft and decisions after another edit", async () => {
-    const member = await createMemberRoute("Lena");
-    const project = await createProjectRoute({ title: "Keller", ownerMemberId: member.id });
-    const initial = await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/projects/${project.id}`,
-      payload: { expectedRevision: project.revision, dueDate: "2026-12-20" },
-    });
-    expect(initial.statusCode).toBe(409);
-    expect(initial.json().error.code).toBe("project_commitment_resolution_required");
-
+  it("rejects a stale project deadline edit and accepts the refreshed revision", async () => {
+    const project = await createProjectRoute({ title: "Keller" });
     const edit = await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${project.id}`,
@@ -533,57 +380,31 @@ describe("project workflow (HTTP routes)", () => {
       payload: {
         expectedRevision: project.revision,
         dueDate: "2026-12-20",
-        activationResolution: {
-          expectedProjects: initial.json().error.details.expectedProjects,
-          drivers: [],
-          nextActionTitle: "Materialbedarf prüfen",
-        },
       },
     });
     expect(staleRetry.statusCode).toBe(409);
-    expect(staleRetry.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: {
-        targetRevision: edit.json().revision,
-        projects: [{ projectId: project.id, required: ["driver", "progressPath"] }],
-        expectedProjects: [{ projectId: project.id, revision: edit.json().revision }],
-      },
-    });
+    expect(staleRetry.json().error.code).toBe("stale_write_conflict");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json())
+      .toMatchObject({ dueDate: null, notes: "Neue Information", status: "backlog", revision: edit.json().revision });
 
     const refreshed = await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${project.id}`,
       payload: {
-        expectedRevision: staleRetry.json().error.details.targetRevision,
+        expectedRevision: edit.json().revision,
         dueDate: "2026-12-20",
-        activationResolution: {
-          expectedProjects: staleRetry.json().error.details.expectedProjects,
-          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
-          nextActionTitle: "Materialbedarf prüfen",
-        },
       },
     });
     expect(refreshed.statusCode).toBe(200);
-    expect(refreshed.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
+    expect(refreshed.json()).toMatchObject({ status: "backlog", dueDate: "2026-12-20" });
     const tasks = ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task'").all();
-    expect(tasks).toEqual([{ title: "Materialbedarf prüfen" }]);
+    expect(tasks).toEqual([]);
   });
 
-  it("refreshes ancestor decisions from the rolled-back graph while preserving a proposed next action", async () => {
+  it("allows explicit child activation after an ancestor edit without activating that ancestor", async () => {
     const member = await createMemberRoute("Lena");
     const parent = await createProjectRoute({ title: "Haus", ownerMemberId: member.id });
     const child = await createProjectRoute({ title: "Keller", parentId: parent.id, ownerMemberId: member.id });
-    const initial = await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/projects/${child.id}`,
-      payload: { expectedRevision: child.revision, dueDate: "2026-12-20" },
-    });
-    expect(initial.statusCode).toBe(409);
-    expect(initial.json().error.details.projects).toEqual(expect.arrayContaining([
-      expect.objectContaining({ projectId: child.id, required: ["driver", "progressPath"] }),
-      expect.objectContaining({ projectId: parent.id, required: ["driver", "progressPath"] }),
-    ]));
-
     const parentEdit = await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${parent.id}`,
@@ -591,55 +412,36 @@ describe("project workflow (HTTP routes)", () => {
     });
     expect(parentEdit.statusCode).toBe(200);
     const nextActionTitle = "Materialbedarf prüfen";
-    const staleRetry = await ctx.app.inject({
+    const dated = await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${child.id}`,
       payload: {
         expectedRevision: child.revision,
         dueDate: "2026-12-20",
-        activationResolution: {
-          expectedProjects: initial.json().error.details.expectedProjects,
-          drivers: [],
-          nextActionTitle,
-        },
       },
     });
-    expect(staleRetry.statusCode).toBe(409);
-    expect(staleRetry.json().error.details).toMatchObject({
-      reason: "project_snapshot_stale",
-      projects: expect.arrayContaining([
-        expect.objectContaining({ projectId: child.id, required: ["driver", "progressPath"] }),
-        expect.objectContaining({ projectId: parent.id, required: ["driver", "progressPath"] }),
-      ]),
-      expectedProjects: [
-        expect.objectContaining({ projectId: child.id, revision: child.revision }),
-        expect.objectContaining({ projectId: parent.id, revision: parentEdit.json().revision }),
-      ],
-    });
+    expect(dated.statusCode).toBe(200);
+    expect(dated.json()).toMatchObject({ status: "backlog", dueDate: "2026-12-20" });
     expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(0);
 
     const accepted = await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/projects/${child.id}`,
+      method: "POST",
+      url: `/api/projects/${child.id}/activate`,
       payload: {
-        expectedRevision: child.revision,
-        dueDate: "2026-12-20",
-        activationResolution: {
-          expectedProjects: staleRetry.json().error.details.expectedProjects,
-          drivers: [
-            { projectId: parent.id, ownerMemberId: member.id },
-            { projectId: child.id, ownerMemberId: member.id },
-          ],
-          nextActionTitle,
-        },
+        expectedRevision: dated.json().revision,
+        ownerMemberId: member.id,
+        nextActionTitle,
       },
     });
     expect(accepted.statusCode).toBe(200);
     expect(ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task'").all())
       .toEqual([{ title: nextActionTitle }]);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json())
+      .toMatchObject({ status: "backlog", revision: parentEdit.json().revision, notes: "Neue Information" });
+    expect(accepted.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
   });
 
-  it("refreshes task commitment decisions before inserting a proposed action when an ancestor changed", async () => {
+  it("keeps a blocked task and project ancestors unchanged when dating it after an ancestor edit", async () => {
     const member = await createMemberRoute("Lena");
     const parent = await createProjectRoute({ title: "Haus", ownerMemberId: member.id });
     const child = await createProjectRoute({ title: "Keller", parentId: parent.id, ownerMemberId: member.id });
@@ -666,70 +468,16 @@ describe("project workflow (HTTP routes)", () => {
       expectedRevision: dependency.json().revision,
       dueDate: "2026-12-20",
     };
-    const initial = await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/tasks/${blocked.json().id}`,
-      payload: request,
-    });
-    expect(initial.statusCode).toBe(409);
-    expect(initial.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: {
-        projects: expect.arrayContaining([
-          expect.objectContaining({ projectId: child.id, required: ["driver", "progressPath"] }),
-          expect.objectContaining({ projectId: parent.id, required: ["driver", "progressPath"] }),
-        ]),
-      },
-    });
-
     const parentEdit = await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${parent.id}`,
       payload: { expectedRevision: parent.revision, notes: "Antwort steht noch aus" },
     });
     expect(parentEdit.statusCode).toBe(200);
-    const nextActionTitle = "Alternative Bezugsquelle prüfen";
-    const staleRetry = await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/tasks/${blocked.json().id}`,
-      payload: {
-        ...request,
-        activationResolution: {
-          expectedProjects: initial.json().error.details.expectedProjects,
-          drivers: [],
-          nextActionTitle,
-        },
-      },
-    });
-    expect(staleRetry.statusCode).toBe(409);
-    expect(staleRetry.json().error.details).toMatchObject({
-      reason: "project_snapshot_stale",
-      projects: expect.arrayContaining([
-        expect.objectContaining({ projectId: child.id, required: ["driver", "progressPath"] }),
-        expect.objectContaining({ projectId: parent.id, required: ["driver", "progressPath"] }),
-      ]),
-      expectedProjects: expect.arrayContaining([
-        expect.objectContaining({ projectId: child.id, revision: child.revision }),
-        expect.objectContaining({ projectId: parent.id, revision: parentEdit.json().revision }),
-      ]),
-    });
-    expect(ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task' ORDER BY id").all())
-      .toEqual([{ title: "Freigabe erhalten" }, { title: "Material bestellen" }]);
-
     const accepted = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${blocked.json().id}`,
-      payload: {
-        ...request,
-        activationResolution: {
-          expectedProjects: staleRetry.json().error.details.expectedProjects,
-          drivers: [
-            { projectId: parent.id, ownerMemberId: member.id },
-            { projectId: child.id, ownerMemberId: member.id },
-          ],
-          nextActionTitle,
-        },
-      },
+      payload: request,
     });
     expect(accepted.statusCode).toBe(200);
     expect(accepted.json()).toMatchObject({ dueDate: "2026-12-20" });
@@ -737,17 +485,16 @@ describe("project workflow (HTTP routes)", () => {
       .toEqual([
         { title: "Freigabe erhalten" },
         { title: "Material bestellen" },
-        { title: nextActionTitle },
       ]);
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json().status).toBe("active");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json())
+      .toMatchObject({ status: "backlog", revision: child.revision });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json())
+      .toMatchObject({ status: "backlog", revision: parentEdit.json().revision });
   });
 
-  it("activates an already-dated backlog project when its deadline is changed", async () => {
-    const member = await createMemberRoute("Lena");
+  it("keeps an already-dated backlog project parked when its deadline is changed", async () => {
     const project = await createProjectRoute({
       title: "Steuer",
-      ownerMemberId: member.id,
     });
     // Simulate a dated backlog project left behind by the previous behavior.
     ctx.handle.sqlite.prepare("UPDATE work_items SET due_date = ? WHERE id = ?")
@@ -760,14 +507,13 @@ describe("project workflow (HTTP routes)", () => {
       payload: {
         expectedRevision: project.revision,
         dueDate: "2026-12-20",
-        activationResolution: { expectedProjects: [{ projectId: project.id, revision: project.revision }], drivers: [{ projectId: project.id, ownerMemberId: member.id }] },
       },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
+    expect(response.json()).toMatchObject({ status: "backlog", dueDate: "2026-12-20" });
   });
 
-  it("does not treat a project deadline as a progress path and rolls back when no path exists", async () => {
+  it("stores a project deadline without treating it as an activation progress path", async () => {
     const member = await createMemberRoute("Jo");
     const project = await createProjectRoute({ title: "Keller", ownerMemberId: member.id });
     const response = await ctx.app.inject({
@@ -775,16 +521,18 @@ describe("project workflow (HTTP routes)", () => {
       url: `/api/projects/${project.id}`,
       payload: { expectedRevision: project.revision, dueDate: "2026-12-20" },
     });
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: { projects: [{ projectId: project.id, required: ["driver", "progressPath"] }] },
-    });
+    expect(response.statusCode).toBe(200);
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json())
-      .toMatchObject({ status: "backlog", dueDate: null });
+      .toMatchObject({ status: "backlog", dueDate: "2026-12-20" });
+    const activation = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/activate`,
+      payload: { expectedRevision: response.json().revision, ownerMemberId: member.id },
+    });
+    expect(activation.statusCode).toBe(409);
+    expect(activation.json().error.code).toBe("project_activation_not_ready");
   });
 
-  it("activates a dated project without resolving its healthy external wait", async () => {
+  it("explicitly activates a dated project without resolving its healthy external wait", async () => {
     const member = await createMemberRoute("Kim");
     const project = await createProjectRoute({ title: "Versicherung", ownerMemberId: member.id });
     const task = (await ctx.app.inject({
@@ -798,10 +546,16 @@ describe("project workflow (HTTP routes)", () => {
     const currentProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
     const response = await ctx.app.inject({
       method: "PATCH", url: `/api/projects/${project.id}`,
-      payload: { expectedRevision: currentProject.revision, dueDate: "2026-12-20", activationResolution: { expectedProjects: [{ projectId: project.id, revision: currentProject.revision }], drivers: [{ projectId: project.id, ownerMemberId: member.id }] } },
+      payload: { expectedRevision: currentProject.revision, dueDate: "2026-12-20" },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().status).toBe("active");
+    expect(response.json().status).toBe("backlog");
+    const activation = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/activate`,
+      payload: { expectedRevision: response.json().revision, ownerMemberId: member.id },
+    });
+    expect(activation.statusCode, activation.body).toBe(200);
+    expect(activation.json().status).toBe("active");
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json())
       .toMatchObject({ status: "actionable", externalWait: expect.objectContaining({ waitingFor: "Versicherung" }) });
   });
@@ -1117,18 +871,13 @@ describe("project workflow (HTTP routes)", () => {
     expect(completed.ownerMemberId).toBe(anna.id);
     expect(completed.availableActions.sort()).toEqual(["archive", "reopen"].sort());
 
-    const completedDetail = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
     const reopened = (
       await ctx.app.inject({
         method: "POST",
         url: `/api/projects/${project.id}/reopen`,
         payload: {
           expectedRevision: completed.revision,
-          activationResolution: {
-            expectedProjects: completedDetail.directActivationDecisionSnapshot.expectedProjects,
-            drivers: [],
-            nextActionTitle: "Weiterführen",
-          },
+          nextActionTitle: "Weiterführen",
         },
       })
     );
@@ -1179,13 +928,12 @@ describe("project workflow (HTTP routes)", () => {
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("cancelled");
   });
 
-  it("keeps a project active while execution commitments remain and withdraws them only by explicit choice", async () => {
+  it("preserves execution commitments when returning an active project to backlog", async () => {
     const owner = await createMemberRoute("Planungstreiber");
-    const project = await createProjectRoute({ title: "Geplantes Projekt", ownerMemberId: owner.id });
+    const project = await createProjectRoute({ title: "Geplantes Projekt", ownerMemberId: owner.id, status: "active" });
     const created = await ctx.app.inject({
       method: "POST", url: "/api/tasks", payload: {
         projectId: project.id, title: "Termin vorbereiten", status: "actionable", scheduledDate: "2026-11-01",
-        activationResolution: { expectedProjects: [{ projectId: project.id, revision: project.revision }], drivers: [{ projectId: project.id, ownerMemberId: owner.id }] },
         repeatAfterDays: 30, allowedDeviationDays: 2,
         reminders: [{ kind: "absolute", at: "2026-10-20T09:00:00.000Z" }],
       },
@@ -1200,25 +948,21 @@ describe("project workflow (HTTP routes)", () => {
     });
     expect(withDeadline.statusCode).toBe(200);
     const projectRevision = withDeadline.json().revision;
-    const first = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: { expectedRevision: projectRevision } });
-    expect(first.statusCode).toBe(409);
-    expect(first.json().error.code).toBe("project_commitments_prevent_parking");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().scheduledDate).toBe("2026-11-01");
-
     const parked = await ctx.app.inject({
       method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: {
-        expectedRevision: projectRevision, revisitAt: "2026-11-15T09:00:00.000Z", withdrawCommitments: true,
-        expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
+        expectedRevision: projectRevision, revisitAt: "2026-11-15T09:00:00.000Z",
       },
     });
     expect(parked.statusCode).toBe(200);
-    expect(parked.json()).toMatchObject({ status: "backlog", dueDate: null, revisitAt: "2026-11-15T09:00:00.000Z" });
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ dueDate: null, scheduledDate: null, repeatAfterDays: null, reminders: [] });
+    expect(parked.json()).toMatchObject({ status: "backlog", dueDate: "2026-12-20", revisitAt: "2026-11-15T09:00:00.000Z" });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({
+      revision: task.revision, status: "actionable", dueDate: task.dueDate, scheduledDate: "2026-11-01",
+      repeatAfterDays: 30, reminders: task.reminders,
+    });
   });
 
-  it("preserves terminal task history during ordinary parking and explicit withdrawal", async () => {
-    for (const [title, withdraw, terminalAction] of [
+  it("preserves terminal task history when parking with or without a project deadline", async () => {
+    for (const [title, datedProject, terminalAction] of [
       ["Ohne Frist", false, "complete"],
       ["Mit Frist", true, "cancel"],
     ] as const) {
@@ -1244,7 +988,7 @@ describe("project workflow (HTTP routes)", () => {
       expect(completedTask.status).toBe(terminalAction === "complete" ? "done" : "cancelled");
 
       let activeProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
-      if (withdraw) {
+      if (datedProject) {
         const dated = await ctx.app.inject({
           method: "PATCH", url: `/api/projects/${project.id}`,
           payload: { dueDate: "2026-12-15", expectedRevision: activeProject.revision },
@@ -1253,7 +997,7 @@ describe("project workflow (HTTP routes)", () => {
       }
       const parked = await ctx.app.inject({
         method: "POST", url: `/api/projects/${project.id}/return-to-backlog`,
-        payload: { expectedRevision: activeProject.revision, ...(withdraw ? { withdrawCommitments: true } : {}) },
+        payload: { expectedRevision: activeProject.revision },
       });
       expect(parked.statusCode).toBe(200);
       const after = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json();
@@ -1504,14 +1248,9 @@ describe("project workflow (HTTP routes)", () => {
             descendantResolutions: [{ taskId: progressTask.id, action: "move_to_inbox" as const, expectedRevision: progressTask.revision }],
         };
       } else if (action === "reopen") {
-        const completedDetail = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
         payload = {
           expectedRevision: project.revision,
-          activationResolution: {
-            expectedProjects: completedDetail.directActivationDecisionSnapshot.expectedProjects,
-            drivers: [],
-            nextActionTitle: "Next action after reopening",
-          },
+          nextActionTitle: "Next action after reopening",
         };
       } else if (action === "activate") {
         payload = { expectedRevision: project.revision, ownerMemberId: anna.id };

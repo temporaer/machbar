@@ -119,6 +119,7 @@ const reasonOrder: Record<ReviewReason, number> = {
   task_scheduled_before_resurface: 7,
   backlog_planned_work: 8,
   backlog_revisit_reached: 9,
+  project_revisit_reached: 9,
   completed_project_open_work: 10,
   completion_review: 11,
   active_stale: 12,
@@ -154,6 +155,7 @@ export function buildReviewItems(
   for (const task of graph.allTasks()) {
     if (task.kind !== "action") continue;
     if (!isOpen(task)) continue;
+    if (graph.isEffectivelyDeferred(task.id)) continue;
     if (!isTaskInWorkingSystem(task, projectStatuses)) continue;
 
     if (task.externalWait && task.revisitAt === null) {
@@ -235,7 +237,7 @@ export function buildReviewItems(
         ),
       );
     }
-    if (task.dueDate !== null && task.dueDate < projectRevisitDate) {
+    if (task.dueDate !== null && task.repeatAfterDays === null && task.dueDate < projectRevisitDate) {
       items.push(
         taskItem(task, "clarification_repair", "task_due_before_resurface", {
           code: "plan_task",
@@ -265,24 +267,6 @@ export function buildReviewItems(
       );
     }
 
-    if (project.status === "backlog") {
-      const openTasks = tasks.filter(isOpen);
-      // Backlog dates are intentional planning/constraint signals (Week
-      // already surfaces them) and are not by themselves a repair issue.
-      // Only genuinely executable work leaking from a parked project counts.
-      const hasPlannedWork = openTasks.some((task) => task.status === "actionable");
-      if (hasPlannedWork) {
-        items.push(
-          projectItem(
-            project,
-            "clarification_repair",
-            "backlog_planned_work",
-            { code: "activate_project", targetEntityType: "project", targetEntityId: project.id },
-          ),
-        );
-      }
-    }
-
     if (project.status === "completed" || project.status === "archived") {
       const openTasks = tasks.filter(isOpen);
       if (openTasks.length > 0) {
@@ -297,7 +281,22 @@ export function buildReviewItems(
       }
     }
 
-    if (project.status === "active") {
+    if (
+      project.status === "active" &&
+      graph.isEffectivelyDeferred(project.id) &&
+      project.revisitAt !== null &&
+      Date.parse(project.revisitAt) <= nowInstant &&
+      (project.reviewedAt === null ||
+        Date.parse(project.reviewedAt) < Date.parse(project.revisitAt))
+    ) {
+      items.push(
+        projectItem(project, "reconsider", "project_revisit_reached", {
+          code: "review_project",
+        }),
+      );
+    }
+
+    if (project.status === "active" && !graph.isEffectivelyDeferred(project.id)) {
       const openTasks = tasks.filter(isOpen);
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
       const hasHealthyProgressPath = openTasks.some((task) => {

@@ -10,7 +10,6 @@ vi.mock("../lib/api", async (importOriginal) => {
   return {
     ...actual,
     api: {
-    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
       createTask: vi.fn(),
       getTags: vi.fn(),
       getProjects: vi.fn(),
@@ -120,23 +119,9 @@ describe("CaptureForm", () => {
     expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Artikel @Mira");
   });
 
-  it("keeps a dated project capture draft and completes project decisions in the same form", async () => {
+  it("keeps a dated project capture draft after a failed save and retries", async () => {
     mockedApi.createTask
-      .mockRejectedValueOnce(new ApiError(
-        409,
-        "Project decisions are required.",
-        "project_commitment_resolution_required",
-        {
-          projects: [{
-            projectId: 42,
-            title: "Keller",
-            revision: 3,
-            ownerMemberId: null,
-            required: ["driver", "progressPath"],
-          }],
-          expectedProjects: [{ projectId: 42, revision: 3 }],
-        },
-      ))
+      .mockRejectedValueOnce(new ApiError(503, "Offline"))
       .mockResolvedValueOnce(makeTask({ projectId: 42, status: "actionable" }));
     const onCaptured = vi.fn();
     render(
@@ -151,15 +136,9 @@ describe("CaptureForm", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
-    expect(await screen.findByText("Vor dem Start noch entscheiden")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeVisible();
     expect(mockedApi.createTask).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Erstellen" })).toBeDisabled();
-
-    await userEvent.selectOptions(screen.getByLabelText("Verantwortlich für „Keller“"), "2");
-    await userEvent.type(
-      screen.getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"),
-      "Maße prüfen",
-    );
+    expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Maße aufnehmen");
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
@@ -167,32 +146,13 @@ describe("CaptureForm", () => {
       title: "Maße aufnehmen",
       projectId: 42,
       dueDate: "2026-12-01",
-      activationResolution: {
-        expectedProjects: [{ projectId: 42, revision: 3 }],
-        drivers: [{ projectId: 42, ownerMemberId: 2 }],
-        nextActionTitle: "Maße prüfen",
-      },
     }), expect.any(Object));
     expect(onCaptured).toHaveBeenCalledTimes(1);
   });
 
-  it("discards activation requirements when the dated commitment changes", async () => {
+  it("keeps a failed capture editable before retry", async () => {
     mockedApi.createTask
-      .mockRejectedValueOnce(new ApiError(
-        409,
-        "Project decisions are required.",
-        "project_commitment_resolution_required",
-        {
-          projects: [{
-            projectId: 42,
-            title: "Keller",
-            revision: 3,
-            ownerMemberId: null,
-            required: ["driver", "progressPath"],
-          }],
-          expectedProjects: [{ projectId: 42, revision: 3 }],
-        },
-      ))
+      .mockRejectedValueOnce(new ApiError(503, "Offline"))
       .mockResolvedValueOnce(makeTask({ projectId: 42, status: "actionable" }));
     render(
       <CaptureForm
@@ -206,13 +166,12 @@ describe("CaptureForm", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
-    expect(await screen.findByText("Vor dem Start noch entscheiden")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeVisible();
     const date = screen.getByLabelText("Fällig");
     await userEvent.clear(date);
     await userEvent.type(date, "05.12.2026");
     await userEvent.tab();
 
-    expect(screen.queryByText("Vor dem Start noch entscheiden")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
     await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
     expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
@@ -223,16 +182,8 @@ describe("CaptureForm", () => {
     expect(mockedApi.createTask.mock.calls[1]?.[0]).not.toHaveProperty("activationResolution");
   });
 
-  it("can cancel a blocked dated capture without submitting a second time", async () => {
-    mockedApi.createTask.mockRejectedValueOnce(new ApiError(
-      409,
-      "Project decisions are required.",
-      "project_commitment_resolution_required",
-      {
-        projects: [{ projectId: 42, title: "Keller", revision: 3, ownerMemberId: null, required: ["driver"] }],
-        expectedProjects: [{ projectId: 42, revision: 3 }],
-      },
-    ));
+  it("can cancel a failed dated capture without submitting a second time", async () => {
+    mockedApi.createTask.mockRejectedValueOnce(new ApiError(503, "Offline"));
     const onCancel = vi.fn();
     const onCaptured = vi.fn();
     render(
@@ -247,7 +198,7 @@ describe("CaptureForm", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
-    expect(await screen.findByLabelText("Verantwortlich für „Keller“")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
     expect(onCancel).toHaveBeenCalledOnce();
     expect(mockedApi.createTask).toHaveBeenCalledOnce();

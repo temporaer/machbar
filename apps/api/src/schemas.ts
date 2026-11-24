@@ -105,18 +105,6 @@ export const homeAssistantSyncTaskSchema = z
     }
   });
 
-export const projectActivationResolutionSchema = z.object({
-  expectedProjects: z.array(z.object({
-    projectId: z.number().int().positive(),
-    revision: z.number().int().positive(),
-  })),
-  drivers: z.array(z.object({
-    projectId: z.number().int().positive(),
-    ownerMemberId: z.number().int().positive(),
-  })),
-  nextActionTitle: z.string().trim().min(1).optional(),
-}).strict();
-
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
   notes: z.string().optional(),
@@ -128,7 +116,6 @@ export const createProjectSchema = z.object({
   revisitAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
-  activationResolution: projectActivationResolutionSchema.optional(),
 });
 
 export const updateProjectSchema = z.object({
@@ -143,7 +130,6 @@ export const updateProjectSchema = z.object({
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
   expectedRevision: z.number().int().positive().optional(),
-  activationResolution: projectActivationResolutionSchema.optional(),
 });
 
 export const appendNotesSchema = z.object({
@@ -153,7 +139,7 @@ export const appendNotesSchema = z.object({
 export const activateProjectSchema = z.object({
   ownerMemberId: z.number().int().nullable().optional(),
   expectedRevision: z.number().int().positive().optional(),
-  activationResolution: projectActivationResolutionSchema.optional(),
+  nextActionTitle: z.string().trim().min(1).optional(),
 });
 
 export const projectLifecycleSchema = z.object({
@@ -163,8 +149,6 @@ export const projectLifecycleSchema = z.object({
 export const returnProjectToBacklogSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
   revisitAt: isoDateTime.nullable().optional(),
-  withdrawCommitments: z.boolean().optional(),
-  expectedTaskRevisions: z.array(z.object({ taskId: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
 });
 
 export const acknowledgeReviewSchema = projectLifecycleSchema;
@@ -272,7 +256,6 @@ export const createTaskSchema = z.object({
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminders: taskRemindersSchema.optional(),
-  activationResolution: projectActivationResolutionSchema.optional(),
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
 });
@@ -289,12 +272,7 @@ export const taskStepBatchSchema = z.object({
     scheduledDate: isoDate.nullable().optional(),
   }).strict()).min(1).max(30),
   expectedRevision: z.number().int().positive(),
-  expectedProjectRevisions: z.array(z.object({
-    projectId: z.number().int().positive(),
-    revision: z.number().int().positive(),
-  }).strict()),
   convertParentToProject: z.boolean().optional(),
-  activationResolution: projectActivationResolutionSchema.optional(),
 }).strict();
 
 export const updateTaskSchema = z.object({
@@ -322,7 +300,6 @@ export const updateTaskSchema = z.object({
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminders: taskRemindersSchema.optional(),
-  activationResolution: projectActivationResolutionSchema.optional(),
   additionalNextAction: z.boolean().optional(),
   tagIds: z.array(z.number().int()).optional(),
   excludedTagIds: z.array(z.number().int()).optional(),
@@ -356,13 +333,11 @@ export const convertTaskToStorySchema = z.object({
     taskId: z.number().int().positive(),
     revision: z.number().int().positive(),
   }).strict()).optional(),
-  activationResolution: projectActivationResolutionSchema.optional(),
   expectedHierarchyRevisions: z.array(z.object({ id: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
   expectedRevision: z.number().int().positive().optional(),
 }).strict();
 
 export const convertStoryToTaskSchema = z.object({
-  activationResolution: projectActivationResolutionSchema.optional(),
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
   expectedHierarchyRevisions: z.array(z.object({ id: z.number().int().positive(), revision: z.number().int().positive() }).strict()).optional(),
@@ -733,7 +708,6 @@ export const moveProjectSchema = z.object({
   parentId: z.number().int().positive().nullable(),
   expectedRevision: z.number().int().positive(),
   expectedHierarchyRevisions: z.array(z.object({ id: z.number().int().positive(), revision: z.number().int().positive() }).strict()),
-  activationResolution: projectActivationResolutionSchema.optional(),
 }).strict();
 
 // --- Goals & interventions (docs/goals-and-interventions.md §9) -------------

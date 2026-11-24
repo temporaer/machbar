@@ -182,7 +182,7 @@ describe("week planning agenda", () => {
     expect(titles(week.days[2].items)).not.toContain("Urlaub planen");
   });
 
-  it("places explicitly dated tasks from backlog stories without adding their unscheduled siblings to the planning pool", async () => {
+  it("keeps scheduled work out of Week but preserves reconsideration in a backlog story", async () => {
     const story = await createProject({ title: "All-Hands planen" });
     const driver = await createMember("Mira");
     const scheduled = await createTask({
@@ -209,25 +209,10 @@ describe("week planning agenda", () => {
 
     const week = await getWeek();
 
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${story.id}` })).json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${story.id}` })).json().status).toBe("backlog");
 
-    expect(week.days[1].items).toContainEqual(
-      expect.objectContaining({
-        id: scheduled.id,
-        title: "Fuer All-Hands anmelden",
-        placement: "scheduled",
-        projectId: story.id,
-        projectTitle: "All-Hands planen",
-      }),
-    );
-    expect(week.days[2].items).toContainEqual(
-      expect.objectContaining({
-        id: waiting.id,
-        title: "Biggi nach Reise fragen",
-        placement: "revisit",
-        externalWait: { waitingFor: "Biggi" },
-      }),
-    );
+    expect(week.days.flatMap((day: { items: Array<{ id: number }> }) => day.items).map((item: { id: number }) => item.id)).not.toContain(scheduled.id);
+    expect(week.days[2].items).toContainEqual(expect.objectContaining({ id: waiting.id, placement: "revisit" }));
     expect(titles(week.unplanned)).not.toContain("Unterkunft irgendwann klaeren");
   });
 
@@ -514,7 +499,7 @@ describe("week planning agenda", () => {
     expect(overdue.id).toBeDefined();
   });
 
-  it("carries an overdue scheduled date forward to today, preserving the original date", async () => {
+  it("returns an expired one-off plan to unplanned without changing its date", async () => {
     await createTask({
       title: "Laengst geplant",
       scheduledDate: "2026-09-01",
@@ -522,11 +507,11 @@ describe("week planning agenda", () => {
 
     const week = await getWeek();
 
-    expect(week.days[0].items).toContainEqual(
+    expect(week.unplanned).toContainEqual(
       expect.objectContaining({
         title: "Laengst geplant",
-        placement: "scheduled",
-        attentionDate: monday,
+        placement: "unplanned",
+        attentionDate: null,
         scheduledDate: "2026-09-01",
       }),
     );
