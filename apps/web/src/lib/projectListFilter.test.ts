@@ -69,6 +69,15 @@ describe("classifyProjectListItem", () => {
     expect(classifyProjectListItem(actionable)).toBe("active-actionable");
     expect(classifyProjectListItem(backlogWithoutAction)).toBe("backlog");
   });
+
+  it("does not classify a non-executable structural next action as actionable", () => {
+    const project = makeProject({
+      status: "active",
+      nextAction: makeTask({ executable: false }),
+      stuckReason: null,
+    });
+    expect(classifyProjectListItem(project)).toBe("active-deferred");
+  });
 });
 
 describe("filterAndSortProjects", () => {

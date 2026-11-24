@@ -127,8 +127,14 @@ describe("mixed task/project hierarchy regressions", () => {
     };
     const taskIds = (agenda: any) => ["planned", "overdue", "dueToday", "dueSoon", "shared", "unscheduled", "revisit"]
       .flatMap((bucket) => agenda[bucket].map((task: { id: number }) => task.id));
+    const weekProject = async () => {
+      const week = await get(`/api/agenda/week?scope=all&start=${day}&today=${day}`);
+      return week.days.flatMap((entry: { items: Array<{ id: number }> }) => entry.items)
+        .find((entry: { id: number }) => entry.id === inner.id);
+    };
 
     expect(taskIds(await readAgenda())).toEqual(expect.arrayContaining([scheduled.id, unscheduled.id, sibling.id]));
+    expect(await weekProject()).toMatchObject({ executable: true });
     ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'backlog', owner_member_id = NULL WHERE id = ?").run(outer.id);
     const before = state();
     const parked = await readAgenda();
@@ -136,6 +142,7 @@ describe("mixed task/project hierarchy regressions", () => {
     expect(taskIds(parked)).not.toContain(unscheduled.id);
     expect(taskIds(parked)).toContain(sibling.id);
     expect(parked.projects.map((entry: { project: { id: number } }) => entry.project.id)).not.toContain(inner.id);
+    expect(await weekProject()).toMatchObject({ executable: false });
     expect((await get("/api/waiting")).map((entry: { task: { id: number } }) => entry.task.id)).not.toContain(waiting.id);
     expect(Graph.load(ctx.handle.db).blockerAnalysisFor(dependent.id)).toMatchObject({
       blocked: true, healthyProgressPath: false,
@@ -153,6 +160,7 @@ describe("mixed task/project hierarchy regressions", () => {
     const activation = await post(`/api/projects/${outer.id}/activate`, { expectedRevision: row(outer.id).revision, ownerMemberId: member.id });
     expect(activation.statusCode, activation.body).toBe(200);
     expect(taskIds(await readAgenda())).toEqual(expect.arrayContaining([scheduled.id, unscheduled.id, progress.id, sibling.id]));
+    expect(await weekProject()).toMatchObject({ executable: true });
     expect((await get(`/api/tasks/${someday.id}`)).status).toBe("someday");
     for (const id of [container.id, inner.id, scheduled.id, unscheduled.id, someday.id, progress.id, waiting.id, dependent.id]) {
       expect(row(id)).toEqual(before.find((item) => item.id === id));

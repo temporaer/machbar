@@ -143,7 +143,7 @@ function storySummary(
     tags: story.effectiveTags,
     contexts: story.contexts,
     blocked: story.stuckReason !== null,
-    executable: story.nextAction !== null,
+    executable: story.nextAction?.executable === true,
     stuckReason: story.stuckReason ?? null,
     task: null,
     project: pruneProjectForCompiledView(story),
