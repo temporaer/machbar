@@ -1861,6 +1861,8 @@ When the person ends the reflection, provide a concise human-readable summary an
       "This commitment still needs a project lead or an executable next step. Your changes were not saved.",
     project_commitments_prevent_parking:
       "This project still has commitments. In the defer sheet, explicitly choose whether to withdraw them.",
+    task_commitments_prevent_deferral:
+      "Remove plans, deadlines and execution reminders and resolve any external wait before moving this task to Someday. Nothing was changed.",
     project_completion_resolution_required:
       "Choose whether to cancel or move each open task branch before completing the project.",
     project_completion_resolution_invalid:

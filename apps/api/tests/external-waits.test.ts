@@ -458,18 +458,14 @@ describe("task external waits", () => {
         expectedRevision: waiting.json().revision,
       },
     });
-    expect(transitioned.json()).toMatchObject({
-      status: "actionable",
-      externalWait: { waitingFor: "Rückmeldung" },
-      scheduledDate: "2026-09-12",
-      blocked: true,
-    });
+    expect(transitioned.statusCode).toBe(409);
+    expect(transitioned.json().error.code).toBe("task_commitments_prevent_deferral");
 
     const parked = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
       payload: {
-        expectedRevision: transitioned.json().revision,
+        expectedRevision: waiting.json().revision,
         status: "someday",
         scheduledDate: null,
         externalWait: null,
@@ -477,6 +473,24 @@ describe("task external waits", () => {
     });
     expect(parked.statusCode).toBe(200);
     expect(parked.json()).toMatchObject({ status: "someday", externalWait: null, scheduledDate: null, blocked: false });
+  });
+
+  it("does not silently remove an external wait when deferring an otherwise unplanned task", async () => {
+    const task = await createTask({ title: "Waiting", status: "actionable" });
+    const wait = await ctx.app.inject({
+      method: "PUT", url: `/api/tasks/${task.id}/external-wait`, payload: { waitingFor: "Reply" },
+    });
+    expect(wait.statusCode).toBe(200);
+    const response = await ctx.app.inject({
+      method: "PATCH", url: `/api/tasks/${task.id}`,
+      payload: { status: "someday", expectedRevision: wait.json().revision },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "task_commitments_prevent_deferral", details: { executionCommitment: false, externalWait: true },
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json())
+      .toMatchObject({ status: "actionable", externalWait: { waitingFor: "Reply" }, revision: wait.json().revision });
   });
 
   it("rejects waits on non-actionable and recurring tasks", async () => {

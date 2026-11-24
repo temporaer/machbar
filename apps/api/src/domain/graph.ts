@@ -591,9 +591,6 @@ export class Graph {
       });
       incomingDependenciesByTask.set(row.dependsOnTaskId, list);
     }
-    const projectStatuses = new Map(
-      rawProjects.map((project) => [project.id, project.status]),
-    );
     const allProjectStatuses = new Map(
       allWorkItemRows.filter((row) => row.role === "story").map((row) => [
         row.id, projectStatusFromStored(row.status as StoredWorkItemStatus, row.archivedAt),
@@ -646,15 +643,29 @@ export class Graph {
       graph.blockerAnalysisByTask.set(taskId, analysis);
     }
     if (includeProjectAnalysis) {
-      const readinessBlockers = analyzeTaskBlockers(
-        blockerInputs, projectStatuses, today, now, householdTimezone(db),
-      );
+      const parents = new Map(allWorkItemRows.map((row) => [row.id, row.parentId]));
       for (const project of rawProjects) {
-        const activationStatuses = new Map(projectStatuses);
-        activationStatuses.set(project.id, "active");
+        const seen = new Set<number>();
+        const toActivate: number[] = [];
+        let currentId: number | null = project.id;
+        while (currentId !== null && !seen.has(currentId)) {
+          seen.add(currentId);
+          const status = allProjectStatuses.get(currentId);
+          if ((currentId === project.id && status !== "active") || status === "backlog") {
+            toActivate.push(currentId);
+          }
+          currentId = parents.get(currentId) ?? null;
+        }
+        const unchanged = toActivate.length === 0;
+        let activationStatuses = workingStatuses;
+        if (!unchanged) {
+          const simulatedStatuses = new Map(allProjectStatuses);
+          for (const id of toActivate) simulatedStatuses.set(id, "active");
+          activationStatuses = effectiveProjectStatuses(allWorkItemRows, simulatedStatuses);
+        }
         const activationBlockers =
-          project.status === "active"
-            ? readinessBlockers
+          unchanged
+            ? blockerAnalysis
             : analyzeTaskBlockers(
                 blockerInputs,
                 activationStatuses,
@@ -668,7 +679,7 @@ export class Graph {
             ownerMemberId: project.ownerMemberId,
             candidateTaskIds: (
               nextActionIdsByProject.get(project.id) ?? []
-            ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
+            ).filter((taskId) => activationStatuses.get(project.id) === "active" && activationBlockers.get(taskId)?.blocked === false),
             projectTaskIds: rawTasks
               .filter((task) => task.projectId === project.id)
               .map((task) => task.id),
@@ -676,6 +687,7 @@ export class Graph {
               .filter(
                 (task) =>
                   task.projectId === project.id &&
+                  activationStatuses.get(project.id) === "active" &&
                   task.kind === "action" &&
                   task.status === "actionable" &&
                   task.repeatAfterDays === null &&
@@ -942,7 +954,7 @@ export class Graph {
     }
 
     for (const project of includeProjectAnalysis ? graph.projectsById.values() : []) {
-      if (project.status !== "active") continue;
+      if (project.status !== "active" || workingStatuses.get(project.id) !== "active") continue;
       const tasks = graph.actionsForProject(project.id);
       const openTasks = tasks.filter(
         (task) => task.status !== "done" && task.status !== "cancelled",

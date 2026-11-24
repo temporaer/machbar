@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
 import { buildAgenda } from "../src/domain/agenda.js";
+import { buildReviewItems } from "../src/domain/reviewItems.js";
 import { getDirectChildren } from "../src/repo/treeRepo.js";
 import { createTestContext, closeTestContext, insertTestProject, insertTestTask, type TestContext } from "./helpers.js";
 
@@ -140,6 +141,10 @@ describe("mixed task/project hierarchy regressions", () => {
       blocked: true, healthyProgressPath: false,
       diagnoses: [expect.objectContaining({ reason: "backlog_project", targetTaskId: unscheduled.id })],
     });
+    const graph = Graph.load(ctx.handle.db);
+    expect(graph.stuckReasonFor(inner.id)).toBeNull();
+    expect(buildReviewItems(graph).filter((item) => item.entityId === inner.id && item.entityType === "project")
+      .map((item) => item.reason)).not.toContain("no_viable_progress_path");
     const detail = await get(`/api/tasks/${scheduled.id}`);
     expect(detail).toMatchObject({ status: "actionable", executable: false, scheduledDate: day, notes: "Keep" });
     expect((await get(`/api/tasks/${someday.id}`)).status).toBe("someday");
@@ -152,6 +157,19 @@ describe("mixed task/project hierarchy regressions", () => {
     for (const id of [container.id, inner.id, scheduled.id, unscheduled.id, someday.id, progress.id, waiting.id, dependent.id]) {
       expect(row(id)).toEqual(before.find((item) => item.id === id));
     }
+  });
+
+  it("does not count a dependency under a different parked ancestor as activation progress", () => {
+    const outer = insertTestProject(ctx.handle.db, { title: "Parked ancestor" });
+    const middle = insertTestTask(ctx.handle.db, { title: "Container", projectId: outer.id });
+    const inner = insertTestProject(ctx.handle.db, { title: "Active nested", status: "active", parentId: middle.id });
+    const prerequisite = insertTestTask(ctx.handle.db, { title: "Future prerequisite", projectId: inner.id, scheduledDate: "2099-12-01" });
+    const target = insertTestProject(ctx.handle.db, { title: "Target" });
+    const dependent = insertTestTask(ctx.handle.db, { title: "Dependent", projectId: target.id });
+    ctx.handle.db.insert(schema.taskDependencies).values({ taskId: dependent.id, dependsOnTaskId: prerequisite.id }).run();
+
+    const graph = Graph.load(ctx.handle.db);
+    expect(graph.projectWithComputed(target.id)?.activationReadiness.hasHealthyFutureWaiting).toBe(false);
   });
 
   it("keeps a task with an open project descendant out of next actions and Today through conversion and inverse", async () => {

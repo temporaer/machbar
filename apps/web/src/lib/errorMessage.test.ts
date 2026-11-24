@@ -24,6 +24,12 @@ describe("localizedErrorMessage", () => {
     expect(localizedErrorMessage(new Error("offline"), de)).toBe("offline");
   });
 
+  it("explains a task deferral commitment conflict in both languages", () => {
+    const error = new ApiError(409, "fallback", "task_commitments_prevent_deferral");
+    expect(localizedErrorMessage(error, de)).toBe(de.apiErrorMessages.task_commitments_prevent_deferral);
+    expect(localizedErrorMessage(error, en)).toBe(en.apiErrorMessages.task_commitments_prevent_deferral);
+  });
+
   it("turns browser fetch failures into actionable connection guidance", () => {
     expect(localizedErrorMessage(new TypeError("Failed to fetch"), en)).toBe(
       "Machbar could not reach the server. Check your connection and try again.",

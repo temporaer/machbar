@@ -1171,6 +1171,13 @@ export function updateTask(
       (input.scheduledDate !== undefined && input.scheduledDate !== currentTask.scheduledDate && input.scheduledDate !== null) ||
       (input.repeatAfterDays !== undefined && input.repeatAfterDays !== null && currentTask.repeatAfterDays === null) ||
       (input.reminders !== undefined && currentTask.reminders.length === 0 && input.reminders.length > 0 && effectiveRevisitAt === null);
+    if (input.status === "someday" && (executionCommitmentAfter || requestedExternalWait !== null)) {
+      throw AppError.conflict(
+        "task_commitments_prevent_deferral",
+        "Remove the task's execution commitments and resolve its external wait before moving it to Someday.",
+        { taskId: id, executionCommitment: executionCommitmentAfter, externalWait: requestedExternalWait !== null },
+      );
+    }
     const requestedTargetStatus = nextStatus ?? currentTask.status;
     const taskTransition = evaluateCommitmentTransition({
       today: new Date().toISOString().slice(0, 10),

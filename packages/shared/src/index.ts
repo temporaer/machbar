@@ -182,6 +182,7 @@ export type ApiErrorCode =
   | "project_commitments_prevent_parking"
   | "project_completion_resolution_required"
   | "project_completion_resolution_invalid"
+  | "task_commitments_prevent_deferral"
   | "task_reopen_required"
   | "project_completion_criteria_incomplete"
   | "task_completion_criteria_incomplete"

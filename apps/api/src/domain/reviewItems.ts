@@ -321,6 +321,7 @@ export function buildReviewItems(
           }),
         );
       } else if (
+        graph.workingProjectStatuses.get(project.id) === "active" &&
         canonicalCandidates.length === 0 &&
         !hasViablePath &&
         !projectsWithRootCause.has(project.id)

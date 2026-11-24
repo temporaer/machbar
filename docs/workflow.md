@@ -315,6 +315,13 @@ revisit remains an intentional pause and does not activate the task. Activation
 changes project lifecycle only; a task scheduled for a future date remains out
 of Heute until its normal agenda eligibility is reached.
 
+An explicit request to move a task to Someday is not silently overridden by an
+existing plan. If an execution plan, deadline, execution reminder, or external
+wait remains, the request fails without changes; the person must explicitly
+remove the commitment or resolve the wait before deferring it. A combined
+request to defer and add a commitment also fails rather than guessing which
+intent wins. Revisit-only reminders remain reconsideration, not execution.
+
 The compact **Meine | Alle** toggle can broaden this to the whole household
 without changing who is signed in or who is recorded as making changes.
 

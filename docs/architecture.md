@@ -25,6 +25,12 @@ deadline can trigger project activation, but is never itself a progress path.
 Missing drivers or a concrete next action return structured decisions before
 the source mutation is committed.
 
+An explicit Someday transition with a remaining execution commitment or
+external wait returns `task_commitments_prevent_deferral` before any write.
+Callers must remove the commitment or resolve the wait explicitly; this also
+rejects a single request that both defers and adds a commitment. The existing
+project commitment-withdrawal guard is independent and unchanged.
+
 Revisit dates remain reconsideration, not execution commitments. A reached
 ordinary revisit on an actionable, unblocked leaf counts as currently available
 project progress, but reads never clear it or turn it into a work plan. Future

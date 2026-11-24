@@ -1811,6 +1811,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Für diesen verbindlichen Plan fehlen noch eine verantwortliche Person oder ein ausführbarer nächster Schritt. Deine Änderungen wurden nicht gespeichert.",
     project_commitments_prevent_parking:
       "Dieses Projekt enthält noch verbindliche Termine oder Erinnerungen. Entscheide im Zurückstellen-Dialog ausdrücklich, ob sie zurückgezogen werden sollen.",
+    task_commitments_prevent_deferral:
+      "Entferne zuerst Pläne, Deadlines und verbindliche Erinnerungen und löse ein offenes Warten auf, bevor du die Aufgabe auf Irgendwann setzt. Es wurde nichts geändert.",
     project_completion_resolution_required:
       "Lege zuerst für jeden offenen Aufgabenbereich fest, ob er verworfen oder in den Eingang verschoben wird.",
     project_completion_resolution_invalid:

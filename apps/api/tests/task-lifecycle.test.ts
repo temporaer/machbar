@@ -88,7 +88,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(deferred.json()).toMatchObject({ status: "captured", scheduledDate: null });
   });
 
-  it("keeps an execution commitment actionable when a status patch also asks to park it", async () => {
+  it("rejects a conflicting explicit Someday and execution commitment instead of silently overriding the status", async () => {
     const combined = await createTask({ title: "Combined patch" });
     const combinedResponse = await ctx.app.inject({
       method: "PATCH",
@@ -99,8 +99,9 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
         dueDate: "2026-12-01",
       },
     });
-    expect(combinedResponse.statusCode).toBe(200);
-    expect(combinedResponse.json()).toMatchObject({ status: "actionable", dueDate: "2026-12-01" });
+    expect(combinedResponse.statusCode).toBe(409);
+    expect(combinedResponse.json().error.code).toBe("task_commitments_prevent_deferral");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${combined.id}` })).json()).toMatchObject({ status: "captured", dueDate: null });
 
     const scheduled = await createTask({
       title: "Already planned",
@@ -114,6 +115,51 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     });
     expect(statusOnly.statusCode).toBe(200);
     expect(statusOnly.json()).toMatchObject({ status: "actionable", scheduledDate: "2026-12-02" });
+  });
+
+  it.each(["PATCH", "POST"] as const)("returns an explicit conflict for scheduled Someday via %s and permits an uncommitted round trip", async (method) => {
+    const task = await createTask({ title: "Scheduled", status: "actionable", scheduledDate: "2026-12-02", notes: "Keep" });
+    const url = `/api/tasks/${task.id}${method === "POST" ? "/status" : ""}`;
+    const rejected = await ctx.app.inject({ method, url, payload: { expectedRevision: task.revision, status: "someday" } });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error).toMatchObject({ code: "task_commitments_prevent_deferral", details: { taskId: task.id } });
+    const unchanged = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json();
+    expect(unchanged).toMatchObject({ revision: task.revision, status: "actionable", scheduledDate: "2026-12-02", notes: "Keep" });
+    const parked = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { expectedRevision: task.revision, status: "someday", scheduledDate: null } });
+    expect(parked.statusCode).toBe(200);
+    expect(parked.json()).toMatchObject({ status: "someday", notes: "Keep", scheduledDate: null });
+    const reactivated = await ctx.app.inject({ method, url, payload: { expectedRevision: parked.json().revision, status: "actionable" } });
+    expect(reactivated.statusCode).toBe(200);
+    expect(reactivated.json()).toMatchObject({ status: "actionable", notes: "Keep" });
+  });
+
+  it.each([
+    ["deadline", { dueDate: "2026-12-01" }],
+    ["reminder", { reminders: [{ kind: "absolute", at: "2026-12-01T09:00:00.000Z" }] }],
+    ["recurrence", { scheduledDate: "2026-12-01", repeatAfterDays: 7, allowedDeviationDays: 0 }],
+  ])("rejects Someday with an existing %s without changing stored data or history", async (_label, commitment) => {
+    const task = await createTask({ title: "Committed", status: "actionable", notes: "Keep", ...commitment });
+    expect(task.id).toBeDefined();
+    const snapshot = () => ({
+      items: ctx.handle.sqlite.prepare("SELECT * FROM work_items").all(),
+      reminders: ctx.handle.sqlite.prepare("SELECT * FROM task_reminders").all(),
+      activity: ctx.handle.sqlite.prepare("SELECT * FROM activity_events").all(),
+      notifications: ctx.handle.sqlite.prepare("SELECT * FROM notification_events").all(),
+    });
+    const before = snapshot();
+    const stale = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { expectedRevision: task.revision + 1, status: "someday" } });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_write_conflict");
+    const rejected = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { expectedRevision: task.revision, status: "someday" } });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error.code).toBe("task_commitments_prevent_deferral");
+    const preview = await ctx.app.inject({
+      method: "PATCH", url: `/api/tasks/${task.id}`, headers: { "x-machbar-preview": "activation" },
+      payload: { expectedRevision: task.revision, status: "someday" },
+    });
+    expect(preview.statusCode).toBe(409);
+    expect(preview.json().error.code).toBe("task_commitments_prevent_deferral");
+    expect(snapshot()).toEqual(before);
   });
 
   it("requires an explicit reopen before adding an execution commitment to terminal work", async () => {
