@@ -94,7 +94,9 @@ test("groups deferred projects and standalone tasks in Later and removes a react
     (await (await page.request.get(`/api/tasks/${task.id}`)).json()).status,
   ).toBe("actionable");
 
+  await expect(detail.getByRole("button", { name: "Status Machbar", exact: true })).toBeEnabled();
   await detail.getByRole("button", { name: "Schließen", exact: true }).click();
+  await expect(detail).toHaveCount(0);
   await page.getByLabel("Suchen").fill(marker);
   await expect(page.getByRole("heading", { name: "Später (1)" })).toBeVisible();
   await expect(row).toHaveCount(0);

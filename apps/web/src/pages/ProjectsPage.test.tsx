@@ -794,6 +794,34 @@ describe("ProjectsPage – workflow sections", () => {
     expect(screen.queryByRole("heading", { name: "Später (1)" })).not.toBeInTheDocument();
   });
 
+  it("keeps project actions available when the supplemental task inventory read fails and retries it", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({
+        id: 94,
+        title: "Available project despite task read failure",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 940, title: "Continue the project" }),
+      }),
+    ]);
+    mockedApi.searchTasks
+      .mockRejectedValueOnce(new Error("task inventory unavailable"))
+      .mockResolvedValueOnce([]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    const projectTitle = "Available project despite task read failure";
+    await screen.findByText(projectTitle);
+    const row = rowFor(container, projectTitle);
+    expect(within(row).getByRole("button", { name: "Abschließen" })).toBeEnabled();
+
+    const readError = screen.getByRole("alert");
+    expect(readError).toHaveTextContent("task inventory unavailable");
+    await userEvent.click(within(readError).getByRole("button", { name: "Erneut versuchen" }));
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByText(projectTitle)).toBeVisible();
+  });
+
   it("renders active/stuck, counted waiting, visible backlog, and terminal sections", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({ id: 1, title: "Backlog", status: "backlog", ownerMemberId: null }),

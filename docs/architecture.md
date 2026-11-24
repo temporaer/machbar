@@ -1306,7 +1306,9 @@ filtered out can be promoted as a root. Task roots reuse `TaskOutline` and keep
 their descendants in the hierarchy; nested projects remain reachable through
 their parent project detail. Active standalone tasks remain in Today/Available,
 not Later. Scope and search filters apply to both groups, with unassigned
-household work retained in the default personal scope.
+household work retained in the default personal scope. If the task inventory
+read fails, the project list and its actions remain available, the error is
+retryable, and incomplete task data is not reported as an empty result.
 
 - **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail instead, never the one-tap default. Activation remains available from Later, Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** asks what should happen next with the item, revealing up to three contextual interventions in one horizontal row. Lifecycle transitions remain in the separate right-swipe rail.

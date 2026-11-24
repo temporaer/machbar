@@ -575,7 +575,7 @@ test("project AI prompt keeps drafts on same-project Back until discard is confi
   expect(materialResponse.status()).toBe(201);
   const material = await materialResponse.json();
   await page.goto("/#/projects");
-  await page.locator('[data-project-section="backlog"] > summary').click();
+  await page.locator('[data-project-section="later"] > summary').click();
   await page.locator(`[data-workitem-id="${project.id}"] .story-row-main`).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
   await page.getByRole("button", { name: "Aufgaben hinzufügen", exact: true }).click();

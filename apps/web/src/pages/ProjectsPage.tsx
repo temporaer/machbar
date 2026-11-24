@@ -61,6 +61,7 @@ function ProjectsPageContent() {
     data: tasks,
     loading: tasksLoading,
     error: tasksError,
+    refreshError: tasksRefreshError,
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks({ includeTerminal: true }), []);
   const { bump } = useRefresh();
@@ -211,7 +212,7 @@ function ProjectsPageContent() {
   const revealTerminalProjects = query.trim() !== "" && terminalProjects.length > 0;
   const revealQuietProjects = query.trim() !== "" && quietProjects.length > 0;
   const revealLater = query.trim() !== "" && laterCount > 0;
-  const readError = error ?? tasksError;
+  const readError = error ?? tasksError ?? tasksRefreshError;
   const readsLoading = loading || tasksLoading;
 
   return (
@@ -301,11 +302,11 @@ function ProjectsPageContent() {
       </div>
       {readsLoading ? <LoadingState /> : null}
       {readError ? <ErrorState message={readError} onRetry={() => { reload(); reloadTasks(); }} /> : null}
-      {projects && tasks ? (
+      {projects ? (
         allProjects.length === 0 && laterCount === 0 ? (
-          <EmptyState message={strings.noProjects} />
+          tasks ? <EmptyState message={strings.noProjects} /> : null
         ) : activeProjects.length + quietProjects.length + laterCount + terminalProjects.length === 0 ? (
-          <EmptyState message={strings.noMatchingProjects} />
+          tasks ? <EmptyState message={strings.noMatchingProjects} /> : null
         ) : (
           <>
             {activeProjects.length > 0 ? (
