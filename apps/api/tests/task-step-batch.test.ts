@@ -747,6 +747,41 @@ describe("atomic task step batches", () => {
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json().status).toBe("captured");
   });
 
+  it("rolls back earlier child writes and parent classification when a later insert fails", async () => {
+    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+    const headers = { [ACTIVITY_ACTOR_HEADER]: String(member.id) };
+    const parent = await createTask({ title: "Plan", size: "XL" });
+    const payload = {
+      expectedRevision: parent.revision,
+      steps: [{ title: "Erster Schritt" }, { title: "Zweiter Schritt", scheduledDate: "2027-01-15" }],
+    };
+    ctx.handle.sqlite.exec(`
+      CREATE TRIGGER fail_second_batch_child BEFORE INSERT ON work_items
+      WHEN NEW.title = 'Zweiter Schritt'
+        AND EXISTS (SELECT 1 FROM work_items WHERE title = 'Erster Schritt' AND parent_id = NEW.parent_id)
+        AND EXISTS (SELECT 1 FROM work_items WHERE id = NEW.parent_id AND status = 'active')
+        AND EXISTS (SELECT 1 FROM contribution_events WHERE entity_id = NEW.parent_id AND reason = 'task_broken_down')
+      BEGIN SELECT RAISE(ABORT, 'forced second child failure'); END
+    `);
+    const before = ctx.handle.sqlite.serialize();
+    const failed = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/children/batch`, headers, payload,
+    });
+    expect(failed.statusCode).toBe(500);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}`, headers })).json())
+      .toMatchObject({ status: "captured", needsClarification: true, revision: parent.revision, children: [] });
+
+    ctx.handle.sqlite.exec("DROP TRIGGER fail_second_batch_child");
+    const retried = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/children/batch`, headers, payload,
+    });
+    expect(retried.statusCode, retried.body).toBe(201);
+    expect(retried.json().tasks.map((task: { title: string }) => task.title))
+      .toEqual(["Erster Schritt", "Zweiter Schritt"]);
+    expect(retried.json().parent).toMatchObject({ status: "actionable", needsClarification: false });
+  });
+
   it("accepts a current parent revision after an ancestor edit without activating projects", async () => {
     const ancestor = await createProject({ title: "Umbau" });
     const destination = await createProject({ title: "Bad renovieren", parentId: ancestor.id });
