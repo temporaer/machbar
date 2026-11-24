@@ -155,6 +155,55 @@ describe("phase 6a parent-preserving structure", () => {
     expect(rows()).toEqual(before);
   });
 
+  it.each(["inherit", "explicit", "none"] as const)("preserves %s ownership through backlog conversion and driver changes", async (mode) => {
+    const anna = (await post("/api/members", { name: "Anna" })).json();
+    const ben = (await post("/api/members", { name: "Ben" })).json();
+    const parent = (await post("/api/tasks", { title: "Parent", status: "actionable", ownerMemberId: anna.id, ownerInheritanceMode: "explicit" })).json();
+    const sourceResponse = await post("/api/tasks", {
+      title: "Scheduled", parentTaskId: parent.id, status: "actionable", scheduledDate: "2026-09-15",
+      ownerInheritanceMode: mode, ...(mode === "explicit" ? { ownerMemberId: anna.id } : {}),
+    });
+    expect(sourceResponse.statusCode, sourceResponse.body).toBe(201);
+    const source = sourceResponse.json();
+    const children = await Promise.all([
+      post(`/api/tasks/${source.id}/children`, { title: "Inherited child", ownerInheritanceMode: "inherit" }),
+      post(`/api/tasks/${source.id}/children`, { title: "Assigned child", ownerInheritanceMode: "explicit", ownerMemberId: anna.id }),
+      post(`/api/tasks/${source.id}/children`, { title: "Unassigned child", ownerInheritanceMode: "none" }),
+    ]);
+    for (const child of children) expect(child.statusCode, child.body).toBe(201);
+    const [inherited, assigned, unassigned] = children.map((child) => child.json());
+    const snapshot = await get(`/api/tasks/${source.id}`);
+    expect(snapshot.effectiveOwnerId).toBe(mode === "none" ? null : anna.id);
+    const converted = await post(`/api/tasks/${source.id}/convert-to-story`, {
+      status: "backlog", expectedRevision: snapshot.revision, expectedHierarchyRevisions: snapshot.hierarchyRevisions,
+    });
+    expect(converted.statusCode, converted.body).toBe(201);
+    const projectDetail = await get(`/api/projects/${source.id}`);
+    expect(projectDetail).toMatchObject({ status: "backlog", ownerMemberId: null, stuckReason: null });
+    const retained = projectDetail.tasks.find((task: { title: string }) => task.title === "Scheduled");
+    expect(retained).toBeDefined();
+
+    const assertOwners = async (driver: number | null) => {
+      expect(await get(`/api/tasks/${retained.id}`)).toMatchObject({
+        ownerInheritanceMode: mode,
+        effectiveOwnerId: mode === "inherit" ? driver : mode === "explicit" ? anna.id : null,
+      });
+      expect(await get(`/api/tasks/${inherited.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: driver });
+      expect(await get(`/api/tasks/${assigned.id}`)).toMatchObject({ ownerInheritanceMode: "explicit", effectiveOwnerId: anna.id });
+      expect(await get(`/api/tasks/${unassigned.id}`)).toMatchObject({ ownerInheritanceMode: "none", effectiveOwnerId: null });
+    };
+    await assertOwners(null);
+    const firstActivation = await post(`/api/projects/${source.id}/activate`, { expectedRevision: projectDetail.revision, ownerMemberId: ben.id });
+    expect(firstActivation.statusCode, firstActivation.body).toBe(200);
+    await assertOwners(ben.id);
+    const parked = await post(`/api/projects/${source.id}/return-to-backlog`, { expectedRevision: firstActivation.json().revision });
+    expect(parked.statusCode, parked.body).toBe(200);
+    await assertOwners(null);
+    const secondActivation = await post(`/api/projects/${source.id}/activate`, { expectedRevision: parked.json().revision, ownerMemberId: anna.id });
+    expect(secondActivation.statusCode, secondActivation.body).toBe(200);
+    await assertOwners(anna.id);
+  });
+
   it("rejects stale nested conversion ancestry and new descendants before writing", async () => {
     const parent = (await post("/api/tasks", { title: "Parent", status: "actionable" })).json();
     const task = (await post(`/api/tasks/${parent.id}/children`, { title: "Child" })).json();

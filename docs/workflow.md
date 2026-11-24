@@ -545,10 +545,13 @@ revision-checked transaction commits. Cycles, scope changes and stale source,
 descendant or ancestor revisions reject the whole operation.
 
 Task → Project conversion works inside a project and below a task without
-detaching first. Existing effective ownership, tags and physical contexts
-become the project's explicit values so retained work keeps its responsibility
-and material. Task-only obligations, including execution windows, use the
-existing retained-action mapping.
+detaching first. Effective tags and physical contexts become explicit project
+values. An active project's driver uses the task's effective owner; a household
+backlog project has no driver. Retained actions and descendants keep their
+ownership modes: inherited ownership may temporarily be unassigned in backlog,
+then follows the selected project driver and later driver changes. Explicit
+assignments remain unchanged. Task-only obligations, including execution
+windows, use the existing retained-action mapping.
 A child project below a task is reachable from that task's detail steps and has
 mixed-role hierarchy breadcrumbs. Project → Task preserves the direct parent
 and position when all descendants are tasks; task descendants and structured

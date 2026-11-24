@@ -76,6 +76,24 @@ describe("effective deferral read projections", () => {
     expect(graph.nextActionFor(project.id)).toBeNull();
   });
 
+  it("suppresses missing-driver diagnostics while deferred but keeps activation decisions and reached revisits", () => {
+    const db = ctx.handle.db;
+    const parked = db.insert(schema.workItems).values({ role: "story", title: "Backlog", status: "backlog" }).returning().get();
+    const nested = db.insert(schema.workItems).values({ role: "story", title: "Nested", status: "active", parentId: parked.id, revisitAt: now }).returning().get();
+    const active = db.insert(schema.workItems).values({ role: "story", title: "Active", status: "active" }).returning().get();
+    const before = ctx.handle.sqlite.serialize();
+    const graph = Graph.load(db, today, undefined, now);
+    const review = buildReviewItems(graph, { today, now });
+    expect(review.filter((item) => item.entityId === parked.id)).toEqual([]);
+    expect(review.filter((item) => item.entityId === nested.id).map((item) => item.reason)).toEqual(["project_revisit_reached"]);
+    expect(review.filter((item) => item.entityId === active.id).map((item) => item.reason)).toContain("missing_driver");
+    expect(graph.projectWithComputed(nested.id)?.stuckReason).toBeNull();
+    expect(graph.projectWithComputed(parked.id)?.activationReadiness).toMatchObject({
+      hasDriver: false, requiredDecisions: expect.arrayContaining(["driver"]),
+    });
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+  });
+
   it("uses hidden ancestors as a gate without returning their identity", () => {
     const db = ctx.handle.db;
     const owner = db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
