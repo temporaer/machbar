@@ -10,12 +10,6 @@ import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useLocale } from "../lib/locale";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import { TaskRemindersEditor, type TaskRemindersEditorHandle } from "./TaskRemindersEditor";
-import {
-  projectActivationPromptFromError,
-  projectActivationResolutionFromPrompt,
-  type ProjectActivationPrompt,
-} from "../lib/projectActivationResolution";
-import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 const labels = {
   update_task: "refinementTitle", update_project: "refinementTitle", convert_task_to_project: "refinementConvert", create_child: "refinementCreate",
@@ -79,12 +73,9 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
   const [revisitDrafts, setRevisitDrafts] = useState<Record<number, { date: string; time: string }>>({});
   const [pendingReminderEditors, setPendingReminderEditors] = useState<Record<number, boolean>>({});
   const [editorResetGeneration, setEditorResetGeneration] = useState(0);
-  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [expandedDetails, setExpandedDetails] = useState<Record<number, boolean>>({});
   const errorRef = useRef<HTMLParagraphElement | null>(null);
-  const activationRef = useRef<HTMLDivElement | null>(null);
   const previousVisibleIssueRef = useRef<string | null>(null);
-  const hadActivationPromptRef = useRef(false);
   const incomingProposalSignature = semanticSignature(serverProposal);
   const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
   const latestObservedRevisionRef = useRef(record.revision);
@@ -100,25 +91,20 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
   const visibleIssue = conflict ? strings.refinementConflict : error ?? selectionConflictMessage;
 
   useEffect(() => {
-    const newActivationPrompt = activationPrompt !== null && !hadActivationPromptRef.current;
     const scrollAndFocus = (element: HTMLElement | null) => {
       element?.scrollIntoView?.({ block: "center", behavior: "smooth" });
       element?.focus();
     };
-    if (newActivationPrompt) {
-      scrollAndFocus(activationRef.current);
-    } else if (visibleIssue && visibleIssue !== previousVisibleIssueRef.current) {
+    if (visibleIssue && visibleIssue !== previousVisibleIssueRef.current) {
       scrollAndFocus(errorRef.current);
     }
-    hadActivationPromptRef.current = activationPrompt !== null;
     previousVisibleIssueRef.current = visibleIssue;
-  }, [activationPrompt, visibleIssue]);
+  }, [visibleIssue]);
 
   const setDraft = useCallback((next: RefinementProposal | null, userEdit = true) => {
     proposalDraftRef.current = next;
     if (userEdit) draftGenerationRef.current += 1;
     setProposalDraft(next);
-    if (userEdit) setActivationPrompt(null);
   }, []);
 
   const commitReminderDrafts = (): boolean => {
@@ -154,7 +140,6 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
     };
     const previous = serverBaselineRef.current;
 
-    if (incomingProposalSignature !== previous.signature) setActivationPrompt(null);
 
     if (previous.recordId !== record.id) {
       serverBaselineRef.current = incomingBaseline;
@@ -302,14 +287,10 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
     try {
       const current = await persistLatestProposal();
       if (!current) return;
-      const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
       onChange(await api.applyWorkRefinement(record.id, {
         expectedRevision: current.revision,
-        ...(activationResolution ? { activationResolution } : {}),
       }));
     } catch (cause) {
-      const prompt = projectActivationPromptFromError(cause, activationPrompt);
-      if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     }
     finally { setBusy(false); setOperation(null); }
@@ -468,7 +449,7 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
     } else if (change.kind === "convert_task_to_project") {
       const titleEdit = proposal?.changes.find((candidate) => candidate.kind === "update_task" && candidate.targetId === change.targetId && candidate.accepted && candidate.title !== undefined);
       if (change.accepted && titleEdit?.kind === "update_task" && titleEdit.title !== existing?.title) result.push(`${existing?.title ?? strings.refinementUnavailable} → ${titleEdit.title}`);
-      result.push(existing?.status === "actionable" ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog);
+      result.push(strings.aiProjectWillBeBacklog);
     }
     else if (change.kind === "update_wait") result.push(`${contextLabels.get(change.taskId)?.title ?? strings.refinementUnavailable}: ${contextLabels.get(change.taskId)?.waitingFor ?? strings.refinementNone} → ${change.waitingFor}`);
     else if (change.kind === "resolve_wait") result.push(`${contextLabels.get(change.taskId)?.title ?? strings.refinementUnavailable}: ${contextLabels.get(change.taskId)?.waitingFor ?? strings.refinementWaitCurrent} → ${strings.refinementResolveWaitHelp}`);
@@ -502,23 +483,6 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
     return result.filter(Boolean);
   };
   const leaveAlone = proposal.disposition === "leave_alone";
-  let source: Record<string, unknown> | null = null;
-  try {
-    source = record.text ? JSON.parse(record.text) as Record<string, unknown> : null;
-  } catch {
-    source = null;
-  }
-  const sourceStatus = source?.status;
-  const sourceOwnerMemberId = typeof source?.ownerMemberId === "number" ? source.ownerMemberId : null;
-  const conversion = proposal.changes.find(
-    (change) => change.kind === "convert_task_to_project" &&
-      change.targetId === refinement.targetId,
-  );
-  const activeConversion =
-    conversion?.accepted === true &&
-    refinement.targetType === "task" &&
-    (sourceStatus === "actionable" || activationPrompt !== null);
-  const activationResolution = activationPrompt ? projectActivationResolutionFromPrompt(activationPrompt) : null;
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
   const hasRetryFeedback = answer.trim().length > 0;
   return <main className="page stack">
@@ -547,10 +511,7 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
         <div className="refinement-rationale">{change.rationale.length > 220 ? <details><summary>{strings.refinementWhy}</summary><p>{change.rationale}</p></details> : <p>{change.rationale}</p>}</div>
         {change.kind === "convert_task_to_project" && change.targetId === refinement.targetId && change.accepted ? (
           <section className="card stack">
-            <strong>{activeConversion ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog}</strong>
-            {activeConversion && sourceOwnerMemberId !== null ? (
-              <p>{strings.aiProjectDriverLabel}: {members.find((member) => member.id === sourceOwnerMemberId)?.name ?? sourceOwnerMemberId}</p>
-            ) : null}
+            <strong>{strings.aiProjectWillBeBacklog}</strong>
           </section>
         ) : null}
         {change.kind === "cancel_task" ? <section className="card stack"><strong>{strings.refinementCancellationImpact}: {openDescendants(change.targetId).length}</strong>{openDescendants(change.targetId).map(([id, item]) => <small key={id}>{item.title}</small>)}{openDescendants(change.targetId).length ? <label className="stack"><span>{strings.refinementCancellationPolicy}</span><select disabled={editorLocked} value={change.descendantsPolicy ?? ""} onChange={(event) => update(index, { descendantsPolicy: event.target.value ? event.target.value as Extract<WorkRefinementChange, { kind: "cancel_task" }>['descendantsPolicy'] : undefined })}><option value="">{strings.refinementUnavailable}</option><option value="leave_open">{strings.refinementCancelLeaveOpen}</option><option value="cancel_children">{strings.refinementCancelChildren}</option><option value="complete_children">{strings.refinementCompleteChildren}</option></select></label> : <p>{strings.refinementCancel}</p>}</section> : null}
@@ -660,13 +621,6 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
         {change.kind === "advisory" ? <p>{change.title}</p> : null}
         </div>
       </article>) : null}
-      {activationPrompt ? <div ref={activationRef} tabIndex={-1}>
-        <ProjectActivationDecisionFields
-          prompt={activationPrompt}
-          disabled={editorLocked}
-          onChange={setActivationPrompt}
-        />
-      </div> : null}
       <label className="stack"><span>{proposal.question ? strings.refinementAnswerLabel : strings.refinementFeedbackLabel}</span><textarea disabled={editorLocked} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={proposal.question ?? strings.workRefinementPlaceholder} /></label>
       {visibleIssue ? <p ref={errorRef} role="alert" tabIndex={-1} className="error-text">{visibleIssue}</p> : null}
       {proposalParentIssue || hasNestedCycle || missingCancelPolicy ? <p role="alert" className="error-text">{proposalParentIssue ? strings.refinementParentRequired : hasNestedCycle ? strings.refinementNestedCycle : strings.refinementCancellationPolicy}</p> : null}
@@ -675,7 +629,7 @@ export function WorkRefinementReview({ record, onChange, onReturn }: { record: I
         {leaveAlone
           ? <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
           : <>
-            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || activationPrompt !== null && activationResolution === null || Boolean(proposalParentIssue) || hasNestedCycle || missingCancelPolicy || Boolean(selectionConflict)} onClick={() => void apply()}>{strings.refinementApply}</button>
+            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || Boolean(proposalParentIssue) || hasNestedCycle || missingCancelPolicy || Boolean(selectionConflict)} onClick={() => void apply()}>{strings.refinementApply}</button>
             <button className="btn" disabled={busy || Boolean(selectionConflict)} onClick={() => void save()}>{strings.save}</button>
             <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
           </>}

@@ -178,8 +178,6 @@ export type ApiErrorCode =
   | "project_driver_required"
   | "project_backlog_owner_forbidden"
   | "project_activation_not_ready"
-  | "project_commitment_resolution_required"
-  | "project_commitments_prevent_parking"
   | "project_completion_resolution_required"
   | "project_completion_resolution_invalid"
   | "task_reopen_required"
@@ -699,32 +697,9 @@ export interface ProjectActivationReadiness {
   requiredDecisions?: Array<"driver" | "progressPath">;
 }
 
-/** Explicit decisions collected before a commitment can activate a project chain. */
-export interface ProjectActivationResolution {
-  /** Revisions returned with `project_commitment_resolution_required`. */
-  expectedProjects: Array<{ projectId: number; revision: number }>;
-  /** Explicitly selected drivers; the acting member is never inferred. */
-  drivers: Array<{ projectId: number; ownerMemberId: number }>;
-  /** A user-authored next action to create in the affected project if readiness requires one. */
-  nextActionTitle?: string;
-}
-
-export interface ProjectActivationRequirement {
-  projectId: number;
-  title: string;
-  revision: number;
-  ownerMemberId: number | null;
-  required: Array<"driver" | "progressPath">;
-}
-
-/** Server-computed requirements and revisions for a commitment decision sheet. */
-export interface ProjectActivationDecisionSnapshot {
-  projects: ProjectActivationRequirement[];
-  expectedProjects: Array<{ projectId: number; revision: number }>;
-  targetRevision: number;
-}
-
 export interface Project {
+  /** Today deadline attention: null means an ancestor is not visible. */
+  effectivelyDeferred?: boolean | null;
   id: number;
   revision: number;
   parentId: number | null;
@@ -827,6 +802,8 @@ export type AvailabilityRule = {
 };
 
 export interface Task {
+  /** Today deadline attention: null means an ancestor is not visible. */
+  effectivelyDeferred?: boolean | null;
   /** Legacy upgrade/input compatibility; current API projections omit these. */
   notBeforeAt?: string | null;
   notBeforeDate?: string | null;
@@ -1365,6 +1342,7 @@ export type ReviewReason =
   | "backlog_stale"
   | "backlog_due"
   | "backlog_revisit_reached"
+  | "project_revisit_reached"
   | "standalone_someday_stale"
   | "backlog_planned_work"
   | "task_scheduled_before_resurface"
@@ -1648,9 +1626,3 @@ export interface AssessmentProposal {
 }
 
 export * from "./interventionObservation.js";
-
-/** Non-persisting evaluation of the exact proposed canonical mutation. */
-export interface ActivationPreview {
-  decision: ProjectActivationDecisionSnapshot | null;
-  activatingProjects: Array<{ id: number; title: string }>;
-}

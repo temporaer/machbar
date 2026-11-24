@@ -36,14 +36,20 @@ function isWeekDatedTask(
   graph: Graph,
   selection: ReturnType<typeof createAgendaSelection>,
 ): boolean {
+  if (selection.isReconsiderationAttentionTask(task)) return true;
+  if (task.status === "captured") return selection.isDeadlineAttentionTask(task);
   if (
     task.kind !== "action" ||
-    task.status !== "actionable" ||
+    (task.status !== "actionable" &&
+      !(task.status === "someday" && graph.isEffectivelyDeferred(task.id))) ||
     (task.needsClarification && task.scheduledDate === null && task.dueDate === null) ||
     !selection.matchesOwner(task) ||
     !selection.matchesScope(task)
   ) {
     return false;
+  }
+  if (graph.isEffectivelyDeferred(task.id)) {
+    return selection.isDeadlineAttentionTask(task);
   }
   if (task.projectId === null) return selection.isAgendaTask(task);
   const story = graph.projectsById.get(task.projectId);
@@ -188,14 +194,18 @@ export function buildWeekAgenda(
   for (const task of graph.allTasks()) {
     if (!isWeekDatedTask(task, graph, selection)) continue;
     const waiting = isWeekDirectExternalWaitAttention(task, graph, selection);
+    const deferred = graph.isEffectivelyDeferred(task.id);
     // Directly-waiting tasks ignore scheduledDate: a wait's revisit date
     // (or its deadline) drives attention, not an incidental schedule.
     const projection = projectWeekAttention(
         {
-          scheduledDate: waiting ? null : task.scheduledDate,
+          scheduledDate: waiting || deferred || task.status === "captured" ||
+            (task.repeatAfterDays === null && task.scheduledDate !== null && task.scheduledDate < today)
+            ? null : task.scheduledDate,
           revisitDate:
             calendarDateForInstant(task.revisitAt, options.householdTimezone) ?? null,
-        dueDate: task.dueDate,
+        dueDate: (deferred || task.status === "captured") && task.repeatAfterDays !== null
+          ? null : task.dueDate,
       },
       today,
     );

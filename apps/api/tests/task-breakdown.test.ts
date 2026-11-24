@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import type { IntakeDraft, IntakeDraftWorkItem, ProjectActivationResolution } from "@machbar/shared";
+import type { IntakeDraft, IntakeDraftWorkItem } from "@machbar/shared";
+
+type ProjectActivationResolution = {
+  expectedProjects: Array<{ projectId: number; revision: number }>;
+  drivers: Array<{ projectId: number; ownerMemberId: number }>;
+  nextActionTitle?: string;
+};
 import * as schema from "../src/db/schema.js";
 import { createChildTask, createTask, getTaskOrThrow, updateTask } from "../src/domain/taskCrud.js";
 import { createProject, updateProject } from "../src/domain/storyCrud.js";

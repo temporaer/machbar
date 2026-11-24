@@ -103,6 +103,12 @@ export function buildApp({
     });
   });
 
+  app.addHook("onRequest", async (request) => {
+    if (request.headers["x-machbar-preview"] !== undefined) {
+      throw AppError.badRequest("malformed_request", "Activation previews are no longer supported.");
+    }
+  });
+
   app.get("/api/health", async () => ({ status: "ok" }));
 
   registerAuthentication(app, db, env, {

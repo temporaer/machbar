@@ -1,42 +1,25 @@
 # Machbar — Architecture
 
-## Commitment-driven project activation
+## Derived deferral and explicit activation
 
-`apps/api/src/domain/commitmentTransition.ts` owns the pure, UI-independent
-decision for commitment and activation transitions. It receives an explicit
-snapshot (including the source and effective target state, project/ancestor
-chain, drivers, readiness, and date boundary), an intent, and explicit user
-decisions. It returns a concrete plan, missing decisions, or a conflict; it
-does not read the database, clock, or transport.
+Backlog is persisted on the selected work item. Task API `someday` maps to the
+same stored status. Effective deferral is derived from the item and all its
+task/project ancestors; it gates operational work without rewriting descendants.
+Stored lifecycle, ownership, dates, waits, reminders, and history remain
+independent. Deadlines and reconsideration remain attention signals; configured
+reminders remain effective and recurrence stays completion-relative.
+Viewer-scoped projections fail closed when an ancestor is not visible rather
+than revealing its lifecycle status. Today attention rows expose
+`effectivelyDeferred` as true or false for a visible lineage and null when its
+state is unavailable due to a hidden ancestor.
 
-`apps/api/src/domain/commitmentActivation.ts` adapts transaction-current
-project/task state and `projectReadiness.ts` into that snapshot, then applies
-the resulting activation and optional user-authored next action in the same
-transaction. Task/project CRUD and explicit activate/reopen lifecycle commands
-share this evaluation and write executor. HTTP, MCP, and Intake continue to
-enter through those canonical mutations. When decisions are missing, the
-server returns their requirements and revisions. Focused editors preserve
-their drafts and retry; the web only presents requirements and collects the
-decisions.
-
-Open captured or Someday actions become actionable only when they receive an
-execution commitment: a plan, deadline, or execution reminder. A project
-deadline can trigger project activation, but is never itself a progress path.
-Missing drivers or a concrete next action return structured decisions before
-the source mutation is committed.
-
-Revisit dates remain reconsideration, not execution commitments. A reached
-ordinary revisit on an actionable, unblocked leaf counts as currently available
-project progress, but reads never clear it or turn it into a work plan. Future
-ordinary revisits remain intentional future pauses; adding a reminder while a
-revisit is present does not promote the task. Healthy waits retain their
-readiness meaning. Project activation does not bypass task blockers or
-future-date agenda eligibility. Reflection's executable-next-actions section
-is narrower than project progress: it lists the first execution-eligible
-canonical candidate per project and does not treat a reached revisit as
-executable work. For a dependency path, a reached revisit on a container is
-healthy only when its canonical unfinished subtree has a healthy descendant
-path; future container revisits remain intentional pauses.
+Property edits, creation, and planning do not activate work. Explicit lifecycle
+commands change only the selected item. Direct project activation still checks
+the selected project's driver and viable progress or healthy future waiting
+point. It does not activate parked ancestors, and independently parked
+descendants remain deferred. Reached revisits remain decisions rather than
+automatic activation. Execution suggestions also retain their normal date,
+context, dependency, and ownership checks.
 
 ## AI clarification and reviewed application
 
@@ -83,9 +66,9 @@ validation, while explicit date clears and an empty reminder list remain
 reviewable user-selected changes. New actions use canonical task creation
 defaults. The review displays current and proposed planning values, uses the
 household timezone for revisit and reminder editing, and commits those values
-with the other accepted changes. Execution commitments run through the shared
-activation requirement/decision continuation in the same transaction; a
-revisit alone remains a reconsideration point rather than execution work.
+with the other accepted changes. Planning properties do not activate the
+target or its ancestors; a revisit remains a reconsideration point rather than
+execution work.
 
 For task-to-project refinement, an accepted `update_task` targeting the
 converted task may edit only title and/or notes. The conversion runs first;
@@ -295,9 +278,8 @@ cross-tab local storage as an identity authority.
 `intake/existingProjects.ts` owns this focused index and destination validation.
 Apply checks every pending destination before external effects, after file reads,
 and again before any work writes in the existing SQLite transaction. Ledger-confirmed
-work is skipped on partial replay. Canonical transactional task creation disables
-commitment activation only for these existing-destination subtrees, preserving
-backlog lifecycle and Today eligibility; new-project creation is unchanged.
+work is skipped on partial replay. Canonical transactional task creation
+preserves the destination's backlog lifecycle and derived Today eligibility.
 If destination validation fails after source retention but before any work/calendar
 has committed, review becomes editable again. The uploaded-source ledger is retained,
 acceptance is cleared, and the draft keeps its stale reviewed destination revisions:
@@ -995,11 +977,9 @@ archived ◄──archive── (backlog | active | completed)
   criteria, ordinary completion remains a direct action. Task criteria
   retained through project conversion continue to be enforced by the same
   completion guard.
-- Returning a project to backlog does not silently withdraw execution
-  commitments. The command checks project deadlines and descendant plans,
-  recurrence and reminders. When explicitly requested, it revision-checks the
-  descendant tasks and clears those commitments atomically with parking while
-  preserving wait and revisit information.
+- Returning a project to backlog changes its lifecycle and the existing
+  household driver assignment without withdrawing plans, deadlines,
+  recurrence, reminders, waits, history, or descendant statuses.
 - Task Planning is also the focused editor for prerequisite relationships.
   External waiting remains separate state: ending a wait removes only the
   external-wait row and revisit date, leaving dependency edges in place.
@@ -1036,11 +1016,10 @@ either executable progress or an intentional healthy future-waiting path:
 
 Quick project capture creates title-only backlog work and opens the project.
 Adding work and starting are separate explicit actions there. Conversion opens
-the resulting project after its existing mapping/commitment decisions; no extra
-post-conversion task-entry dialog remains. Explicit Start uses the server's
-activation snapshot and the canonical activation command, collecting only missing
-decisions before confirmation. Proposed task creation/planning uses a rollback-only
-preview of that same canonical mutation to account for the actual proposed graph.
+the resulting project after its mapping decisions; no extra post-conversion
+task-entry dialog remains. Explicit Start uses the server's readiness and the
+canonical activation command, collecting only missing decisions before
+confirmation. Task creation and planning do not start a project.
 The canonical `ProjectWorkflowHost` read supplies the activation sheet.
 Access loss removes protected content and ends the editor; reopening starts
 with current requirements and no restored choices. Other refresh failures keep
@@ -1132,10 +1111,8 @@ rows must survive; retired UI callbacks and navigation do not resume.
 Task splitting and project task entry submit every filled row in one request to
 `domain/taskStepBatch.ts`. The domain operation checks the selected parent or
 project revision and the full containing project chain, creates all tasks,
-classifies an Inbox parent with its first child, and runs the Phase 1
-commitment evaluator before commit. Missing driver/progress decisions roll back
-the complete batch; the UI keeps its rows and renders the server requirements
-for an explicit retry. A requested captured-task conversion invokes the
+and classifies an Inbox parent with its first child. A requested
+captured-task conversion invokes the
 existing guarded role-conversion implementation inside the same transaction.
 Undated children do not activate Someday/backlog work. Existing outline
 reordering still uses `useOutlineOrganize` and the canonical task move API.
@@ -1685,9 +1662,8 @@ reusable `TaskRemindersEditor` only edits reminder inputs; it does not write to
 the API. Recurrence interval and its first scheduled date are collected
 together. The canonical task update derives each subsequent occurrence from
 the prior completion, and the initial inclusive deadline from that first date
-plus the allowed deviation. Turning recurrence on is an execution commitment,
-so it uses the same explicit project activation requirements as other planning
-commitments. A future first date remains outside Today until it becomes
+plus the allowed deviation. Turning recurrence on does not activate the task or
+its ancestors. A future first date remains outside Today until it becomes
 eligible. A stale-write retry rebases untouched fields onto the current task
 snapshot; when the same field changed both locally and on the server, the user
 chooses which value to retain before retrying. An open custom-reminder editor
@@ -1853,14 +1829,12 @@ The source revisit date continues to mean intentional deferral even when an
 absolute reminder is also present. The conversion sheet can map both outgoing
 dependencies and visible tasks that wait on the source, including to nested
 open action descendants; the graph projection omits incoming edges whose
-dependent item is not visible to the current viewer. Active commitments and
-explicit activation use the shared project-readiness transition, and the
-conversion transaction rolls back if the required driver, path, mapping, or
-revision is missing. Reverse conversion (story → task) remains conservative
+dependent item is not visible to the current viewer. Explicit activation uses
+project readiness, and conversion retains its mapping and revision safeguards.
+Reverse conversion (story → task) remains conservative
 while retaining all task children and acceptance criteria on the same row.
-When a backlog project becomes a Someday task, unplanned actionable descendants
-are parked with it; dated, reminded, recurring, explicitly selected next-action,
-and externally waiting descendants retain their existing operational state.
+When a backlog project becomes a Someday task, descendants retain their own
+statuses and are effectively deferred by their parent.
 Completed tasks retain the project's recorded `completed_at`, even when its
 title or notes changed after completion.
 The converted action task exposes the criteria in its detail and completion
@@ -2094,14 +2068,11 @@ rewriting siblings; descendant links, relations, obligations and ownership
 stay attached. `assertHierarchySnapshot`, reused by conversion, checks complete
 subtree/ancestor membership and all supplied revisions before any writes.
 Source and destination ancestry are reviewed along with the source subtree.
-Committed moves and nested conversions use `activateCommittedProjectChain`
-inside their original transaction. That adapter walks through intervening task
-parents and presents the nearest project parent to the pure commitment rules.
+Moves and nested conversions do not activate ancestors.
 
 `story.move` dispatches only through `useWorkItemCommands` / `ProjectWorkflowHost`
-to `MoveProjectSheet`. It reuses `DestinationPicker`, recents, and
-`ProjectActivationDecisionFields`. Conflict keeps the destination and authored
-activation choices for retry. Task details expose direct `childStories`; graph
+to `MoveProjectSheet`. It reuses `DestinationPicker` and recents. Conflict
+keeps the destination for retry. Task details expose direct `childStories`; graph
 breadcrumbs follow mixed-role parents. The obsolete standalone/nested-root
 conversion blockers, duplicate post-conversion activation dispatch, and no-op
 project-ID cascade were removed. Merge and compound undo remain separate slices.
@@ -2393,9 +2364,8 @@ is directly editable; their revisit value is guarded by unarchived backlog
 status and labelled “Wieder ansehen am”. There is no project More options menu
 when the supported missing properties already have direct access.
 Project status and header lifecycle choices use server `availableActions` and
-`storyWorkflowCommand`. Deferral remains the existing project workflow, including
-explicit withdrawal decisions and the canonical atomic return-to-backlog command
-for active/archived projects. `story.planWork` adds a next action, never a project
+`storyWorkflowCommand`. Deferral remains the existing project workflow and canonical atomic
+return-to-backlog command for active/archived projects. `story.planWork` adds a next action, never a project
 execution date. Outcome guidance/edit access and next-step guidance/actions remain
 prominent for empty projects; completed/archived projects retain their existing
 next-step eligibility guards. Task captured/reference/recurrence/terminal guards
@@ -2423,22 +2393,17 @@ open/cancel focus return for both task and project details.
 
 Project creation/conversion opens the resulting project with a confirmation.
 The separate post-conversion handoff is removed; title-only inactive projects
-remain valid. Existing conversion mapping and commitment decisions remain in
-the canonical conversion workflow. Project next-action entry is now explicitly
+remain valid. Existing conversion mapping remains in the canonical conversion
+workflow. Project next-action entry is now explicitly
 “Aufgaben hinzufügen”, with one task per line and count-aware submission.
 StepComposer preserves project/split drafts per member in session storage across
 closing and navigation; successful submissions clear only the submitted draft.
 Enter advances rows; single-successor behavior retains its own contract.
 
-Explicit project start consumes the server direct activation snapshot. For
-operations that can imply activation, the first confirmation evaluates the
-exact proposed mutation without persisting it, then displays missing decisions
-and the start consequence before the final mutation. The preview reuses the
-canonical domain function inside a rollback-only transaction (including all
-activity/contribution writes), rather than approximating the proposed graph
-in the UI. Canonical revisions, permissions and validation also apply on the
-final request; stale failures keep drafts. Preview responses suppress the
-mutation notification hook.
+Explicit project start uses the selected project's server-computed readiness.
+Planning and creation do not activate projects. Canonical revisions,
+permissions and validation apply to the final request; stale failures keep
+authored drafts.
 
 Mobile Chromium verification for #248 used a 390px viewport reduced to 320px
 visible height: the two-task submit control remained reachable by scrolling,
@@ -2447,16 +2412,11 @@ on-screen keyboard remains a manual device check; BottomSheet owns viewport
 bounds as documented above. Verify creation/conversion opens the project with
 confirmation, and check ready/unready starts plus stale-state draft recovery.
 
-Review hardening for #248: activation previews authorize source/destination IDs
-against the viewer-aware graph before evaluating mutations, and guard both
-activation output and decision snapshot IDs. Non-snapshot conflicts retain their
-canonical status. Conversion snapshot refreshes retain authored decisions for
-reconciliation with new requirements; split composers remount per task/member
-to isolate session drafts.
+Split composers remount per task/member to isolate session drafts.
 
 ### Verification-driven production fixes
 
-The write-visibility regression compares reads, previews and final writes for
+The write-visibility regression compares reads and writes for
 household/work/durable-private items, and checks database snapshots and absence
 of notifications on rejected operations. Destructive/move/dependency cases and
 real session-vs-spoofed-actor tests complement that matrix. Reads and HTTP write
@@ -2490,23 +2450,17 @@ key so navigating back restores the same operation. No global payload-keyed retr
 queue remains.
 
 Public task/project mutation contexts carry a viewer separately from the activity
-actor. The canonical activation evaluator supplies affected write/decision IDs;
-those IDs are authorized inside the source transaction before plan application
-or decision-error serialization. Internal domain callers without viewer context
-retain their existing unrestricted contract. Project creation replay also checks
+actor. Write targets are authorized before mutation and response serialization.
+Internal domain callers without viewer context retain their existing unrestricted
+contract. Project creation replay also checks
 the project projection after role conversion and returns project_not_found
 instead of 200/null. Migration 0031 includes its chained schema snapshot; the
 schema-drift regression invokes the installed generator against a temporary copy
 and requires that it produces no additional SQL migration.
 
-The early stale project-deadline branch also passes viewer context to
-projectActivationDecisionSnapshot. That builder authorizes every project in
-both its requirements and revision arrays before returning an error snapshot.
-GET project independently checks all commitment-snapshot references against its
-viewer-aware graph and omits that optional snapshot if an ancestor is hidden,
-while preserving the readable child document and authorized direct activation.
-The regression matrix exercises reads, stale/fresh deadline writes and visible/
-hidden ancestors, including unchanged database and notification state.
+A readable child beneath a hidden ancestor must not reveal that ancestor's
+status through availability or readiness. Permission and stale-write failures
+leave data and notifications unchanged.
 
 ### Externally triggered routine instances
 

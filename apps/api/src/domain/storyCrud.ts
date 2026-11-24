@@ -4,7 +4,7 @@
  * in `acceptanceCriteria.ts`.
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { ProjectActivationResolution, ProjectStatus, WorkItemScope } from "@machbar/shared";
+import type { ProjectStatus, WorkItemScope } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -28,10 +28,6 @@ import {
   sortedIds,
   touchProject,
 } from "./workItemShared.js";
-import {
-  activateCommittedProjectChain,
-  projectActivationDecisionSnapshot,
-} from "./commitmentActivation.js";
 import { cascadeDescendantScope } from "./scopeCascade.js";
 
 // ---------------------------------------------------------------------------
@@ -48,27 +44,6 @@ function projectStatusToStored(status: ProjectStatus): "backlog" | "active" | "d
     case "archived":
       return "backlog";
   }
-}
-
-function withSelectedActivationDriver(
-  db: Db,
-  projectId: number,
-  ownerMemberId: number | null | undefined,
-  resolution: ProjectActivationResolution | undefined,
-  context?: MutationContext,
-): ProjectActivationResolution | undefined {
-  if (ownerMemberId == null) return resolution;
-  const base = resolution ?? {
-    expectedProjects: projectActivationDecisionSnapshot(db, projectId, "commitment", context).expectedProjects,
-    drivers: [],
-  };
-  return {
-    ...base,
-    drivers: [
-      ...base.drivers.filter((driver) => driver.projectId !== projectId),
-      { projectId, ownerMemberId },
-    ],
-  };
 }
 
 function projectStatusFromStored(
@@ -97,7 +72,6 @@ export interface CreateProjectInput {
   revisitAt?: string | null;
   tagIds?: number[];
   contextIds?: number[];
-  activationResolution?: ProjectActivationResolution;
   /** Only meaningful for a root project (no `parentId`); a nested project
    * always inherits its parent's scope regardless of this field. */
   scope?: WorkItemScope;
@@ -145,13 +119,10 @@ export function createProject(
     const scope: WorkItemScope =
       parent !== null ? (parent.scope as WorkItemScope) : input.scope ?? "household";
     const requestedStatus = input.status ?? "backlog";
-    const activatesForDeadline =
-      scope === "household" && requestedStatus === "backlog" &&
-      input.ownerMemberId != null && input.dueDate != null;
     if (
       scope === "household" &&
       requestedStatus === "backlog" &&
-      input.ownerMemberId != null && !activatesForDeadline
+      input.ownerMemberId != null
     ) {
       throw AppError.badRequest(
         "project_backlog_owner_forbidden",
@@ -163,7 +134,7 @@ export function createProject(
     // created it, so default the owner to the creator when none was given.
     const requestedOwnerMemberId =
       input.ownerMemberId ?? (scope === "work" ? actor(context) : null);
-    const ownerMemberId = activatesForDeadline ? null : requestedOwnerMemberId;
+    const ownerMemberId = requestedOwnerMemberId;
     const maxPosition = getDirectChildren(txDb, parentId)
       .reduce((max, item) => Math.max(max, item.position), -1);
 
@@ -205,22 +176,6 @@ export function createProject(
     };
     if (returned.status === "active") {
       assertProjectActivationReady(txDb, project.id, project.ownerMemberId);
-    } else if (returned.status === "backlog" && returned.dueDate !== null) {
-      // A newly-created deadline is a commitment too. If the user supplied a
-      // first action alongside the activation decisions, keep both it and the
-      // project transition in this transaction.
-      activateCommittedProjectChain(
-        txDb,
-        project.id,
-        context,
-        withSelectedActivationDriver(
-          txDb,
-          project.id,
-          activatesForDeadline ? requestedOwnerMemberId : undefined,
-          input.activationResolution,
-          context,
-        ),
-      );
     }
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
@@ -249,7 +204,6 @@ export interface UpdateProjectInput {
   tagIds?: number[];
   contextIds?: number[];
   expectedRevision?: number;
-  activationResolution?: ProjectActivationResolution;
 }
 
 /**
@@ -275,19 +229,6 @@ export function updateProject(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    if (
-      input.expectedRevision !== undefined &&
-      input.expectedRevision !== project.revision &&
-      project.status === "backlog" &&
-      input.dueDate !== undefined &&
-      input.dueDate !== null
-    ) {
-      throw AppError.conflict(
-        "project_commitment_resolution_required",
-        "The project changed while its deadline was being planned. Refresh the project decisions and retry.",
-        { reason: "project_snapshot_stale", ...projectActivationDecisionSnapshot(txDb, id, "commitment", context) },
-      );
-    }
     assertExpectedRevision("project", id, project.revision, input.expectedRevision);
     if (input.title !== undefined && input.title.trim() === "") {
       throw AppError.badRequest(
@@ -300,8 +241,7 @@ export function updateProject(
     if (
       project.status === "backlog" &&
       nextScope === "household" &&
-      input.ownerMemberId != null &&
-      (input.dueDate == null || input.activationResolution === undefined)
+      input.ownerMemberId != null
     ) {
       throw AppError.conflict(
         "project_backlog_owner_forbidden",
@@ -325,21 +265,6 @@ export function updateProject(
         "project_transition_invalid",
         "Project revisit dates are only valid while the project is in the backlog.",
         { projectId: id, currentStatus: project.status, requiredStatus: "backlog" },
-      );
-    }
-    if (
-      project.status === "backlog" &&
-      input.dueDate !== undefined &&
-      input.dueDate !== null
-    ) {
-      // The transaction keeps the date draft and any activation decisions
-      // atomic. Readiness is evaluated before writing the date because a
-      // project deadline is not itself a progress path.
-      activateCommittedProjectChain(
-        txDb,
-        id,
-        context,
-        withSelectedActivationDriver(txDb, id, input.ownerMemberId, input.activationResolution, context),
       );
     }
     const patch: Partial<typeof schema.workItems.$inferInsert> = {};

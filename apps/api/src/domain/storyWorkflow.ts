@@ -17,8 +17,6 @@ import { getProjectOrThrow } from "./storyCrud.js";
 import {
   activateProjectFromWorkflow,
 } from "./commitmentActivation.js";
-import { hasExecutionCommitment } from "./commitmentTransition.js";
-import type { ProjectActivationResolution } from "@machbar/shared";
 import {
   MutationContext,
   actor,
@@ -86,7 +84,7 @@ function assertWorkflowAction(
 export interface ActivateProjectInput {
   ownerMemberId?: number | null;
   expectedRevision?: number;
-  activationResolution?: ProjectActivationResolution;
+  nextActionTitle?: string;
 }
 
 /**
@@ -107,11 +105,10 @@ export function activateProject(
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, input.expectedRevision);
     assertWorkflowAction(project, "activate");
-    const resolutionDriver = input.activationResolution?.drivers.find((decision) => decision.projectId === id)?.ownerMemberId;
     const ownerMemberId = input.ownerMemberId !== undefined
       ? input.ownerMemberId
-      : resolutionDriver ?? project.ownerMemberId;
-    activateProjectFromWorkflow(txDb, id, ownerMemberId, context, input.activationResolution);
+      : project.ownerMemberId;
+    activateProjectFromWorkflow(txDb, id, ownerMemberId, context, input.nextActionTitle);
     const updated = getProjectOrThrow(txDb, id);
     return updated;
   });
@@ -127,87 +124,18 @@ export function returnProjectToBacklog(
   context?: MutationContext,
   expectedRevision?: number,
   revisitAt?: string | null,
-  withdrawCommitments = false,
-  expectedTaskRevisions?: Array<{ taskId: number; revision: number }>,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "return_to_backlog");
-    const taskIds = getTaskIdsForStory(txDb, id);
-    const tasks = taskIds.length === 0 ? [] : tx.select({
-      id: schema.workItems.id,
-      revision: schema.workItems.revision,
-      dueDate: schema.workItems.dueDate,
-      scheduledDate: schema.workItems.scheduledDate,
-      revisitAt: schema.workItems.revisitAt,
-      repeatAfterDays: schema.workItems.repeatAfterDays,
-      status: schema.workItems.status,
-      taskKind: schema.workItems.taskKind,
-    }).from(schema.workItems).where(inArray(schema.workItems.id, taskIds)).all();
-    const reminders = taskIds.length === 0 ? [] : tx.select({ taskId: schema.taskReminders.taskId, id: schema.taskReminders.id })
-      .from(schema.taskReminders).where(inArray(schema.taskReminders.taskId, taskIds)).all();
-    const remindersByTask = new Map<number, typeof reminders>();
-    for (const reminder of reminders) {
-      const taskReminders = remindersByTask.get(reminder.taskId) ?? [];
-      taskReminders.push(reminder);
-      remindersByTask.set(reminder.taskId, taskReminders);
-    }
-    // Terminal task fields are historical evidence, not live commitments.
-    // Revisit notifications are intentional deferrals; the shared helper
-    // excludes reminders attached to a revisit point from execution work.
-    const committedTasks = tasks.filter((task) =>
-      task.status !== "done" && task.status !== "cancelled" && hasExecutionCommitment({
-        kind: task.taskKind === "action" ? "action" : "reference",
-        dueDate: task.dueDate,
-        scheduledDate: task.scheduledDate,
-        revisitAt: task.revisitAt,
-        reminders: remindersByTask.get(task.id) ?? [],
-      }),
-    );
-    const projectHasCommitment = project.dueDate !== null;
-    if ((committedTasks.length > 0 || projectHasCommitment) && !withdrawCommitments) {
-      throw AppError.conflict(
-        "project_commitments_prevent_parking",
-        "This project still has planned work, deadlines, recurrence, or reminders. Confirm withdrawing those commitments before moving it to backlog.",
-        { projectId: id, projectRevision: project.revision, committedTaskIds: committedTasks.map((task) => task.id), projectDeadline: project.dueDate },
-      );
-    }
-    if (withdrawCommitments && committedTasks.length > 0) {
-      const expected = new Map((expectedTaskRevisions ?? []).map((entry) => [entry.taskId, entry.revision]));
-      const mismatched = tasks.filter((task) => expected.get(task.id) !== task.revision);
-      const expectedIds = expectedTaskRevisions?.map((entry) => entry.taskId) ?? [];
-      if (mismatched.length > 0 || new Set(expectedIds).size !== expectedIds.length || expectedIds.length !== tasks.length) {
-        throw AppError.conflict("stale_write_conflict", "A planned task changed before its commitments could be withdrawn.", {
-          entityType: "task", staleItems: mismatched.map((task) => ({ taskId: task.id, expectedRevision: expected.get(task.id), currentRevision: task.revision })),
-        });
-      }
-      const now = nowIso();
-      for (const task of committedTasks) {
-        tx.update(schema.workItems).set({
-          dueDate: null,
-          scheduledDate: null,
-          repeatAfterDays: null,
-          allowedDeviationDays: null,
-          revision: sql`${schema.workItems.revision} + 1`,
-          updatedAt: now,
-        }).where(eq(schema.workItems.id, task.id)).run();
-        tx.delete(schema.taskReminders).where(eq(schema.taskReminders.taskId, task.id)).run();
-        recordActivity(txDb, {
-          actorMemberId: actor(context), kind: "task_updated", entityType: "task",
-          entityTitle: tx.select({ title: schema.workItems.title }).from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!.title,
-          taskId: task.id, projectId: id, metadata: { changedFields: ["dueDate", "scheduledDate", "repeatAfterDays", "reminders"] },
-        });
-      }
-    }
     tx.update(schema.workItems)
       .set({
         status: "backlog",
         ...(project.scope === "household" ? { ownerMemberId: null } : {}),
-        ...(withdrawCommitments ? { dueDate: null } : {}),
         archivedAt: null,
-        revisitAt: project.status === "archived" ? null : revisitAt ?? null,
+        ...(revisitAt !== undefined ? { revisitAt } : {}),
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
@@ -349,18 +277,17 @@ export function reopenProject(
   context?: MutationContext,
   expectedRevision?: number,
   ownerMemberId?: number | null,
-  activationResolution?: ProjectActivationResolution,
+  nextActionTitle?: string,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "reopen");
-    const resolutionDriver = activationResolution?.drivers.find((decision) => decision.projectId === id)?.ownerMemberId;
     const nextOwnerMemberId = ownerMemberId !== undefined
       ? ownerMemberId
-      : resolutionDriver ?? project.ownerMemberId;
-    const activityEventId = activateProjectFromWorkflow(txDb, id, nextOwnerMemberId, context, activationResolution);
+      : project.ownerMemberId;
+    const activityEventId = activateProjectFromWorkflow(txDb, id, nextOwnerMemberId, context, nextActionTitle);
     const updated = getProjectOrThrow(txDb, id);
     neutralizeContribution(txDb, {
       activityEventId,

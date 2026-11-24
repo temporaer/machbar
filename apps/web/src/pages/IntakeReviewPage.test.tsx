@@ -1944,7 +1944,7 @@ describe("IntakeReviewPage", () => {
       },
     } as never);
     renderPage();
-    expect(await screen.findByText("Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.")).toBeInTheDocument();
+    expect(await screen.findByText("Wird als zurückgestelltes Projekt angelegt.")).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" })).not.toBeInTheDocument();
   });
 
@@ -1970,11 +1970,11 @@ describe("IntakeReviewPage", () => {
       },
     } as never);
     renderPage();
-    expect(await screen.findByText("Ob eine Aktivierung nötig ist, prüft Machbar anhand der ausgewählten Änderungen.")).toBeInTheDocument();
+    expect(await screen.findByText("Wird als zurückgestelltes Projekt angelegt.")).toBeInTheDocument();
     expect(screen.queryByText("Wähle eine verantwortliche Person für das Projekt.")).not.toBeInTheDocument();
   });
 
-  it("shows the server activation requirement and retries breakdown with the selected driver", async () => {
+  it("applies a dated breakdown without activation decisions", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
       breakdown: {
@@ -1989,27 +1989,12 @@ describe("IntakeReviewPage", () => {
         ],
       },
     } as never);
-    const activationError = Object.assign(new Error("This commitment needs a project driver."), {
-      code: "project_commitment_resolution_required",
-      details: {
-        projects: [{ projectId: 27, title: "Schulfest", ownerMemberId: null, revision: 2, required: ["driver"] }],
-        expectedProjects: [{ projectId: 27, revision: 2 }],
-      },
-    });
-    mockedApi.applyIntake.mockRejectedValueOnce(activationError as never).mockResolvedValueOnce({ ...record("applied"), draft: null } as never);
+    mockedApi.applyIntake.mockResolvedValueOnce({ ...record("applied"), draft: null } as never);
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
-    expect(await screen.findByRole("heading", { name: "Vor dem Start noch entscheiden" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Verantwortlich für „Schulfest“"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
-    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
-    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toMatchObject({
-      projectDriverMemberId: 1,
-      activationResolution: {
-        expectedProjects: [{ projectId: 27, revision: 2 }],
-        drivers: [{ projectId: 27, ownerMemberId: 1 }],
-      },
-    });
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1]).not.toHaveProperty("activationResolution");
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1]).not.toHaveProperty("projectDriverMemberId");
   });
 
   it("opens the applied refinement at the resulting project route", async () => {

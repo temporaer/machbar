@@ -120,6 +120,7 @@ export function buildAgenda(
     options: {
       requireExecutable?: boolean;
       requireContextAvailable?: boolean;
+      deadlineAttention?: boolean;
     } = {},
   ): TaskRecord[] => {
     const requireExecutable = options.requireExecutable ?? true;
@@ -128,8 +129,7 @@ export function buildAgenda(
       .allTasks()
       .filter(
         (t) =>
-          selection.isAgendaTask(t) &&
-          (requireExecutable || t.status === "actionable") &&
+          (options.deadlineAttention ? selection.isDeadlineAttentionTask(t) : selection.isAgendaTask(t)) &&
           (!requireExecutable || t.executable) &&
           (!requireContextAvailable || isContextAvailable(t)) &&
           !seen.has(t.id) &&
@@ -143,18 +143,19 @@ export function buildAgenda(
   const overdue = take(
     (t) => !!t.dueDate && t.dueDate < today,
     sortByDueThenPriorityTitleId,
-    { requireExecutable: false, requireContextAvailable: false },
+    { requireExecutable: false, requireContextAvailable: false, deadlineAttention: true },
   );
   const dueToday = take(
     (t) => t.dueDate === today,
     sortByDueThenPriorityTitleId,
-    { requireExecutable: false, requireContextAvailable: false },
+    { requireExecutable: false, requireContextAvailable: false, deadlineAttention: true },
   );
   const planned = take(
     (t) =>
       t.status === "actionable" &&
       !!t.scheduledDate &&
-      selection.isScheduledDateEligible(t) &&
+      (t.scheduledDate === today ||
+        (t.repeatAfterDays !== null && t.scheduledDate < today)) &&
       t.externalWait === null && selection.isWindowAvailable(t),
     sortByScheduledThenPriorityTitleId,
     { requireExecutable: false, requireContextAvailable: false },
@@ -172,8 +173,8 @@ export function buildAgenda(
             t.revisitAt !== null &&
             t.revisitAt !== undefined &&
             Date.parse(t.revisitAt) <= now));
-      return selection.isAgendaTask(t) && reached &&
-        (t.externalWait !== null ||
+      return selection.isReconsiderationAttentionTask(t) && reached &&
+        (graph.isEffectivelyDeferred(t.id) || t.externalWait !== null ||
           (selection.isScheduledDateEligible(t) && selection.isWindowAvailable(t))) &&
         !seen.has(t.id);
     })
@@ -182,7 +183,7 @@ export function buildAgenda(
   const dueSoon = take(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
     sortByDueThenPriorityTitleId,
-    { requireExecutable: false, requireContextAvailable: false },
+    { requireExecutable: false, requireContextAvailable: false, deadlineAttention: true },
   );
   // Attention roots own eligible embedded work. Other attention roots remain
   // separate rows; ordinary descendants must not be duplicated in ready lanes.
@@ -191,7 +192,7 @@ export function buildAgenda(
   const coveredIds = new Set([
     ...attentionRootIds, ...attentionRoots.flatMap(taskDescendantIds),
   ]);
-  const availableWork = selection.availableWork(coveredIds);
+  const availableWork = selection.availableWork(coveredIds, today);
   const shared = availableWork.shared.filter((task) => !seen.has(task.id));
   const unscheduled = availableWork.unscheduled.filter((task) => !seen.has(task.id));
   for (const task of [...shared, ...unscheduled]) seen.add(task.id);
@@ -220,17 +221,19 @@ export function buildAgenda(
   const pruneTask = (task: TaskRecord | null): TaskRecord | null =>
     task && selection.isExecutableWork(task)
       ? pruneReferenceContainers(task, selection.isExecutableWork, todayProjection) : null;
-  const pruneAttentionTask = (task: TaskRecord): TaskRecord =>
-    pruneReferenceContainers(task, selection.isExecutableWork, {
+  const pruneAttentionTask = (task: TaskRecord): TaskRecord => ({
+    ...pruneReferenceContainers(task, selection.isExecutableWork, {
       ...todayProjection, excludedSubtrees: attentionRootIds,
-    });
+    }),
+    effectivelyDeferred: graph.effectiveDeferralFor(task.id),
+  });
   const stuckByProject = new Map(
     graph.listStuckProjects().map((project) => [project.id, project]),
   );
   const projects = [...graph.projectsById.values()]
     .filter(
       (project) =>
-        project.status === "active" &&
+        (project.status === "active" || project.status === "backlog") &&
         (memberId === undefined ||
           project.ownerMemberId === null ||
           project.ownerMemberId === memberId) &&
@@ -264,6 +267,7 @@ export function buildAgenda(
       );
       const projectForAgenda = pruneProjectForCompiledView({
         ...computed,
+        effectivelyDeferred: graph.effectiveDeferralFor(project.id),
         nextAction: pruneTask(nextAction),
         deferredNextAction: pruneTask(computed.deferredNextAction ?? null),
         additionalNextActions: computed.additionalNextActions ?? [],

@@ -1,5 +1,4 @@
 import { createWithReceipt } from "../domain/creationReceipt.js";
-import { previewActivation } from "../domain/activationPreview.js";
 import { assertWorkItemAccessible } from "../domain/workItemShared.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
@@ -212,10 +211,6 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       },
       { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null },
     );
-    if (request.headers["x-machbar-preview"] === "activation") {
-      reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate, viewerMemberId(request), [body.projectId, body.parentTaskId]);
-    }
     const task = createWithReceipt(db, { key: request.headers["idempotency-key"], route: "/api/tasks", viewer: viewerMemberId(request), body }, mutate);
     if (task.replayed) reply.header("x-machbar-replay", "true");
     reply.status(task.replayed ? 200 : 201);
@@ -250,10 +245,6 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       ...body,
       ...(request.authMember ? { createdByMemberId: request.authMember.id } : {}),
     }, { actorMemberId: request.activityActor?.id ?? null, viewerMemberId: viewerMemberId(request) ?? null });
-    if (request.headers["x-machbar-preview"] === "activation") {
-      reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate, viewerMemberId(request), [parentId]);
-    }
     const result = mutate();
     const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(201);
@@ -293,17 +284,13 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     },
   );
 
-  app.patch<{ Params: { id: string } }>("/api/tasks/:id", async (request, reply) => {
+  app.patch<{ Params: { id: string } }>("/api/tasks/:id", async (request) => {
     const id = parseId(request.params.id);
     const body = parseOrThrow(updateTaskSchema, request.body);
     const mutate = () => updateTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
       viewerMemberId: viewerMemberId(request) ?? null,
     });
-    if (request.headers["x-machbar-preview"] === "activation") {
-      reply.header("x-machbar-preview", "activation");
-      return previewActivation(db, mutate, viewerMemberId(request), [id]);
-    }
     mutate();
     return taskOrThrow(db, id, viewerMemberId(request));
   });
@@ -360,10 +347,6 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         actorMemberId: request.activityActor?.id ?? null,
         viewerMemberId: viewerMemberId(request) ?? null,
       });
-      if (request.headers["x-machbar-preview"] === "activation") {
-        reply.header("x-machbar-preview", "activation");
-        return previewActivation(db, mutate, viewerMemberId(request), [id]);
-      }
       const project = mutate();
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       reply.status(201);

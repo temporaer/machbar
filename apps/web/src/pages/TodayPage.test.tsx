@@ -88,6 +88,19 @@ describe("TodayPage", () => {
     vi.useRealTimers();
   });
 
+  it("labels parked and privacy-uncertain deadline tasks without hiding their detail path", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      dueToday: [
+        makeTask({ id: 21, title: "Parked deadline", status: "someday", effectivelyDeferred: true }),
+        makeTask({ id: 22, title: "Private lineage", status: "actionable", effectivelyDeferred: null }),
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+    expect(await screen.findByRole("button", { name: "Parked deadline — Zurückgestellt" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Private lineage — Verfügbarkeit unklar" })).toBeVisible();
+  });
+
   it.each([["de", "Suchen"], ["en", "Search"]] as const)(
     "offers keyboard-accessible inventory search in %s without changing agenda scope",
     async (locale, label) => {

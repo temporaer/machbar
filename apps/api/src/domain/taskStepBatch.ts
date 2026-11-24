@@ -1,10 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import type { ProjectActivationResolution, TaskStatus } from "@machbar/shared";
+import type { TaskStatus } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
-import { activateCommittedProjectChain } from "./commitmentActivation.js";
-import { hasExecutionCommitment } from "./commitmentTransition.js";
 import {
   getTaskOrThrow,
   createChildTaskInTransaction,
@@ -27,74 +25,13 @@ export interface StepBatchInput {
   createdByMemberId?: number | null;
   /** Revision of the task parent or project destination selected by the user. */
   expectedRevision: number;
-  /** Complete containing-project chain, including a project destination itself. */
-  expectedProjectRevisions: Array<{ projectId: number; revision: number }>;
   /** Only supported for an open, standalone task through the existing conversion guard. */
   convertParentToProject?: boolean;
-  activationResolution?: ProjectActivationResolution;
 }
 
 export interface StepBatchResult {
   tasks: TaskCreationFacts[];
   convertedProjectId: number | null;
-}
-
-function projectChainRevisions(db: Db, projectId: number | null) {
-  const projects: Array<{ id: number; revision: number; parentId: number | null }> = [];
-  const seen = new Set<number>();
-  let current = projectId;
-  while (current !== null) {
-    if (seen.has(current)) {
-      throw AppError.conflict("project_transition_invalid", "The project hierarchy contains a cycle.", { projectId: current });
-    }
-    seen.add(current);
-    const row = db.select({
-      id: schema.workItems.id,
-      revision: schema.workItems.revision,
-      parentId: schema.workItems.parentId,
-    }).from(schema.workItems)
-      .where(and(eq(schema.workItems.id, current), eq(schema.workItems.role, "story")))
-      .get();
-    if (!row) throw AppError.notFound("project_not_found", "The project was not found.", { projectId: current });
-    projects.push(row);
-    current = row.parentId;
-  }
-  return projects;
-}
-
-function assertProjectChainRevisions(
-  db: Db,
-  projectId: number | null,
-  expected: StepBatchInput["expectedProjectRevisions"],
-) {
-  const current = projectChainRevisions(db, projectId);
-  const expectedById = new Map(expected.map((entry) => [entry.projectId, entry.revision]));
-  const matches = expectedById.size === expected.length && expectedById.size === current.length &&
-    current.every((project) => expectedById.get(project.id) === project.revision);
-  if (!matches) {
-    const changed = current.find((project) => expectedById.get(project.id) !== project.revision) ?? current[0];
-    throw AppError.conflict(
-      "stale_write_conflict",
-      "The destination project structure changed. Review the preserved step draft and try again.",
-      changed
-        ? { entityType: "project", entityId: changed.id, expectedRevision: expectedById.get(changed.id) ?? null, currentRevision: changed.revision }
-        : { entityType: "project", reason: "project_chain_changed" },
-    );
-  }
-}
-
-function commitmentSubject(task: TaskCreationFacts) {
-  return {
-    type: "task" as const,
-    id: task.id,
-    status: task.status as TaskStatus,
-    targetStatus: task.status as TaskStatus,
-    executionCommitment: true,
-    newExecutionCommitment: true,
-    revisitAt: task.revisitAt,
-    recurring: task.repeatAfterDays !== null,
-    explicitlyReopened: false,
-  };
 }
 
 function assertBatch(input: StepBatchInput): void {
@@ -137,10 +74,8 @@ function createSteps(
       }, context);
       convertedProjectId = converted.id;
       projectId = converted.id;
-      assertProjectChainRevisions(txDb, null, input.expectedProjectRevisions);
     } else {
       projectId = parent.projectId;
-      assertProjectChainRevisions(txDb, projectId, input.expectedProjectRevisions);
       const existingChildren = txDb.select({
         role: schema.workItems.role,
         taskKind: schema.workItems.taskKind,
@@ -152,7 +87,9 @@ function createSteps(
       childBatchState = {
         parent,
         nextPosition: existingChildren.reduce((max, child) => Math.max(max, child.position), -1) + 1,
-        hasActionChild: existingChildren.some((child) => child.role === "task" && child.taskKind === "action"),
+        hasActionChild: existingChildren.some((child) =>
+          child.role === "task" && child.taskKind === "action"
+        ),
         hasOpenActionChild: existingChildren.some((child) =>
           child.role === "task" &&
           child.taskKind === "action" &&
@@ -175,7 +112,6 @@ function createSteps(
       });
     }
     projectId = project.id;
-    assertProjectChainRevisions(txDb, project.id, input.expectedProjectRevisions);
   }
 
   const tasks = input.steps.map((step) => {
@@ -188,35 +124,18 @@ function createSteps(
     };
     return destinationTaskId !== null && convertedProjectId === null
       ? createChildTaskInTransaction(txDb, destinationTaskId, taskInput, context, {
-          activateCommitment: false,
           batchState: childBatchState!,
         })
       : createTaskInTransaction(txDb, {
           ...taskInput,
           projectId,
-        }, context, { activateCommitment: false });
+        }, context);
   });
 
-  const committedTask = tasks.find((task) => hasExecutionCommitment({
-    kind: task.kind,
-    dueDate: task.dueDate,
-    scheduledDate: task.scheduledDate,
-    revisitAt: task.revisitAt,
-    reminders: task.reminders,
-  }));
-  if (committedTask?.projectId !== null && committedTask?.projectId !== undefined) {
-    activateCommittedProjectChain(
-      txDb,
-      committedTask.projectId,
-      context,
-      input.activationResolution,
-      commitmentSubject(committedTask),
-    );
-  }
   return { tasks, convertedProjectId };
 }
 
-/** Create task/project outline steps and all commitment-driven transitions atomically. */
+/** Create task/project outline steps atomically. */
 export function createTaskStepBatchForTask(
   db: Db,
   parentTaskId: number,

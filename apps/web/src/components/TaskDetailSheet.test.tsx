@@ -35,9 +35,6 @@ vi.mock("../lib/api", () => ({
   paperlessDocumentThumbnailUrl: (id: number) =>
     `/api/integrations/paperless/documents/${id}/thumbnail`,
   api: {
-    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),
@@ -1103,7 +1100,6 @@ describe("TaskDetailSheet", () => {
     await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledWith(43, {
       steps: [{ title: "First new step" }, { title: "Second new step" }],
       expectedRevision: 1,
-      expectedProjectRevisions: [],
     }));
     expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
     await userEvent.click(within(sheet).getByRole("button", { name: strings.cancel }));

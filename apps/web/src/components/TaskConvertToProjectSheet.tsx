@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ProjectActivationResolution, Task } from "@machbar/shared";
+import type { Task } from "@machbar/shared";
 import { api, type TaskDetail } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
-import { hasApiErrorCode, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
-import { projectActivationPromptFromSnapshot, projectActivationPromptFromError, projectActivationResolutionFromPrompt, type ProjectActivationPrompt } from "../lib/projectActivationResolution";
+import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 import { useNavigate } from "react-router-dom";
 import { useTaskDetail } from "../lib/taskDetailContext";
-import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 
 function descendantRevisions(tasks: Task[]): Array<{ taskId: number; revision: number }> {
   return tasks.flatMap((child) => [
@@ -38,8 +36,6 @@ export function TaskConvertToProjectSheet({ task, onClose, onFailure, isCurrent 
   const [preservedStepTitle, setPreservedStepTitle] = useState(task.title);
   const [preservedStepTitleEdited, setPreservedStepTitleEdited] = useState(false);
   const [dependencyTargets, setDependencyTargets] = useState<Record<number, number>>({});
-  const [previewIntent, setPreviewIntent] = useState<"active" | "backlog" | null>(null);
-  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
 
   useEffect(() => {
     setCurrentTask(task);
@@ -69,12 +65,6 @@ export function TaskConvertToProjectSheet({ task, onClose, onFailure, isCurrent 
     currentTask.reminders.length > 0 || currentTask.scheduledDate !== null || currentTask.availabilityRule !== null ||
     currentTask.notBeforeAt != null || currentTask.notBeforeDate != null ||
     (currentTask.status === "actionable" && openChildren.length === 0);
-  const activationResolution: ProjectActivationResolution | null = activationPrompt
-    ? projectActivationResolutionFromPrompt(activationPrompt)
-    : null;
-
-  useEffect(() => { setActivationPrompt(null); setPreviewIntent(null); }, [preservedStepTitle, dependencyTargets]);
-
   const hierarchyPending = (currentTask.parentTaskId !== null || currentTask.projectId !== null) && !currentTask.hierarchyRevisions;
 
   const convert = async (status: "active" | "backlog") => {
@@ -97,18 +87,8 @@ export function TaskConvertToProjectSheet({ task, onClose, onFailure, isCurrent 
         expectedDescendantRevisions: currentTask.hierarchyRevisions
           ? currentTask.hierarchyRevisions.filter((entry) => entry.id !== currentTask.id && !currentTask.ancestors?.some((parent) => parent.id === entry.id)).map(({ id, revision }) => ({ taskId: id, revision }))
           : descendantRevisions(currentTask.children),
-        ...(previewIntent === status && activationPrompt?.projects.length && activationResolution ? { activationResolution } : {}),
         expectedRevision: currentTask.revision,
       };
-      if (!activationPrompt || previewIntent !== status) {
-        const preview = await api.previewTaskConversion(task.id, input);
-        if (!isCurrent()) return;
-        if (preview.activatingProjects.length) {
-          setPreviewIntent(status);
-          setActivationPrompt(projectActivationPromptFromSnapshot(preview.decision));
-          return;
-        }
-      }
       const converted = await api.convertTaskToStory(task.id, input);
       bump();
       if (!isCurrent()) return;
@@ -119,17 +99,13 @@ export function TaskConvertToProjectSheet({ task, onClose, onFailure, isCurrent 
     } catch (cause) {
       if (!isCurrent()) return;
       onFailure?.(cause);
-      const requiredPrompt = projectActivationPromptFromError(cause);
-      if (isStaleWriteConflict(cause) || hasApiErrorCode(cause, "project_commitment_resolution_required")) {
-        setActivationPrompt(null);
-        setPreviewIntent(null);
+      if (isStaleWriteConflict(cause)) {
         setDependencyTargets({});
         bump();
         try {
           const latest = await api.getTask(task.id);
           if (!isCurrent()) return;
           setCurrentTask(latest);
-          if (requiredPrompt) { setPreviewIntent(status); setActivationPrompt(requiredPrompt); }
         } catch (refreshCause) {
           onFailure?.(refreshCause);
         }
@@ -180,10 +156,9 @@ export function TaskConvertToProjectSheet({ task, onClose, onFailure, isCurrent 
                 </select>
               </label>
             ))}
-            {activationPrompt ? <ProjectActivationDecisionFields prompt={activationPrompt} disabled={busy} onChange={setActivationPrompt} /> : null}
             <div className="capture-shape-actions">
-              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "backlog" && activationPrompt !== null && activationResolution === null)} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
-              <button type="button" className="btn capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim()) || (previewIntent === "active" && activationPrompt !== null && activationResolution === null)} onClick={() => void convert("active")}>{previewIntent === "active" && activationPrompt ? strings.activateStory : strings.convertToProjectActive}</button>
+              <button type="button" className="btn btn-primary capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim())} onClick={() => void convert("backlog")}>{strings.convertToProjectBacklog}</button>
+              <button type="button" className="btn capture-shape-action" disabled={busy || hierarchyPending || (preserveStepRequired && !preservedStepTitle.trim())} onClick={() => void convert("active")}>{strings.convertToProjectActive}</button>
             </div>
           </>
         )}

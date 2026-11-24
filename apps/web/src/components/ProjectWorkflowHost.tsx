@@ -22,10 +22,6 @@ import type { WorkRefinementOrigin } from "../lib/taskDetailContext";
 import { BottomSheet } from "./BottomSheet";
 import { isReadAccessError, isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 
-function flattenTaskRevisions(tasks: ProjectDetail["tasks"]): Array<{ taskId: number; revision: number }> {
-  return tasks.flatMap((task) => [{ taskId: task.id, revision: task.revision }, ...flattenTaskRevisions(task.children)]);
-}
-
 /**
  * Project counterpart of `TaskWorkflowHost.tsx` — the single place that
  * imports every focused `story.*` sheet and switches on
@@ -95,6 +91,7 @@ function ProjectWorkflowContent({
   const {
     data: story,
     loading: projectLoading,
+    refreshing: projectRefreshing,
     error: projectError,
     refreshError: projectRefreshError,
     reload,
@@ -108,7 +105,7 @@ function ProjectWorkflowContent({
         throw error;
       }
     },
-    [projectId, requirementsEpoch],
+    [projectId],
   );
   const dismiss = () => { if (isCurrent()) workflow.close(); };
   const close = () => { if (!ended.current) dismiss(); };
@@ -126,9 +123,8 @@ function ProjectWorkflowContent({
     const action = opening.kind === "reopenWithDriver" ? "reopen" : "activate";
     return (
       <ProjectActivationSheet
-        key={requirementsEpoch}
         story={story}
-        loading={projectLoading}
+        loading={projectLoading || projectRefreshing}
         action={action}
         readError={projectRefreshError ?? projectError}
         requirementsChanged={requirementsEpoch > 0}
@@ -140,9 +136,9 @@ function ProjectWorkflowContent({
         isCurrent={() => isCurrent() && !ended.current}
         onClose={close}
         onActivationSuccess={close}
-        onActivate={(ownerMemberId, resolution, expectedRevision) =>
+        onActivate={(ownerMemberId, nextActionTitle, expectedRevision) =>
           story
-            ? run(() => projectActions.runAction(story, action, ownerMemberId, resolution, true, expectedRevision))
+            ? run(() => projectActions.runAction(story, action, ownerMemberId, nextActionTitle, true, expectedRevision))
             : Promise.resolve()
         }
       />
@@ -162,8 +158,6 @@ function ProjectWorkflowContent({
               await run(() => projectActions.returnToBacklog(
                 story,
                 patch.revisitAt,
-                patch.withdrawCommitments,
-                flattenTaskRevisions(story.tasks),
               ));
             } else {
               await run(() => projectActions.schedule(story, { revisitAt: patch.revisitAt }));
@@ -229,6 +223,9 @@ function ProjectWorkflowContent({
           story={story}
           onClose={close}
           onFailure={endOnDenied}
+          onRefresh={reload}
+          refreshing={projectRefreshing}
+          refreshError={projectRefreshError}
           onSave={async (patch) => {
             await run(() => projectActions.schedule(story, patch));
           }}

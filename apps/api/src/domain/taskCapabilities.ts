@@ -80,7 +80,7 @@ export function followUpExternalWait(
       task.revision,
       input.expectedRevision,
     );
-    if (task.status !== "actionable") {
+    if (task.status !== "actionable" && task.status !== "someday") {
       throw AppError.conflict(
         "external_wait_status_invalid",
         "Only actionable tasks can receive an external-wait follow-up.",
@@ -264,7 +264,12 @@ export function upsertExternalWait(
       task.revision,
       input.expectedRevision,
     );
-    if (task.status !== "actionable") {
+    const existing = tx
+      .select()
+      .from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, taskId))
+      .get();
+    if (task.status !== "actionable" && !(task.status === "someday" && existing)) {
       throw AppError.conflict(
         "external_wait_status_invalid",
         "Only actionable tasks can wait for an external event.",
@@ -282,11 +287,6 @@ export function upsertExternalWait(
       task.projectId === null
         ? true
         : projectHasNextAction(txDb, task.projectId);
-    const existing = tx
-      .select()
-      .from(schema.taskExternalWaits)
-      .where(eq(schema.taskExternalWaits.taskId, taskId))
-      .get();
     const waitingFor =
       input.waitingFor === undefined
         ? existing?.waitingFor?.trim() ?? ""

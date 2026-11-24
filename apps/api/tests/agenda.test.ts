@@ -229,7 +229,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     );
   });
 
-  it("derives 'planned' purely from scheduledDate <= today (today and overdue-scheduled)", async () => {
+  it("places today's plan in planned and an expired one-off plan in available work", async () => {
     await createTask({ title: "Heute geplant", scheduledDate: today });
     await createTask({ title: "Gestern geplant, noch offen", scheduledDate: yesterday });
     await createTask({ title: "Erst morgen geplant", scheduledDate: tomorrow });
@@ -237,7 +237,8 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     const agenda = await getAgenda();
     const plannedTitles = titlesOf(agenda.planned);
     expect(plannedTitles).toContain("Heute geplant");
-    expect(plannedTitles).toContain("Gestern geplant, noch offen");
+    expect(plannedTitles).not.toContain("Gestern geplant, noch offen");
+    expect(titlesOf(agenda.shared)).toContain("Gestern geplant, noch offen");
     expect(plannedTitles).not.toContain("Erst morgen geplant");
 
     // The future-scheduled task doesn't land in planned (or any date-based
@@ -482,13 +483,13 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Noch zu entscheiden")).toEqual([]);
   });
 
-  it("promotes standalone Someday work when it receives a deadline", async () => {
+  it("surfaces a standalone Someday deadline without activating the task", async () => {
     const task = await createTask({
       title: "Irgendwann fällig",
       status: "someday",
       dueDate: today,
     });
-    expect(task.status).toBe("actionable");
+    expect(task.status).toBe("someday");
     expect(await bucketsContaining("Irgendwann fällig")).toEqual(["dueToday"]);
   });
 
@@ -884,7 +885,6 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     ) => section.filter((task) => task.title.startsWith(prefix)).map((task) => task.title);
 
     expect(titles(agenda.planned, "Planned")).toEqual([
-      "Planned yesterday low",
       "Planned today high",
     ]);
     expect(titles(agenda.revisit, "Revisit")).toEqual([

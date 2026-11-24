@@ -10,6 +10,16 @@ describe("ProjectDeferSheet", () => {
     vi.useRealTimers();
   });
 
+  it("defers an active project without offering or submitting withdrawal", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    renderWithProviders(
+      <ProjectDeferSheet story={makeProject({ id: 53, status: "active" })} onClose={vi.fn()} onSave={onSave} />,
+    );
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ohne Wiedervorlage" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ revisitAt: null }));
+  });
+
   it.each([
     ["2026-03-28T01:30:00.000Z", "2026-03-29", "Diese lokale Uhrzeit"],
     ["2026-10-24T00:30:00.000Z", "2026-10-25", "Diese lokale Uhrzeit"],
@@ -71,14 +81,13 @@ describe("ProjectDeferSheet", () => {
           "02:30",
           "Europe/Berlin",
         ),
-        withdrawCommitments: false,
       }),
     );
 
     vi.clearAllMocks();
     fireEvent.click(screen.getByRole("button", { name: "Ohne Wiedervorlage" }));
     await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith({ revisitAt: null, withdrawCommitments: false }),
+      expect(onSave).toHaveBeenCalledWith({ revisitAt: null }),
     );
   });
 

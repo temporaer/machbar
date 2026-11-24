@@ -31,7 +31,6 @@ import "./ProjectStoryRow.css";
 
 vi.mock("../lib/api", () => ({
   api: {
-    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getProjects: vi.fn(),
     getProject: vi.fn(),
@@ -520,11 +519,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     await waitFor(() =>
       expect(mockedApi.reopenProject).toHaveBeenCalledWith(27, {
         expectedRevision: 1,
-        activationResolution: {
-          expectedProjects: [{ projectId: 27, revision: 1 }],
-          drivers: [],
-          nextActionTitle: "Ersten Schritt festlegen",
-        },
+        nextActionTitle: "Ersten Schritt festlegen",
         ownerMemberId: 1,
       }),
     );
@@ -556,10 +551,6 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(26, {
       expectedRevision: 1,
       ownerMemberId: 1,
-      activationResolution: {
-        expectedProjects: [{ projectId: 26, revision: 1 }],
-        drivers: [{ projectId: 26, ownerMemberId: 1 }],
-      },
     });
   });
 
@@ -587,8 +578,6 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(23, {
       expectedRevision: 1,
       revisitAt: null,
-      withdrawCommitments: false,
-      expectedTaskRevisions: [],
     });
     expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Archiviert");
   });
@@ -654,10 +643,6 @@ describe("ProjectStoryRow – activation preparation", () => {
       expect(mockedApi.activateProject).toHaveBeenCalledWith(30, {
         expectedRevision: 1,
         ownerMemberId: 2,
-        activationResolution: {
-          expectedProjects: [{ projectId: 30, revision: 1 }],
-          drivers: [{ projectId: 30, ownerMemberId: 2 }],
-        },
       }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -719,11 +704,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(33, {
       expectedRevision: 1,
       ownerMemberId: 2,
-      activationResolution: {
-        expectedProjects: [{ projectId: 33, revision: 1 }],
-        drivers: [{ projectId: 33, ownerMemberId: 2 }],
-        nextActionTitle: "Ersten Schritt vorbereiten",
-      },
+      nextActionTitle: "Ersten Schritt vorbereiten",
     }));
     expect(mockedApi.activateProject).toHaveBeenCalledTimes(1);
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
@@ -797,8 +778,6 @@ describe("ProjectStoryRow – activation preparation", () => {
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(31, {
       expectedRevision: 1,
       revisitAt: null,
-      withdrawCommitments: false,
-      expectedTaskRevisions: [],
     });
   });
 
@@ -876,8 +855,6 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43, {
       expectedRevision: 1,
       revisitAt: null,
-      withdrawCommitments: false,
-      expectedTaskRevisions: [],
     });
     expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
   });

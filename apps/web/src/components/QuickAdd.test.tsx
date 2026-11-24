@@ -21,7 +21,6 @@ function renderQuickAddInStory(storyId: number, ui = <QuickAdd />) {
 
 vi.mock("../lib/api", () => ({
   api: {
-    previewTaskCreation: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     createTask: vi.fn(),
     createProject: vi.fn(),
@@ -51,21 +50,6 @@ const originalRevokeObjectUrl = Object.getOwnPropertyDescriptor(
 async function openCapture() {
   await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
   expect(screen.getByText("Nur Titel reicht")).toBeInTheDocument();
-}
-
-function commitmentResolutionError(
-  projectId: number,
-  title: string,
-  revision: number,
-  required: Array<"driver" | "progressPath"> = ["driver", "progressPath"],
-) {
-  return Object.assign(new Error("Project decisions are required."), {
-    code: "project_commitment_resolution_required",
-    details: {
-      projects: [{ projectId, title, revision, ownerMemberId: null, required }],
-      expectedProjects: [{ projectId, revision }],
-    },
-  });
 }
 
 async function cropCapturedPhoto(index = 0, croppedName = "photo-cropped.jpg") {
@@ -209,7 +193,6 @@ describe("QuickAdd", () => {
         expect.any(Object),
       ),
     );
-    expect(mockedApi.previewTaskCreation).not.toHaveBeenCalled();
     expect(await screen.findByText("Material gespeichert: Reiseplan")).toBeInTheDocument();
     expect(readRecentMaterialTargets()).toEqual([{ kind: "project", id: 7 }]);
     await userEvent.click(screen.getByRole("button", { name: "Ansehen" }));
@@ -257,10 +240,10 @@ describe("QuickAdd", () => {
     );
   });
 
-  it("behält Capture-Entwurf und Serverentscheidungen bis zum erneuten selben Create-Aufruf", async () => {
+  it("retains a capture draft after failure and retries", async () => {
     mockedApi.getProjects.mockResolvedValue([makeProject({ id: 42, title: "Keller" })]);
     mockedApi.createTask
-      .mockRejectedValueOnce(commitmentResolutionError(42, "Keller", 3))
+      .mockRejectedValueOnce(new Error("Offline"))
       .mockResolvedValueOnce(makeTask({ id: 92, title: "Maße aufnehmen", projectId: 42 }));
     renderQuickAddInStory(42);
     await openCapture();
@@ -268,32 +251,22 @@ describe("QuickAdd", () => {
     await userEvent.type(title, "Maße aufnehmen");
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
-    expect(await screen.findByText("Vor dem Start noch entscheiden")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeVisible();
     expect(title).toHaveValue("Maße aufnehmen");
     expect(mockedApi.createTask).toHaveBeenCalledTimes(1);
 
-    await userEvent.selectOptions(screen.getByLabelText("Verantwortlich für „Keller“"), "1");
-    await userEvent.type(
-      screen.getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"),
-      "Maße prüfen",
-    );
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
     expect(mockedApi.createTask.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
       title: "Maße aufnehmen",
       projectId: 42,
-      activationResolution: {
-        expectedProjects: [{ projectId: 42, revision: 3 }],
-        drivers: [{ projectId: 42, ownerMemberId: 1 }],
-        nextActionTitle: "Maße prüfen",
-      },
     }));
     expect(await screen.findByText("Erfasst: Maße aufnehmen")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveValue("");
   });
 
-  it("verwirft Entscheidungen für Projekt A nach Wechsel zu Eingang, erhält aber den Capture-Draft", async () => {
+  it("retains a failed capture draft when changing destination to inbox", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 9, 12, 12, 0, 0));
     mockedApi.getProjects.mockResolvedValue([makeProject({ id: 42, title: "Keller A" })]);
@@ -304,7 +277,7 @@ describe("QuickAdd", () => {
       mimeType: "application/pdf",
     });
     mockedApi.createTask
-      .mockRejectedValueOnce(commitmentResolutionError(42, "Keller A", 3))
+      .mockRejectedValueOnce(new Error("Offline"))
       .mockResolvedValueOnce(makeTask({ id: 93, title: "Material bestellen" }));
     renderQuickAddInStory(42);
 
@@ -317,11 +290,10 @@ describe("QuickAdd", () => {
       const title = screen.getByPlaceholderText("Was ist zu tun?");
       await userEvent.type(title, "Material bestellen !15.11");
       await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
-      expect(await screen.findByLabelText("Verantwortlich für „Keller A“")).toBeInTheDocument();
+      expect(await screen.findByRole("alert")).toBeVisible();
 
       await userEvent.click(screen.getByRole("button", { name: "+ Projekt" }));
       await userEvent.click(screen.getByRole("button", { name: "Eingang" }));
-      expect(screen.queryByText("Vor dem Start noch entscheiden")).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
       await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
@@ -338,7 +310,7 @@ describe("QuickAdd", () => {
     }
   });
 
-  it("fragt nach Wechsel von Projekt A zu B nur die aktuellen B-Entscheidungen ab", async () => {
+  it("retains a failed capture draft when changing project destination", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 9, 12, 12, 0, 0));
     mockedApi.getProjects.mockResolvedValue([
@@ -352,8 +324,8 @@ describe("QuickAdd", () => {
       mimeType: "application/pdf",
     });
     mockedApi.createTask
-      .mockRejectedValueOnce(commitmentResolutionError(42, "Keller A", 3))
-      .mockRejectedValueOnce(commitmentResolutionError(43, "Keller B", 7, ["driver"]));
+      .mockRejectedValueOnce(new Error("Offline"))
+      .mockResolvedValueOnce(makeTask({ id: 94, title: "Material bestellen", projectId: 43 }));
     renderQuickAddInStory(42);
 
     try {
@@ -365,11 +337,10 @@ describe("QuickAdd", () => {
       const title = screen.getByPlaceholderText("Was ist zu tun?");
       await userEvent.type(title, "Material bestellen !15.11");
       await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
-      expect(await screen.findByLabelText("Verantwortlich für „Keller A“")).toBeInTheDocument();
+      expect(await screen.findByRole("alert")).toBeVisible();
 
       await userEvent.click(screen.getByRole("button", { name: "+ Projekt" }));
       await userEvent.click(screen.getByRole("button", { name: "Keller B" }));
-      expect(screen.queryByLabelText("Verantwortlich für „Keller A“")).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
       await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
@@ -380,8 +351,7 @@ describe("QuickAdd", () => {
         notes: "[material.pdf](paperless:705)",
       }));
       expect(mockedApi.createTask.mock.calls[1]?.[0]).not.toHaveProperty("activationResolution");
-      expect(await screen.findByLabelText("Verantwortlich für „Keller B“")).toBeInTheDocument();
-      expect(screen.queryByLabelText("Verantwortlich für „Keller A“")).not.toBeInTheDocument();
+      expect(await screen.findByText("Erfasst: Material bestellen")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

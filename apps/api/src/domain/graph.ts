@@ -227,11 +227,11 @@ function stuckReasonForDiagnoses(
  * issues a handful of ordinary Drizzle CRUD selects for the raw rows, and
  * delegates every non-trivial derivation — effective owner/tags
  * inheritance, dependency-based blocking, next-action selection and
- * "Festgefahren" (stuck) classification — to the SQL/CTE-based functions in
- * `src/repo/*`. The only tree-shaped work still done here is building the
- * plain parent→children adjacency used purely to *shape* the nested
- * `Task.children` output array; no inheritance/blocking/stuck business
- * logic is computed by walking that adjacency in application code.
+ * "Festgefahren" (stuck) classification — to shared domain and repository
+ * helpers. It also walks the raw mixed-role parent chain to derive effective
+ * deferral: any parked ancestor gates work, and an inaccessible ancestor is
+ * an opaque gate regardless of its status. The separately built task
+ * parent→children adjacency shapes the nested `Task.children` output.
  */
 export class Graph {
   readonly projectsById = new Map<number, ProjectRecord>();
@@ -255,6 +255,16 @@ export class Graph {
     ProjectActivationReadiness
   >();
   private readonly childStoryIdsByParent = new Map<number | null, number[]>();
+  private readonly deferredWorkItemIds = new Set<number>();
+  private readonly opaqueWorkItemIds = new Set<number>();
+
+  isEffectivelyDeferred(id: number): boolean {
+    return this.deferredWorkItemIds.has(id);
+  }
+
+  effectiveDeferralFor(id: number): boolean | null {
+    return this.opaqueWorkItemIds.has(id) ? null : this.isEffectivelyDeferred(id);
+  }
 
   private constructor(
     private readonly analysisNow: number,
@@ -364,14 +374,49 @@ export class Graph {
     // descendants of a work item legitimately have no explicit owner of
     // their own; a project has no owner-inheritance mechanism, so its own
     // row is authoritative there.
-    const workItemRows = db
-      .select()
-      .from(schema.workItems)
-      .all()
-      .filter((row) => {
-        if (!restrictToViewer) return true;
-        return workItemVisibleToViewer(row, viewerMemberId, effectiveOwners.get(row.id)?.ownerId ?? null);
-      });
+    const allWorkItemRows = db.select().from(schema.workItems).all();
+    const rowsById = new Map(allWorkItemRows.map((row) => [row.id, row]));
+    const workItemRows = allWorkItemRows.filter((row) => {
+      if (!restrictToViewer) return true;
+      return workItemVisibleToViewer(row, viewerMemberId, effectiveOwners.get(row.id)?.ownerId ?? null);
+    });
+    const visibleIds = new Set(workItemRows.map((row) => row.id));
+    const deferredById = new Map<number, boolean>();
+    const deferralCache = new Map<number, boolean | null>();
+    const deferral = (id: number, stopBefore?: number): boolean | null => {
+      const visited = new Set<number>();
+      const path: typeof allWorkItemRows = [];
+      let row = rowsById.get(id);
+      let state: boolean | null = false;
+      while (row && row.id !== stopBefore) {
+        if (stopBefore === undefined && deferralCache.has(row.id)) {
+          state = deferralCache.get(row.id)!;
+          break;
+        }
+        if (visited.has(row.id)) {
+          state = null;
+          break;
+        }
+        visited.add(row.id);
+        path.push(row);
+        row = row.parentId === null ? undefined : rowsById.get(row.parentId);
+      }
+      for (let index = path.length - 1; index >= 0; index--) {
+        const item = path[index]!;
+        state = state === null || !visibleIds.has(item.id)
+          ? null
+          : state || (item.status === "backlog" && item.archivedAt === null);
+        if (stopBefore === undefined) deferralCache.set(item.id, state);
+      }
+      return state;
+    };
+    for (const row of allWorkItemRows) {
+      const state = deferral(row.id);
+      const deferred = state !== false;
+      deferredById.set(row.id, deferred);
+      if (deferred) graph.deferredWorkItemIds.add(row.id);
+      if (state === null) graph.opaqueWorkItemIds.add(row.id);
+    }
     const reminderRows = db.select().from(schema.taskReminders).all();
     const remindersByTask = new Map<number, TaskReminder[]>();
     for (const row of reminderRows) {
@@ -603,6 +648,7 @@ export class Graph {
           title: task.title,
           status: task.status,
           projectId: task.projectId,
+          effectivelyDeferred: deferredById.get(task.id) ?? false,
           scheduledDate: task.scheduledDate,
           revisitAt:
             task.revisitAt ??
@@ -643,23 +689,37 @@ export class Graph {
       for (const project of rawProjects) {
         const activationStatuses = new Map(projectStatuses);
         activationStatuses.set(project.id, "active");
-        const activationBlockers =
-          project.status === "active"
-            ? blockerAnalysis
-            : analyzeTaskBlockers(
-                blockerInputs,
-                activationStatuses,
-                today,
-                now,
-                householdTimezone(db),
-              );
+        // Test the target's own lifecycle change without treating an ancestor
+        // as activated. Other prerequisites retain their actual eligibility.
+        const requiresHypothetical =
+          project.status !== "active" || graph.isEffectivelyDeferred(project.id);
+        const activationInputs = requiresHypothetical
+          ? new Map(
+              [...blockerInputs].map(([id, input]) => [
+                id,
+                input.projectId === project.id
+                  ? { ...input, effectivelyDeferred: deferral(id, project.id) !== false }
+                  : input,
+              ]),
+            )
+          : blockerInputs;
+        const activationBlockers = requiresHypothetical
+          ? analyzeTaskBlockers(
+              activationInputs,
+              activationStatuses,
+              today,
+              now,
+              householdTimezone(db),
+            )
+          : blockerAnalysis;
         graph.activationReadinessByProject.set(
           project.id,
           evaluateProjectActivationReadiness({
             ownerMemberId: project.ownerMemberId,
             candidateTaskIds: (
               nextActionIdsByProject.get(project.id) ?? []
-            ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false),
+            ).filter((taskId) => activationBlockers.get(taskId)?.blocked === false &&
+              !activationInputs.get(taskId)?.effectivelyDeferred),
             projectTaskIds: rawTasks
               .filter((task) => task.projectId === project.id)
               .map((task) => task.id),
@@ -670,6 +730,7 @@ export class Graph {
                   task.kind === "action" &&
                   task.status === "actionable" &&
                   task.repeatAfterDays === null &&
+                  !activationInputs.get(task.id)?.effectivelyDeferred &&
                   task.revisitAt !== null &&
                   Date.parse(task.revisitAt) > Date.parse(now) &&
                   blockerInputs.get(task.id)?.externalWait === null &&
@@ -933,7 +994,7 @@ export class Graph {
     }
 
     for (const project of includeProjectAnalysis ? graph.projectsById.values() : []) {
-      if (project.status !== "active") continue;
+      if (project.status !== "active" || graph.isEffectivelyDeferred(project.id)) continue;
       const tasks = graph.actionsForProject(project.id);
       const openTasks = tasks.filter(
         (task) => task.status !== "done" && task.status !== "cancelled",
@@ -1114,7 +1175,7 @@ export class Graph {
   nextActionFor(projectId: number): TaskRecord | null {
     for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
       const task = this.tasksById.get(id);
-      if (task && !task.blocked) return task;
+      if (task && !task.blocked && !this.isEffectivelyDeferred(task.id)) return task;
     }
     return null;
   }
@@ -1127,7 +1188,8 @@ export class Graph {
 
   deferredNextActionFor(projectId: number): TaskRecord | null {
     const candidates =
-      this.orderedNextActionCandidatesByProject.get(projectId) ?? [];
+      (this.orderedNextActionCandidatesByProject.get(projectId) ?? [])
+        .filter((candidate) => !this.isEffectivelyDeferred(candidate.taskId));
     const firstAvailable = candidates.find(
       (candidate) => candidate.availability === "available",
     );

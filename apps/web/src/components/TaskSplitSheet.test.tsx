@@ -24,9 +24,6 @@ import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
-    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     createTaskStepBatchForTask: vi.fn(),
@@ -227,7 +224,6 @@ describe("TaskSplitSheet", () => {
     await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(1));
     expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledWith(7, {
       expectedRevision: 1,
-      expectedProjectRevisions: [],
       steps: [
         { title: "Pakete prüfen" },
         { title: "Korpus aufbauen" },
@@ -280,7 +276,6 @@ describe("TaskSplitSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
     await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledWith(7, expect.objectContaining({
       expectedRevision: 4,
-      expectedProjectRevisions: [],
       convertParentToProject: true,
       steps: [{ title: "Ersten Schritt" }],
     })));
@@ -310,7 +305,6 @@ describe("TaskSplitSheet", () => {
     await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(2));
     expect(mockedApi.createTaskStepBatchForTask.mock.calls[1]?.[1]).toMatchObject({
       expectedRevision: 2,
-      expectedProjectRevisions: [],
       steps: [{ title: "Zweiter Schritt" }],
     });
   });
@@ -324,20 +318,13 @@ describe("TaskSplitSheet", () => {
     expect(mockedApi.createTaskStepBatchForTask).not.toHaveBeenCalled();
   });
 
-  it("retains the dated batch while collecting server-required activation decisions", async () => {
+  it("retains a dated batch across stale parent refresh and retries", async () => {
     const project = makeProject({ id: 12, revision: 5, title: "Sommerfest", status: "backlog", ownerMemberId: null });
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 7, revision: 4, projectId: 12 }));
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [], ancestors: [] });
     mockedApi.createTaskStepBatchForTask
-      .mockRejectedValueOnce(Object.assign(new Error("Treiber fehlt"), {
-        code: "project_commitment_resolution_required",
-        details: {
-          projects: [{ projectId: 12, title: project.title, revision: 5, ownerMemberId: null, required: ["driver"] }],
-          expectedProjects: [{ projectId: 12, revision: 5 }],
-          targetRevision: 5,
-        },
-      }))
+      .mockRejectedValueOnce(Object.assign(new Error("Stale"), { code: "stale_write_conflict" }))
       .mockResolvedValueOnce({
         tasks: [],
         parent: makeTask({ id: 7, revision: 4, status: "actionable", projectId: 12 }),
@@ -357,20 +344,14 @@ describe("TaskSplitSheet", () => {
     await userEvent.type(screen.getByLabelText("Geplant für"), "2027-03-12");
     await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
 
-    const driver = await screen.findByLabelText(strings.commitmentDriverFor(project.title));
+    expect(await screen.findByRole("alert")).toBeVisible();
     expect(screen.getByLabelText("Geplant für")).toHaveValue("2027-03-12");
-    await userEvent.selectOptions(driver, "1");
     await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
 
     await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(2));
     expect(mockedApi.createTaskStepBatchForTask).toHaveBeenLastCalledWith(7, expect.objectContaining({
       expectedRevision: 4,
-      expectedProjectRevisions: [{ projectId: 12, revision: 5 }],
       steps: [{ title: "Maße prüfen", scheduledDate: "2027-03-12" }],
-      activationResolution: {
-        expectedProjects: [{ projectId: 12, revision: 5 }],
-        drivers: [{ projectId: 12, ownerMemberId: 1 }],
-      },
     }));
 
     await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Zweiter Schritt");
@@ -378,33 +359,25 @@ describe("TaskSplitSheet", () => {
     await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(3));
     expect(mockedApi.createTaskStepBatchForTask.mock.calls[2]?.[1]).toMatchObject({
       expectedRevision: 4,
-      expectedProjectRevisions: [{ projectId: 12, revision: 6 }],
       steps: [{ title: "Zweiter Schritt" }],
     });
   });
 
-  it("drops activation decisions when the user changes the batch after a requirement response", async () => {
+  it("allows editing a batch after a failed save", async () => {
     const project = makeProject({ id: 13, revision: 6, title: "Garten", status: "backlog", ownerMemberId: null });
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 7, revision: 4, projectId: 13 }));
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [], ancestors: [] });
     mockedApi.createTaskStepBatchForTask
-      .mockRejectedValueOnce(Object.assign(new Error("Treiber fehlt"), {
-        code: "project_commitment_resolution_required",
-        details: {
-          projects: [{ projectId: 13, title: project.title, revision: 6, ownerMemberId: null, required: ["driver"] }],
-          expectedProjects: [{ projectId: 13, revision: 6 }],
-        },
-      }))
+      .mockRejectedValueOnce(new Error("Offline"))
       .mockResolvedValueOnce({ tasks: [] });
     renderWithProviders(<TaskSplitSheet parentId={7} parentRevision={4} projectId={13} onClose={vi.fn()} />);
     const input = screen.getByPlaceholderText("Schritt …");
     await userEvent.type(input, "Schritt eins");
     await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
-    expect(await screen.findByLabelText(strings.commitmentDriverFor(project.title))).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeVisible();
 
     await userEvent.clear(input);
     await userEvent.type(input, "Schritt angepasst");
-    expect(screen.queryByLabelText(strings.commitmentDriverFor(project.title))).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "1 Teilaufgabe anlegen" }));
 
     await waitFor(() => expect(mockedApi.createTaskStepBatchForTask).toHaveBeenCalledTimes(2));

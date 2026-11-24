@@ -26,9 +26,6 @@ import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
-    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),
@@ -536,32 +533,18 @@ describe("TaskStructureSheet routing", () => {
     })));
   });
 
-  it.each([false, true])("collects required activation decisions and retries conversion atomically (progress path: %s)", async (needsPath) => {
+  it("converts directly without activating enclosing projects", async () => {
     const project = makeProject({ id: 72, title: "Keller organisieren", status: "active", ownerMemberId: 1, revision: 3 });
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 72, status: "captured" }));
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
-    mockedApi.previewTaskConversion.mockResolvedValueOnce({ activatingProjects: [{ id: 72, title: project.title }], decision: {
-      targetRevision: 1, expectedProjects: [{ projectId: 72, revision: 1 }],
-      projects: [{ projectId: 72, title: project.title, revision: 1, ownerMemberId: null, required: needsPath ? ["driver", "progressPath"] : ["driver"] }],
-    } });
     mockedApi.convertTaskToStory.mockResolvedValueOnce(project);
     mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
     renderStructure(72);
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
     await userEvent.click(await screen.findByRole("button", { name: "In Projekt umwandeln" }));
     await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectActive }));
-    const picker = await screen.findByRole("dialog");
-    expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
-    expect(within(picker).getByText(strings.activationDecisionHint)).toBeInTheDocument();
-    await userEvent.selectOptions(within(picker).getByLabelText(strings.commitmentDriverFor(project.title)), "1");
-    if (needsPath) await userEvent.type(within(picker).getByLabelText(strings.commitmentNextActionLabel), "Ersten Schritt festlegen");
-    await userEvent.click(within(picker).getByRole("button", { name: strings.activateStory }));
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenLastCalledWith(72, {
       status: "active", expectedRevision: 1, dependencyMappings: [], expectedDescendantRevisions: [],
-      activationResolution: {
-        expectedProjects: [{ projectId: 72, revision: 1 }], drivers: [{ projectId: 72, ownerMemberId: 1 }],
-        ...(needsPath ? { nextActionTitle: "Ersten Schritt festlegen" } : {}),
-      },
     }));
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
@@ -579,7 +562,6 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(await screen.findByRole("button", { name: strings.convertToProjectActive }));
     await waitFor(() => expect(mockedApi.convertTaskToStory).toHaveBeenCalledOnce());
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
-    expect(screen.queryByText(strings.activationDecisionHint)).not.toBeInTheDocument();
   });
 
   it("offers step entry, move, and conversion for a captured inbox item", async () => {

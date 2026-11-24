@@ -151,7 +151,7 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const inScope = (scope: Scope) => options.scope === "all" || options.scope === scope;
   const tasks = graph.allTasks().filter((t) => inScope(t.scope)); const projects = [...graph.projectsById.values()].filter((p) => inScope(p.scope));
   const fact = (t: TaskRecord) => factForTask(t, graph, memberNames);
-  const activeProjects = projects.filter((p) => p.status === "active").map((p) => factForProject(p, graph, memberNames));
+  const activeProjects = projects.filter((p) => p.status === "active" && !graph.isEffectivelyDeferred(p.id)).map((p) => factForProject(p, graph, memberNames));
   const projectStatusById = new Map([...graph.projectsById.values()].map((project) => [project.id, project.status]));
   const firstExecutionCandidateByProject = new Map<number, number>();
   for (const project of projects) {
@@ -164,9 +164,9 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
     if (candidate) firstExecutionCandidateByProject.set(project.id, candidate.id);
   }
   const executableNextActions = tasks.filter((t) => isTaskInWorkingSystem(t, projectStatusById) && t.kind === "action" && t.status === "actionable" && t.executable && !t.blocked && !t.needsClarification).filter((t) => t.projectId === null || firstExecutionCandidateByProject.get(t.projectId) === t.id || t.additionalNextAction).map(fact);
-  const waitingItems = tasks.filter((t) => t.status === "actionable" && (t.externalWait !== null || t.blocked || (t.revisitAt !== null && t.revisitAt > now.toISOString()))).map(fact);
+  const waitingItems = tasks.filter((t) => !graph.isEffectivelyDeferred(t.id) && isTaskInWorkingSystem(t, projectStatusById) && t.status === "actionable" && (t.externalWait !== null || t.blocked || (t.revisitAt !== null && t.revisitAt > now.toISOString()))).map(fact);
   const backlog = [...projects.filter((p) => p.status === "backlog").map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "someday" || t.status === "captured").map(fact)];
-  const areaCommitments = [...projects.filter((p) => p.status === "active" && p.effectiveTags.some((tag) => tag.kind === "area")).map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "actionable" && t.effectiveAreaTags.length > 0 && (t.scope === "household" || t.effectiveOwnerId === options.subjectMemberId)).map(fact)];
+  const areaCommitments = [...projects.filter((p) => p.status === "active" && !graph.isEffectivelyDeferred(p.id) && p.effectiveTags.some((tag) => tag.kind === "area")).map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => !graph.isEffectivelyDeferred(t.id) && t.status === "actionable" && t.effectiveAreaTags.length > 0 && (t.scope === "household" || t.effectiveOwnerId === options.subjectMemberId)).map(fact)];
   const currentRows = db.select({ id: schema.workItems.id, scope: schema.workItems.scope, privacyOwnerMemberId: schema.workItems.privacyOwnerMemberId, role: schema.workItems.role, ownerMemberId: schema.workItems.ownerMemberId }).from(schema.workItems).all();
   const owners = getEffectiveOwners(db);
   const currentVisibility = new Map<number, CurrentVisibility>(currentRows.map((r) => [r.id, { scope: r.scope as Scope, privacyOwnerMemberId: r.privacyOwnerMemberId, owner: r.role === "task" ? owners.get(r.id)?.ownerId ?? null : r.ownerMemberId }]));
@@ -245,8 +245,8 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const inactiveWork: ReflectionBriefing["history"]["inactiveWork"] = [];
   const oldEnough = (createdAt: string) => now.getTime() - Date.parse(createdAt) >= INACTIVE_COMMITMENT_AGE_DAYS * 86400000;
   const candidates: Array<{ item: TaskRecord | ProjectRecord; type: "task" | "project" }> = [
-    ...projects.filter((p) => p.status === "active" && oldEnough(p.createdAt)).map((item) => ({ item, type: "project" as const })),
-    ...tasks.filter((t) => isTaskInWorkingSystem(t, projectStatusById) && t.kind === "action" && t.repeatAfterDays === null && t.status === "actionable" && oldEnough(t.createdAt)).map((item) => ({ item, type: "task" as const })),
+    ...projects.filter((p) => p.status === "active" && !graph.isEffectivelyDeferred(p.id) && oldEnough(p.createdAt)).map((item) => ({ item, type: "project" as const })),
+    ...tasks.filter((t) => !graph.isEffectivelyDeferred(t.id) && isTaskInWorkingSystem(t, projectStatusById) && t.kind === "action" && t.repeatAfterDays === null && t.status === "actionable" && oldEnough(t.createdAt)).map((item) => ({ item, type: "task" as const })),
   ];
   // Report the last verified outcome date even when it predates the selected lookback.
   // Project attribution still depends solely on the recorded historical projectContextId.

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
+import { eq } from "drizzle-orm";
 import { ChangeNotifier } from "../src/changeNotifier.js";
 import { createSession } from "../src/auth/repository.js";
 import { SESSION_COOKIE } from "../src/auth/routes.js";
@@ -63,14 +64,14 @@ describe("authenticated viewer wins over a spoofed actor", () => {
 
 });
 
-describe("task commitments authorize every project they activate", () => {
+describe("task planning does not mutate or disclose inaccessible projects", () => {
   let ctx: TestContext;
   afterEach(async () => closeTestContext(ctx));
   it.each([
-    { projectOwner: "viewer", ancestorOwner: "viewer", expectedStatus: 200 },
-    { projectOwner: "other", ancestorOwner: "viewer", expectedStatus: 404 },
-    { projectOwner: "viewer", ancestorOwner: "other", expectedStatus: 404 },
-  ])("checks project owner $projectOwner and ancestor owner $ancestorOwner", async ({ projectOwner, ancestorOwner, expectedStatus }) => {
+    { projectOwner: "viewer", ancestorOwner: "viewer" },
+    { projectOwner: "other", ancestorOwner: "viewer" },
+    { projectOwner: "viewer", ancestorOwner: "other" },
+  ])("checks project owner $projectOwner and ancestor owner $ancestorOwner", async ({ projectOwner, ancestorOwner }) => {
     ctx = createTestContext();
     const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
     const viewer = member("Viewer"), other = member("Other");
@@ -83,36 +84,44 @@ describe("task commitments authorize every project they activate", () => {
       ownerMemberId: viewer.id,
       ownerInheritanceMode: "explicit",
     });
-    const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
+    const beforeProjects = ctx.handle.db.select().from(schema.workItems)
+      .all().filter(row => row.id === project.id || row.id === ancestor.id);
     const response = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
       headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id) },
       payload: { scheduledDate: "2026-10-27", expectedRevision: task.revision },
     });
-    expect(response.statusCode, response.body).toBe(expectedStatus);
-    if (expectedStatus === 404) {
-      expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
-    } else {
-      expect(response.json().scheduledDate).toBe("2026-10-27");
-    }
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json().scheduledDate).toBe("2026-10-27");
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .all().filter(row => row.id === project.id || row.id === ancestor.id)).toEqual(beforeProjects);
+    if (ancestorOwner === "other") expect(response.body).not.toContain(ancestor.title);
+    if (projectOwner === "other") expect(response.body).not.toContain(project.title);
   });
 });
 
-describe("hidden activation decision snapshots", () => {
+describe("obsolete previews and hidden projects", () => {
   let ctx: TestContext;
   afterEach(async () => closeTestContext(ctx));
-  it.each([false, true])("rejects hidden project requirements before serializing them, preview %s", async preview => {
+  it.each([false, true])("keeps hidden projects private, preview %s", async preview => {
     ctx = createTestContext();
     const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
     const viewer = member("Viewer"), other = member("Other");
     const hidden = createProject(ctx.handle.db, { title: "Hidden project title", scope: "work", ownerMemberId: other.id });
     const task = createTask(ctx.handle.db, { title: "Visible task", projectId: hidden.id, ownerMemberId: viewer.id, ownerInheritanceMode: "explicit" });
     const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
-    const response = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id), ...(preview ? { "x-machbar-preview": "activation" } : {}) }, payload: { scheduledDate: "2027-01-15", expectedRevision: task.revision, activationResolution: { expectedProjects: [{ projectId: hidden.id, revision: hidden.revision + 1 }], drivers: [] } } });
-    expect(response.statusCode, response.body).toBe(404);
+    const response = await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id), ...(preview ? { "x-machbar-preview": "activation" } : {}) }, payload: { scheduledDate: "2027-01-15", expectedRevision: task.revision } });
+    expect(response.statusCode, response.body).toBe(preview ? 400 : 200);
     expect(response.body).not.toContain(hidden.title);
-    expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
+    if (preview) {
+      expect(response.json().error.code).toBe("malformed_request");
+      expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
+    } else {
+      expect(response.json().scheduledDate).toBe("2027-01-15");
+      expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, hidden.id)).get())
+        .toMatchObject({ status: "backlog", revision: hidden.revision });
+    }
   });
 
 });

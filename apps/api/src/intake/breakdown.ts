@@ -1,5 +1,5 @@
 import { eq, inArray } from "drizzle-orm";
-import type { IntakeApplyResults, IntakeDraft, ProjectActivationResolution, Task, TaskStatus } from "@machbar/shared";
+import type { IntakeApplyResults, IntakeDraft, Task } from "@machbar/shared";
 import { canBreakDownTask, intakeCanonicalPlanning } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -7,11 +7,8 @@ import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
 import { createChildTaskInTransaction, createTaskInTransaction, updateTask } from "../domain/taskCrud.js";
 import { updateProject } from "../domain/storyCrud.js";
-import { hasExecutionCommitment } from "../domain/commitmentTransition.js";
-import { activateCommittedProjectChain } from "../domain/commitmentActivation.js";
 import {
   beginCommitmentConversion,
-  finishCommitmentConversion,
 } from "./commitmentPreservingConversion.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import { getDescendantIds } from "../repo/treeRepo.js";
@@ -77,8 +74,6 @@ export function applyBreakdown(
   draft: IntakeDraft,
   context: MutationContext,
   viewerMemberId: number | null,
-  projectDriverMemberId?: number,
-  activationResolution?: ProjectActivationResolution,
 ): IntakeApplyResults {
   const task = breakdownTask(db, job.breakdownTaskId!, viewerMemberId);
   assertBreakdownDraft(draft, task);
@@ -89,20 +84,9 @@ export function applyBreakdown(
   const converted = root.kind === "project";
   let conversion: ReturnType<typeof beginCommitmentConversion> | null = null;
   if (converted) {
-    const acceptedChildren = draft.workItems.filter((item) => item.enabled && item.key !== root.key);
-    const childAddsExecutionCommitment = acceptedChildren.some((item) => hasExecutionCommitment({
-      kind: item.kind === "reference" ? "reference" : "action",
-      dueDate: item.dueDate,
-      scheduledDate: item.scheduledDate,
-      revisitAt: intakeCanonicalPlanning(item).revisitAt,
-      reminders: item.reminders,
-    }));
     conversion = beginCommitmentConversion(
       db,
       task.id,
-      activationResolution ? undefined : projectDriverMemberId,
-      childAddsExecutionCommitment,
-      viewerMemberId,
       context,
     );
     const project = updateProject(db, task.id, {
@@ -117,7 +101,6 @@ export function applyBreakdown(
   const results: IntakeApplyResults = { work: [{
     key: root.key, kind: root.kind, workItemId: task.id, role: converted ? "story" : "task",
   }], calendar: [], paperlessDocumentIds: [] };
-  const createdChildren: Task[] = [];
   for (const item of draft.workItems.filter((item) => item.enabled && item.key !== root.key)) {
     const planning = intakeCanonicalPlanning(item);
     const input = {
@@ -133,39 +116,9 @@ export function applyBreakdown(
       createdByMemberId: job.createdByMemberId,
     };
     const child = converted
-      ? createTaskInTransaction(db, { ...input, projectId: task.id }, context, { activateCommitment: false })
-      : createChildTaskInTransaction(db, task.id, input, context, { activateCommitment: false });
-    createdChildren.push(child);
+      ? createTaskInTransaction(db, { ...input, projectId: task.id }, context)
+      : createChildTaskInTransaction(db, task.id, input, context);
     results.work.push({ key: item.key, kind: "action", workItemId: child.id, role: "task" });
-  }
-  const committedChild = createdChildren.find((child) => hasExecutionCommitment({
-    kind: child.kind,
-    dueDate: child.dueDate,
-    scheduledDate: child.scheduledDate,
-    revisitAt: child.revisitAt,
-    reminders: child.reminders,
-  }));
-  if (!conversion && committedChild?.projectId !== null && committedChild?.projectId !== undefined) {
-    activateCommittedProjectChain(db, committedChild.projectId, context, activationResolution, {
-      type: "task",
-      id: committedChild.id,
-      status: committedChild.status as TaskStatus,
-      targetStatus: committedChild.status as TaskStatus,
-      executionCommitment: true,
-      newExecutionCommitment: true,
-      revisitAt: committedChild.revisitAt,
-      recurring: committedChild.repeatAfterDays !== null,
-      explicitlyReopened: false,
-    });
-  }
-  if (conversion) {
-    const project = conversion.projectId;
-    const current = db.select({ revision: schema.workItems.revision }).from(schema.workItems)
-      .where(eq(schema.workItems.id, project)).get();
-    finishCommitmentConversion(db, {
-      ...conversion,
-      projectRevision: current?.revision ?? conversion.projectRevision,
-    }, context, activationResolution);
   }
   return results;
 }

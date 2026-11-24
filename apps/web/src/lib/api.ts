@@ -1,4 +1,3 @@
-import type { ActivationPreview } from "@machbar/shared";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
   AvailabilityRule,
@@ -37,9 +36,7 @@ import type {
   PaperlessDocumentSummary,
   PaperlessIntegrationStatus,
   Project,
-  ProjectActivationDecisionSnapshot,
   ProjectActivationReadiness,
-  ProjectActivationResolution,
   ProjectAgendaEntry,
   ProjectStatus,
   PushConfig,
@@ -255,7 +252,6 @@ export interface CreateTaskInput {
   repeatAfterDays?: number | null;
   allowedDeviationDays?: number | null;
   reminders?: TaskReminderInput[];
-  activationResolution?: ProjectActivationResolution;
   tagIds?: number[];
   contextIds?: number[];
   contextInheritanceMode?: InheritanceMode;
@@ -270,9 +266,7 @@ export type CreateChildTaskInput = Omit<CreateTaskInput, "projectId" | "parentTa
 export interface CreateTaskStepBatchInput {
   steps: Array<{ title: string; dueDate?: string | null; scheduledDate?: string | null }>;
   expectedRevision: number;
-  expectedProjectRevisions: Array<{ projectId: number; revision: number }>;
   convertParentToProject?: boolean;
-  activationResolution?: ProjectActivationResolution;
 }
 
 export type ProjectRevisionSnapshot = Pick<Project, "id" | "revision" | "title" | "status"> & {
@@ -305,13 +299,11 @@ export interface ConvertTaskToStoryInput {
   preservedStepTitle?: string;
   dependencyMappings?: Array<{ dependencyId: number; targetTaskId: number; sourceEndpoint: "task" | "dependsOnTask" }>;
   expectedDescendantRevisions?: Array<{ taskId: number; revision: number }>;
-  activationResolution?: ProjectActivationResolution;
   expectedRevision?: number;
   expectedHierarchyRevisions?: Array<{ id: number; revision: number }>;
 }
 
 export interface ConvertStoryToTaskInput {
-  activationResolution?: ProjectActivationResolution;
   title?: string;
   notes?: string;
   expectedRevision?: number;
@@ -336,7 +328,6 @@ export interface CreateProjectInput {
   revisitAt?: string | null;
   tagIds?: number[];
   contextIds?: number[];
-  activationResolution?: ProjectActivationResolution;
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput> & {
@@ -370,8 +361,6 @@ export type StuckProjectWithActions = StuckProject & {
 };
 export type ProjectDetail = ProjectWithActions & {
   tasks: Task[];
-  activationDecisionSnapshot?: ProjectActivationDecisionSnapshot;
-  directActivationDecisionSnapshot?: ProjectActivationDecisionSnapshot;
   childStories?: ProjectWithActions[];
   ancestors?: WorkItemAncestor[];
   hierarchyRevisions?: Array<{ id: number; revision: number }>;
@@ -406,7 +395,6 @@ export type WeekAgendaResponse = Omit<WeekAgenda, "days" | "unplanned"> & {
 export interface ProjectWorkflowInput {
   expectedRevision: number;
   revisitAt?: string | null;
-  withdrawCommitments?: boolean;
   expectedTaskRevisions?: Array<{ taskId: number; revision: number }>;
   criteriaToCheck?: number[];
   descendantResolutions?: Array<{
@@ -418,7 +406,7 @@ export interface ProjectWorkflowInput {
 
 export interface ActivateProjectInput extends ProjectWorkflowInput {
   ownerMemberId?: number | null;
-  activationResolution?: ProjectActivationResolution;
+  nextActionTitle?: string;
 }
 
 /**
@@ -616,11 +604,6 @@ export function paperlessDocumentDownloadUrl(id: number): string {
 }
 
 export const api = {
-  previewTaskCreation: (input: CreateTaskInput) => request<ActivationPreview>("/tasks", { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
-  previewTaskUpdate: (id: number, input: UpdateTaskInput) => request<ActivationPreview>(`/tasks/${id}`, { method: "PATCH", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
-  previewTaskConversion: (id: number, input: ConvertTaskToStoryInput) => request<ActivationPreview>(`/tasks/${id}/convert-to-story`, { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
-  previewTaskSteps: (id: number, input: CreateTaskStepBatchInput) => request<ActivationPreview>(`/tasks/${id}/children/batch`, { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
-  previewProjectSteps: (id: number, input: CreateTaskStepBatchInput) => request<ActivationPreview>(`/projects/${id}/tasks/batch`, { method: "POST", headers: { "x-machbar-preview": "activation" }, body: JSON.stringify(input) }),
 
   getAuthStatus: () => request<AuthStatus>("/auth/status"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
@@ -692,8 +675,6 @@ export const api = {
       draft?: IntakeDraft;
       acceptIncomplete?: boolean;
       timezone?: string;
-      projectDriverMemberId?: number;
-      activationResolution?: ProjectActivationResolution;
     },
   ) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/apply`, {
@@ -707,7 +688,7 @@ export const api = {
     }),
   updateWorkRefinement: (id: string, body: { expectedRevision: number; proposal: NonNullable<IntakeRecord["refinement"]>["proposal"] }) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement`, { method: "PATCH", body: JSON.stringify(body) }),
-  applyWorkRefinement: (id: string, body: { expectedRevision: number; activationResolution?: ProjectActivationResolution }) =>
+  applyWorkRefinement: (id: string, body: { expectedRevision: number }) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement/apply`, { method: "POST", body: JSON.stringify(body) }),
   deleteIntake: (id: string) =>
     request<void>(`/intake/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -1137,7 +1118,7 @@ export const api = {
       ),
     }),
 
-  moveProject: (id: number, input: { parentId: number | null; expectedRevision: number; expectedHierarchyRevisions: Array<{ id: number; revision: number }>; activationResolution?: ProjectActivationResolution }) =>
+  moveProject: (id: number, input: { parentId: number | null; expectedRevision: number; expectedHierarchyRevisions: Array<{ id: number; revision: number }> }) =>
     request<ProjectWithActions>(`/projects/${id}/move`, { method: "POST", body: JSON.stringify(input) }),
   moveTask: (id: number, input: MoveTaskInput) =>
     request<Task>(`/tasks/${id}/move`, { method: "POST", body: JSON.stringify(input) }),

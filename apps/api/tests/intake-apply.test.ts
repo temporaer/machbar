@@ -550,7 +550,7 @@ describe("intake apply", () => {
     expect(getIntake(ctx.handle.db, setup.id, setup.member.id).status).toBe("applied");
   });
 
-  it("uses the selected driver when retrying an ordinary project intake", async () => {
+  it("keeps a planned intake project in backlog without assigning a driver", async () => {
     const setup = await prepare();
     const d = draft([
       {
@@ -566,25 +566,16 @@ describe("intake apply", () => {
         needsClarification: false, relatedCalendarKeys: [], enabled: true,
       },
     ]);
-    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
       expectedRevision: setup.revision,
       draft: d,
-    }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toMatchObject({
-      code: "project_commitment_resolution_required",
-    });
-
-    const recovered = getIntake(ctx.handle.db, setup.id, setup.member.id);
-    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
-      expectedRevision: recovered.revision,
-      draft: d,
-      projectDriverMemberId: setup.member.id,
     }, { actorMemberId: setup.member.id }, setup.member.id);
 
     const project = ctx.handle.db.select().from(schema.workItems)
       .where(eq(schema.workItems.title, "Mathematik vorbereiten")).get()!;
     const action = ctx.handle.db.select().from(schema.workItems)
       .where(eq(schema.workItems.title, "Übungen bearbeiten")).get()!;
-    expect(project).toMatchObject({ role: "story", ownerMemberId: setup.member.id, status: "active" });
+    expect(project).toMatchObject({ role: "story", ownerMemberId: null, status: "backlog", dueDate: "2026-10-22" });
     expect(action.parentId).toBe(project.id);
     expect(getIntake(ctx.handle.db, setup.id, setup.member.id).status).toBe("applied");
   });

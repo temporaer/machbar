@@ -436,7 +436,7 @@ describe("task external waits", () => {
     });
   });
 
-  it("keeps planned work actionable until the commitment is removed before parking", async () => {
+  it("parks planned work without withdrawing its wait or schedule", async () => {
     const task = await createTask({
       title: "Später entscheiden",
       scheduledDate: "2026-09-12",
@@ -459,10 +459,9 @@ describe("task external waits", () => {
       },
     });
     expect(transitioned.json()).toMatchObject({
-      status: "actionable",
+      status: "someday",
       externalWait: { waitingFor: "Rückmeldung" },
       scheduledDate: "2026-09-12",
-      blocked: true,
     });
 
     const parked = await ctx.app.inject({

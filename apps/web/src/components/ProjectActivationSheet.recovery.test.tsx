@@ -43,17 +43,6 @@ function activationDetail(revision = 1, id = 731): ProjectDetail {
   return {
     ...project,
     tasks: [],
-    directActivationDecisionSnapshot: {
-      projects: [{
-        projectId: id,
-        title: project.title,
-        revision,
-        ownerMemberId: null,
-        required: ["driver", "progressPath"],
-      }],
-      expectedProjects: [{ projectId: id, revision }],
-      targetRevision: revision,
-    },
   };
 }
 
@@ -203,24 +192,19 @@ describe("ProjectActivationSheet server-confirmed recovery", () => {
     await waitFor(() => expect(activate).toHaveBeenCalledTimes(2));
     expect(activate).toHaveBeenLastCalledWith(731, expect.objectContaining({
       expectedRevision: 2,
-      activationResolution: {
-        expectedProjects: [{ projectId: 731, revision: 2 }],
-        drivers: [{ projectId: 731, ownerMemberId: 1 }],
-        nextActionTitle: "Authored activation step",
-      },
+      ownerMemberId: 1,
+      nextActionTitle: "Authored activation step",
     }));
   });
 
-  it.each(["stale_write_conflict", "project_commitment_resolution_required"] as const)(
-    "reloads after %s and requires explicit fresh choices before another submit",
-    async (code) => {
+  it("reloads stale readiness while retaining authored choices", async () => {
       const freshRead = deferred<ProjectDetail>();
       const getProject = vi.spyOn(api, "getProject")
         .mockResolvedValueOnce(activationDetail())
         .mockReturnValueOnce(freshRead.promise)
         .mockResolvedValue(activationDetail(4));
       const activate = vi.spyOn(api, "activateProject")
-        .mockRejectedValueOnce(new ApiError(409, "Decisions changed", code, {
+        .mockRejectedValueOnce(new ApiError(409, "Decisions changed", "stale_write_conflict", {
           projects: [{ projectId: 999, title: "Obsolete error requirements", revision: 2, ownerMemberId: null, required: ["driver"] }],
           expectedProjects: [{ projectId: 999, revision: 2 }],
         }))
@@ -231,70 +215,25 @@ describe("ProjectActivationSheet server-confirmed recovery", () => {
       const dialog = await authorChoices(user);
       await user.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
       await waitFor(() => expect(getProject).toHaveBeenCalledTimes(2));
-      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("textbox")).toHaveValue("Authored activation step");
+      expect(within(dialog).getByRole("button", { name: "Projekt starten" })).toBeDisabled();
       expect(activate).toHaveBeenCalledTimes(1);
       await act(async () => freshRead.resolve(activationDetail(4)));
-      expect(await screen.findByRole("textbox")).toHaveValue("");
+      expect(await screen.findByRole("textbox")).toHaveValue("Authored activation step");
       const freshDialog = screen.getByRole("dialog");
-      expect(within(freshDialog).getByRole("combobox")).toHaveValue("");
-      expect(within(freshDialog).getByRole("button", { name: "Projekt starten" })).toBeDisabled();
+      expect(within(freshDialog).getByRole("combobox")).toHaveValue("1");
       expect(document.body).not.toHaveTextContent("Obsolete error requirements");
       expect(activate).toHaveBeenCalledTimes(1);
-      await authorChoices(user, "Reconfirmed step");
       await user.click(within(freshDialog).getByRole("button", { name: "Projekt starten" }));
       await waitFor(() => expect(activate).toHaveBeenCalledTimes(2));
       expect(activate).toHaveBeenLastCalledWith(731, expect.objectContaining({
         expectedRevision: 4,
-        activationResolution: {
-          expectedProjects: [{ projectId: 731, revision: 4 }],
-          drivers: [{ projectId: 731, ownerMemberId: 1 }],
-          nextActionTitle: "Reconfirmed step",
-        },
+        ownerMemberId: 1,
+        nextActionTitle: "Authored activation step",
       }));
-    },
-  );
-
-  it("reconfirms equal-revision detail with changed ancestor requirements and expected projects", async () => {
-    const fresh = activationDetail();
-    fresh.ownerMemberId = 1;
-    fresh.directActivationDecisionSnapshot = {
-      projects: [
-        { projectId: 731, title: fresh.title, revision: 1, ownerMemberId: 1, required: ["progressPath"] },
-        { projectId: 740, title: "Fresh ancestor requirement", revision: 8, ownerMemberId: null, required: ["driver"] },
-      ],
-      expectedProjects: [{ projectId: 731, revision: 1 }, { projectId: 740, revision: 8 }],
-      targetRevision: 1,
-    };
-    vi.spyOn(api, "getProject").mockResolvedValueOnce(activationDetail()).mockResolvedValue(fresh);
-    const activate = vi.spyOn(api, "activateProject")
-      .mockRejectedValueOnce(new ApiError(409, "Stale", "stale_write_conflict"))
-      .mockResolvedValue(makeProject({ id: 731, status: "active", revision: 2 }));
-    renderWithProviders(<WorkflowControls />);
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Start activation" }));
-    const original = await authorChoices(user);
-    await user.click(within(original).getByRole("button", { name: "Projekt starten" }));
-    const driver = await screen.findByLabelText(/Fresh ancestor requirement/);
-    expect(driver).toHaveValue("");
-    expect(screen.getByRole("textbox")).toHaveValue("");
-    expect(screen.queryByLabelText(/Verantwortlich für.*Protected project/)).not.toBeInTheDocument();
-    expect(activate).toHaveBeenCalledTimes(1);
-    await user.selectOptions(driver, "2");
-    await user.type(screen.getByRole("textbox"), "Fresh child-aware step");
-    await user.click(screen.getByRole("button", { name: "Projekt starten" }));
-    await waitFor(() => expect(activate).toHaveBeenCalledTimes(2));
-    expect(activate).toHaveBeenLastCalledWith(731, expect.objectContaining({
-      expectedRevision: 1,
-      ownerMemberId: 1,
-      activationResolution: {
-        expectedProjects: [{ projectId: 731, revision: 1 }, { projectId: 740, revision: 8 }],
-        drivers: [{ projectId: 740, ownerMemberId: 2 }],
-        nextActionTitle: "Fresh child-aware step",
-      },
-    }));
   });
 
-  it("does not restore stale choices when the requirements reload fails", async () => {
+  it("retains choices but blocks submission when the requirements reload fails", async () => {
     const getProject = vi.spyOn(api, "getProject")
       .mockResolvedValueOnce(activationDetail())
       .mockRejectedValueOnce(new ApiError(503, "Offline"))
@@ -307,15 +246,17 @@ describe("ProjectActivationSheet server-confirmed recovery", () => {
     await user.click(within(dialog).getByRole("button", { name: "Projekt starten" }));
     await waitFor(() => expect(getProject).toHaveBeenCalledTimes(2));
     const retry = await screen.findByRole("button", { name: "Erneut versuchen" });
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("Authored activation step");
+    expect(screen.getByRole("combobox")).toHaveValue("1");
+    expect(screen.getByRole("button", { name: "Projekt starten" })).toBeDisabled();
     expect(activate).toHaveBeenCalledTimes(1);
     await user.click(retry);
-    expect(await screen.findByRole("textbox")).toHaveValue("");
-    expect(screen.getByRole("combobox")).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Projekt starten" })).toBeDisabled();
+    expect(await screen.findByRole("textbox")).toHaveValue("Authored activation step");
+    expect(screen.getByRole("combobox")).toHaveValue("1");
+    expect(screen.getByRole("button", { name: "Projekt starten" })).toBeEnabled();
   });
 
-  it("resets and reloads after a delayed stale command even when a newer read already arrived", async () => {
+  it("reloads after a delayed stale command even when a newer read already arrived", async () => {
     const command = deferred<ProjectWithActions>();
     const getProject = vi.spyOn(api, "getProject")
       .mockResolvedValueOnce(activationDetail())
@@ -331,8 +272,8 @@ describe("ProjectActivationSheet server-confirmed recovery", () => {
     await waitFor(() => expect(getProject).toHaveBeenCalledTimes(2));
     await act(async () => command.reject(new ApiError(409, "Old stale error", "stale_write_conflict")));
     await waitFor(() => expect(getProject.mock.calls.length).toBeGreaterThanOrEqual(3));
-    expect(await screen.findByRole("textbox")).toHaveValue("");
-    expect(screen.getByRole("combobox")).toHaveValue("");
+    expect(await screen.findByRole("textbox")).toHaveValue("Authored activation step");
+    expect(screen.getByRole("combobox")).toHaveValue("1");
     expect(activate).toHaveBeenCalledTimes(1);
   });
 

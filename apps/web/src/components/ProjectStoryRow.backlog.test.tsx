@@ -207,10 +207,6 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
       expect(mockedApi.activateProject).toHaveBeenCalledWith(13, {
         expectedRevision: 1,
         ownerMemberId: 2,
-        activationResolution: {
-          expectedProjects: [{ projectId: 13, revision: 1 }],
-          drivers: [{ projectId: 13, ownerMemberId: 2 }],
-        },
       }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

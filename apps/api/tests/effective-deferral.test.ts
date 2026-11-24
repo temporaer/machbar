@@ -1,0 +1,330 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
+import * as schema from "../src/db/schema.js";
+import { buildAgenda } from "../src/domain/agenda.js";
+import { Graph } from "../src/domain/graph.js";
+import { buildReviewItems } from "../src/domain/reviewItems.js";
+import { buildWaitingEntries } from "../src/domain/waiting.js";
+import { buildWeekAgenda } from "../src/domain/weekAgenda.js";
+import { buildReflectionBriefing } from "../src/reflection/briefing.js";
+import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+
+const today = "2026-09-07";
+const now = `${today}T12:00:00.000Z`;
+const available = () => ({ status: "available" as const, availableNow: true, missingContexts: [] });
+
+describe("effective deferral read projections", () => {
+  let ctx: TestContext;
+  beforeEach(() => { ctx = createTestContext(); });
+  afterEach(async () => closeTestContext(ctx));
+
+  it("suppresses work and waiting under mixed-role backlog ancestors while preserving deadlines and stored state", () => {
+    const db = ctx.handle.db;
+    const member = db.insert(schema.members).values({ name: "Reader", color: "#123456" }).returning().get();
+    const parked = db.insert(schema.workItems).values({ role: "task", title: "Parked", status: "backlog" }).returning().get();
+    const project = db.insert(schema.workItems).values({ role: "story", title: "Nested", status: "active", parentId: parked.id, ownerMemberId: member.id }).returning().get();
+    const child = db.insert(schema.workItems).values({ role: "task", title: "Scheduled", status: "active", parentId: project.id, scheduledDate: today }).returning().get();
+    const deadline = db.insert(schema.workItems).values({ role: "task", title: "Deadline", status: "active", parentId: project.id, dueDate: today }).returning().get();
+    const waiting = db.insert(schema.workItems).values({ role: "task", title: "Waiting", status: "active", parentId: project.id, revisitAt: now }).returning().get();
+    db.insert(schema.taskExternalWaits).values({ taskId: waiting.id, waitingFor: "Response" }).run();
+    const reconsider = db.insert(schema.workItems).values({ role: "task", title: "Reconsider", status: "active", parentId: project.id, revisitAt: now }).returning().get();
+    const clarify = db.insert(schema.workItems).values({ role: "task", title: "Clarify", status: "captured", needsClarification: true, parentId: project.id, revisitAt: now }).returning().get();
+    const recurringRevisit = db.insert(schema.workItems).values({ role: "task", title: "Recurring reconsideration", status: "active", parentId: project.id, scheduledDate: today, dueDate: today, repeatAfterDays: 7, allowedDeviationDays: 0, revisitAt: now }).returning().get();
+    const independent = db.insert(schema.workItems).values({ role: "task", title: "Independent", status: "active" }).returning().get();
+    const before = ctx.handle.sqlite.serialize();
+    const graph = Graph.load(db, today, member.id, now);
+    expect(graph.tasksById.get(child.id)?.status).toBe("actionable");
+    expect(graph.tasksById.get(child.id)?.executable).toBe(false);
+    expect(graph.tasksById.get(independent.id)?.executable).toBe(true);
+    const agenda = buildAgenda(graph, { today, now });
+    expect(agenda.planned.map((t) => t.id)).not.toContain(child.id);
+    expect(agenda.dueToday.map((t) => t.id)).toContain(deadline.id);
+    expect(agenda.revisit.map((t) => t.id)).toEqual(expect.arrayContaining([waiting.id, reconsider.id, clarify.id, recurringRevisit.id]));
+    expect([...agenda.shared, ...agenda.unscheduled].map((t) => t.id)).toContain(independent.id);
+    expect(buildWaitingEntries(graph, { scope: "all", contextAvailability: available }).map((entry) => entry.task.id)).not.toContain(waiting.id);
+    const review = buildReviewItems(graph, { today, now });
+    expect(review.filter((item) => item.entityId === waiting.id)).toEqual([]);
+    expect(review.filter((item) => item.entityId === project.id && item.reason === "no_viable_progress_path")).toEqual([]);
+    const week = buildWeekAgenda(graph, { start: today, today });
+    expect(week.days.flatMap((day) => day.items).filter((item) => item.id === child.id)).toEqual([]);
+    expect(week.days.flatMap((day) => day.items).map((item) => item.id)).toContain(deadline.id);
+    expect(week.days[0]!.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: clarify.id, placement: "revisit" }),
+      expect.objectContaining({ id: recurringRevisit.id, placement: "revisit" }),
+    ]));
+    const briefing = buildReflectionBriefing(db, { subjectMemberId: member.id, days: 30, scope: "household", now: new Date(now) });
+    expect(briefing.current.waitingItems.map((item) => item.id)).not.toContain(waiting.id);
+    expect(briefing.current.executableNextActions.map((item) => item.id)).not.toContain(child.id);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it("computes selected-project readiness hypothetically without admitting independently parked descendants or prerequisites", () => {
+    const db = ctx.handle.db;
+    const member = db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+    const ancestor = db.insert(schema.workItems).values({ role: "story", title: "Parked ancestor", status: "backlog" }).returning().get();
+    const project = db.insert(schema.workItems).values({ role: "story", title: "Target", status: "backlog", parentId: ancestor.id, ownerMemberId: member.id }).returning().get();
+    const parked = db.insert(schema.workItems).values({ role: "task", title: "Parked child", status: "backlog", parentId: project.id }).returning().get();
+    const child = db.insert(schema.workItems).values({ role: "task", title: "Hidden work", status: "active", parentId: parked.id }).returning().get();
+    let graph = Graph.load(db, today, member.id, now);
+    expect(graph.projectsById.get(project.id)?.activationReadiness.hasViableProgressPath).toBe(false);
+    expect(graph.nextActionFor(project.id)).toBeNull();
+    db.insert(schema.workItems).values({ role: "task", title: "Available to target", status: "active", parentId: project.id }).run();
+    graph = Graph.load(db, today, member.id, now);
+    expect(graph.projectsById.get(project.id)?.activationReadiness.hasViableProgressPath).toBe(true);
+    expect(graph.tasksById.get(child.id)?.executable).toBe(false);
+    expect(graph.nextActionFor(project.id)).toBeNull();
+  });
+
+  it("uses hidden ancestors as a gate without returning their identity", () => {
+    const db = ctx.handle.db;
+    const owner = db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
+    const viewer = db.insert(schema.members).values({ name: "Viewer", color: "#654321" }).returning().get();
+    const hidden = db.insert(schema.workItems).values({ role: "story", title: "Secret ancestor", status: "backlog", scope: "work", ownerMemberId: owner.id }).returning().get();
+    const child = db.insert(schema.workItems).values({ role: "task", title: "Visible child", status: "active", parentId: hidden.id, scope: "work", ownerMemberId: viewer.id, ownerInheritanceMode: "explicit" }).returning().get();
+    const graph = Graph.load(db, today, viewer.id, now);
+    expect(graph.projectsById.get(hidden.id)).toBeUndefined();
+    expect(graph.tasksById.get(child.id)?.executable).toBe(false);
+    expect(JSON.stringify(graph.tasksById.get(child.id))).not.toContain("Secret ancestor");
+  });
+
+  it("does not reveal a hidden ancestor's status through viewer projections", () => {
+    const db = ctx.handle.db;
+    const owner = db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
+    const other = db.insert(schema.members).values({ name: "Other", color: "#654321" }).returning().get();
+    const ancestor = db.insert(schema.workItems).values({ role: "story", title: "Hidden", status: "backlog", scope: "work", ownerMemberId: owner.id }).returning().get();
+    const child = db.insert(schema.workItems).values({ role: "task", title: "Visible", status: "active", parentId: ancestor.id, scope: "household", dueDate: today }).returning().get();
+    const read = (viewer: number | undefined) => {
+      const graph = Graph.load(db, today, viewer, now);
+      return {
+        child: graph.tasksById.get(child.id),
+        agenda: buildAgenda(graph, { today, now }),
+        waiting: buildWaitingEntries(graph, { scope: "all", contextAvailability: available }),
+        review: buildReviewItems(graph, { today, now }),
+        week: buildWeekAgenda(graph, { start: today, today }),
+      };
+    };
+    const ownerDeferred = read(owner.id);
+    const otherDeferred = read(other.id);
+    const unknownDeferred = read(undefined);
+    expect(otherDeferred.agenda.dueToday[0]?.effectivelyDeferred).toBeNull();
+    expect(ownerDeferred.child?.executable).toBe(false);
+    db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, ancestor.id)).run();
+    expect(read(other.id)).toEqual(otherDeferred);
+    expect(read(undefined)).toEqual(unknownDeferred);
+    expect(read(owner.id).child?.executable).toBe(true);
+    expect(ownerDeferred.child?.executable).toBe(false);
+  });
+
+  it("serializes the same visible detail and attention for hidden active and parked ancestors", async () => {
+    const db = ctx.handle.db;
+    const owner = db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
+    const other = db.insert(schema.members).values({ name: "Other", color: "#654321" }).returning().get();
+    const ancestor = db.insert(schema.workItems).values({ role: "story", title: "Hidden", status: "backlog", scope: "work", ownerMemberId: owner.id }).returning().get();
+    const child = db.insert(schema.workItems).values({ role: "task", title: "Visible", status: "active", parentId: ancestor.id, scope: "household", dueDate: today }).returning().get();
+    const project = db.insert(schema.workItems).values({ role: "story", title: "Visible project", status: "active", parentId: ancestor.id, scope: "household", revisitAt: "2000-01-01T12:00:00.000Z" }).returning().get();
+    const capture = db.insert(schema.workItems).values({ role: "task", title: "Visible capture", status: "captured", needsClarification: true, parentId: project.id, scope: "household", dueDate: today }).returning().get();
+    const urls = [`/api/tasks/${child.id}`, `/api/agenda/today?scope=all&date=${today}`, `/api/agenda/week?start=${today}&today=${today}`, "/api/waiting?scope=all", "/api/review"];
+    const read = async (viewer?: number) => Promise.all(urls.map(async (url) => {
+      const response = await ctx.app.inject({ method: "GET", url, headers: viewer === undefined ? {} : { [ACTIVITY_ACTOR_HEADER]: String(viewer) } });
+      expect(response.statusCode).toBe(200);
+      return response.json();
+    }));
+    const otherDeferred = await read(other.id);
+    const unknownDeferred = await read();
+    expect(otherDeferred[1].dueToday.map((task: { id: number }) => task.id)).toContain(capture.id);
+    expect(otherDeferred[2].days[0].items.map((item: { id: number }) => item.id)).toContain(project.id);
+    expect(otherDeferred[4]).toContainEqual(expect.objectContaining({ entityId: project.id, reason: "project_revisit_reached" }));
+    db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, ancestor.id)).run();
+    expect(await read(other.id)).toEqual(otherDeferred);
+    expect(await read()).toEqual(unknownDeferred);
+  });
+
+  it("keeps actual deadlines and reconsideration, but not recurring occurrence boundaries or past plans", () => {
+    const db = ctx.handle.db;
+    const parkedProject = db.insert(schema.workItems).values({ role: "story", title: "Parked due", status: "backlog", dueDate: today, revisitAt: now }).returning().get();
+    const parkedTask = db.insert(schema.workItems).values({ role: "task", title: "Parked task due", status: "backlog", dueDate: today }).returning().get();
+    const recurring = db.insert(schema.workItems).values({ role: "task", title: "Parked recurring", status: "backlog", scheduledDate: today, dueDate: today, repeatAfterDays: 7, allowedDeviationDays: 0 }).returning().get();
+    const past = db.insert(schema.workItems).values({ role: "task", title: "Past plan", status: "active", scheduledDate: "2026-09-06" }).returning().get();
+    const future = db.insert(schema.workItems).values({ role: "task", title: "Future plan", status: "active", scheduledDate: "2026-09-08" }).returning().get();
+    db.update(schema.workItems).set({ status: "backlog" }).where(eq(schema.workItems.id, past.id)).run();
+    expect(buildAgenda(Graph.load(db, today, undefined, now), { today, now }).planned.map((task) => task.id)).not.toContain(past.id);
+    db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, past.id)).run();
+    const graph = Graph.load(db, today, undefined, now);
+    expect(graph.tasksById.get(past.id)?.scheduledDate).toBe("2026-09-06");
+    const agenda = buildAgenda(graph, { today, now });
+    expect(agenda.projects.map((entry) => entry.project.id)).toContain(parkedProject.id);
+    expect(agenda.projects.find((entry) => entry.project.id === parkedProject.id)?.project.effectivelyDeferred).toBe(true);
+    expect(agenda.dueToday.map((task) => task.id)).toContain(parkedTask.id);
+    expect(agenda.dueToday.find((task) => task.id === parkedTask.id)?.effectivelyDeferred).toBe(true);
+    expect(agenda.dueToday.map((task) => task.id)).not.toContain(recurring.id);
+    expect(agenda.planned.map((task) => task.id)).not.toContain(past.id);
+    expect(agenda.shared.map((task) => task.id)).toContain(past.id);
+    expect([...agenda.planned, ...agenda.shared].map((task) => task.id)).not.toContain(future.id);
+    expect(buildReviewItems(graph, { today, now }).map((item) => item.reason)).toContain("backlog_revisit_reached");
+    const week = buildWeekAgenda(graph, { start: today, today });
+    expect(week.days.flatMap((day) => day.items).map((item) => item.id)).not.toContain(recurring.id);
+    expect(week.days[0]!.items.map((item) => item.id)).not.toContain(past.id);
+    expect(week.unplanned.map((item) => item.id)).toContain(past.id);
+    expect(week.days[1]!.items.map((item) => item.id)).toContain(future.id);
+  });
+
+  it("does not count a parked dependency as healthy target readiness", () => {
+    const db = ctx.handle.db;
+    const member = db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+    const project = db.insert(schema.workItems).values({ role: "story", title: "Target", status: "backlog", ownerMemberId: member.id }).returning().get();
+    const task = db.insert(schema.workItems).values({ role: "task", title: "Dependent", status: "active", parentId: project.id }).returning().get();
+    const parked = db.insert(schema.workItems).values({ role: "task", title: "Parked prerequisite", status: "backlog" }).returning().get();
+    db.insert(schema.taskDependencies).values({ taskId: task.id, dependsOnTaskId: parked.id }).run();
+    const graph = Graph.load(db, today, member.id, now);
+    expect(graph.projectsById.get(project.id)?.activationReadiness).toMatchObject({
+      hasViableProgressPath: false, hasHealthyFutureWaiting: false, ready: false,
+    });
+  });
+
+  it("retains terminal-project rules rather than treating an archived backlog row as parked", () => {
+    const db = ctx.handle.db;
+    const project = db.insert(schema.workItems).values({ role: "story", title: "Archived", status: "backlog", archivedAt: now, dueDate: today }).returning().get();
+    const task = db.insert(schema.workItems).values({ role: "task", title: "Open under archived", status: "active", parentId: project.id, dueDate: today }).returning().get();
+    const graph = Graph.load(db, today, undefined, now);
+    expect(graph.effectiveDeferralFor(project.id)).toBe(false);
+    const agenda = buildAgenda(graph, { today, now });
+    expect(agenda.projects.map((entry) => entry.project.id)).not.toContain(project.id);
+    expect(agenda.dueToday.map((item) => item.id)).not.toContain(task.id);
+    expect(buildReviewItems(graph, { today, now })).toContainEqual(expect.objectContaining({ entityId: project.id, reason: "completed_project_open_work" }));
+  });
+
+  it("projects an arbitrarily deep mixed-role lineage without rewriting descendants", () => {
+    const db = ctx.handle.db;
+    const root = db.insert(schema.workItems).values({ role: "story", title: "Root", status: "backlog" }).returning().get();
+    let parentId = root.id;
+    for (let index = 0; index < 180; index++) {
+      parentId = db.insert(schema.workItems).values({ role: index % 2 ? "story" : "task", title: `Level ${index}`, status: "active", parentId }).returning().get().id;
+    }
+    const leaf = db.insert(schema.workItems).values({ role: "task", title: "Leaf", status: "active", parentId }).returning().get();
+    const graph = Graph.load(db, today, undefined, now);
+    expect(graph.tasksById.get(leaf.id)).toMatchObject({ status: "actionable", executable: false });
+    expect(graph.effectiveDeferralFor(leaf.id)).toBe(true);
+  });
+
+  it("surfaces captured real deadlines without treating the work as executable", () => {
+    const db = ctx.handle.db;
+    const parent = db.insert(schema.workItems).values({ role: "story", title: "Backlog", status: "backlog" }).returning().get();
+    const standalone = db.insert(schema.workItems).values({ role: "task", title: "Captured standalone", status: "captured", needsClarification: true, dueDate: today }).returning().get();
+    const nested = db.insert(schema.workItems).values({ role: "task", title: "Captured nested", status: "captured", needsClarification: true, parentId: parent.id, dueDate: today }).returning().get();
+    const cancelled = db.insert(schema.workItems).values({ role: "task", title: "Cancelled", status: "cancelled", dueDate: today }).returning().get();
+    const archived = db.insert(schema.workItems).values({ role: "story", title: "Archived", status: "backlog", archivedAt: now }).returning().get();
+    const terminalChild = db.insert(schema.workItems).values({ role: "task", title: "Archived child", status: "captured", needsClarification: true, parentId: archived.id, dueDate: today }).returning().get();
+    const before = ctx.handle.sqlite.serialize();
+    const graph = Graph.load(db, today, undefined, now);
+    const agenda = buildAgenda(graph, { today, now });
+    expect(agenda.dueToday.map((task) => task.id)).toEqual(expect.arrayContaining([standalone.id, nested.id]));
+    expect(agenda.dueToday.map((task) => task.id)).not.toContain(cancelled.id);
+    expect(agenda.dueToday.map((task) => task.id)).not.toContain(terminalChild.id);
+    expect(agenda.dueToday.find((task) => task.id === nested.id)).toMatchObject({ status: "captured", executable: false, effectivelyDeferred: true });
+    const week = buildWeekAgenda(graph, { start: today, today });
+    const weekIds = week.days[0]!.items.map((item) => item.id);
+    expect(weekIds).toEqual(expect.arrayContaining([standalone.id, nested.id]));
+    expect(weekIds).not.toContain(terminalChild.id);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it("returns a newly captured deadline through the real Today and Week routes", async () => {
+    const created = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Captured with deadline", status: "captured", dueDate: today },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().status).toBe("captured");
+    const id = created.json().id;
+    const before = ctx.handle.sqlite.serialize();
+    const agenda = await ctx.app.inject({ method: "GET", url: `/api/agenda/today?scope=all&date=${today}` });
+    const week = await ctx.app.inject({ method: "GET", url: `/api/agenda/week?start=${today}&today=${today}&scope=all` });
+    expect(agenda.statusCode).toBe(200);
+    expect(week.statusCode).toBe(200);
+    expect(agenda.json().dueToday).toContainEqual(expect.objectContaining({ id, status: "captured", executable: false }));
+    expect(week.json().days[0].items).toContainEqual(expect.objectContaining({ id, placement: "due", executable: false }));
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it("preserves child-project revisit attention under parked ancestry without execution diagnostics", () => {
+    const db = ctx.handle.db;
+    const parent = db.insert(schema.workItems).values({ role: "task", title: "Parked", status: "backlog" }).returning().get();
+    const reached = db.insert(schema.workItems).values({ role: "story", title: "Reached child", status: "active", parentId: parent.id, revisitAt: now }).returning().get();
+    const future = db.insert(schema.workItems).values({ role: "story", title: "Future child", status: "active", parentId: parent.id, revisitAt: "2026-09-08T12:00:00.000Z" }).returning().get();
+    const terminal = db.insert(schema.workItems).values({ role: "story", title: "Archived child", status: "backlog", parentId: parent.id, archivedAt: now, revisitAt: now }).returning().get();
+    const before = ctx.handle.sqlite.serialize();
+    const graph = Graph.load(db, today, undefined, now);
+    const week = buildWeekAgenda(graph, { start: today, today });
+    expect(week.days[0]!.items).toContainEqual(expect.objectContaining({ id: reached.id, placement: "revisit" }));
+    expect(week.days[1]!.items).toContainEqual(expect.objectContaining({ id: future.id, placement: "revisit" }));
+    expect(week.days.flatMap((day) => day.items).map((item) => item.id)).not.toContain(terminal.id);
+    const review = buildReviewItems(graph, { today, now });
+    expect(review).toContainEqual(expect.objectContaining({ entityId: reached.id, category: "reconsider", reason: "project_revisit_reached", suggestedAction: { code: "review_project" } }));
+    expect(review.filter((item) => item.entityId === future.id)).toEqual([]);
+    expect(review.filter((item) => item.entityId === reached.id && item.category === "clarification_repair")).toEqual([]);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
+  });
+
+  it("acknowledges a reached child-project revisit without changing lifecycle and resurfaces a later revisit", async () => {
+    vi.setSystemTime(new Date(now));
+    try {
+      const db = ctx.handle.db;
+      const owner = db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+      const parent = db.insert(schema.workItems).values({ role: "task", title: "Parked", status: "backlog" }).returning().get();
+      const project = db.insert(schema.workItems).values({ role: "story", title: "Child", status: "active", ownerMemberId: owner.id, parentId: parent.id, revisitAt: now }).returning().get();
+      db.insert(schema.workItems).values({ role: "task", title: "Progress", status: "active", parentId: project.id }).run();
+      const readReview = async () => {
+        const response = await ctx.app.inject({ method: "GET", url: "/api/review" });
+        expect(response.statusCode).toBe(200);
+        return response.json().filter((item: { entityId: number; reason: string }) =>
+          item.entityId === project.id && item.reason === "project_revisit_reached");
+      };
+      expect(await readReview()).toHaveLength(1);
+      const stale = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/review`, payload: { expectedRevision: project.revision + 1 } });
+      expect(stale.statusCode).toBe(409);
+      expect(await readReview()).toHaveLength(1);
+      const acknowledged = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/review`, payload: { expectedRevision: project.revision } });
+      expect(acknowledged.statusCode).toBe(200);
+      expect(acknowledged.json()).toMatchObject({ status: "active", revisitAt: now, reviewedAt: now });
+      expect(await readReview()).toEqual([]);
+      expect(db.select().from(schema.workItems).where(eq(schema.workItems.id, parent.id)).get()?.status).toBe("backlog");
+
+      const later = "2026-09-08T12:00:00.000Z";
+      const updated = await ctx.app.inject({ method: "PATCH", url: `/api/projects/${project.id}`, payload: { expectedRevision: acknowledged.json().revision, revisitAt: later } });
+      expect(updated.statusCode, updated.body).toBe(200);
+      expect(updated.json()).toMatchObject({ status: "active", revisitAt: later });
+      expect(await readReview()).toEqual([]);
+      vi.setSystemTime(new Date(later));
+      expect(await readReview()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not reveal hidden ancestor status through captured deadlines or project reconsideration", () => {
+    const db = ctx.handle.db;
+    const owner = db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
+    const other = db.insert(schema.members).values({ name: "Other", color: "#654321" }).returning().get();
+    const hidden = db.insert(schema.workItems).values({ role: "story", title: "Hidden", status: "backlog", scope: "work", ownerMemberId: owner.id }).returning().get();
+    const project = db.insert(schema.workItems).values({ role: "story", title: "Visible project", status: "active", parentId: hidden.id, scope: "household", revisitAt: now }).returning().get();
+    const captured = db.insert(schema.workItems).values({ role: "task", title: "Visible capture", status: "captured", needsClarification: true, parentId: project.id, scope: "household", dueDate: today }).returning().get();
+    const read = (viewer?: number) => {
+      const graph = Graph.load(db, today, viewer, now);
+      return {
+        agenda: buildAgenda(graph, { today, now }),
+        week: buildWeekAgenda(graph, { start: today, today }),
+        review: buildReviewItems(graph, { today, now }),
+      };
+    };
+    const otherParked = read(other.id);
+    const unknownParked = read();
+    expect(otherParked.agenda.dueToday).toContainEqual(expect.objectContaining({ id: captured.id, effectivelyDeferred: null }));
+    expect(otherParked.week.days[0]!.items.map((item) => item.id)).toContain(project.id);
+    expect(otherParked.review).toContainEqual(expect.objectContaining({ entityId: project.id, reason: "project_revisit_reached" }));
+    db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, hidden.id)).run();
+    expect(read(other.id)).toEqual(otherParked);
+    expect(read()).toEqual(unknownParked);
+  });
+});

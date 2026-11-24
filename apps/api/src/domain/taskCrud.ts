@@ -7,7 +7,6 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type {
   AvailabilityRule,
   InheritanceMode,
-  ProjectActivationResolution,
   TaskKind,
   TaskReminderInput,
   TaskSize,
@@ -32,14 +31,8 @@ import { getProjectOrThrow } from "./storyCrud.js";
 import { assertReferenceCapableInput } from "./taskKindGuard.js";
 import { assertActionTask } from "./taskKindGuard.js";
 import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
-import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import { insertTaskRow, nextTaskPosition, storedTaskStatus } from "./taskRowInsert.js";
 import { cascadeDescendantScope } from "./scopeCascade.js";
-import {
-  committedTaskStatus,
-  evaluateCommitmentTransition,
-  hasExecutionCommitment,
-} from "./commitmentTransition.js";
 import {
   MutationContext,
   actor,
@@ -117,7 +110,6 @@ export interface CreateTaskInput {
   repeatAfterDays?: number | null;
   allowedDeviationDays?: number | null;
   reminders?: TaskReminderInput[];
-  activationResolution?: ProjectActivationResolution;
   tagIds?: number[];
   contextIds?: number[];
 }
@@ -439,14 +431,7 @@ function insertTask(
           input.status === undefined ? input.needsClarification : undefined,
           projectId === null && parentTaskId === null ? "captured" : "actionable",
         );
-  const executionCommitment = hasExecutionCommitment({
-    kind,
-    dueDate: kind === "reference" ? null : input.dueDate ?? null,
-    scheduledDate: kind === "reference" ? null : input.scheduledDate ?? null,
-    revisitAt: input.revisitAt ?? input.notBeforeAt ?? input.notBeforeDate ?? null,
-    reminders: input.reminders ?? [],
-  });
-  const status = committedTaskStatus(requestedStatus, executionCommitment);
+  const status = requestedStatus;
   const repeatAfterDays = kind === "reference" ? null : input.repeatAfterDays ?? null;
   const allowedDeviationDays =
     kind === "reference" ? null : input.allowedDeviationDays ?? null;
@@ -543,34 +528,6 @@ function insertTask(
   return getTaskOrThrow(db, task.id);
 }
 
-function commitmentSubjectForTask(
-  task: {
-    id: number;
-    kind: TaskKind;
-    status: TaskStatus;
-    dueDate: string | null;
-    scheduledDate: string | null;
-    revisitAt: string | null;
-    repeatAfterDays: number | null;
-    reminders: readonly unknown[];
-  },
-  newExecutionCommitment: boolean,
-  initialStatus: TaskStatus = task.status,
-  explicitlyReopened = false,
-) {
-  return {
-    type: "task" as const,
-    id: task.id,
-    status: initialStatus,
-    targetStatus: task.status,
-    executionCommitment: hasExecutionCommitment(task),
-    newExecutionCommitment,
-    revisitAt: task.revisitAt,
-    recurring: task.repeatAfterDays !== null,
-    explicitlyReopened,
-  };
-}
-
 export function createTask(
   db: Db,
   input: CreateTaskInput,
@@ -586,14 +543,12 @@ export function createTaskInTransaction(
   txDb: Db,
   input: CreateTaskInput,
   context?: MutationContext,
-  options: { activateCommitment?: boolean } = {},
 ) {
     // A parentTaskId supplied through the general create contract is the same
     // structural mutation as POST /children. Route it through the canonical
-    // child implementation so Inbox classification and parked-parent rules
-    // cannot depend on which transport created the child.
+    // child implementation so behavior cannot depend on the transport.
     if (input.parentTaskId != null) {
-      return createChildTaskInTransaction(txDb, input.parentTaskId, input, context, options);
+      return createChildTaskInTransaction(txDb, input.parentTaskId, input, context);
     }
     const projectId = input.projectId ?? null;
     const hadNextAction =
@@ -639,15 +594,6 @@ export function createTaskInTransaction(
         personalEligible: true,
       });
     }
-    if (options.activateCommitment !== false && task.projectId !== null && hasExecutionCommitment({
-      kind: task.kind,
-      dueDate: task.dueDate,
-      scheduledDate: task.scheduledDate,
-      revisitAt: task.revisitAt,
-      reminders: task.reminders,
-    })) {
-      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution, commitmentSubjectForTask(task, true));
-    }
     return task;
 }
 
@@ -662,9 +608,7 @@ export function createChildTask(
   );
 }
 
-/** Shared child-create implementation. Inbox parents are classified in the
- * same transaction as their first child so no partially clarified outline is
- * ever committed. */
+/** Shared child-create implementation. */
 export interface ChildTaskBatchState {
   parent: ReturnType<typeof getTaskOrThrow>;
   nextPosition: number;
@@ -679,21 +623,21 @@ export function createChildTaskInTransaction(
   parentTaskId: number,
   input: CreateTaskInput,
   context?: MutationContext,
-  options?: { activateCommitment?: boolean },
+  options?: { batchState?: undefined },
 ): ReturnType<typeof getTaskOrThrow>;
 export function createChildTaskInTransaction(
   txDb: Db,
   parentTaskId: number,
   input: CreateTaskInput,
   context: MutationContext | undefined,
-  options: { activateCommitment?: boolean; batchState: ChildTaskBatchState },
+  options: { batchState: ChildTaskBatchState },
 ): TaskCreationFacts;
 export function createChildTaskInTransaction(
   txDb: Db,
   parentTaskId: number,
   input: CreateTaskInput,
   context?: MutationContext,
-  options: { activateCommitment?: boolean; batchState?: ChildTaskBatchState } = {},
+  options: { batchState?: ChildTaskBatchState } = {},
 ): ReturnType<typeof getTaskOrThrow> | TaskCreationFacts {
     const batchState = options.batchState;
     const parent = batchState?.parent ?? getTaskOrThrow(txDb, parentTaskId);
@@ -705,11 +649,9 @@ export function createChildTaskInTransaction(
             eq(schema.workItems.role, "task"),
             eq(schema.workItems.parentId, parentTaskId),
             eq(schema.workItems.taskKind, "action"),
-          ))
-          .get() !== undefined;
-    const createsFirstActionChild = input.kind !== "reference" && !actionChildAlreadyExists;
-    const classifiesCapturedParent = parent.kind === "action" && parent.status === "captured" && createsFirstActionChild;
-    if (classifiesCapturedParent) {
+          )).get() !== undefined;
+    if (parent.kind === "action" && parent.status === "captured" &&
+        input.kind !== "reference" && !actionChildAlreadyExists) {
       txDb.update(schema.workItems).set({
         status: "active",
         needsClarification: false,
@@ -725,8 +667,6 @@ export function createChildTaskInTransaction(
         projectId: parent.projectId,
         metadata: { previousStatus: "captured", nextStatus: "actionable", changedFields: ["status", "needsClarification"] },
       });
-      // The canonical single-child path checks next-action state after this
-      // classification. Recompute once here, then share it across the batch.
       if (batchState && parent.projectId !== null) {
         batchState.hasNextAction = projectHasNextAction(txDb, parent.projectId);
       }
@@ -845,15 +785,6 @@ export function createChildTaskInTransaction(
         personalEligible: true,
       });
     }
-    if (options.activateCommitment !== false && task.projectId !== null && hasExecutionCommitment({
-      kind: task.kind,
-      dueDate: task.dueDate,
-      scheduledDate: task.scheduledDate,
-      revisitAt: task.revisitAt,
-      reminders: task.reminders,
-    })) {
-      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution, commitmentSubjectForTask(task, true));
-    }
     return task;
 }
 
@@ -941,15 +872,6 @@ export function createTaskSuccessor(
         personalEligible: true,
       });
     }
-    if (successor.projectId !== null && hasExecutionCommitment({
-      kind: successor.kind,
-      dueDate: successor.dueDate,
-      scheduledDate: successor.scheduledDate,
-      revisitAt: successor.revisitAt,
-      reminders: successor.reminders,
-    })) {
-      activateCommittedProjectChain(txDb, successor.projectId, context, input.activationResolution, commitmentSubjectForTask(successor, true));
-    }
     return successor;
   });
 }
@@ -981,7 +903,6 @@ export interface UpdateTaskInput {
   allowedDeviationDays?: number | null;
   completedOn?: string;
   reminders?: TaskReminderInput[];
-  activationResolution?: ProjectActivationResolution;
   additionalNextAction?: boolean;
   tagIds?: number[];
   excludedTagIds?: number[];
@@ -994,7 +915,6 @@ export function updateTask(
   id: number,
   input: UpdateTaskInput,
   context?: MutationContext,
-  options: { activateCommitment?: boolean } = {},
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -1067,7 +987,7 @@ export function updateTask(
     const allowsBoth = hasExternalWait || recurrenceAllowsBoth;
     if (input.externalWait !== undefined && requestedExternalWait !== null) {
       assertActionTask(currentTask, "updateTask");
-      if (currentTask.status !== "actionable") {
+      if (currentTask.status !== "actionable" && !(currentTask.status === "someday" && currentExternalWait)) {
         throw AppError.conflict(
           "external_wait_status_invalid",
           "Only actionable tasks can wait for an external event.",
@@ -1158,44 +1078,18 @@ export function updateTask(
       : input.dueDate !== undefined
         ? input.dueDate
         : currentTask.dueDate;
-    const remindersAfter = input.reminders ?? currentTask.reminders;
-    const executionCommitmentAfter = hasExecutionCommitment({
-      kind: currentTask.kind,
-      dueDate: effectiveDueDate,
-      scheduledDate: effectiveScheduledDate,
-      revisitAt: effectiveRevisitAt,
-      reminders: remindersAfter,
-    });
     const addsExecutionCommitment =
       (input.dueDate !== undefined && input.dueDate !== currentTask.dueDate && input.dueDate !== null) ||
       (input.scheduledDate !== undefined && input.scheduledDate !== currentTask.scheduledDate && input.scheduledDate !== null) ||
       (input.repeatAfterDays !== undefined && input.repeatAfterDays !== null && currentTask.repeatAfterDays === null) ||
-      (input.reminders !== undefined && currentTask.reminders.length === 0 && input.reminders.length > 0 && effectiveRevisitAt === null);
-    const requestedTargetStatus = nextStatus ?? currentTask.status;
-    const taskTransition = evaluateCommitmentTransition({
-      today: new Date().toISOString().slice(0, 10),
-      subject: {
-        type: "task",
-        id,
-        status: currentTask.status,
-        targetStatus: requestedTargetStatus,
-        executionCommitment: executionCommitmentAfter,
-        newExecutionCommitment: addsExecutionCommitment,
-        revisitAt: effectiveRevisitAt,
-        recurring: nextRepeatAfterDays !== null,
-        explicitlyReopened: nextStatus === "actionable",
-      },
-      projects: [],
-    }, "commitment");
-    if (taskTransition.kind === "conflict" && taskTransition.reason === "terminal_task_requires_reopen") {
+      (input.reminders !== undefined && input.reminders.some((reminder) =>
+        reminder.id === undefined || !currentTask.reminders.some((existing) => existing.id === reminder.id)));
+    if (addsExecutionCommitment && (currentTask.status === "done" || currentTask.status === "cancelled") && nextStatus !== "actionable") {
       throw AppError.conflict(
         "task_reopen_required",
         "Reopen this completed or cancelled task before adding an execution commitment.",
         { taskId: id, currentStatus: currentTask.status, requiredStatus: "actionable" },
       );
-    }
-    if (taskTransition.kind === "ready" && taskTransition.plan.taskStatus !== requestedTargetStatus) {
-      nextStatus = taskTransition.plan.taskStatus ?? nextStatus;
     }
     if (currentExternalWait && nextRepeatAfterDays !== null) {
       throw AppError.conflict(
@@ -1234,7 +1128,7 @@ export function updateTask(
     const removingExternalWait =
       currentExternalWait !== undefined &&
       (input.externalWait === null ||
-        (statusChanged && nextStatus !== "actionable"));
+        (statusChanged && nextStatus !== "actionable" && nextStatus !== "someday"));
     if (statusChanged && nextStatus !== undefined && !recurringCompletion) {
       patch.status = storedTaskStatus(nextStatus);
       // Lifecycle and the clarification request are independent. Entering
@@ -1284,7 +1178,7 @@ export function updateTask(
     // task open for its next scheduled occurrence. Its clarification state
     // therefore remains valid even though the requested transition is `done`.
     const resultingStatus = recurringCompletion
-      ? "actionable"
+      ? currentTask.status
       : nextStatus ?? currentTask.status;
     if (
       nextClarificationRevisitDate !== null &&
@@ -1444,7 +1338,7 @@ export function updateTask(
         completedOn,
         nextRepeatAfterDays!,
       );
-      patch.status = "active";
+      patch.status = storedTaskStatus(currentTask.status);
       patch.completedAt = null;
       patch.cancelledAt = null;
       patch.scheduledDate = followingScheduledDate;
@@ -1604,7 +1498,7 @@ export function updateTask(
         projectId: updated.projectId,
         metadata: {
           previousStatus: currentTask.status as TaskStatus,
-          nextStatus: "actionable",
+          nextStatus: updated.status as TaskStatus,
           before: {
             effectiveOwnerId: effectiveOwnerBefore,
             dueDate: currentTask.dueDate,
@@ -1928,27 +1822,6 @@ export function updateTask(
         projectId: updated.projectId,
         metadata: {},
       });
-    }
-    if (
-      options.activateCommitment !== false &&
-      updated.projectId !== null &&
-      updated.status !== "done" &&
-      updated.status !== "cancelled" &&
-      hasExecutionCommitment({
-        kind: updated.kind,
-        dueDate: updated.dueDate,
-        scheduledDate: updated.scheduledDate,
-        revisitAt: updated.revisitAt,
-        reminders: updated.reminders,
-      })
-    ) {
-      activateCommittedProjectChain(
-        txDb,
-        updated.projectId,
-        context,
-        input.activationResolution,
-        commitmentSubjectForTask(updated, addsExecutionCommitment, currentTask.status, nextStatus === "actionable"),
-      );
     }
     return updated;
   });

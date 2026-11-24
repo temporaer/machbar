@@ -76,17 +76,10 @@ describe("InlineSuccessorComposer", () => {
     expect(mockedApi.createTaskSuccessor).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves a dated successor while collecting activation requirements and retries the same operation", async () => {
+  it("preserves a dated successor after a failed save and retries", async () => {
     mockedApi.getMembers.mockResolvedValue([{ id: 1, name: "Mira" } as never]);
     mockedApi.createTaskSuccessor
-      .mockRejectedValueOnce(Object.assign(new Error("Projekt braucht eine verantwortliche Person"), {
-        code: "project_commitment_resolution_required",
-        details: {
-          projects: [{ projectId: 12, title: "Sommerfest", revision: 5, ownerMemberId: null, required: ["driver"] }],
-          expectedProjects: [{ projectId: 12, revision: 5 }],
-          targetRevision: 5,
-        },
-      }))
+      .mockRejectedValueOnce(new Error("Offline"))
       .mockResolvedValueOnce(makeTask({ id: 2, title: "Rechnung bezahlen" }));
     const onCreated = vi.fn();
     renderWithProviders(
@@ -99,10 +92,9 @@ describe("InlineSuccessorComposer", () => {
     await userEvent.type(screen.getByLabelText("Geplant für"), "2027-03-12");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
-    const driver = await screen.findByLabelText("Verantwortlich für „Sommerfest“");
+    expect(await screen.findByRole("alert")).toBeVisible();
     expect(title).toHaveValue("Angebot vergleichen");
     expect(screen.getByLabelText("Geplant für")).toHaveValue("2027-03-12");
-    await userEvent.selectOptions(driver, "1");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() => expect(mockedApi.createTaskSuccessor).toHaveBeenCalledTimes(2));
@@ -111,22 +103,12 @@ describe("InlineSuccessorComposer", () => {
       scheduledDate: "2027-03-12",
       createdByMemberId: null,
       status: "actionable",
-      activationResolution: {
-        expectedProjects: [{ projectId: 12, revision: 5 }],
-        drivers: [{ projectId: 12, ownerMemberId: 1 }],
-      },
     });
     expect(onCreated).toHaveBeenCalledOnce();
   });
 
-  it("does not retry a dated successor when the user cancels activation decisions", async () => {
-    mockedApi.createTaskSuccessor.mockRejectedValueOnce(Object.assign(new Error("Treiber fehlt"), {
-      code: "project_commitment_resolution_required",
-      details: {
-        projects: [{ projectId: 12, title: "Sommerfest", revision: 5, ownerMemberId: null, required: ["driver"] }],
-        expectedProjects: [{ projectId: 12, revision: 5 }],
-      },
-    }));
+  it("does not retry a failed dated successor when the user cancels", async () => {
+    mockedApi.createTaskSuccessor.mockRejectedValueOnce(new Error("Offline"));
     const onCancel = vi.fn();
     const onCreated = vi.fn();
     renderWithProviders(<InlineSuccessorComposer predecessorId={1} onCancel={onCancel} onCreated={onCreated} />);
@@ -134,7 +116,7 @@ describe("InlineSuccessorComposer", () => {
     await userEvent.click(screen.getByText("Planung (optional)"));
     await userEvent.type(screen.getByLabelText("Geplant für"), "2027-03-12");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
-    expect(await screen.findByLabelText("Verantwortlich für „Sommerfest“")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
     expect(onCancel).toHaveBeenCalledOnce();

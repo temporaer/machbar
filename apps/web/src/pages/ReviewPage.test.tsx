@@ -18,9 +18,6 @@ import {
 
 vi.mock("../lib/api", () => ({
   api: {
-    previewTaskUpdate: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskConversion: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
-    previewTaskSteps: vi.fn().mockResolvedValue({ decision: null, activatingProjects: [] }),
     getAuthStatus: vi.fn().mockResolvedValue({
       enabled: false,
       authenticated: false,
@@ -139,6 +136,7 @@ describe("ReviewPage", () => {
       revision: 2,
       reviewedAt: "2026-08-31T20:00:00.000Z",
     });
+
     mockedApi.acknowledgeTaskReview.mockResolvedValue({
       ...task,
       revision: 2,
@@ -147,6 +145,56 @@ describe("ReviewPage", () => {
   });
 
   afterEach(() => { vi.useRealTimers(); });
+
+  it("offers a status-neutral project review without an automatic lifecycle change", async () => {
+    mockedApi.getReviewItems.mockResolvedValue([{
+      entityType: "project",
+      entityId: project.id,
+      entityTitle: project.title,
+      projectId: project.id,
+      projectTitle: project.title,
+      category: "reconsider",
+      reason: "project_revisit_reached",
+      suggestedAction: { code: "review_project" },
+    }]);
+    renderWithProviders(<Routes>
+      <Route path="/more/review" element={<ReviewPage />} />
+      <Route path="/projects/:id" element={<ReviewProjectDestination />} />
+    </Routes>, { initialEntries: ["/more/review"] });
+    expect(await screen.findByText("Die Wiedervorlage dieses Projekts ist erreicht.")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Details öffnen" }));
+    expect(await screen.findByLabelText("repair-location")).toHaveTextContent(`/projects/${project.id}`);
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    expect(mockedApi.returnProjectToBacklog).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges a reached active-project revisit without changing its lifecycle", async () => {
+    const item: ReviewItem = {
+      entityType: "project",
+      entityId: project.id,
+      entityTitle: project.title,
+      projectId: project.id,
+      projectTitle: project.title,
+      category: "reconsider",
+      reason: "project_revisit_reached",
+      suggestedAction: { code: "review_project" },
+    };
+    let acknowledged = false;
+    mockedApi.getReviewItems.mockImplementation(async () => acknowledged ? [] : [item]);
+    mockedApi.acknowledgeProjectReview.mockImplementation(async () => {
+      acknowledged = true;
+      return { ...project, revision: project.revision + 1, reviewedAt: "2026-10-25T11:00:00.000Z" };
+    });
+    renderWithProviders(<ReviewPage />);
+    const card = (await screen.findByText(project.title)).closest("article")!;
+    await userEvent.click(within(card).getByRole("button", { name: "So beibehalten" }));
+    await waitFor(() => expect(card).not.toBeInTheDocument());
+    expect(mockedApi.acknowledgeProjectReview).toHaveBeenCalledWith(project.id, { expectedRevision: project.revision });
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    expect(mockedApi.returnProjectToBacklog).not.toHaveBeenCalled();
+    expect(mockedApi.completeProject).not.toHaveBeenCalled();
+    expect(mockedApi.archiveProject).not.toHaveBeenCalled();
+  });
 
   it("shows pending feedback and an explicit rejected decision without removing the server issue", async () => {
     let reject!: (error: Error) => void;

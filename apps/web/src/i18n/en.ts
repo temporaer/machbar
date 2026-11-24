@@ -56,12 +56,13 @@ const assessmentBandLabels: Record<AssessmentBand, string> = {
 };
 
 const en = {
+  attentionDeferred: "Deferred",
+  attentionUnavailable: "Availability unknown",
   createProjectAction: "Create project",
   projectCreated: "Project created",
   projectTasksTitle: "Add tasks",
   oneTaskPerLine: "One task per line",
   projectTaskDraftHint: "Unsaved rows are kept as a draft when you close this sheet.",
-  activationWillStart: "Confirming will start the affected projects.",
   addProjectTaskCount: (count: number) => count <= 1 ? "Add task" : `Add ${count} tasks`,
   projectReviewOn: "Review again on",
   projectAddReviewOn: "Review again on …",
@@ -917,7 +918,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   moveHere: "Move here",
   subtreeHint: "Moves this task together with all its subtasks.",
   changeParentTitle: "New parent task",
-  projectMoveActivationHint: "Active work will activate the destination and any necessary project ancestors. Missing decisions are collected here.",
   projectSubtreeHint: "Moves the project together with all child projects and tasks.",
   moveProjectTitle: "Move to another project",
   currentProject: "Current project",
@@ -959,7 +959,6 @@ When the person ends the reflection, provide a concise human-readable summary an
     noDate: "No date",
   },
   projectDeferQuestion: "Defer until when?",
-  withdrawProjectCommitments: "Withdraw plans, deadlines, recurrence and reminders for this project",
   projectDeferWithoutRevisit: "Without revisit",
   projectDeferShortcutLabels: {
     tomorrow: "Tomorrow",
@@ -1102,7 +1101,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   refinementConvert: "Convert to a project",
   aiProjectWillBeActive: "Becomes an active project and stays in your active work.",
   aiProjectWillBeBacklog: "Becomes a backlog project.",
-  aiProjectActivationResolvedOnApply: "Machbar checks whether activation is needed from the selected changes.",
+  aiProjectActivationResolvedOnApply: "Created as a deferred project.",
   aiProjectDriverLabel: "Who is accountable for this project reaching its outcome?",
   aiProjectDriverHint: "The accountable person coordinates and protects progress; they do not need to execute every step.",
   aiProjectDriverRequired: "Choose an accountable project driver.",
@@ -1258,6 +1257,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     "This backlog project already has planned or executable work — that contradicts its backlog status.",
   reviewReasonBacklogRevisitReached:
     "This backlog project's revisit date has been reached.",
+  reviewReasonProjectRevisitReached: "This project's revisit date has been reached.",
   reviewReasonTaskScheduledBeforeResurface:
     "This task is scheduled before the project's own resurface date.",
   reviewReasonTaskDueBeforeResurface:
@@ -1277,7 +1277,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   allMaterialEmpty: "No matching material found.",
 
   activateStory: "Start project",
-  activationDecisionHint: "Review the current requirements and confirm your choices.",
   activationRequirementsChanged: "This item changed. Review the current details and confirm again.",
   activationProgressRequired:
     "Add an executable next action first, or deliberately plan a healthy waiting path.",
@@ -1286,8 +1285,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   assignDriver: "Assign a project lead",
   assignDriverToActivateHint:
     "Assign a project lead before making this project active.",
-  commitmentResolutionTitle: "A decision is needed before starting",
-  commitmentResolutionHint: "Your draft is kept. Choose missing project leads and, if needed, write a concrete next action.",
   commitmentDriverFor: (title: string) => `Lead for “${title}”`,
   commitmentNextActionLabel: "What concrete next action will move the project forward?",
   driverLockedHint:
@@ -1857,10 +1854,6 @@ When the person ends the reflection, provide a concise human-readable summary an
       "A household project in the backlog cannot have an owner. Activate it to assign a lead.",
     project_activation_not_ready:
       "Add an executable next step or a healthy waiting path before starting.",
-    project_commitment_resolution_required:
-      "This commitment still needs a project lead or an executable next step. Your changes were not saved.",
-    project_commitments_prevent_parking:
-      "This project still has commitments. In the defer sheet, explicitly choose whether to withdraw them.",
     project_completion_resolution_required:
       "Choose whether to cancel or move each open task branch before completing the project.",
     project_completion_resolution_invalid:
