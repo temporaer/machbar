@@ -2063,9 +2063,11 @@ A task below a project or task becomes a child project by changing its role,
 keeping `parentId`, `position`, identity and descendant edges. Effective task
 tags/contexts become explicit project values; the effective owner becomes the
 driver except for a household backlog project, whose driver is cleared.
-Retained actions and descendants keep their ownership modes, so inherited
-ownership follows the driver and can be temporarily unassigned. Task-only
-obligations continue to use the existing retained action and dependency mappings. A nested
+Retained actions and descendants keep their ownership modes: inheritance
+through task parents respects explicit and unassigned overrides, while
+inheritance from the project follows its driver and can be temporarily
+unassigned. Task-only obligations continue to use the existing retained action
+and dependency mappings. A nested
 project containing only task descendants can become a task at the same parent
 and position. A project with any project descendant remains unsupported: task
 lifecycle/outline commands cannot yet represent project descendants. Archived

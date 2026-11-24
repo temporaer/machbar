@@ -172,6 +172,10 @@ describe("phase 6a parent-preserving structure", () => {
     ]);
     for (const child of children) expect(child.statusCode, child.body).toBe(201);
     const [inherited, assigned, unassigned] = children.map((child) => child.json());
+    const grandchildren = await Promise.all([inherited, assigned, unassigned].map((parent) =>
+      post(`/api/tasks/${parent.id}/children`, { title: "Inherited grandchild", ownerInheritanceMode: "inherit" })));
+    for (const child of grandchildren) expect(child.statusCode, child.body).toBe(201);
+    const [inheritedGrandchild, assignedGrandchild, unassignedGrandchild] = grandchildren.map((child) => child.json());
     const snapshot = await get(`/api/tasks/${source.id}`);
     expect(snapshot.effectiveOwnerId).toBe(mode === "none" ? null : anna.id);
     const converted = await post(`/api/tasks/${source.id}/convert-to-story`, {
@@ -191,6 +195,9 @@ describe("phase 6a parent-preserving structure", () => {
       expect(await get(`/api/tasks/${inherited.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: driver });
       expect(await get(`/api/tasks/${assigned.id}`)).toMatchObject({ ownerInheritanceMode: "explicit", effectiveOwnerId: anna.id });
       expect(await get(`/api/tasks/${unassigned.id}`)).toMatchObject({ ownerInheritanceMode: "none", effectiveOwnerId: null });
+      expect(await get(`/api/tasks/${inheritedGrandchild.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: driver });
+      expect(await get(`/api/tasks/${assignedGrandchild.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: anna.id });
+      expect(await get(`/api/tasks/${unassignedGrandchild.id}`)).toMatchObject({ ownerInheritanceMode: "inherit", effectiveOwnerId: null });
     };
     await assertOwners(null);
     const firstActivation = await post(`/api/projects/${source.id}/activate`, { expectedRevision: projectDetail.revision, ownerMemberId: ben.id });
