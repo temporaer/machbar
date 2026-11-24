@@ -42,20 +42,13 @@ export function buildWaitingEntries(
   graph: Graph,
   options: BuildWaitingOptions,
 ): WaitingEntry[] {
-  const projectStatusById = new Map(
-    [...graph.projectsById.values()].map((project) => [
-      project.id,
-      project.status,
-    ]),
-  );
-
   return graph
     .allTasks()
     .filter(
       (task) =>
         task.kind === "action" &&
         task.status === "actionable" &&
-        isTaskInWorkingSystem(task, projectStatusById) &&
+        isTaskInWorkingSystem(task, graph.workingProjectStatuses) &&
         matchesOwnerScope(task, options.memberId, options.scope) &&
         matchesItemScope(task, options.scope),
     )

@@ -3,7 +3,7 @@ import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
 import { buildAgenda } from "../src/domain/agenda.js";
 import { getDirectChildren } from "../src/repo/treeRepo.js";
-import { createTestContext, closeTestContext, type TestContext } from "./helpers.js";
+import { createTestContext, closeTestContext, insertTestProject, insertTestTask, type TestContext } from "./helpers.js";
 
 describe("mixed task/project hierarchy regressions", () => {
   let ctx: TestContext;
@@ -103,6 +103,56 @@ describe("mixed task/project hierarchy regressions", () => {
     const agenda = buildAgenda(Graph.load(ctx.handle.db), { today: "2026-10-14", now: "2026-10-14T12:00:00.000Z" });
     return [...agenda.shared, ...agenda.unscheduled, ...agenda.planned].map((task) => task.id);
   }
+
+  it("gates scheduled and unscheduled work beneath a backlog project across mixed ancestry without rewriting it", async () => {
+    const member = await create("/api/members", { name: "Driver" });
+    const outer = insertTestProject(ctx.handle.db, { title: "Outer", status: "active", ownerMemberId: member.id });
+    const container = insertTestTask(ctx.handle.db, { title: "Container", projectId: outer.id });
+    const inner = insertTestProject(ctx.handle.db, { title: "Inner", status: "active", parentId: container.id, ownerMemberId: member.id, dueDate: "2026-10-14" });
+    const scheduled = insertTestTask(ctx.handle.db, { title: "Scheduled", projectId: inner.id, scheduledDate: "2026-10-14", notes: "Keep" });
+    const unscheduled = insertTestTask(ctx.handle.db, { title: "Unscheduled", projectId: inner.id, additionalNextAction: true });
+    const someday = insertTestTask(ctx.handle.db, { title: "Someday", projectId: inner.id, status: "someday" });
+    const progress = insertTestTask(ctx.handle.db, { title: "Outer progress", projectId: outer.id });
+    const sibling = insertTestTask(ctx.handle.db, { title: "Standalone" });
+    const waiting = insertTestTask(ctx.handle.db, { title: "Waiting", projectId: inner.id });
+    const dependent = insertTestTask(ctx.handle.db, { title: "Dependent" });
+    ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: waiting.id, waitingFor: "Reply" }).run();
+    ctx.handle.db.insert(schema.taskDependencies).values({ taskId: dependent.id, dependsOnTaskId: unscheduled.id }).run();
+    const day = "2026-10-14";
+    const readAgenda = async () => {
+      const response = await ctx.app.inject({ method: "GET", url: `/api/agenda/today?scope=all&date=${day}` });
+      expect(response.statusCode).toBe(200);
+      return response.json();
+    };
+    const taskIds = (agenda: any) => ["planned", "overdue", "dueToday", "dueSoon", "shared", "unscheduled", "revisit"]
+      .flatMap((bucket) => agenda[bucket].map((task: { id: number }) => task.id));
+
+    expect(taskIds(await readAgenda())).toEqual(expect.arrayContaining([scheduled.id, unscheduled.id, sibling.id]));
+    ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'backlog', owner_member_id = NULL WHERE id = ?").run(outer.id);
+    const before = state();
+    const parked = await readAgenda();
+    expect(taskIds(parked)).not.toContain(scheduled.id);
+    expect(taskIds(parked)).not.toContain(unscheduled.id);
+    expect(taskIds(parked)).toContain(sibling.id);
+    expect(parked.projects.map((entry: { project: { id: number } }) => entry.project.id)).not.toContain(inner.id);
+    expect((await get("/api/waiting")).map((entry: { task: { id: number } }) => entry.task.id)).not.toContain(waiting.id);
+    expect(Graph.load(ctx.handle.db).blockerAnalysisFor(dependent.id)).toMatchObject({
+      blocked: true, healthyProgressPath: false,
+      diagnoses: [expect.objectContaining({ reason: "backlog_project", targetTaskId: unscheduled.id })],
+    });
+    const detail = await get(`/api/tasks/${scheduled.id}`);
+    expect(detail).toMatchObject({ status: "actionable", executable: false, scheduledDate: day, notes: "Keep" });
+    expect((await get(`/api/tasks/${someday.id}`)).status).toBe("someday");
+    expect(state()).toEqual(before);
+
+    const activation = await post(`/api/projects/${outer.id}/activate`, { expectedRevision: row(outer.id).revision, ownerMemberId: member.id });
+    expect(activation.statusCode, activation.body).toBe(200);
+    expect(taskIds(await readAgenda())).toEqual(expect.arrayContaining([scheduled.id, unscheduled.id, progress.id, sibling.id]));
+    expect((await get(`/api/tasks/${someday.id}`)).status).toBe("someday");
+    for (const id of [container.id, inner.id, scheduled.id, unscheduled.id, someday.id, progress.id, waiting.id, dependent.id]) {
+      expect(row(id)).toEqual(before.find((item) => item.id === id));
+    }
+  });
 
   it("keeps a task with an open project descendant out of next actions and Today through conversion and inverse", async () => {
     const { outer, parent, child, project, step } = await nestedConversion();

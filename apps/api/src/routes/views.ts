@@ -231,12 +231,6 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       new Date().toISOString(),
       householdTimezone(db),
     ) ?? new Date().toISOString().slice(0, 10);
-    const projectStatusById = new Map(
-      [...graph.projectsById.values()].map((project) => [
-        project.id,
-        project.status,
-      ]),
-    );
     const clarificationTasks = graph
       .allTasks()
       .filter(
@@ -250,7 +244,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
           // while leaving its lifecycle/agenda commitments untouched.
           !(task.clarificationRevisitDate && task.clarificationRevisitDate > householdToday) &&
           !(task.revisitAt && Date.parse(task.revisitAt) > Date.now()) &&
-          isTaskInWorkingSystem(task, projectStatusById) &&
+          isTaskInWorkingSystem(task, graph.workingProjectStatuses) &&
           selection.matchesScope(task) &&
           selection.matchesOwner(task),
       );

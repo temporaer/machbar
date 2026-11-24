@@ -152,7 +152,7 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const tasks = graph.allTasks().filter((t) => inScope(t.scope)); const projects = [...graph.projectsById.values()].filter((p) => inScope(p.scope));
   const fact = (t: TaskRecord) => factForTask(t, graph, memberNames);
   const activeProjects = projects.filter((p) => p.status === "active").map((p) => factForProject(p, graph, memberNames));
-  const projectStatusById = new Map([...graph.projectsById.values()].map((project) => [project.id, project.status]));
+  const projectStatusById = graph.workingProjectStatuses;
   const firstExecutionCandidateByProject = new Map<number, number>();
   for (const project of projects) {
     const candidate = graph.nextActionCandidatesFor(project.id).find(

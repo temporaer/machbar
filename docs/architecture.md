@@ -530,7 +530,7 @@ The API computes several derived fields before returning tasks to the client:
 | `explicitTags` | Tags directly on this task |
 | `externalWait` | Nullable unresolved external blocker with a required non-empty reason; its optional follow-up is represented by the work item's `revisitAt` |
 | `blocked` | `true` for actionable tasks with an external wait or any unresolved dependency |
-| `executable` | `true` only for actionable, unblocked tasks |
+| `executable` | `true` only for actionable, unblocked tasks without a backlog project ancestor and without a revisit pause |
 | `blockers` | Structured external/dependency blocker summaries |
 | `nextBlockerAttentionDate` | Earliest derived attention date through unresolved blocker branches; never persisted or copied to the dependent task |
 | `children` | Direct sub-tasks (recursive to arbitrary depth) |

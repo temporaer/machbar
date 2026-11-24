@@ -1,4 +1,4 @@
-import type { ContextAvailability, ProjectStatus } from "@machbar/shared";
+import type { ContextAvailability } from "@machbar/shared";
 import { DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
 import type { Graph, TaskRecord } from "./graph.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
@@ -76,12 +76,6 @@ export function createAgendaSelection(
     (scope === "mine" || scope === "work") && memberId !== undefined
       ? { scope: "mine", memberId }
       : { scope: "all" };
-  const projectStatusById = new Map<number, ProjectStatus>(
-    [...graph.projectsById.values()].map((project) => [
-      project.id,
-      project.status,
-    ]),
-  );
   const contextAvailability = (task: TaskRecord): ContextAvailability => {
     if (options.ignoreContextAvailability) {
       return { status: "available", availableNow: true, missingContexts: [] };
@@ -122,7 +116,7 @@ export function createAgendaSelection(
     (scope !== "all" || item.privacyOwnerMemberId == null) &&
     (scope === "work" ? item.scope === "work" : item.scope !== "work");
   const isOperationalTask = (task: TaskRecord) =>
-    isTaskInWorkingSystem(task, projectStatusById);
+    isTaskInWorkingSystem(task, graph.workingProjectStatuses);
   const isAgendaTask = (task: TaskRecord) =>
     task.kind === "action" &&
     isOpenTask(task) &&

@@ -125,9 +125,6 @@ function loadFilteredOpenTasks(
   const effective = getEffectiveOwners(db);
   const effectiveTagIds = getEffectiveTagIds(db);
   const graph = Graph.load(db, undefined, undefined);
-  const projectStatusById = new Map(
-    [...graph.projectsById.values()].map((project) => [project.id, project.status]),
-  );
   const allTasks = graph.allActions().map((task): OpenTaskRow => ({
     id: task.id,
     revision: task.revision,
@@ -152,7 +149,7 @@ function loadFilteredOpenTasks(
 
   const rows = allTasks.filter((t) => {
     if (!isOpenStatus(t.status)) return false;
-    if (!isTaskInWorkingSystem(t, projectStatusById)) return false;
+    if (!isTaskInWorkingSystem(t, graph.workingProjectStatuses)) return false;
     if (filters?.projectId !== undefined && t.projectId !== filters.projectId) {
       return false;
     }
@@ -243,17 +240,11 @@ export function getRefinementTasks(
   filters?: RefinementFilters,
 ): RefinementTaskRow[] {
   const graph = Graph.load(db, undefined, undefined);
-  const projectStatusById = new Map(
-    [...graph.projectsById.values()].map((project) => [
-      project.id,
-      project.status,
-    ]),
-  );
   return graph
     .allActions()
     .filter((task) => {
       if (!isOpenStatus(task.status)) return false;
-      if (!isTaskInWorkingSystem(task, projectStatusById)) return false;
+      if (!isTaskInWorkingSystem(task, graph.workingProjectStatuses)) return false;
       if (
         filters?.projectId !== undefined &&
         task.projectId !== filters.projectId

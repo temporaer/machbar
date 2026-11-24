@@ -231,6 +231,7 @@ export function buildAgenda(
     .filter(
       (project) =>
         project.status === "active" &&
+        graph.workingProjectStatuses.get(project.id) === "active" &&
         (memberId === undefined ||
           project.ownerMemberId === null ||
           project.ownerMemberId === memberId) &&

@@ -229,6 +229,7 @@ export function analyzeTaskBlockers(
       blocked,
       executable:
         task.status === "actionable" &&
+        (task.projectId === null || projectStatuses.get(task.projectId) !== "backlog") &&
         !blocked &&
         task.revisitAt === null,
       healthyProgressPath: path.healthy,

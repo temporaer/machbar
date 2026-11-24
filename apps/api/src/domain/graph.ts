@@ -48,6 +48,7 @@ import {
   type TaskBlockerAnalysis,
 } from "./blockers.js";
 import { evaluateProjectActivationReadiness } from "./projectReadiness.js";
+import { effectiveProjectStatuses, isTaskInWorkingSystem } from "./workEligibility.js";
 
 function householdTimezone(db: Db): string {
   const row = db
@@ -235,6 +236,7 @@ function stuckReasonForDiagnoses(
  */
 export class Graph {
   readonly projectsById = new Map<number, ProjectRecord>();
+  readonly workingProjectStatuses = new Map<number, ProjectStatus>();
   readonly tasksById = new Map<number, TaskRecord>();
   readonly tasksByProject = new Map<number | null, TaskRecord[]>();
   readonly childrenByParent = new Map<number | null, TaskRecord[]>();
@@ -364,11 +366,8 @@ export class Graph {
     // descendants of a work item legitimately have no explicit owner of
     // their own; a project has no owner-inheritance mechanism, so its own
     // row is authoritative there.
-    const workItemRows = db
-      .select()
-      .from(schema.workItems)
-      .all()
-      .filter((row) => {
+    const allWorkItemRows = db.select().from(schema.workItems).all();
+    const workItemRows = allWorkItemRows.filter((row) => {
         if (!restrictToViewer) return true;
         return workItemVisibleToViewer(row, viewerMemberId, effectiveOwners.get(row.id)?.ownerId ?? null);
       });
@@ -595,6 +594,13 @@ export class Graph {
     const projectStatuses = new Map(
       rawProjects.map((project) => [project.id, project.status]),
     );
+    const allProjectStatuses = new Map(
+      allWorkItemRows.filter((row) => row.role === "story").map((row) => [
+        row.id, projectStatusFromStored(row.status as StoredWorkItemStatus, row.archivedAt),
+      ]),
+    );
+    const workingStatuses = effectiveProjectStatuses(allWorkItemRows, allProjectStatuses);
+    for (const [id, status] of workingStatuses) graph.workingProjectStatuses.set(id, status);
     const blockerInputs = new Map(
       rawTasks.map((task) => [
         task.id,
@@ -631,7 +637,7 @@ export class Graph {
     );
     const blockerAnalysis = analyzeTaskBlockers(
       blockerInputs,
-      projectStatuses,
+      workingStatuses,
       today,
       now,
       householdTimezone(db),
@@ -640,12 +646,15 @@ export class Graph {
       graph.blockerAnalysisByTask.set(taskId, analysis);
     }
     if (includeProjectAnalysis) {
+      const readinessBlockers = analyzeTaskBlockers(
+        blockerInputs, projectStatuses, today, now, householdTimezone(db),
+      );
       for (const project of rawProjects) {
         const activationStatuses = new Map(projectStatuses);
         activationStatuses.set(project.id, "active");
         const activationBlockers =
           project.status === "active"
-            ? blockerAnalysis
+            ? readinessBlockers
             : analyzeTaskBlockers(
                 blockerInputs,
                 activationStatuses,
@@ -1114,7 +1123,7 @@ export class Graph {
   nextActionFor(projectId: number): TaskRecord | null {
     for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
       const task = this.tasksById.get(id);
-      if (task && !task.blocked) return task;
+      if (task && !task.blocked && isTaskInWorkingSystem(task, this.workingProjectStatuses)) return task;
     }
     return null;
   }

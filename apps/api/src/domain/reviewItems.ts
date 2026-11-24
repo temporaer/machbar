@@ -141,12 +141,6 @@ export function buildReviewItems(
     options.today ?? new Date().toISOString().slice(0, 10);
   const now = options.now ?? new Date().toISOString();
   const nowInstant = Date.parse(now);
-  const projectStatuses = new Map(
-    [...graph.projectsById.values()].map((project) => [
-      project.id,
-      project.status,
-    ]),
-  );
   const items: ReviewItem[] = [];
   const projectsWithRootCause = new Set<number>();
   const brokenRootKeys = new Set<string>();
@@ -154,7 +148,7 @@ export function buildReviewItems(
   for (const task of graph.allTasks()) {
     if (task.kind !== "action") continue;
     if (!isOpen(task)) continue;
-    if (!isTaskInWorkingSystem(task, projectStatuses)) continue;
+    if (!isTaskInWorkingSystem(task, graph.workingProjectStatuses)) continue;
 
     if (task.externalWait && task.revisitAt === null) {
       items.push(

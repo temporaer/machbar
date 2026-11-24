@@ -259,8 +259,10 @@ contexts, and sensible ownership, so activity history and links stay attached.
 Existing child tasks become story-root steps while deeper task nesting stays
 intact. Once a project is in `backlog` status, every task under it --
 including ones added afterward from the handoff -- is automatically excluded
-from Today/executable views regardless of the task's own status, so parking a
-capture as a backlog project never leaks unplanned work onto Today.
+from Today/executable views regardless of the task's own status, including
+through nested active projects and intervening task or reference containers.
+Parking does not rewrite descendant state or planning metadata. Week may still
+show dated work as a planning signal.
 
 A project converted this way, and its whole **Später / noch nicht aktiv**
 section on the Projekte tab, does not silently disappear: leaving the handoff
