@@ -71,6 +71,7 @@ function makeProject(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
     title: "Umzug organisieren",
     notes: "",
     status: "active",
+    effectivelyParked: false,
     discussionRequested: false,
     archivedAt: null,
     ownerMemberId: null,

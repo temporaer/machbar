@@ -127,6 +127,7 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
     title: "Beispielprojekt",
     notes: "",
     status,
+    effectivelyParked: false,
     discussionRequested: false,
     archivedAt: status === "archived" ? new Date("2026-01-01T09:00:00Z").toISOString() : null,
     ownerMemberId: null,

@@ -150,6 +150,9 @@ describe("mixed task/project hierarchy regressions", () => {
     });
     const graph = Graph.load(ctx.handle.db);
     expect(graph.stuckReasonFor(inner.id)).toBeNull();
+    expect(await get(`/api/projects/${inner.id}`)).toMatchObject({
+      effectivelyParked: true, nextAction: { id: scheduled.id, executable: false },
+    });
     expect(buildReviewItems(graph).filter((item) => item.entityId === inner.id && item.entityType === "project")
       .map((item) => item.reason)).not.toContain("no_viable_progress_path");
     const detail = await get(`/api/tasks/${scheduled.id}`);
@@ -161,10 +164,27 @@ describe("mixed task/project hierarchy regressions", () => {
     expect(activation.statusCode, activation.body).toBe(200);
     expect(taskIds(await readAgenda())).toEqual(expect.arrayContaining([scheduled.id, unscheduled.id, progress.id, sibling.id]));
     expect(await weekProject()).toMatchObject({ executable: true });
+    expect(await get(`/api/projects/${inner.id}`)).toMatchObject({ effectivelyParked: false });
     expect((await get(`/api/tasks/${someday.id}`)).status).toBe("someday");
     for (const id of [container.id, inner.id, scheduled.id, unscheduled.id, someday.id, progress.id, waiting.id, dependent.id]) {
       expect(row(id)).toEqual(before.find((item) => item.id === id));
     }
+  });
+
+  it("keeps a reached revisit structural while Week recognizes a later executable action", async () => {
+    const day = "2026-10-14";
+    const project = insertTestProject(ctx.handle.db, { title: "Active", status: "active", dueDate: day });
+    const reached = insertTestTask(ctx.handle.db, {
+      title: "Reached revisit", projectId: project.id, revisitAt: "2020-01-01T12:00:00.000Z",
+    });
+    insertTestTask(ctx.handle.db, { title: "Later action", projectId: project.id });
+    expect(await get(`/api/projects/${project.id}`)).toMatchObject({
+      nextAction: { id: reached.id, executable: false },
+    });
+    const week = await get(`/api/agenda/week?scope=all&start=${day}&today=${day}`);
+    const item = week.days.flatMap((entry: { items: Array<{ id: number }> }) => entry.items)
+      .find((entry: { id: number }) => entry.id === project.id);
+    expect(item).toMatchObject({ executable: true });
   });
 
   it("does not count a dependency under a different parked ancestor as activation progress", () => {

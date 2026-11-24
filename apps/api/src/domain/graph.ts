@@ -717,6 +717,7 @@ export class Graph {
         title: p.title,
         notes: p.notes,
         status: p.status,
+        effectivelyParked: p.status === "active" && graph.workingProjectStatuses.get(p.id) === "backlog",
         discussionRequested: p.discussionRequested,
         archivedAt: p.archivedAt,
         ownerMemberId: p.ownerMemberId,

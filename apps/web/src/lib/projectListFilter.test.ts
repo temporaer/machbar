@@ -70,11 +70,18 @@ describe("classifyProjectListItem", () => {
     expect(classifyProjectListItem(backlogWithoutAction)).toBe("backlog");
   });
 
-  it("does not classify a non-executable structural next action as actionable", () => {
+  it("keeps a reached structural revisit actionable for an active project", () => {
     const project = makeProject({
       status: "active",
-      nextAction: makeTask({ executable: false }),
+      nextAction: makeTask({ executable: false, revisitAt: "2020-01-01T12:00:00.000Z" }),
       stuckReason: null,
+    });
+    expect(classifyProjectListItem(project)).toBe("active-actionable");
+  });
+
+  it("keeps an active project under a parked ancestor out of actionable projects", () => {
+    const project = makeProject({
+      status: "active", effectivelyParked: true, nextAction: makeTask(), stuckReason: null,
     });
     expect(classifyProjectListItem(project)).toBe("active-deferred");
   });
