@@ -89,12 +89,20 @@ describe("project activation snapshot visibility at every public exit", () => {
     const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
     const viewer = member("Viewer"), other = member("Other");
     const hidden = createProject(ctx.handle.db, { title: "Hidden prerequisite project", scope: "work", ownerMemberId: other.id });
-    const prerequisite = ctx.handle.db.insert(schema.workItems).values({
-      title: "Visible prerequisite", role: "task", status: "active", parentId: hidden.id,
-      scope: "work", ownerMemberId: viewer.id, ownerInheritanceMode: "explicit",
+    const intermediate = ctx.handle.db.insert(schema.workItems).values({
+      title: "Visible prerequisite project", role: "story", status: "active", parentId: hidden.id,
+      ownerMemberId: viewer.id,
     }).returning().get();
-    const project = createProject(ctx.handle.db, { title: "Visible project", scope: "work", ownerMemberId: viewer.id });
-    const dependent = createTask(ctx.handle.db, { title: "Dependent", projectId: project.id });
+    const prerequisite = ctx.handle.db.insert(schema.workItems).values({
+      title: "Visible prerequisite", role: "task", status: "active", parentId: intermediate.id,
+      scheduledDate: "2099-01-01",
+    }).returning().get();
+    const project = ctx.handle.db.insert(schema.workItems).values({
+      title: "Visible project", role: "story", status: "backlog", ownerMemberId: viewer.id,
+    }).returning().get();
+    const dependent = ctx.handle.db.insert(schema.workItems).values({
+      title: "Dependent", role: "task", status: "active", parentId: project.id,
+    }).returning().get();
     ctx.handle.db.insert(schema.taskDependencies).values({ taskId: dependent.id, dependsOnTaskId: prerequisite.id }).run();
     const readiness = [];
     for (const status of ["backlog", "active"] as const) {
