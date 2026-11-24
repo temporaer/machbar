@@ -212,8 +212,6 @@ function ReviewPageContent({
         return strings.reviewReasonBlocked;
       case "completion_review":
         return strings.reviewReasonCompletion;
-      case "backlog_planned_work":
-        return strings.reviewReasonBacklogPlannedWork;
       case "backlog_revisit_reached":
         return strings.reviewReasonBacklogRevisitReached;
       case "task_scheduled_before_resurface":

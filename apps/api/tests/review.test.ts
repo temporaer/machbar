@@ -1688,16 +1688,20 @@ describe("review queue", () => {
     ]);
   });
 
-  it("flags a backlog project that already carries actionable open work, not merely scheduled/due dates", () => {
+  it("does not flag backlog projects merely for containing open or completed work", () => {
     const actionableWork = ctx.handle.db
       .insert(schema.workItems)
       .values({ role: "story", status: "backlog", title: "Backlog with actionable work" })
       .returning()
       .get();
-    ctx.handle.db
+    const rootTask = ctx.handle.db
       .insert(schema.workItems)
       .values({ role: "task", status: "active", parentId: actionableWork.id, title: "Do now" })
-      .run();
+      .returning().get();
+    ctx.handle.db.insert(schema.workItems).values([
+      { role: "task", status: "active", parentId: rootTask.id, title: "Nested" },
+      { role: "task", status: "done", parentId: rootTask.id, title: "Completed" },
+    ]).run();
 
     // Backlog dates are intentional planning/constraint signals (Week already
     // surfaces them) and must not by themselves flag repair debt.
@@ -1743,13 +1747,12 @@ describe("review queue", () => {
       .values({ role: "task", status: "backlog", parentId: cleanBacklog.id, title: "Someday" })
       .run();
 
-    const flagged = reviewItems().filter(
-      (item) => item.reason === "backlog_planned_work",
-    );
-    expect(flagged.map((item) => item.entityId)).toEqual([actionableWork.id]);
-    expect(flagged.some((item) => item.entityId === scheduledWork.id)).toBe(false);
-    expect(flagged.some((item) => item.entityId === dueWork.id)).toBe(false);
-    expect(flagged.some((item) => item.entityId === cleanBacklog.id)).toBe(false);
+    const repairIds = reviewItems()
+      .filter((item) => item.entityType === "project" && item.category === "clarification_repair")
+      .map((item) => item.entityId);
+    for (const project of [actionableWork, scheduledWork, dueWork, cleanBacklog]) {
+      expect(repairIds).not.toContain(project.id);
+    }
   });
 
   it("flags a task scheduled or due before its project's resurface date", () => {

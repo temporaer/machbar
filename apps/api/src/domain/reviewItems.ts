@@ -117,7 +117,6 @@ const reasonOrder: Record<ReviewReason, number> = {
   project_due_before_resurface: 5,
   task_due_before_resurface: 6,
   task_scheduled_before_resurface: 7,
-  backlog_planned_work: 8,
   backlog_revisit_reached: 9,
   completed_project_open_work: 10,
   completion_review: 11,
@@ -257,24 +256,6 @@ export function buildReviewItems(
           { code: "defer_project", targetEntityType: "project", targetEntityId: project.id },
         ),
       );
-    }
-
-    if (project.status === "backlog") {
-      const openTasks = tasks.filter(isOpen);
-      // Backlog dates are intentional planning/constraint signals (Week
-      // already surfaces them) and are not by themselves a repair issue.
-      // Only genuinely executable work leaking from a parked project counts.
-      const hasPlannedWork = openTasks.some((task) => task.status === "actionable");
-      if (hasPlannedWork) {
-        items.push(
-          projectItem(
-            project,
-            "clarification_repair",
-            "backlog_planned_work",
-            { code: "activate_project", targetEntityType: "project", targetEntityId: project.id },
-          ),
-        );
-      }
     }
 
     if (project.status === "completed" || project.status === "archived") {

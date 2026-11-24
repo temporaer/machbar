@@ -1367,7 +1367,6 @@ export type ReviewReason =
   | "backlog_due"
   | "backlog_revisit_reached"
   | "standalone_someday_stale"
-  | "backlog_planned_work"
   | "task_scheduled_before_resurface"
   | "task_due_before_resurface"
   | "project_due_before_resurface"

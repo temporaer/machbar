@@ -1170,10 +1170,7 @@ Review contains structural decisions: missing project driver or progress path,
 due-without-plan, malformed waiting, broken blocker paths, XL work without
 breakdown, completion review, and age-based reconsideration. It also flags
 semantic contradictions between a project's own dates/status and its child
-tasks: a backlog project already carrying genuinely executable/actionable open
-work (an intentionally scheduled or due child-task date alone is not flagged —
-those task dates are allowed planning signals that Week surfaces); a task
-scheduled or due before its project's Wiedervorlage (`scheduledDate`); a
+tasks: a task scheduled or due before its project's Wiedervorlage; a
 project whose deadline precedes its own Wiedervorlage; and a completed/archived
 project that still has open child tasks (a repair signal for legacy/corrupt or
 externally-created data — normal completion no longer creates this state, since

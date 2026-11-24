@@ -1197,8 +1197,6 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   reviewReasonWaiting: "Der Wartepfad braucht eine künftige Wiedervorlage.",
   reviewReasonBlocked: "Die Blockierung hat keinen erkennbaren Weg nach vorn.",
   reviewReasonAge: "Diese Arbeit wurde länger nicht bewusst bestätigt.",
-  reviewReasonBacklogPlannedWork:
-    "Dieses Backlog-Projekt hat bereits geplante oder ausführbare Arbeit — das widerspricht dem Backlog-Status.",
   reviewReasonBacklogRevisitReached:
     "Die Wiedervorlage dieses Backlog-Projekts ist erreicht.",
   reviewReasonTaskScheduledBeforeResurface:

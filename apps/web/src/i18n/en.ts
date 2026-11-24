@@ -1254,8 +1254,6 @@ When the person ends the reflection, provide a concise human-readable summary an
   reviewReasonWaiting: "The waiting path needs a future revisit.",
   reviewReasonBlocked: "The blockage has no clear path forward.",
   reviewReasonAge: "This work has not been intentionally confirmed for a while.",
-  reviewReasonBacklogPlannedWork:
-    "This backlog project already has planned or executable work — that contradicts its backlog status.",
   reviewReasonBacklogRevisitReached:
     "This backlog project's revisit date has been reached.",
   reviewReasonTaskScheduledBeforeResurface:

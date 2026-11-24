@@ -747,7 +747,7 @@ describe("ReviewPage", () => {
 
     it("opens the canonical planning workflow for a plan_task repair", async () => {
       mockedApi.getReviewItems.mockResolvedValue([
-        repairItem(32, unplannedTask.title, "backlog_planned_work", "plan_task"),
+        repairItem(32, unplannedTask.title, "task_scheduled_before_resurface", "plan_task"),
       ]);
       renderWithProviders(
         <>
