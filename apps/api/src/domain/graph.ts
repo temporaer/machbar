@@ -610,14 +610,16 @@ export class Graph {
       }
       return false;
     };
+    const conservativelyGatedProjectIds = new Set<number>();
     for (const id of allProjectStatuses.keys()) {
-      if (!visibleItemIds.has(id)) workingStatuses.set(id, "backlog");
+      if (!visibleItemIds.has(id)) conservativelyGatedProjectIds.add(id);
     }
     for (const project of rawProjects) {
       if (project.status === "active" && hasHiddenProjectAncestor(project.parentId)) {
-        workingStatuses.set(project.id, "backlog");
+        conservativelyGatedProjectIds.add(project.id);
       }
     }
+    for (const id of conservativelyGatedProjectIds) workingStatuses.set(id, "backlog");
     for (const [id, status] of workingStatuses) graph.workingProjectStatuses.set(id, status);
     const blockerInputs = new Map(
       rawTasks.map((task) => [
@@ -684,6 +686,9 @@ export class Graph {
           const simulatedStatuses = new Map(allProjectStatuses);
           for (const id of toActivate) simulatedStatuses.set(id, "active");
           activationStatuses = effectiveProjectStatuses(allWorkItemRows, simulatedStatuses);
+          for (const id of conservativelyGatedProjectIds) {
+            if (!seen.has(id)) activationStatuses.set(id, "backlog");
+          }
         }
         const activationBlockers =
           unchanged

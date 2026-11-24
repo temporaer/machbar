@@ -120,7 +120,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const activationDecisionSnapshot = projectActivationDecisionSnapshot(db, id);
     // A readable child may have a hidden ancestor. Keep its own document
     // readable, but do not expose a partial/misleading commitment snapshot.
-    const snapshotVisible = [...activationDecisionSnapshot.expectedProjects, ...activationDecisionSnapshot.projects]
+    const snapshotVisible = project.effectivelyParked !== null && [...activationDecisionSnapshot.expectedProjects, ...activationDecisionSnapshot.projects]
       .every(entry => graph.projectsById.has(entry.projectId));
     return {
       ...project,

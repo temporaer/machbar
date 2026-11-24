@@ -77,10 +77,37 @@ describe("project activation snapshot visibility at every public exit", () => {
         executable: response.json().nextAction?.executable,
         readiness: response.json().activationReadiness,
         intermediateExecutable: taskResponse?.json().executable ?? null,
+        snapshotPresent: Object.hasOwn(response.json(), "activationDecisionSnapshot"),
       });
       expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
     }
     if (!ancestorVisible) expect(projections[0]).toEqual(projections[1]);
+  });
+
+  it("does not infer an unrelated hidden prerequisite project's status from activation readiness", async () => {
+    ctx = createTestContext();
+    const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
+    const viewer = member("Viewer"), other = member("Other");
+    const hidden = createProject(ctx.handle.db, { title: "Hidden prerequisite project", scope: "work", ownerMemberId: other.id });
+    const prerequisite = ctx.handle.db.insert(schema.workItems).values({
+      title: "Visible prerequisite", role: "task", status: "active", parentId: hidden.id,
+      scope: "work", ownerMemberId: viewer.id, ownerInheritanceMode: "explicit",
+    }).returning().get();
+    const project = createProject(ctx.handle.db, { title: "Visible project", scope: "work", ownerMemberId: viewer.id });
+    const dependent = createTask(ctx.handle.db, { title: "Dependent", projectId: project.id });
+    ctx.handle.db.insert(schema.taskDependencies).values({ taskId: dependent.id, dependsOnTaskId: prerequisite.id }).run();
+    const readiness = [];
+    for (const status of ["backlog", "active"] as const) {
+      ctx.handle.db.update(schema.workItems).set({ status }).where(eq(schema.workItems.id, hidden.id)).run();
+      const response = await ctx.app.inject({
+        method: "GET", url: `/api/projects/${project.id}`,
+        headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id) },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).not.toContain(hidden.title);
+      readiness.push(response.json().activationReadiness);
+    }
+    expect(readiness[0]).toEqual(readiness[1]);
   });
 });
 
