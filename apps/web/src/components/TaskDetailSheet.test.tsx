@@ -1561,7 +1561,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Wieder warten");
 
     const statuses = await openStatusChoices();
-    await userEvent.click(within(statuses).getByRole("button", { name: "Irgendwann" }));
+    await userEvent.click(within(statuses).getByRole("button", { name: "Später" }));
 
     await waitFor(() =>
       expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(
@@ -2188,7 +2188,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Status wählen");
 
     expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Irgendwann" }));
+    await userEvent.click(screen.getByRole("button", { name: "Später" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(55, {

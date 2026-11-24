@@ -167,7 +167,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
 
     swipe(container, 100);
     const lifecycle = screen.getByRole("group", { name: "Status" });
-    expect(within(lifecycle).getByRole("button", { name: "Später / noch nicht aktiv" })).toHaveAttribute("aria-current", "true");
+    expect(within(lifecycle).getByRole("button", { name: "Später" })).toHaveAttribute("aria-current", "true");
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Projekt starten" }));
     await act(async () => {
       await flushMicrotasks();
@@ -180,7 +180,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     // Optimistic: still shown, muted, with the new status while retained.
     expect(screen.getByText("Garten aufräumen")).toBeInTheDocument();
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
-    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später");
   });
 
   it("collects a missing driver before activation from the lifecycle rail", async () => {
@@ -284,7 +284,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
       expectedRevision: 1,
     });
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
-    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später");
     expect(screen.getByText("Winterreifen wechseln")).toBeInTheDocument();
   });
 

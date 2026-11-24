@@ -97,7 +97,7 @@ describe("TodayPage", () => {
       ],
     });
     renderWithProviders(<TodayPage />);
-    expect(await screen.findByRole("button", { name: "Parked deadline — Zurückgestellt" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Parked deadline — Später" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Private lineage — Verfügbarkeit unklar" })).toBeVisible();
   });
 

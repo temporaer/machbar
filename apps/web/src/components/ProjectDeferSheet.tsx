@@ -20,7 +20,7 @@ function toRevisitAt(
  * The canonical `story.defer` workflow, separate from deadline editing.
  * `revisitAt` has explicit semantics for a project
  * ("before this instant, this project is intentionally not relevant"), so
- * the question is "Bis wann zurückstellen?" with convenience shortcuts.
+ * the question is how long the project should stay under Later.
  */
 export function ProjectDeferSheet({
   story,

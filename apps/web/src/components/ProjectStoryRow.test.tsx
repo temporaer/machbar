@@ -210,7 +210,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
       expectedRevision: 1,
     });
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
-    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später");
   });
 
   it("completes an active story", async () => {
@@ -568,8 +568,8 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
-    const restoreSheet = await screen.findByRole("dialog", { name: "In Backlog zurückholen" });
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurück zu Später" }));
+    const restoreSheet = await screen.findByRole("dialog", { name: "Zurück zu Später" });
     await userEvent.click(within(restoreSheet).getByRole("button", { name: "Ohne Wiedervorlage" }));
     await act(async () => {
       await flushMicrotasks();
@@ -768,8 +768,8 @@ describe("ProjectStoryRow – activation preparation", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
-    const restoreSheet = await screen.findByRole("dialog", { name: "In Backlog zurückholen" });
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurück zu Später" }));
+    const restoreSheet = await screen.findByRole("dialog", { name: "Zurück zu Später" });
     await userEvent.click(within(restoreSheet).getByRole("button", { name: "Ohne Wiedervorlage" }));
     await act(async () => {
       await flushMicrotasks();
@@ -824,14 +824,14 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     let lifecycle = openLifecycleRail(completedContainer);
     expect(within(lifecycle).getByRole("button", { name: "Wieder öffnen" })).toBeInTheDocument();
     expect(within(lifecycle).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
-    expect(within(lifecycle).queryByRole("button", { name: "Zurückstellen …" })).not.toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Auf Später setzen …" })).not.toBeInTheDocument();
     unmount();
 
     const archived = makeProject({ id: 42, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 });
     const { container } = renderWithProviders(<Harness story={archived} />);
     await screen.findByText("Archivierte Geschichte");
     lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "Zurück zu Später" })).toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
@@ -843,8 +843,8 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Doch nicht jetzt");
 
     const lifecycle = openLifecycleRail(container);
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
-    const deferSheet = await screen.findByRole("dialog", { name: "Zurückstellen …" });
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf Später setzen …" }));
+    const deferSheet = await screen.findByRole("dialog", { name: "Auf Später setzen …" });
     await userEvent.click(
       within(deferSheet).getByRole("button", { name: "Ohne Wiedervorlage" }),
     );
@@ -872,7 +872,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).queryByRole("button", { name: "Niemand zugewiesen" })).not.toBeInTheDocument();
     expect(
-      screen.getByText("Die verantwortliche Person kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht."),
+      screen.getByText("Die verantwortliche Person kann erst entfernt werden, wenn das Vorhaben wieder unter Später steht."),
     ).toBeInTheDocument();
 
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
@@ -940,7 +940,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).getByRole("button", { name: "Niemand zugewiesen" })).toBeInTheDocument();
     expect(
-      screen.queryByText("Die verantwortliche Person kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht."),
+      screen.queryByText("Die verantwortliche Person kann erst entfernt werden, wenn das Vorhaben wieder unter Später steht."),
     ).not.toBeInTheDocument();
   });
 
@@ -988,7 +988,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
       within(deferSheet).getByRole("heading", { name: "Wiedervorlage" }),
     ).toBeInTheDocument();
     expect(
-      within(deferSheet).getByText("Bis wann zurückstellen?"),
+      within(deferSheet).getByText("Bis wann soll es unter Später bleiben?"),
     ).toBeInTheDocument();
     expect(
       within(deferSheet).queryByRole("button", { name: "+ Deadline hinzufügen" }),
@@ -1137,7 +1137,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
   });
 
   it.each<[ProjectStatus, string, string]>([
-    ["backlog", "Später / noch nicht aktiv", "Projekt starten"],
+    ["backlog", "Später", "Projekt starten"],
     ["active", "Aktiv", "Abschließen"],
   ])(
     "shows the current status (%s) and a labelled non-gesture primary control",
@@ -1205,7 +1205,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     // … and every status change is an explicitly named lifecycle-rail button.
     fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     const lifecycle = openLifecycleRail(container);
-    for (const label of ["Abschließen", "Zurückstellen …", "Archivieren"]) {
+    for (const label of ["Abschließen", "Auf Später setzen …", "Archivieren"]) {
       expect(within(lifecycle).getByRole("button", { name: label })).toBeEnabled();
     }
     expect((container.querySelector(".story-row-primary") as HTMLElement).getAttribute("aria-label")).toBe(
@@ -1549,7 +1549,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     });
 
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
-    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später");
     expect(container.querySelector(".story-row-primary")).toBeDisabled();
 
     await act(async () => {
@@ -1559,7 +1559,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
 
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
     expect(container.querySelector(".story-row-primary")).not.toBeDisabled();
-    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später / noch nicht aktiv");
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Später");
   });
 
   it("reopens after the completed server row arrives", async () => {
@@ -1704,7 +1704,7 @@ describe("ProjectStoryRow – semantic status accents", () => {
     const primary = screen.getByRole("button", { name: "Abschließen" });
     expect(primary).toHaveClass("story-row-primary--waiting");
     const lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "Zurückstellen …" })).toBeEnabled();
+    expect(within(lifecycle).getByRole("button", { name: "Auf Später setzen …" })).toBeEnabled();
     expect(within(lifecycle).getByRole("button", { name: "Archivieren" })).toBeEnabled();
     expect(within(lifecycle).getByRole("button", { name: "Abschließen" })).toBeEnabled();
 

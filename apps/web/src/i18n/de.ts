@@ -122,7 +122,7 @@ const base = {
       possibility: "Wie würdest du einen wichtigen Moment gern gestalten, wenn Erwartungen anderer kurz Pause hätten?",
     } },
   },
-  projects: "Projekte",
+  projects: "Vorhaben",
   waiting: "Wartet",
   more: "Mehr",
   weekPlanning: "Wochenplanung",
@@ -488,8 +488,8 @@ const base = {
   revisitProceedAnyway:  "Trotzdem angehen",
   inherited: "Geerbt",
   actionable: "Machbar",
-  someday: "Irgendwann",
-  attentionDeferred: "Zurückgestellt",
+  someday: "Später",
+  attentionDeferred: "Später",
   attentionUnavailable: "Verfügbarkeit unklar",
   done: "Erledigt",
   cancelled: "Verworfen",
@@ -696,7 +696,7 @@ const extra = {
   addNextAction: "Nächsten Schritt hinzufügen",
   projectSteps: "Schritte",
   plan: "Planen",
-  deferProject: "Zurückstellen …",
+  deferProject: "Auf Später setzen …",
   activateProject: "Projekt aktivieren",
   projectLifecycle: "Projektstatus prüfen",
   appendNote: "Notiz hinzufügen",
@@ -705,7 +705,7 @@ const extra = {
   clarifyNow: "Jetzt klären",
   classifyAsAction: "Machbar",
   classifyAsBacklog: "In Projekt umwandeln",
-  classifyAsSomeday: "Irgendwann",
+  classifyAsSomeday: "Später",
   workItemRole: "Typ",
   convertToProject: "In Projekt umwandeln",
   convertToProjectBacklog: "In Projekt umwandeln",
@@ -890,7 +890,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     oneWeek: "1 Woche",
     noDate: "Kein Datum",
   },
-  projectDeferQuestion: "Bis wann zurückstellen?",
+  projectDeferQuestion: "Bis wann soll es unter Später bleiben?",
   projectDeferWithoutRevisit: "Ohne Wiedervorlage",
   projectDeferShortcutLabels: {
     tomorrow: "Morgen",
@@ -1032,7 +1032,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   refinementPlanningIncomplete: "Bitte vervollständige oder verwirf die offene Erinnerung, bevor du fortfährst.",
   refinementConvert: "In ein Projekt umwandeln",
   aiProjectWillBeActive: "Wird aktives Projekt – bleibt in deiner aktiven Arbeit.",
-  aiProjectWillBeBacklog: "Wird Backlog-Projekt.",
+  aiProjectWillBeBacklog: "Wird unter Später eingeordnet.",
   aiProjectActivationResolvedOnApply: "Wird als zurückgestelltes Projekt angelegt.",
   aiProjectDriverLabel: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?",
   aiProjectDriverHint: "Die verantwortliche Person koordiniert und schützt den Fortschritt; sie muss nicht alle Schritte selbst ausführen.",
@@ -1182,8 +1182,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   reviewKeep: "So beibehalten",
   reviewRescheduleRevisit: "Wiedervorlage verschieben",
   reviewStart: "Starten",
-  reviewBacklog: "Im Backlog lassen",
-  reviewSomeday: "Irgendwann lassen",
+  reviewBacklog: "Für Später behalten",
+  reviewSomeday: "Für Später behalten",
   reviewArchive: "Archivieren",
   reviewCancel: "Verwerfen",
   reviewCategoryStructure: "Fortschritt ermöglichen",
@@ -1198,9 +1198,9 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   reviewReasonBlocked: "Die Blockierung hat keinen erkennbaren Weg nach vorn.",
   reviewReasonAge: "Diese Arbeit wurde länger nicht bewusst bestätigt.",
   reviewReasonBacklogPlannedWork:
-    "Dieses Backlog-Projekt hat bereits geplante oder ausführbare Arbeit — das widerspricht dem Backlog-Status.",
+    "Dieses Vorhaben unter Später hat bereits geplante oder ausführbare Arbeit — das widerspricht seinem zurückgestellten Status.",
   reviewReasonBacklogRevisitReached:
-    "Die Wiedervorlage dieses Backlog-Projekts ist erreicht.",
+    "Die Wiedervorlage dieses Vorhabens unter Später ist erreicht.",
   reviewReasonProjectRevisitReached: "Die Wiedervorlage dieses Projekts ist erreicht.",
   reviewReasonTaskScheduledBeforeResurface:
     "Diese Aufgabe ist vor der Wiedervorlage des Projekts eingeplant.",
@@ -1232,7 +1232,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   commitmentDriverFor: (title: string) => `Verantwortlich für „${title}“`,
   commitmentNextActionLabel: "Welcher konkrete nächste Schritt bringt das Projekt voran?",
   driverLockedHint:
-    "Die verantwortliche Person kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht.",
+    "Die verantwortliche Person kann erst entfernt werden, wenn das Vorhaben wieder unter Später steht.",
   noDriver: "Niemand zugewiesen",
   criteria: "Erledigt, wenn …",
   outcomeSectionTitle: "Ergebnis",
@@ -1254,8 +1254,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   taskCaptureConfirmed: (title: string) => `„${title}“ in den Eingang verschoben.`,
   taskMakingActionable: "Wird als machbar markiert …",
   taskActionableConfirmed: (title: string) => `„${title}“ als machbar markiert.`,
-  taskMovingToSomeday: "Wird auf Irgendwann gesetzt …",
-  taskSomedayConfirmed: (title: string) => `„${title}“ auf Irgendwann gesetzt.`,
+  taskMovingToSomeday: "Wird auf Später gesetzt …",
+  taskSomedayConfirmed: (title: string) => `„${title}“ auf Später gesetzt.`,
   taskCriteria: "Erledigt, wenn",
   taskCriteriaSummary: (checked: number, total: number) => `${checked}/${total} Kriterien`,
   taskCriteriaCompletionHint: "Alle Kriterien müssen abgehakt sein, bevor die Aufgabe abgeschlossen werden kann.",
@@ -1276,7 +1276,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   storyArchived: "Archiviert",
   storyCompleted: "Abgeschlossen",
   storyReopened: "Wieder geöffnet",
-  storyReturnedToBacklog: "Auf später verschoben",
+  storyReturnedToBacklog: "Auf Später gesetzt",
 
   // --- Projects tab (Projekte) -----------------------------------------
   waitingHouseholdScope: "Wartende Aufgaben aller Personen anzeigen",
@@ -1355,15 +1355,17 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   showAllProjects: "Alle anzeigen",
   noMatchingProjects: "Keine Projekte für Suche/Filter.",
   activeProjectsSection: "Aktiv & festgefahren",
-  quietProjectsSection: (count: number) => `Wartet / zurückgestellt (${count})`,
-  backlogProjectsSection: "Später / noch nicht aktiv",
+  quietProjectsSection: (count: number) => `Wartet / geplant (${count})`,
+  laterSection: (count: number) => `Später (${count})`,
+  laterProjectsGroup: (count: number) => `Projekte (${count})`,
+  laterTasksGroup: (count: number) => `Einzelaufgaben (${count})`,
   finishedProjectsSection: (count: number) => `Abgeschlossen & archiviert (${count})`,
 
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   openProject: "Projekt öffnen",
   projectDangerSection: "Projekt löschen",
-  returnToBacklogStory: "Zurückstellen …",
-  restoreProjectToBacklog: "In Backlog zurückholen",
+  returnToBacklogStory: "Auf Später setzen …",
+  restoreProjectToBacklog: "Zurück zu Später",
   completeStory: "Abschließen",
   taskProgress: "Aufgaben",
   addCriterion: "Punkt hinzufügen",
@@ -1802,7 +1804,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     project_driver_required:
       "Das Projekt braucht zuerst eine verantwortliche Person.",
     project_backlog_owner_forbidden:
-      "Ein Haushaltsprojekt im Backlog kann keine verantwortliche Person haben. Aktiviere es, um eine Person festzulegen.",
+      "Ein zurückgestelltes Haushaltsvorhaben kann keine verantwortliche Person haben. Aktiviere es, um eine Person festzulegen.",
     project_activation_not_ready:
       "Füge vor dem Start einen ausführbaren nächsten Schritt oder einen gesunden Wartepfad hinzu.",
     project_completion_resolution_required:
@@ -2093,7 +2095,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
 const taskStatusLabels: Record<TaskStatus, string> = {
   captured: "Erfasst",
   actionable: "Machbar",
-  someday: "Irgendwann",
+  someday: "Später",
   done: "Erledigt",
   cancelled: "Verworfen",
 };
@@ -2106,7 +2108,7 @@ const stuckReasonLabels: Record<StuckReason, string> = {
 };
 
 const projectStatusLabels: Record<ProjectStatus, string> = {
-  backlog: "Später / noch nicht aktiv",
+  backlog: "Später",
   active: "Aktiv",
   completed: "Abgeschlossen",
   archived: "Archiviert",

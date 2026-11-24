@@ -474,7 +474,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     ).toEqual(["Nachhaken", "Planen"]);
     expect(within(rail).queryByRole("button", { name: "Für Besprechung vormerken" })).not.toBeInTheDocument();
     expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
-    expect(within(rail).queryByRole("button", { name: "Irgendwann" })).not.toBeInTheDocument();
+    expect(within(rail).queryByRole("button", { name: "Später" })).not.toBeInTheDocument();
   });
 
   it("offers clarification, clarification deferral and structure for captured tasks", async () => {
@@ -758,7 +758,7 @@ describe("TaskRow – calm shared card presentation", () => {
   });
 
   it.each([
-    ["someday", "Irgendwann"],
+    ["someday", "Später"],
     ["done", "Erledigt"],
     ["cancelled", "Verworfen"],
   ] as const)("keeps the exceptional %s status as quiet metadata", async (status, label) => {

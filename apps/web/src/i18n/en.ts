@@ -13,7 +13,7 @@ import type { TranslationCatalog } from "./catalog";
 const taskStatusLabels: Record<TaskStatus, string> = {
   captured: "Captured",
   actionable: "Ready",
-  someday: "Someday",
+  someday: "Later",
   done: "Done",
   cancelled: "Discarded",
 };
@@ -26,7 +26,7 @@ const stuckReasonLabels: Record<StuckReason, string> = {
 };
 
 const projectStatusLabels: Record<ProjectStatus, string> = {
-  backlog: "Later / not active yet",
+  backlog: "Later",
   active: "Active",
   completed: "Completed",
   archived: "Archived",
@@ -56,7 +56,7 @@ const assessmentBandLabels: Record<AssessmentBand, string> = {
 };
 
 const en = {
-  attentionDeferred: "Deferred",
+  attentionDeferred: "Later",
   attentionUnavailable: "Availability unknown",
   createProjectAction: "Create project",
   projectCreated: "Project created",
@@ -198,7 +198,7 @@ const en = {
       possibility: "How would you shape an important moment if other people’s expectations could take a break?",
     } },
   },
-  projects: "Projects",
+  projects: "Plans",
   waiting: "Waiting",
   more: "More",
   weekPlanning: "Week planning",
@@ -565,7 +565,7 @@ const en = {
   revisitProceedAnyway:  "Proceed anyway",
   inherited: "Inherited",
   actionable: "Ready",
-  someday: "Someday",
+  someday: "Later",
   done: "Done",
   cancelled: "Discarded",
   clarify: "Clarify",
@@ -758,7 +758,7 @@ const en = {
   addNextAction: "Add next step",
   projectSteps: "Steps",
   plan: "Plan",
-  deferProject: "Defer project …",
+  deferProject: "Move to Later …",
   activateProject: "Activate project",
   projectLifecycle: "Review project status",
   appendNote: "Add note",
@@ -767,7 +767,7 @@ const en = {
   clarifyNow: "Clarify now",
   classifyAsAction: "Ready action",
   classifyAsBacklog: "Convert to project",
-  classifyAsSomeday: "Someday",
+  classifyAsSomeday: "Later",
   workItemRole: "Type",
   convertToProject: "Convert to project",
   convertToProjectBacklog: "Convert to project",
@@ -958,7 +958,7 @@ When the person ends the reflection, provide a concise human-readable summary an
     oneWeek: "1 week",
     noDate: "No date",
   },
-  projectDeferQuestion: "Defer until when?",
+  projectDeferQuestion: "How long should it stay under Later?",
   projectDeferWithoutRevisit: "Without revisit",
   projectDeferShortcutLabels: {
     tomorrow: "Tomorrow",
@@ -1100,7 +1100,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   refinementPlanningIncomplete: "Complete or discard the open reminder before continuing.",
   refinementConvert: "Convert to a project",
   aiProjectWillBeActive: "Becomes an active project and stays in your active work.",
-  aiProjectWillBeBacklog: "Becomes a backlog project.",
+  aiProjectWillBeBacklog: "Appears under Later.",
   aiProjectActivationResolvedOnApply: "Created as a deferred project.",
   aiProjectDriverLabel: "Who is accountable for this project reaching its outcome?",
   aiProjectDriverHint: "The accountable person coordinates and protects progress; they do not need to execute every step.",
@@ -1238,8 +1238,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   reviewKeep: "Keep as is",
   reviewRescheduleRevisit: "Reschedule revisit",
   reviewStart: "Start",
-  reviewBacklog: "Keep in backlog",
-  reviewSomeday: "Keep for someday",
+  reviewBacklog: "Keep under Later",
+  reviewSomeday: "Keep under Later",
   reviewArchive: "Archive",
   reviewCancel: "Discard",
   reviewCategoryStructure: "Enable progress",
@@ -1254,9 +1254,9 @@ When the person ends the reflection, provide a concise human-readable summary an
   reviewReasonBlocked: "The blockage has no clear path forward.",
   reviewReasonAge: "This work has not been intentionally confirmed for a while.",
   reviewReasonBacklogPlannedWork:
-    "This backlog project already has planned or executable work — that contradicts its backlog status.",
+    "This plan under Later already has planned or executable work — that contradicts its deferred status.",
   reviewReasonBacklogRevisitReached:
-    "This backlog project's revisit date has been reached.",
+    "This plan under Later has reached its revisit date.",
   reviewReasonProjectRevisitReached: "This project's revisit date has been reached.",
   reviewReasonTaskScheduledBeforeResurface:
     "This task is scheduled before the project's own resurface date.",
@@ -1310,8 +1310,8 @@ When the person ends the reflection, provide a concise human-readable summary an
   taskCaptureConfirmed: (title: string) => `Moved “${title}” to Inbox.`,
   taskMakingActionable: "Making actionable …",
   taskActionableConfirmed: (title: string) => `Made “${title}” actionable.`,
-  taskMovingToSomeday: "Moving to Someday …",
-  taskSomedayConfirmed: (title: string) => `Moved “${title}” to Someday.`,
+  taskMovingToSomeday: "Moving to Later …",
+  taskSomedayConfirmed: (title: string) => `Moved “${title}” to Later.`,
   taskCriteria: "Done when",
   taskCriteriaSummary: (checked: number, total: number) => `${checked}/${total} criteria`,
   taskCriteriaCompletionHint: "Every criterion must be checked before this task can be completed.",
@@ -1332,7 +1332,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   storyArchived: "Archived",
   storyCompleted: "Completed",
   storyReopened: "Reopened",
-  storyReturnedToBacklog: "Moved to later",
+  storyReturnedToBacklog: "Moved under Later",
 
   waitingHouseholdScope: "Show everyone's waiting tasks",
   waitingWorkScope: "Show only your waiting work tasks",
@@ -1410,15 +1410,17 @@ When the person ends the reflection, provide a concise human-readable summary an
   showAllProjects: "Show all",
   noMatchingProjects: "No projects match your search and filters.",
   activeProjectsSection: "Active & stuck",
-  quietProjectsSection: (count: number) => `Waiting / deferred (${count})`,
-  backlogProjectsSection: "Later / not active yet",
+  quietProjectsSection: (count: number) => `Waiting / scheduled (${count})`,
+  laterSection: (count: number) => `Later (${count})`,
+  laterProjectsGroup: (count: number) => `Plans (${count})`,
+  laterTasksGroup: (count: number) => `Standalone tasks (${count})`,
   finishedProjectsSection: (count: number) =>
     `Completed & archived (${count})`,
 
   openProject: "Open project",
   projectDangerSection: "Delete project",
-  returnToBacklogStory: "Defer project …",
-  restoreProjectToBacklog: "Restore to backlog",
+  returnToBacklogStory: "Move to Later …",
+  restoreProjectToBacklog: "Return to Later",
   completeStory: "Complete",
   taskProgress: "Tasks",
   addCriterion: "Add item",
@@ -1851,7 +1853,7 @@ When the person ends the reflection, provide a concise human-readable summary an
       "The project lead cannot be removed in this project status.",
     project_driver_required: "The project needs a lead first.",
     project_backlog_owner_forbidden:
-      "A household project in the backlog cannot have an owner. Activate it to assign a lead.",
+      "A household plan under Later cannot have a driver. Activate it to assign one.",
     project_activation_not_ready:
       "Add an executable next step or a healthy waiting path before starting.",
     project_completion_resolution_required:

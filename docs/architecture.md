@@ -1287,14 +1287,28 @@ Project descendants are reached through project detail rather than duplicated
 beside the project. Active search/filtering may return a matching nested task
 directly and searches project title/notes as well as tasks.
 
-### Projects tab — `/projects`
+### Vorhaben tab — `/projects`
 
-`ProjectsPage` renders the same `ProjectStoryRow` (card variant) for active,
-backlog, completed, and archived projects. Active stories stay primary, backlog
-stories render in their own visible but collapsed-by-default **Später / noch
-nicht aktiv** section, and completed/archived stories remain folded.
+`ProjectsPage` keeps active, completed, and archived projects in the existing
+`ProjectStoryRow` presentation and combines deferred projects with standalone
+deferred task roots in one collapsed-by-default **Später (Later)** section,
+grouped into projects and standalone tasks. It composes the existing
+`getProjects()` and `searchTasks({ includeTerminal: true })` reads; both
+projections expose the server-derived `effectivelyDeferred: boolean | null`.
+The nullable value preserves uncertainty when an ancestor is hidden from the
+viewer. The client treats only explicit `backlog`/`someday` status or confirmed
+effective deferral as Later work, and never uses an opaque ancestor to hide an
+otherwise visible item or disclose that ancestor.
 
-- **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail instead, never the one-tap default. Backlog activation is also offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
+The inventory counts only visible roots: a deferred descendant is suppressed
+when its deferred ancestor is also visible, while a child whose parent is
+filtered out can be promoted as a root. Task roots reuse `TaskOutline` and keep
+their descendants in the hierarchy; nested projects remain reachable through
+their parent project detail. Active standalone tasks remain in Today/Available,
+not Later. Scope and search filters apply to both groups, with unassigned
+household work retained in the default personal scope.
+
+- **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail instead, never the one-tap default. Activation remains available from Later, Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** asks what should happen next with the item, revealing up to three contextual interventions in one horizontal row. Lifecycle transitions remain in the separate right-swipe rail.
 - The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step. `archived` only ever offers `return_to_backlog`; there is no direct `archived → active` shortcut anywhere in the UI.
 - Activation requires a driver plus an executable progress path or intentional

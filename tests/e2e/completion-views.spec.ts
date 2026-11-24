@@ -115,7 +115,7 @@ for (const view of views) {
     await page.goto(path);
     if (isMobile && view.name === "All") {
       const row = page.locator(`[data-workitem-id="${task.id}"]`);
-      await row.getByRole("button", { name: task.title, exact: true }).click();
+      await row.getByRole("button", { name: task.title }).click();
       const detail = page.getByRole("dialog", { name: "Details", exact: true });
       await detail.getByRole("button", { name: /^Status / }).click();
       await detail.getByRole("button", { name: "Aufgabe abschließen", exact: true }).click();
@@ -367,7 +367,7 @@ test("Review cancellation confirms its own action after the card disappears", as
 });
 
 for (const { from, to, button, message } of [
-  { from: "actionable", to: "someday", button: "Irgendwann", message: "auf Irgendwann gesetzt." },
+  { from: "actionable", to: "someday", button: "Später", message: "auf Später gesetzt." },
   { from: "someday", to: "actionable", button: "Machbar", message: "als machbar markiert." },
 ] as const) {
 test(`a ${from} to ${to} detail transition confirms in its initiating view`, async ({ page }) => {
@@ -382,7 +382,7 @@ test(`a ${from} to ${to} detail transition confirms in its initiating view`, asy
   await page.goto("/#/more/all");
   const row = page.locator(`[data-workitem-id="${task.id}"]`).first();
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: task.title, exact: true }).click();
+  await row.getByRole("button", { name: task.title }).click();
   const detail = page.getByRole("dialog", { name: "Details", exact: true });
   await detail.getByRole("button", { name: /^Status / }).click();
   await detail.getByRole("button", { name: button, exact: true }).click();
@@ -426,12 +426,12 @@ test("a rejected status write never confirms, and a committed status survives fa
   await page.goto("/#/more/review");
   const card = page.locator(".review-item").filter({ hasText: task.title });
   await expect(card).toBeVisible();
-  await card.getByRole("button", { name: "Irgendwann lassen", exact: true }).click();
+  await card.getByRole("button", { name: "Für Später behalten", exact: true }).click();
   await expect(card.getByRole("alert")).toBeVisible();
   await expect(page.locator(".view-completion-notice")).toHaveCount(0);
   reject = false;
-  await card.getByRole("button", { name: "Irgendwann lassen", exact: true }).click();
-  await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ auf Irgendwann gesetzt.`);
+  await card.getByRole("button", { name: "Für Später behalten", exact: true }).click();
+  await expect(page.locator(".view-completion-notice")).toHaveText(`„${task.title}“ auf Später gesetzt.`);
   await expect(page.locator(".error-state")).toBeVisible();
 });
 
@@ -449,7 +449,7 @@ test("a Review status write cannot announce in a replacement view", async ({ pag
   await page.goto("/#/more/review");
   const card = page.locator(".review-item").filter({ hasText: task.title });
   await expect(card).toBeVisible();
-  await card.getByRole("button", { name: "Irgendwann lassen", exact: true }).click();
+  await card.getByRole("button", { name: "Für Später behalten", exact: true }).click();
   await expect.poll(() => writing).toBe(true);
   await page.goto("/#/more/all");
   await expect(page.locator(`[data-workitem-id="${task.id}"]`).first()).toBeVisible();

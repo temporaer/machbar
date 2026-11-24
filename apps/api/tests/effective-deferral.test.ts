@@ -527,5 +527,12 @@ describe("effective deferral read projections", () => {
       .toMatchObject({ effectivelyDeferred: true });
     expect(visibleToOwner.tasks.find((item) => item.id === task.id))
       .toMatchObject({ effectivelyDeferred: true });
+
+    const visibleToUnknown = await read();
+    expect(visibleToUnknown.projects.find((item) => item.id === project.id))
+      .toMatchObject({ effectivelyDeferred: null });
+    expect(visibleToUnknown.tasks.find((item) => item.id === task.id))
+      .toMatchObject({ effectivelyDeferred: null });
+    expect(JSON.stringify(visibleToUnknown)).not.toContain("Hidden ancestor");
   });
 });

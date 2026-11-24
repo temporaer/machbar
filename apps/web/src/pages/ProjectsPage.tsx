@@ -21,6 +21,7 @@ import {
 } from "../lib/tagGrouping";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
+import { TaskOutline } from "../components/TaskOutline";
 import { BottomSheet } from "../components/BottomSheet";
 import { TagGroupingOptions } from "../components/TagGroupingControl";
 import { ListOptionDisclosureTrigger } from "../components/ListOptionDisclosure";
@@ -31,9 +32,10 @@ import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { nextAgendaScope, readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
+import { selectLaterInventoryRoots } from "../lib/laterInventory";
 
 /**
- * The Projekte tab: current and terminal projects are user stories, and every
+ * The Vorhaben tab: current and terminal projects are user stories, and every
  * row carries the full Scrum-style workflow directly — right swipe (or the dedicated primary
  * button on larger screens) performs the status-appropriate next step, while
  * left swipe or ⋯ reveals the targeted chips plus the remaining legal
@@ -55,6 +57,12 @@ function ProjectsPageContent() {
   const { locale } = useLocale();
   const navigate = useNavigate();
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
+  const {
+    data: tasks,
+    loading: tasksLoading,
+    error: tasksError,
+    reload: reloadTasks,
+  } = useAsync(() => api.searchTasks({ includeTerminal: true }), []);
   const { bump } = useRefresh();
   const { currentMemberId } = useIdentity();
   const actions = useProjectActions();
@@ -96,6 +104,7 @@ function ProjectsPageContent() {
   };
 
   const allProjects = projects ?? [];
+  const allTasks = tasks ?? [];
 
   const now = new Date();
   const filteredProjects = filterAndSortProjects(allProjects, {
@@ -109,6 +118,14 @@ function ProjectsPageContent() {
     scope === "mine"
       ? countScopeHiddenMatches(allProjects, query, currentMemberId)
       : 0;
+  const laterInventory = selectLaterInventoryRoots(allProjects, allTasks, {
+    query,
+    scope,
+    currentMemberId,
+    locale,
+  });
+  const laterProjects = laterInventory.projects;
+  const laterTasks = laterInventory.tasks;
   // Keep workflow meaning ahead of tag grouping: actionable, review, and
   // stuck work stays in the foreground; healthy waiting and deferred work
   // share one quiet folded section, and terminal work remains folded below.
@@ -121,15 +138,15 @@ function ProjectsPageContent() {
       classification === "active-actionable" ||
       classification === "active-review" ||
       classification === "active-stuck"
-    );
+    ) && project.effectivelyDeferred !== true;
   });
   const quietCandidates = filteredProjects.filter((project) => {
     const classification = classifications.get(project.id);
-    return classification === "active-waiting" || classification === "active-deferred";
+    return (
+      (classification === "active-waiting" || classification === "active-deferred") &&
+      project.effectivelyDeferred !== true
+    );
   });
-  const backlogCandidates = filteredProjects.filter(
-    (project) => classifications.get(project.id) === "backlog",
-  );
   const terminalCandidates = filteredProjects.filter((project) => {
     const classification = classifications.get(project.id);
     return classification === "completed" || classification === "archived";
@@ -143,7 +160,7 @@ function ProjectsPageContent() {
   };
   const sections = {
     active: groupCandidates("active", activeCandidates), quiet: groupCandidates("quiet", quietCandidates),
-    backlog: groupCandidates("backlog", backlogCandidates), terminal: groupCandidates("terminal", terminalCandidates),
+    backlog: groupCandidates("backlog", laterProjects), terminal: groupCandidates("terminal", terminalCandidates),
   };
   const groupsFor = (section: Section) => sections[section].flatMap(node => {
     const items = (node.children ?? []).flatMap(child => child.project ? [child.project] : []);
@@ -154,6 +171,7 @@ function ProjectsPageContent() {
   const quietProjects = projectsFor("quiet");
   const backlogProjects = projectsFor("backlog");
   const terminalProjects = projectsFor("terminal");
+  const laterCount = backlogProjects.length + laterTasks.length;
   const renderGroups = (
     sectionKey: Section,
     headingLevel: 2 | 3,
@@ -192,6 +210,9 @@ function ProjectsPageContent() {
   // search (or no terminal matches) the section stays folded by default.
   const revealTerminalProjects = query.trim() !== "" && terminalProjects.length > 0;
   const revealQuietProjects = query.trim() !== "" && quietProjects.length > 0;
+  const revealLater = query.trim() !== "" && laterCount > 0;
+  const readError = error ?? tasksError;
+  const readsLoading = loading || tasksLoading;
 
   return (
     <div className="projects-page">
@@ -278,12 +299,12 @@ function ProjectsPageContent() {
           </div>
         </div>
       </div>
-      {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={reload} /> : null}
-      {projects ? (
-        allProjects.length === 0 && activeProjects.length + quietProjects.length + backlogProjects.length + terminalProjects.length === 0 ? (
+      {readsLoading ? <LoadingState /> : null}
+      {readError ? <ErrorState message={readError} onRetry={() => { reload(); reloadTasks(); }} /> : null}
+      {projects && tasks ? (
+        allProjects.length === 0 && laterCount === 0 ? (
           <EmptyState message={strings.noProjects} />
-        ) : activeProjects.length + quietProjects.length + backlogProjects.length + terminalProjects.length === 0 ? (
+        ) : activeProjects.length + quietProjects.length + laterCount + terminalProjects.length === 0 ? (
           <EmptyState message={strings.noMatchingProjects} />
         ) : (
           <>
@@ -311,18 +332,39 @@ function ProjectsPageContent() {
                 {renderGroups("quiet", 3)}
               </details>
             ) : null}
-            {backlogProjects.length > 0 ? (
+            {laterCount > 0 ? (
               <details
                 className="section"
-                data-project-section="backlog"
-                aria-labelledby="backlog-projects-heading"
+                data-project-section="later"
+                aria-labelledby="later-heading"
+                open={revealLater}
               >
                 <summary className="section-title disclosure-summary">
-                  <span id="backlog-projects-heading" role="heading" aria-level={2}>
-                    {strings.backlogProjectsSection}
+                  <span id="later-heading" role="heading" aria-level={2}>
+                    {strings.laterSection(laterCount)}
                   </span>
                 </summary>
-                {renderGroups("backlog", 3)}
+                {backlogProjects.length > 0 ? (
+                  <section aria-labelledby="later-projects-heading">
+                    <h3 id="later-projects-heading" className="section-title">
+                      {strings.laterProjectsGroup(backlogProjects.length)}
+                    </h3>
+                    {renderGroups("backlog", 3)}
+                  </section>
+                ) : null}
+                {laterTasks.length > 0 ? (
+                  <section aria-labelledby="later-tasks-heading">
+                    <h3 id="later-tasks-heading" className="section-title">
+                      {strings.laterTasksGroup(laterTasks.length)}
+                    </h3>
+                    <TaskOutline
+                      tasks={laterTasks}
+                      emptyMessage={strings.noMatchingProjects}
+                      showSwipeHint={false}
+                      preserveRootOrder
+                    />
+                  </section>
+                ) : null}
               </details>
             ) : null}
             {terminalProjects.length > 0 ? (

@@ -14,7 +14,7 @@ describe("ProjectAgendaRow", () => {
   });
 
   it.each([
-    [true, "Zurückgestellt"],
+    [true, "Später"],
     [null, "Verfügbarkeit unklar"],
   ] as const)("labels deadline availability without exposing hidden ancestors (%s)", (effectivelyDeferred, label) => {
     render(<MemoryRouter><ProjectAgendaRow entry={{
