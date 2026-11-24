@@ -105,6 +105,75 @@ describe("mixed task/project hierarchy regressions", () => {
     return [...agenda.shared, ...agenda.unscheduled, ...agenda.planned].map((task) => task.id);
   }
 
+  it("parks and reactivates a mixed hierarchy through project workflow commands without rewriting descendants", async () => {
+    const member = await create("/api/members", { name: "Driver" });
+    const outer = insertTestProject(ctx.handle.db, { title: "Outer", status: "active", ownerMemberId: member.id });
+    const container = insertTestTask(ctx.handle.db, { title: "Container", projectId: outer.id, notes: "Container notes", taskKind: "action" });
+    const progress = insertTestTask(ctx.handle.db, { title: "Outer progress", projectId: outer.id, taskKind: "action" });
+    const inner = insertTestProject(ctx.handle.db, { title: "Inner", status: "active", parentId: container.id, ownerMemberId: member.id });
+    const open = insertTestTask(ctx.handle.db, { title: "Open", projectId: inner.id, notes: "Keep notes", taskKind: "action" });
+    const done = insertTestTask(ctx.handle.db, { title: "Done", projectId: inner.id, status: "done", scheduledDate: "2026-10-14", completedAt: "2026-10-14T09:00:00.000Z", taskKind: "action" });
+    const someday = insertTestTask(ctx.handle.db, { title: "Someday", projectId: inner.id, status: "someday", taskKind: "action" });
+    const waiting = insertTestTask(ctx.handle.db, { title: "Future revisit", projectId: inner.id, revisitAt: "2099-01-01T09:00:00.000Z", taskKind: "action" });
+    ctx.handle.db.insert(schema.taskReminders).values({ taskId: waiting.id, kind: "absolute", at: "2098-12-31T09:00:00.000Z" }).run();
+    const descendantIds = [container.id, progress.id, inner.id, open.id, done.id, someday.id, waiting.id];
+    const descendants = () => state().filter((item) => descendantIds.includes(item.id));
+    const before = descendants();
+    const reminders = ctx.handle.db.select().from(schema.taskReminders).all();
+    const initial = await get(`/api/projects/${outer.id}`);
+    expect(initial.availableActions).toContain("return_to_backlog");
+    const agenda = async () => get("/api/agenda/today?scope=all&date=2026-10-14");
+    const taskIds = (view: any) => ["planned", "overdue", "dueToday", "dueSoon", "shared", "unscheduled", "revisit"]
+      .flatMap((bucket) => view[bucket].map((task: { id: number }) => task.id));
+    expect(taskIds(await agenda())).toContain(open.id);
+
+    const stale = await post(`/api/projects/${outer.id}/return-to-backlog`, { expectedRevision: initial.revision + 1 });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_write_conflict");
+    expect(descendants()).toEqual(before);
+    expect(row(outer.id).revision).toBe(initial.revision);
+    const parked = await post(`/api/projects/${outer.id}/return-to-backlog`, { expectedRevision: initial.revision });
+    expect(parked.statusCode, parked.body).toBe(200);
+    expect(parked.json()).toMatchObject({ status: "backlog", revision: initial.revision + 1 });
+    expect(descendants()).toEqual(before);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toEqual(reminders);
+    expect(taskIds(await agenda())).not.toContain(open.id);
+    expect(await get(`/api/projects/${inner.id}`)).toMatchObject({ status: "active", effectivelyParked: true, openCount: 3, doneCount: 1 });
+    expect(await get(`/api/tasks/${done.id}`)).toMatchObject({ status: "done", scheduledDate: "2026-10-14" });
+    expect(await get(`/api/tasks/${someday.id}`)).toMatchObject({ status: "someday" });
+
+    const staleActivation = await post(`/api/projects/${outer.id}/activate`, { expectedRevision: initial.revision, ownerMemberId: member.id });
+    expect(staleActivation.statusCode).toBe(409);
+    expect(staleActivation.json().error.code).toBe("stale_write_conflict");
+    expect(descendants()).toEqual(before);
+    const activated = await post(`/api/projects/${outer.id}/activate`, { expectedRevision: parked.json().revision, ownerMemberId: member.id });
+    expect(activated.statusCode, activated.body).toBe(200);
+    expect(activated.json()).toMatchObject({ status: "active", revision: parked.json().revision + 1 });
+    expect(descendants()).toEqual(before);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toEqual(reminders);
+    expect(taskIds(await agenda())).toContain(open.id);
+    expect(await get(`/api/projects/${inner.id}`)).toMatchObject({ status: "active", effectivelyParked: false, openCount: 3, doneCount: 1 });
+    expect(await get(`/api/tasks/${done.id}`)).toMatchObject({ status: "done" });
+    expect(await get(`/api/tasks/${someday.id}`)).toMatchObject({ status: "someday" });
+  });
+
+  it("rejects parking with an execution commitment without changing descendants or reminders", async () => {
+    const member = await create("/api/members", { name: "Driver" });
+    const project = insertTestProject(ctx.handle.db, { title: "Committed", status: "active", ownerMemberId: member.id });
+    const task = insertTestTask(ctx.handle.db, { title: "Scheduled", projectId: project.id, scheduledDate: "2026-10-14", notes: "Keep", taskKind: "action" });
+    ctx.handle.db.insert(schema.taskReminders).values({ taskId: task.id, kind: "absolute", at: "2026-10-14T09:00:00.000Z" }).run();
+    const before = state();
+    const reminders = ctx.handle.db.select().from(schema.taskReminders).all();
+    const response = await post(`/api/projects/${project.id}/return-to-backlog`, { expectedRevision: project.revision });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "project_commitments_prevent_parking",
+      details: { committedTaskIds: [task.id] },
+    });
+    expect(state()).toEqual(before);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toEqual(reminders);
+  });
+
   it("gates scheduled and unscheduled work beneath a backlog project across mixed ancestry without rewriting it", async () => {
     const member = await create("/api/members", { name: "Driver" });
     const outer = insertTestProject(ctx.handle.db, { title: "Outer", status: "active", ownerMemberId: member.id });
