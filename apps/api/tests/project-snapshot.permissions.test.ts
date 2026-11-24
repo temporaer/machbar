@@ -41,19 +41,22 @@ describe("project activation snapshot visibility at every public exit", () => {
     expect(notified).not.toHaveBeenCalled();
   });
 
-  it.each([true, false].flatMap((ancestorVisible) => [true, false].map((mixed) => ({ ancestorVisible, mixed }))))(
-    "redacts inherited parking with visible ancestor $ancestorVisible and mixed ancestry $mixed",
-    async ({ ancestorVisible, mixed }) => {
+  it.each([true, false].flatMap((ancestorVisible) => [true, false].flatMap((mixed) =>
+    [true, false].map((withTask) => ({ ancestorVisible, mixed, withTask })))))(
+    "redacts inherited parking with visible ancestor $ancestorVisible, mixed ancestry $mixed and task $withTask",
+    async ({ ancestorVisible, mixed, withTask }) => {
     ctx = createTestContext();
     const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
     const viewer = member("Viewer"), other = member("Other");
     const ancestor = createProject(ctx.handle.db, { title: "Hidden ancestor", scope: "work", ownerMemberId: ancestorVisible ? viewer.id : other.id });
     const source = createProject(ctx.handle.db, { title: "Visible child", parentId: ancestor.id, ownerMemberId: viewer.id });
+    if (withTask) createTask(ctx.handle.db, { title: "Visible action", projectId: source.id });
     const middle = mixed ? ctx.handle.db.insert(schema.workItems).values({
       title: "Visible intermediate", role: "task", status: "active", parentId: ancestor.id,
       scope: "work", ownerMemberId: viewer.id, ownerInheritanceMode: "explicit",
     }).returning().get() : null;
     ctx.handle.db.update(schema.workItems).set({ status: "active", ...(middle ? { parentId: middle.id } : {}) }).where(eq(schema.workItems.id, source.id)).run();
+    const projections = [];
     for (const status of ["backlog", "active"] as const) {
       ctx.handle.db.update(schema.workItems).set({ status }).where(eq(schema.workItems.id, ancestor.id)).run();
       const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
@@ -64,8 +67,20 @@ describe("project activation snapshot visibility at every public exit", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json().effectivelyParked).toBe(ancestorVisible ? status === "backlog" : null);
       if (!ancestorVisible) expect(response.body).not.toContain(ancestor.title);
+      const taskResponse = middle ? await ctx.app.inject({
+        method: "GET", url: `/api/tasks/${middle.id}`,
+        headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id) },
+      }) : null;
+      if (taskResponse) expect(taskResponse.statusCode).toBe(200);
+      projections.push({
+        stuckReason: response.json().stuckReason,
+        executable: response.json().nextAction?.executable,
+        readiness: response.json().activationReadiness,
+        intermediateExecutable: taskResponse?.json().executable ?? null,
+      });
       expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
     }
+    if (!ancestorVisible) expect(projections[0]).toEqual(projections[1]);
   });
 });
 

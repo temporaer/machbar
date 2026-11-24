@@ -547,7 +547,8 @@ backlog ancestor. Their persisted status and structural next action remain
 unchanged; consumers use the derived flag rather than inferring the gate from
 one task's `executable` value. The flag is `null` whenever any project
 ancestor is inaccessible to the viewer, regardless of that ancestor's status;
-the internal execution gate still applies.
+viewer-facing execution projections conservatively gate that work while the
+unrestricted internal execution gate still uses the actual ancestor status.
 
 `GET /api/tasks/:id` (and only that single-task detail endpoint — never list
 or tree responses) additionally attaches `ancestors: WorkItemAncestor[]`, the

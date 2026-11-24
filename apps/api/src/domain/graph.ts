@@ -597,7 +597,6 @@ export class Graph {
       ]),
     );
     const workingStatuses = effectiveProjectStatuses(allWorkItemRows, allProjectStatuses);
-    for (const [id, status] of workingStatuses) graph.workingProjectStatuses.set(id, status);
     const allItemsById = new Map(allWorkItemRows.map((row) => [row.id, row]));
     const visibleItemIds = new Set(workItemRows.map((row) => row.id));
     const hasHiddenProjectAncestor = (parentId: number | null): boolean => {
@@ -611,6 +610,15 @@ export class Graph {
       }
       return false;
     };
+    for (const id of allProjectStatuses.keys()) {
+      if (!visibleItemIds.has(id)) workingStatuses.set(id, "backlog");
+    }
+    for (const project of rawProjects) {
+      if (project.status === "active" && hasHiddenProjectAncestor(project.parentId)) {
+        workingStatuses.set(project.id, "backlog");
+      }
+    }
+    for (const [id, status] of workingStatuses) graph.workingProjectStatuses.set(id, status);
     const blockerInputs = new Map(
       rawTasks.map((task) => [
         task.id,
@@ -664,7 +672,8 @@ export class Graph {
         while (currentId !== null && !seen.has(currentId)) {
           seen.add(currentId);
           const status = allProjectStatuses.get(currentId);
-          if ((currentId === project.id && status !== "active") || status === "backlog") {
+          if ((currentId === project.id && status !== "active") || status === "backlog" ||
+            (status === "active" && !visibleItemIds.has(currentId))) {
             toActivate.push(currentId);
           }
           currentId = parents.get(currentId) ?? null;
