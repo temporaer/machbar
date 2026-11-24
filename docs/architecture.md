@@ -545,7 +545,9 @@ The API computes several derived fields before returning tasks to the client:
 Project projections expose `effectivelyParked` for active projects gated by a
 backlog ancestor. Their persisted status and structural next action remain
 unchanged; consumers use the derived flag rather than inferring the gate from
-one task's `executable` value.
+one task's `executable` value. The flag is `null` whenever any project
+ancestor is inaccessible to the viewer, regardless of that ancestor's status;
+the internal execution gate still applies.
 
 `GET /api/tasks/:id` (and only that single-task detail endpoint — never list
 or tree responses) additionally attaches `ancestors: WorkItemAncestor[]`, the

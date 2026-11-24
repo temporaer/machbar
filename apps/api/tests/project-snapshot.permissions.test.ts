@@ -40,6 +40,33 @@ describe("project activation snapshot visibility at every public exit", () => {
     expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
     expect(notified).not.toHaveBeenCalled();
   });
+
+  it.each([true, false].flatMap((ancestorVisible) => [true, false].map((mixed) => ({ ancestorVisible, mixed }))))(
+    "redacts inherited parking with visible ancestor $ancestorVisible and mixed ancestry $mixed",
+    async ({ ancestorVisible, mixed }) => {
+    ctx = createTestContext();
+    const member = (name: string) => ctx.handle.db.insert(schema.members).values({ name, color: "#111111" }).returning().get();
+    const viewer = member("Viewer"), other = member("Other");
+    const ancestor = createProject(ctx.handle.db, { title: "Hidden ancestor", scope: "work", ownerMemberId: ancestorVisible ? viewer.id : other.id });
+    const source = createProject(ctx.handle.db, { title: "Visible child", parentId: ancestor.id, ownerMemberId: viewer.id });
+    const middle = mixed ? ctx.handle.db.insert(schema.workItems).values({
+      title: "Visible intermediate", role: "task", status: "active", parentId: ancestor.id,
+      scope: "work", ownerMemberId: viewer.id, ownerInheritanceMode: "explicit",
+    }).returning().get() : null;
+    ctx.handle.db.update(schema.workItems).set({ status: "active", ...(middle ? { parentId: middle.id } : {}) }).where(eq(schema.workItems.id, source.id)).run();
+    for (const status of ["backlog", "active"] as const) {
+      ctx.handle.db.update(schema.workItems).set({ status }).where(eq(schema.workItems.id, ancestor.id)).run();
+      const before = createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex");
+      const response = await ctx.app.inject({
+        method: "GET", url: `/api/projects/${source.id}`,
+        headers: { [ACTIVITY_ACTOR_HEADER]: String(viewer.id) },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().effectivelyParked).toBe(ancestorVisible ? status === "backlog" : null);
+      if (!ancestorVisible) expect(response.body).not.toContain(ancestor.title);
+      expect(createHash("sha256").update(ctx.handle.sqlite.serialize()).digest("hex")).toBe(before);
+    }
+  });
 });
 
 describe("viewer-aware project next actions", () => {

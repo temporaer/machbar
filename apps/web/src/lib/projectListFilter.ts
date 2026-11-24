@@ -94,7 +94,7 @@ export function classifyProjectListItem(
   now = new Date(),
 ): ProjectListClassification {
   if (project.status === "active") {
-    if (project.effectivelyParked) return "active-deferred";
+    if (project.effectivelyParked !== false) return "active-deferred";
     if (project.stuckReason === "completion_review") return "active-review";
     if (project.stuckReason != null) return "active-stuck";
     if (

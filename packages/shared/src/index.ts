@@ -732,8 +732,8 @@ export interface Project {
   title: string;
   notes: string;
   status: ProjectStatus;
-  /** Active project whose execution is gated by a backlog ancestor. */
-  effectivelyParked: boolean;
+  /** Active project gated by a backlog ancestor; null when an ancestor is not visible. */
+  effectivelyParked: boolean | null;
   /** Shared, persistent nomination for a future conversation. */
   discussionRequested: boolean;
   archivedAt: string | null;

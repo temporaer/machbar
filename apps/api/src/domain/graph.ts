@@ -598,6 +598,19 @@ export class Graph {
     );
     const workingStatuses = effectiveProjectStatuses(allWorkItemRows, allProjectStatuses);
     for (const [id, status] of workingStatuses) graph.workingProjectStatuses.set(id, status);
+    const allItemsById = new Map(allWorkItemRows.map((row) => [row.id, row]));
+    const visibleItemIds = new Set(workItemRows.map((row) => row.id));
+    const hasHiddenProjectAncestor = (parentId: number | null): boolean => {
+      const seen = new Set<number>();
+      while (parentId !== null && !seen.has(parentId)) {
+        seen.add(parentId);
+        const parent = allItemsById.get(parentId);
+        if (!parent) break;
+        if (parent.role === "story" && !visibleItemIds.has(parentId)) return true;
+        parentId = parent.parentId;
+      }
+      return false;
+    };
     const blockerInputs = new Map(
       rawTasks.map((task) => [
         task.id,
@@ -717,7 +730,9 @@ export class Graph {
         title: p.title,
         notes: p.notes,
         status: p.status,
-        effectivelyParked: p.status === "active" && graph.workingProjectStatuses.get(p.id) === "backlog",
+        effectivelyParked: hasHiddenProjectAncestor(p.parentId)
+          ? null
+          : p.status === "active" && graph.workingProjectStatuses.get(p.id) === "backlog",
         discussionRequested: p.discussionRequested,
         archivedAt: p.archivedAt,
         ownerMemberId: p.ownerMemberId,

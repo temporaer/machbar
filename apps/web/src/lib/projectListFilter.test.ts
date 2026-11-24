@@ -85,6 +85,13 @@ describe("classifyProjectListItem", () => {
     });
     expect(classifyProjectListItem(project)).toBe("active-deferred");
   });
+
+  it("does not claim actionability when inherited parking is not visible", () => {
+    const project = makeProject({
+      status: "active", effectivelyParked: null, nextAction: makeTask(), stuckReason: null,
+    });
+    expect(classifyProjectListItem(project)).toBe("active-deferred");
+  });
 });
 
 describe("filterAndSortProjects", () => {
