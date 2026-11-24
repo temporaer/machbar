@@ -120,7 +120,7 @@ describe("intake apply", () => {
       reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ...extra };
   }
 
-  it("adds mixed new work and nested actions to existing active/backlog destinations without activation or Today leakage", async () => {
+  it("adds mixed work without activation while preserving deadline attention", async () => {
     const setup = await prepare();
     const active = createProject(ctx.handle.db, { title: "Active" });
     const backlog = createProject(ctx.handle.db, { title: "Backlog" });
@@ -154,7 +154,9 @@ describe("intake apply", () => {
     const today = await ctx.app.inject({ method: "GET", url: "/api/agenda/today" });
     expect(today.statusCode).toBe(200);
     expect(today.body).not.toContain('"title":"backlog-step"');
-    expect(today.body).not.toContain('"title":"nested"');
+    expect(today.json().overdue).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: "nested", effectivelyDeferred: true, executable: false }),
+    ]));
     // Lost result: replay the immutable accepted work after its destination revision/lifecycle changed.
     ctx.handle.db.update(schema.workItems).set({ revision: 99, status: "done" }).where(eq(schema.workItems.id, backlog.id)).run();
     ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied" }).where(eq(schema.intakeJobs.id, setup.id)).run();
@@ -212,9 +214,10 @@ describe("intake apply", () => {
       action("existing-step", { existingProjectId: project.id, existingProjectRevision: project.revision }),
       action("new-project", { kind: "project", dueDate: "2099-01-01" }),
     ]);
+    ctx.handle.sqlite.exec("CREATE TRIGGER reject_later_project BEFORE INSERT ON work_items WHEN NEW.title = 'new-project' BEGIN SELECT RAISE(ABORT, 'forced create failure'); END");
     await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
       { expectedRevision: setup.revision, draft: d }, { actorMemberId: null }, setup.member.id))
-      .rejects.toMatchObject({ code: "project_commitment_resolution_required" });
+      .rejects.toThrow("forced create failure");
     expect(ctx.handle.db.select().from(schema.workItems).all()).toEqual(before);
     expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(activity);
     expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual(outbox);
@@ -523,25 +526,23 @@ describe("intake apply", () => {
       parentKey: null, ownerMemberId: null, dueDate: null, scheduledDate: "2026-10-16", revisitAt: null,
       notBeforeDate: null, notBeforeAt: null, reminders: [{ kind: "absolute", at: "2026-10-16T17:30:00+02:00" }],
       needsClarification: false, relatedCalendarKeys: [], enabled: true };
-    // A project deadline activates the project and needs a driver; validation cannot decide this from the draft alone.
     const d = draft([item, { ...item, key: "project", title: "Project", kind: "project", scheduledDate: null,
       dueDate: "2026-10-20", reminders: [] }]);
     updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, { expectedRevision: setup.revision, draft: d });
     const saved = getIntake(ctx.handle.db, setup.id, setup.member.id);
     const beforeActivity = ctx.handle.db.select().from(schema.activityEvents).all();
+    ctx.handle.sqlite.exec("CREATE TRIGGER reject_project BEFORE INSERT ON work_items WHEN NEW.title = 'Project' BEGIN SELECT RAISE(ABORT, 'forced create failure'); END");
     await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
-      { expectedRevision: saved.revision, draft: d }, { actorMemberId: null }, setup.member.id)).rejects.toMatchObject({
-        code: "project_commitment_resolution_required",
-      });
+      { expectedRevision: saved.revision, draft: d }, { actorMemberId: null }, setup.member.id)).rejects.toThrow("forced create failure");
     const recovered = getIntake(ctx.handle.db, setup.id, setup.member.id);
     expect(recovered.status).toBe("ready");
-    expect(recovered.error).toMatchObject({ code: "project_commitment_resolution_required", retryable: true });
-    expect(recovered.error?.details).toBeDefined();
+    expect(recovered.error).toMatchObject({ code: "intake_apply_failed", retryable: true });
     expect(recovered.draft).toEqual(d);
     expect(recovered.applyResults).toBeNull();
     expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
     expect(ctx.handle.db.select().from(schema.taskReminders).all()).toHaveLength(0);
     expect(ctx.handle.db.select().from(schema.activityEvents).all()).toEqual(beforeActivity);
+    ctx.handle.sqlite.exec("DROP TRIGGER reject_project");
     const corrected = draft([item]);
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id,
       { expectedRevision: recovered.revision, draft: corrected }, { actorMemberId: setup.member.id }, setup.member.id);

@@ -3,12 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { IntakeDraft, IntakeDraftWorkItem } from "@machbar/shared";
 
-type ProjectActivationResolution = {
-  expectedProjects: Array<{ projectId: number; revision: number }>;
-  drivers: Array<{ projectId: number; ownerMemberId: number }>;
-  nextActionTitle?: string;
-};
 import * as schema from "../src/db/schema.js";
+import { Graph } from "../src/domain/graph.js";
 import { createChildTask, createTask, getTaskOrThrow, updateTask } from "../src/domain/taskCrud.js";
 import { createProject, updateProject } from "../src/domain/storyCrud.js";
 import { applyIntake } from "../src/intake/apply.js";
@@ -51,13 +47,11 @@ describe("reviewed task breakdown", () => {
     return { id, draft };
   }
 
-  const apply = (id: string, draft: IntakeDraft, revision = 1, projectDriverMemberId?: number, activationResolution?: ProjectActivationResolution) =>
+  const apply = (id: string, draft: IntakeDraft, revision = 1) =>
     applyIntake(ctx.handle.db, { dataDir: ctx.dataDir } as never, undefined,
       new HomeAssistantRequestSignal(), id, {
         expectedRevision: revision,
         draft,
-        ...(projectDriverMemberId !== undefined ? { projectDriverMemberId } : {}),
-        ...(activationResolution ? { activationResolution } : {}),
       }, {}, null);
 
   it.each(["ordinary", "breakdown"] as const)("keeps serialized ordinary plan-save/Apply usable for %s jobs", async (mode) => {
@@ -169,7 +163,7 @@ describe("reviewed task breakdown", () => {
     expect(updated.children.map((child) => child.status)).toEqual(["someday", "someday"]);
   });
 
-  it("lets canonical task creation promote a planned step without activating its parked parent", async () => {
+  it("keeps a planned step and its parked parent deferred", async () => {
     const task = createTask(ctx.handle.db, { title: "Dachboden sortieren", status: "someday" });
     const { id, draft } = prepare(task.id);
     draft.workItems[1]!.scheduledDate = "2027-02-10";
@@ -178,72 +172,41 @@ describe("reviewed task breakdown", () => {
     const updated = getTaskOrThrow(ctx.handle.db, task.id);
     expect(updated.status).toBe("someday");
     expect(updated.children.find((child) => child.title === "Compare options")).toMatchObject({
-      status: "actionable",
+      status: "someday",
       scheduledDate: "2027-02-10",
     });
     expect(updated.children.find((child) => child.title === "Book the chosen option")?.status).toBe("someday");
   });
 
-  it("retries planned steps in an existing backlog project using decisions for every affected ancestor", async () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
+  it("adds planned steps without activating backlog project ancestors", async () => {
     const outer = createProject(ctx.handle.db, { title: "Home" });
     const inner = createProject(ctx.handle.db, { title: "Garden", parentId: outer.id });
     const task = createTask(ctx.handle.db, { title: "Prepare the garden", projectId: inner.id, status: "actionable" });
     const { id, draft } = prepare(task.id);
     draft.workItems[1]!.scheduledDate = "2030-12-01";
 
-    let error: { code: string; details: { projects: Array<{ projectId: number; revision: number; required: string[] }>; expectedProjects: Array<{ projectId: number; revision: number }> } } | undefined;
-    try {
-      await apply(id, draft);
-    } catch (cause) {
-      error = cause as typeof error;
-    }
-    expect(error).toMatchObject({ code: "project_commitment_resolution_required" });
-    expect(error!.details.projects.map((project) => project.projectId)).toEqual([inner.id, outer.id]);
-    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
-    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get()?.status).toBe("backlog");
-    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get()?.status).toBe("backlog");
-
-    const resolution: ProjectActivationResolution = {
-      expectedProjects: error!.details.expectedProjects,
-      drivers: error!.details.projects.filter((project) => project.required.includes("driver"))
-        .map((project) => ({ projectId: project.projectId, ownerMemberId: driver.id })),
-    };
-    const currentJob = getIntake(ctx.handle.db, id, null);
-    await apply(id, draft, currentJob.revision, undefined, resolution);
+    await apply(id, draft);
 
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(2);
+    const planned = getTaskOrThrow(ctx.handle.db, task.id).children.find((child) => child.title === "Compare options")!;
+    expect(planned).toMatchObject({ scheduledDate: "2030-12-01" });
+    expect(Graph.load(ctx.handle.db).effectiveDeferralFor(planned.id)).toBe(true);
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get())
-      .toMatchObject({ status: "active", ownerMemberId: driver.id });
+      .toMatchObject({ status: "backlog", revision: inner.revision });
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get())
-      .toMatchObject({ status: "active", ownerMemberId: driver.id });
+      .toMatchObject({ status: "backlog", revision: outer.revision });
   });
 
-  it("rejects stale ancestor decisions without creating steps, leaving fresh requirements available", async () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
+  it("preserves an ancestor edit while adding planned steps without activating it", async () => {
     const outer = createProject(ctx.handle.db, { title: "Home" });
     const inner = createProject(ctx.handle.db, { title: "Garden", parentId: outer.id });
     const task = createTask(ctx.handle.db, { title: "Prepare the garden", projectId: inner.id, status: "actionable" });
     const { id, draft } = prepare(task.id);
     draft.workItems[1]!.scheduledDate = "2030-12-01";
 
-    let firstError: { details: { projects: Array<{ projectId: number; revision: number; required: string[] }>; expectedProjects: Array<{ projectId: number; revision: number }> } } | undefined;
-    try { await apply(id, draft); } catch (cause) { firstError = cause as typeof firstError; }
-    const resolution: ProjectActivationResolution = {
-      expectedProjects: firstError!.details.expectedProjects,
-      drivers: firstError!.details.projects.filter((project) => project.required.includes("driver"))
-        .map((project) => ({ projectId: project.projectId, ownerMemberId: driver.id })),
-    };
-    const currentJob = getIntake(ctx.handle.db, id, null);
     updateProject(ctx.handle.db, outer.id, { notes: "Changed while reviewing", expectedRevision: outer.revision });
-
-    let staleError: { code: string; details: { reason?: string; projects?: unknown[] } } | undefined;
-    try { await apply(id, draft, currentJob.revision, undefined, resolution); } catch (cause) { staleError = cause as typeof staleError; }
-    expect(staleError).toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: { reason: "project_snapshot_stale", projects: expect.any(Array) },
-    });
-    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    await apply(id, draft);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(2);
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, inner.id)).get()?.status).toBe("backlog");
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, outer.id)).get())
       .toMatchObject({ status: "backlog", notes: "Changed while reviewing" });
@@ -305,45 +268,30 @@ describe("reviewed task breakdown", () => {
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
-  it("converts an actionable task into an active project with an explicit driver", async () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+  it("converts a planned actionable task to backlog without losing its plan", async () => {
     const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
     ctx.handle.db.update(schema.workItems).set({ scheduledDate: "2027-01-05" })
       .where(eq(schema.workItems.id, task.id)).run();
     const { id, draft } = prepare(task.id, true);
-    await apply(id, draft, 1, driver.id);
+    await apply(id, draft);
     const row = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
     expect(row.role).toBe("story");
-    expect(row.status).toBe("active");
-    expect(row.ownerMemberId).toBe(driver.id);
+    expect(row.status).toBe("backlog");
+    expect(row.ownerMemberId).toBeNull();
     expect(row.scheduledDate).toBeNull();
     const children = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all();
     expect(children).toHaveLength(3);
     expect(children.find((child) => child.title === task.title)?.scheduledDate).toBe("2027-01-05");
   });
 
-  it.each(["captured", "someday"] as const)("activates a %s conversion from a dated accepted child only after its driver decision", async (status) => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Breakdown driver", color: "#234567" }).returning().get();
+  it.each(["captured", "someday"] as const)("keeps a %s conversion with a dated child in backlog", async (status) => {
     const task = createTask(ctx.handle.db, { title: "Prepare the move", status });
     const { id, draft } = prepare(task.id, true);
     draft.workItems[1]!.scheduledDate = "2030-12-01";
 
-    await expect(apply(id, draft)).rejects.toMatchObject({
-      code: "project_commitment_resolution_required",
-      details: { projects: [expect.objectContaining({ projectId: task.id, required: expect.arrayContaining(["driver"]) })] },
-    });
-    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get())
-      .toMatchObject({ role: "task" });
-    expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({
-      kind: "action", status, children: [],
-    });
-    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
-
-    // The failed application leaves the same proposal editable. Retrying with
-    // the explicit decision applies the accepted graph exactly once.
-    await apply(id, draft, getIntake(ctx.handle.db, id, null).revision, driver.id);
+    await apply(id, draft);
     const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
-    expect(project).toMatchObject({ role: "story", status: "active", ownerMemberId: driver.id });
+    expect(project).toMatchObject({ role: "story", status: "backlog", ownerMemberId: null });
     const children = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all();
     expect(children.filter((child) => child.title === "Compare options")).toHaveLength(1);
     expect(children.find((child) => child.title === "Compare options")).toMatchObject({
@@ -360,25 +308,23 @@ describe("reviewed task breakdown", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id)).toMatchObject({ kind: "action", status: "captured", children: [] });
   });
 
-  it("rolls back an actionable conversion when no driver is selected", async () => {
+  it("converts actionable work to backlog without a driver", async () => {
     const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
     const { id, draft } = prepare(task.id, true);
-    await expect(apply(id, draft)).rejects.toMatchObject({ code: "project_commitment_resolution_required" });
-    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
-    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
-    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
-    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
+    await apply(id, draft);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get())
+      .toMatchObject({ role: "story", status: "backlog", ownerMemberId: null });
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
   it("preserves an actionable task's revisit on the identity-preserved action step during conversion", async () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
     const task = createTask(ctx.handle.db, {
       title: "Plan the holiday",
       status: "actionable",
       revisitAt: "2027-01-05T08:00:00.000Z",
     });
     const { id, draft } = prepare(task.id, true);
-    await apply(id, draft, 1, driver.id);
+    await apply(id, draft);
     const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
     const preserved = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()
       .find((child) => child.title === task.title);
@@ -386,15 +332,14 @@ describe("reviewed task breakdown", () => {
     expect(preserved?.revisitAt).toBe("2027-01-05T08:00:00.000Z");
   });
 
-  it("rolls back actionable conversion when accepted steps provide no viable progress path", async () => {
-    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#abcdef" }).returning().get();
+  it("allows backlog conversion without a viable progress path", async () => {
     const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
     const { id, draft } = prepare(task.id, true);
     draft.workItems = [draft.workItems[0]!];
-    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "project_commitment_resolution_required" });
-    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
-    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
-    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
+    await apply(id, draft);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get())
+      .toMatchObject({ role: "story", status: "backlog", ownerMemberId: null });
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
   it("rolls back an invalid captured-task breakdown and keeps the proposal editable for retry", async () => {

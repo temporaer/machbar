@@ -85,8 +85,9 @@ describe("Today execution eligibility across task and project containers", () =>
         status: reason === "context" && item.id === unavailable.id ? "unavailable" : "available",
         availableNow: item.id !== unavailable.id, missingContexts: [],
       }) });
-      expect(agenda.dueToday[0]).toMatchObject({ id: parent.id, children: [{ id: ready.id, parentTaskId: reference.id, position: 2 }] });
-      expect(ids(agenda)).toEqual([parent.id, ready.id]);
+      const expectedChildren = reason === "parked" ? [] : [{ id: ready.id, parentTaskId: reference.id, position: 2 }];
+      expect(agenda.dueToday[0]).toMatchObject({ id: parent.id, children: expectedChildren });
+      expect(ids(agenda)).toEqual(reason === "parked" ? [parent.id] : [parent.id, ready.id]);
       expect(agenda.shared).toEqual([]);
     },
   );

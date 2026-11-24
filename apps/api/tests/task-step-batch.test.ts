@@ -55,7 +55,6 @@ describe("atomic task step batches", () => {
       url: `/api/tasks/${parent.id}/children/batch`,
       payload: {
         expectedRevision: parent.revision,
-        expectedProjectRevisions: [],
         steps: [{ title: "Formular ausfüllen" }, { title: "Im Sekretariat abgeben" }],
       },
     });
@@ -88,7 +87,6 @@ describe("atomic task step batches", () => {
       headers,
       payload: {
         expectedRevision: parent.revision,
-        expectedProjectRevisions: [],
         steps: [{ title: "Kisten packen" }, { title: "Transporter buchen" }, { title: "Schlüssel übergeben" }],
       },
     });
@@ -149,7 +147,6 @@ describe("atomic task step batches", () => {
       headers,
       payload: {
         expectedRevision: currentBatchParent.revision,
-        expectedProjectRevisions: [],
         steps: [{ title: "Zug buchen" }, { title: "Hotel buchen" }],
       },
     });
@@ -207,7 +204,6 @@ describe("atomic task step batches", () => {
       headers,
       payload: {
         expectedRevision: parent.revision,
-        expectedProjectRevisions: [],
         steps: [{ title: "Werkzeug inventarisieren" }, { title: "Spenden sortieren" }],
       },
     });
@@ -245,18 +241,12 @@ describe("atomic task step batches", () => {
     expect(singleAction.statusCode).toBe(201);
 
     const batch = await setup();
-    const projectBefore = (await ctx.app.inject({
-      method: "GET",
-      url: `/api/projects/${batch.project.id}`,
-      headers,
-    })).json();
     const batchAction = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${batch.parent.id}/children/batch`,
       headers,
       payload: {
         expectedRevision: batch.parent.revision,
-        expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
         steps: [{ title: "Schrauben sortieren" }],
       },
     });
@@ -301,19 +291,6 @@ describe("atomic task step batches", () => {
       const parent = await createTask({ title: "Fenster austauschen", projectId: project.id, status: "someday" });
       return { project, parent };
     }
-    function activationResolution(blocked: { json(): any }, nextActionTitle: string) {
-      const requirements = blocked.json().error.details;
-      return {
-        expectedProjects: requirements.expectedProjects,
-        drivers: requirements.projects
-          .filter((entry: { required: string[] }) => entry.required.includes("driver"))
-          .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
-        ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
-          ? { nextActionTitle }
-          : {}),
-      };
-    }
-
     const single = await setup("Fensterprojekt");
     const firstSingle = await ctx.app.inject({
       method: "POST",
@@ -325,22 +302,11 @@ describe("atomic task step batches", () => {
     expect(firstSingle.json().status).toBe("someday");
 
     const committedSinglePayload = { title: "Termin setzen", scheduledDate: "2027-01-15" };
-    const blockedSingle = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${single.parent.id}/children`,
-      headers,
-      payload: committedSinglePayload,
-    });
-    expect(blockedSingle.statusCode).toBe(409);
-    expect(blockedSingle.json().error.code).toBe("project_commitment_resolution_required");
     const committedSingle = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${single.parent.id}/children`,
       headers,
-      payload: {
-        ...committedSinglePayload,
-        activationResolution: activationResolution(blockedSingle, "Termin setzen"),
-      },
+      payload: committedSinglePayload,
     });
     expect(committedSingle.statusCode).toBe(201);
     const lastSingle = await ctx.app.inject({
@@ -352,36 +318,19 @@ describe("atomic task step batches", () => {
     expect(lastSingle.statusCode).toBe(201);
 
     const batch = await setup("Fensterprojekt");
-    const projectBeforeBatch = (await ctx.app.inject({
-      method: "GET",
-      url: `/api/projects/${batch.project.id}`,
-      headers,
-    })).json();
     const batchPayload = {
       expectedRevision: batch.parent.revision,
-      expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBeforeBatch.revision }],
       steps: [
         { title: "Material sichten" },
         { title: "Termin setzen", scheduledDate: "2027-01-15" },
         { title: "Angebote vergleichen", dueDate: "2027-01-16" },
       ],
     };
-    const blockedBatch = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${batch.parent.id}/children/batch`,
-      headers,
-      payload: batchPayload,
-    });
-    expect(blockedBatch.statusCode).toBe(409);
-    expect(blockedBatch.json().error.code).toBe("project_commitment_resolution_required");
     const committedBatch = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${batch.parent.id}/children/batch`,
       headers,
-      payload: {
-        ...batchPayload,
-        activationResolution: activationResolution(blockedBatch, "Termin setzen"),
-      },
+      payload: batchPayload,
     });
     expect(committedBatch.statusCode).toBe(201);
 
@@ -420,10 +369,10 @@ describe("atomic task step batches", () => {
       ...committedBatch.json().tasks.map((task: { id: number }) => task.id),
     ]);
     expect(batchOutcome).toEqual(singleOutcome);
-    expect(batchOutcome.records.contributions).toContainEqual(expect.objectContaining({
-      category: "planning",
+    expect(batchOutcome.projectStatus).toBe("backlog");
+    expect(batchOutcome.parentStatus).toBe("someday");
+    expect(batchOutcome.records.contributions).not.toContainEqual(expect.objectContaining({
       reason: "project_next_action_added",
-      entityType: "project",
     }));
     expect(batchOutcome.records.contributions).not.toContainEqual(expect.objectContaining({
       reason: "project_due_plan_added",
@@ -472,14 +421,8 @@ describe("atomic task step batches", () => {
     expect(scheduledSingle.statusCode, scheduledSingle.body).toBe(201);
 
     const batch = await setup();
-    const projectBefore = (await ctx.app.inject({
-      method: "GET",
-      url: `/api/projects/${batch.project.id}`,
-      headers,
-    })).json();
     const batchPayload = {
       expectedRevision: batch.parent.revision,
-      expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
       steps: [{ title: "Notizen sammeln" }, { title: "Termin vormerken", scheduledDate: "2027-02-20" }],
     };
     const scheduledBatch = await ctx.app.inject({
@@ -571,14 +514,8 @@ describe("atomic task step batches", () => {
     expect(scheduledSingle.statusCode, scheduledSingle.body).toBe(201);
 
     const batch = await setup();
-    const projectBefore = (await ctx.app.inject({
-      method: "GET",
-      url: `/api/projects/${batch.project.id}`,
-      headers,
-    })).json();
     const batchPayload = {
       expectedRevision: batch.parent.revision,
-      expectedProjectRevisions: [{ projectId: batch.project.id, revision: projectBefore.revision }],
       steps: [{ title: "Notizen sammeln" }, { title: "Termin vormerken", scheduledDate: "2027-02-20" }],
     };
     const scheduledBatch = await ctx.app.inject({
@@ -631,43 +568,21 @@ describe("atomic task step batches", () => {
     });
     expect(reference.statusCode).toBe(201);
 
-    const projectBefore = (await ctx.app.inject({
-      method: "GET",
-      url: `/api/projects/${project.id}`,
-      headers,
-    })).json();
     const payload = {
       expectedRevision: parent.revision,
-      expectedProjectRevisions: [{ projectId: project.id, revision: projectBefore.revision }],
       steps: [
         { title: "Termin vereinbaren", scheduledDate: "2027-03-12" },
         { title: "Werkzeug bereitlegen" },
       ],
     };
-    const blocked = await ctx.app.inject({
+    const applied = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${parent.id}/children/batch`,
       headers,
       payload,
     });
-    expect(blocked.statusCode).toBe(409);
-    const requirements = blocked.json().error.details;
-    const activationResolution = {
-      expectedProjects: requirements.expectedProjects,
-      drivers: requirements.projects
-        .filter((entry: { required: string[] }) => entry.required.includes("driver"))
-        .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
-      ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
-        ? { nextActionTitle: "Termin vereinbaren" }
-        : {}),
-    };
-    const applied = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${parent.id}/children/batch`,
-      headers,
-      payload: { ...payload, activationResolution },
-    });
     expect(applied.statusCode).toBe(201);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}`, headers })).json().status).toBe("backlog");
 
     const contributions = ctx.handle.sqlite.prepare(`
       SELECT activity.entity_title AS title, contribution.reason AS reason
@@ -684,7 +599,7 @@ describe("atomic task step batches", () => {
     const response = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${parent.id}/children/batch`,
-      payload: { expectedRevision: parent.revision, expectedProjectRevisions: [], steps: [{ title: "Kisten sichten" }] },
+      payload: { expectedRevision: parent.revision, steps: [{ title: "Kisten sichten" }] },
     });
 
     expect(response.statusCode).toBe(201);
@@ -700,13 +615,12 @@ describe("atomic task step batches", () => {
       url: `/api/tasks/${parent.id}/children/batch`,
       payload: {
         expectedRevision: response.json().parent.revision,
-        expectedProjectRevisions: [],
         steps: [{ title: "Kisten sortieren", scheduledDate: "2027-01-15" }],
       },
     });
     expect(committed.statusCode).toBe(201);
     expect(committed.json().parent).toMatchObject({ status: "someday" });
-    expect(committed.json().tasks).toMatchObject([{ status: "actionable", scheduledDate: "2027-01-15" }]);
+    expect(committed.json().tasks).toMatchObject([{ status: "someday", scheduledDate: "2027-01-15" }]);
     const futureAgenda = await ctx.app.inject({ method: "GET", url: "/api/agenda/today?scope=all&date=2026-10-12" });
     expect(JSON.stringify(futureAgenda.json())).not.toContain("Irgendwann Dachboden");
     expect(JSON.stringify(futureAgenda.json())).not.toContain("Kisten sortieren");
@@ -732,7 +646,7 @@ describe("atomic task step batches", () => {
     const viaBatch = await createTask({ title: "Posteingang C" });
     const batch = await ctx.app.inject({
       method: "POST", url: `/api/tasks/${viaBatch.id}/children/batch`,
-      payload: { expectedRevision: viaBatch.revision, expectedProjectRevisions: [], steps: [{ title: "Erster Schritt C" }] },
+      payload: { expectedRevision: viaBatch.revision, steps: [{ title: "Erster Schritt C" }] },
     });
     expect(batch.statusCode).toBe(201);
     expect(batch.json().parent).toMatchObject({ status: "actionable", needsClarification: false });
@@ -751,86 +665,45 @@ describe("atomic task step batches", () => {
       .toMatchObject({ status: "captured", needsClarification: true, children: [] });
   });
 
-  it("retries a dated successor with explicit project activation decisions exactly once", async () => {
-    const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } })).json();
+  it("creates a dated successor without activating the backlog project", async () => {
     const project = await createProject({ title: "Sommerfest", status: "backlog" });
     const predecessor = await createTask({ title: "Termin abstimmen", projectId: project.id, status: "actionable" });
     const payload = { title: "Angebot vergleichen", scheduledDate: "2027-03-12", status: "actionable" };
 
-    const blocked = await ctx.app.inject({ method: "POST", url: `/api/tasks/${predecessor.id}/successors`, payload });
-    expect(blocked.statusCode).toBe(409);
-    expect(blocked.json().error.code).toBe("project_commitment_resolution_required");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().tasks)
-      .not.toContainEqual(expect.objectContaining({ title: "Angebot vergleichen" }));
-
-    const requirements = blocked.json().error.details;
-    const activationResolution = {
-      expectedProjects: requirements.expectedProjects,
-      drivers: requirements.projects
-        .filter((entry: { required: string[] }) => entry.required.includes("driver"))
-        .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
-      ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
-        ? { nextActionTitle: "Termin abstimmen" }
-        : {}),
-    };
     const applied = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${predecessor.id}/successors`,
-      payload: { ...payload, activationResolution },
+      payload,
     });
     expect(applied.statusCode, applied.body).toBe(201);
     expect(applied.json()).toMatchObject({ title: "Angebot vergleichen", scheduledDate: "2027-03-12" });
 
     const updatedProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
-    expect(updatedProject.status).toBe("active");
+    expect(updatedProject.status).toBe("backlog");
     expect(updatedProject.tasks.filter((task: { title: string }) => task.title === "Angebot vergleichen")).toHaveLength(1);
   });
 
-  it("rolls back every child when dated work needs decisions, then applies one complete retry", async () => {
-    const memberResponse = await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Mira" } });
-    const member = memberResponse.json();
+  it("creates a dated batch without activating its backlog project", async () => {
     const project = await createProject({ title: "Dachfenster", status: "backlog" });
     const parent = await createTask({ title: "Dachfenster planen", projectId: project.id, status: "actionable" });
-    const initialProject = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
-    const chain = [{ projectId: project.id, revision: initialProject.json().revision }];
     const payload = {
       expectedRevision: parent.revision,
-      expectedProjectRevisions: chain,
       steps: [
         { title: "Maße prüfen", scheduledDate: "2027-01-15" },
         { title: "Angebot vergleichen" },
       ],
     };
 
-    const needsDecisions = await ctx.app.inject({
-      method: "POST", url: `/api/tasks/${parent.id}/children/batch`, payload,
-    });
-    expect(needsDecisions.statusCode).toBe(409);
-    expect(needsDecisions.json().error.code).toBe("project_commitment_resolution_required");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json().children).toHaveLength(0);
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
-
-    const requirements = needsDecisions.json().error.details;
-    const resolution = {
-      expectedProjects: requirements.expectedProjects,
-      drivers: requirements.projects
-        .filter((entry: { required: string[] }) => entry.required.includes("driver"))
-        .map((entry: { projectId: number }) => ({ projectId: entry.projectId, ownerMemberId: member.id })),
-      ...(requirements.projects.some((entry: { required: string[] }) => entry.required.includes("progressPath"))
-        ? { nextActionTitle: "Maße prüfen" }
-        : {}),
-    };
     const retry = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${parent.id}/children/batch`,
-      payload: { ...payload, activationResolution: resolution },
+      method: "POST", url: `/api/tasks/${parent.id}/children/batch`, payload,
     });
     expect(retry.statusCode).toBe(201);
     expect(retry.json().tasks).toHaveLength(2);
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
+    expect(retry.json().tasks[0]).toMatchObject({ title: "Maße prüfen", scheduledDate: "2027-01-15" });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
   });
 
-  it("rolls back earlier children when the final scheduled child needs project activation decisions", async () => {
+  it("keeps earlier and final scheduled children without activating their project", async () => {
     const project = await createProject({ title: "Fenster", status: "backlog" });
     const parent = await createTask({
       title: "Fenster vorbereiten",
@@ -842,7 +715,6 @@ describe("atomic task step batches", () => {
       url: `/api/tasks/${parent.id}/children/batch`,
       payload: {
         expectedRevision: parent.revision,
-        expectedProjectRevisions: [{ projectId: project.id, revision: project.revision }],
         steps: [
           { title: "Maße notieren" },
           { title: "Termin planen", scheduledDate: "2027-02-11" },
@@ -850,10 +722,12 @@ describe("atomic task step batches", () => {
       },
     });
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("project_commitment_resolution_required");
+    expect(response.statusCode).toBe(201);
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json())
-      .toMatchObject({ status: "actionable", children: [] });
+      .toMatchObject({ status: "actionable", children: [
+        { title: "Maße notieren" },
+        { title: "Termin planen", scheduledDate: "2027-02-11" },
+      ] });
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
   });
 
@@ -864,7 +738,6 @@ describe("atomic task step batches", () => {
       url: `/api/tasks/${parent.id}/children/batch`,
       payload: {
         expectedRevision: parent.revision,
-        expectedProjectRevisions: [],
         steps: [{ title: "Gültig" }, { title: "Ungültiges Datum", dueDate: "morgen" }],
       },
     });
@@ -874,29 +747,69 @@ describe("atomic task step batches", () => {
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json().status).toBe("captured");
   });
 
-  it("rejects stale parent and project-chain revisions before writing", async () => {
+  it("accepts a current parent revision after an ancestor edit without activating projects", async () => {
     const ancestor = await createProject({ title: "Umbau" });
     const destination = await createProject({ title: "Bad renovieren", parentId: ancestor.id });
     const parent = await createTask({ title: "Wand streichen", projectId: destination.id, status: "actionable" });
-    const projectBefore = await ctx.app.inject({ method: "GET", url: `/api/projects/${destination.id}` });
-    const ancestorBefore = projectBefore.json().ancestors.find((entry: { id: number }) => entry.id === ancestor.id);
-    await ctx.app.inject({ method: "PATCH", url: `/api/projects/${ancestor.id}`, payload: { notes: "Aktualisiert" } });
+    const edit = await ctx.app.inject({ method: "PATCH", url: `/api/projects/${ancestor.id}`, payload: { notes: "Aktualisiert", expectedRevision: ancestor.revision } });
+    expect(edit.statusCode).toBe(200);
 
     const response = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${parent.id}/children/batch`,
       payload: {
         expectedRevision: parent.revision,
-        expectedProjectRevisions: [
-          { projectId: ancestor.id, revision: ancestorBefore.revision },
-          { projectId: destination.id, revision: projectBefore.json().revision },
-        ],
         steps: [{ title: "Kanten abkleben" }],
       },
     });
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("stale_write_conflict");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json().children).toHaveLength(0);
+    expect(response.statusCode).toBe(201);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${parent.id}` })).json().children).toMatchObject([{ title: "Kanten abkleben" }]);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${ancestor.id}` })).json()).toMatchObject({ status: "backlog", notes: "Aktualisiert", revision: edit.json().revision });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${destination.id}` })).json().status).toBe("backlog");
+  });
+
+  it("uses the same current archived-project behavior for single and batch children", async () => {
+    const project = await createProject({ title: "Archiv" });
+    const singleParent = await createTask({ title: "Einzelner Schritt", projectId: project.id, status: "actionable" });
+    const batchParent = await createTask({ title: "Mehrere Schritte", projectId: project.id, status: "actionable" });
+    const archived = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/archive`,
+      payload: { expectedRevision: project.revision },
+    });
+    expect(archived.statusCode, archived.body).toBe(200);
+    const single = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${singleParent.id}/children`,
+      payload: { title: "Einzelkind" },
+    });
+    const batch = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${batchParent.id}/children/batch`,
+      payload: { expectedRevision: batchParent.revision, steps: [{ title: "Batchkind" }] },
+    });
+    expect(single.statusCode, single.body).toBe(201);
+    expect(batch.statusCode, batch.body).toBe(201);
+    expect(batch.json().tasks).toMatchObject([{ title: "Batchkind", status: single.json().status }]);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json())
+      .toMatchObject({ status: "archived", revision: archived.json().revision });
+  });
+
+  it("rejects a batch from a viewer without parent access without writing children", async () => {
+    const owner = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Owner" } })).json();
+    const other = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Other" } })).json();
+    const created = await ctx.app.inject({
+      method: "POST", url: "/api/tasks",
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(owner.id) },
+      payload: { title: "Private", scope: "work", ownerMemberId: owner.id, ownerInheritanceMode: "explicit", status: "actionable" },
+    });
+    expect(created.statusCode).toBe(201);
+    const parent = created.json();
+    const before = ctx.handle.sqlite.serialize();
+    const denied = await ctx.app.inject({
+      method: "POST", url: `/api/tasks/${parent.id}/children/batch`,
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(other.id) },
+      payload: { expectedRevision: parent.revision, steps: [{ title: "Hidden child" }] },
+    });
+    expect(denied.statusCode).toBe(404);
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
   });
 
   it("rejects a changed task parent and creates no children", async () => {
@@ -907,7 +820,6 @@ describe("atomic task step batches", () => {
       url: `/api/tasks/${parent.id}/children/batch`,
       payload: {
         expectedRevision: parent.revision,
-        expectedProjectRevisions: [],
         steps: [{ title: "Anbieter anrufen" }],
       },
     });
@@ -925,7 +837,6 @@ describe("atomic task step batches", () => {
       url: `/api/tasks/${capture.id}/children/batch`,
       payload: {
         expectedRevision: capture.revision,
-        expectedProjectRevisions: [],
         convertParentToProject: true,
         steps: [{ title: "Unterlagen zusammenstellen" }],
       },
@@ -949,7 +860,6 @@ describe("atomic task step batches", () => {
       url: `/api/tasks/${capture.id}/children/batch`,
       payload: {
         expectedRevision: current.revision,
-        expectedProjectRevisions: [],
         convertParentToProject: true,
         steps: [{ title: "Rückruf vorbereiten" }],
       },
@@ -960,6 +870,6 @@ describe("atomic task step batches", () => {
       capture.title,
       "Rückruf vorbereiten",
     ]);
-    expect(project.tasks[0]).toMatchObject({ status: "actionable", externalWait: { waitingFor: "Versicherung" } });
+    expect(project.tasks[0]).toMatchObject({ status: "captured", externalWait: { waitingFor: "Versicherung" } });
   });
 });

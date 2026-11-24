@@ -228,7 +228,10 @@ export function buildWeekAgenda(
       {
         scheduledDate: null,
         revisitDate:
-          story.status === "backlog"
+          story.status === "backlog" ||
+          (story.revisitAt !== null &&
+            story.reviewedAt !== null &&
+            Date.parse(story.reviewedAt) >= Date.parse(story.revisitAt))
             ? null
             : calendarDateForInstant(story.revisitAt, options.householdTimezone) ?? null,
         dueDate: story.dueDate,

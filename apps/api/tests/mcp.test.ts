@@ -1665,7 +1665,7 @@ describe("MCP integration", () => {
         };
       }).result,
     ).toMatchObject({
-      status: "actionable",
+      status: "captured",
       reminders: [{ kind: "absolute", at: "2026-09-21T08:00:00.000Z" }],
     });
 
@@ -1874,19 +1874,20 @@ describe("MCP integration", () => {
       await ctx.app.inject({ method: "GET", url: `/api/projects/${sharedProject.id}` })
     ).json();
 
+    const activated = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${sharedProject.id}/activate`,
+      payload: { expectedRevision: currentSharedProject.revision, ownerMemberId: owner.id, nextActionTitle: "Nächsten Schritt festlegen" },
+    });
+    expect(activated.statusCode, activated.body).toBe(200);
     const updated = await client.callTool({
       name: "machbar_update_project",
       arguments: {
         projectId: sharedProject.id,
-        expectedRevision: currentSharedProject.revision,
+        expectedRevision: activated.json().revision,
         ownerMemberId: owner.id,
         dueDate: "2026-09-21",
         contextIds: [context.id],
-        activationResolution: {
-          expectedProjects: [{ projectId: sharedProject.id, revision: currentSharedProject.revision }],
-          drivers: [{ projectId: sharedProject.id, ownerMemberId: owner.id }],
-          nextActionTitle: "Nächsten Schritt festlegen",
-        },
       },
     });
     expect(updated.structuredContent).toEqual({

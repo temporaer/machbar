@@ -489,6 +489,7 @@ describe("cleanup rounds", () => {
     await ctx.app.inject({ method: "POST", url: `/api/tasks/${done}/complete`, payload: {} });
     await ctx.app.inject({ method: "POST", url: `/api/projects/${backup}/criteria`, payload: { text: "Restore-Test erfolgreich dokumentiert" } });
 
+    ctx.handle.db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, backup)).run();
     const graph = Graph.load(ctx.handle.db);
     const context = projectContext(graph, backup)!;
     expect(context.planningContext?.currentNextAction).toMatchObject({ id: open, title: "Restore-Test durchführen" });

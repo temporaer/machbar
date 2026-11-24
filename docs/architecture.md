@@ -21,6 +21,10 @@ descendants remain deferred. Reached revisits remain decisions rather than
 automatic activation. Execution suggestions also retain their normal date,
 context, dependency, and ownership checks.
 
+Moving a root captured Inbox action into a task or project remains an explicit
+classification: the moved action becomes actionable and its clarification flag
+clears. This does not activate the destination or any parked ancestor.
+
 ## AI clarification and reviewed application
 
 `canBreakDownTask` in the shared intake contract owns target eligibility for
@@ -654,7 +658,10 @@ deadline command for surfaces that offer due-date editing. Project `revisitAt`
 is not a Week placement field when it is a backlog-only
 Wiedervorlage, edited through `story.defer` and surfaced in Review when reached.
 Active projects have no project-level Wiedervorlage. Project dates never
-propagate to descendants.
+propagate to descendants. A retained legacy revisit on an active project can
+still appear in Week; once explicitly acknowledged at or after that instant,
+Week omits the revisit while continuing to show any applicable deadline.
+This acknowledgement rule does not depend on ancestor visibility or status.
 
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`; a backlog project's

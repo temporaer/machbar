@@ -408,11 +408,7 @@ describe("atomic activity recording", () => {
       url: `/api/projects/${project.id}/activate`,
       payload: {
         expectedRevision: project.revision,
-        activationResolution: {
-          expectedProjects: [{ projectId: project.id, revision: project.revision }],
-          drivers: [{ projectId: project.id, ownerMemberId: owner.id }],
-          nextActionTitle: "Activation path",
-        },
+        ownerMemberId: owner.id,
       },
     });
     expect(activation.statusCode, activation.body).toBe(200);

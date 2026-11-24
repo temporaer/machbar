@@ -138,6 +138,15 @@ describe("effective deferral read projections", () => {
     db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, ancestor.id)).run();
     expect(await read(other.id)).toEqual(otherDeferred);
     expect(await read()).toEqual(unknownDeferred);
+    db.update(schema.workItems).set({ status: "backlog" }).where(eq(schema.workItems.id, ancestor.id)).run();
+    db.update(schema.workItems).set({ reviewedAt: "2000-01-01T12:00:00.000Z" }).where(eq(schema.workItems.id, project.id)).run();
+    const otherAcknowledged = await read(other.id);
+    const unknownAcknowledged = await read();
+    expect(otherAcknowledged[2].days.flatMap((day: { items: { id: number }[] }) => day.items).map((item: { id: number }) => item.id)).not.toContain(project.id);
+    expect(otherAcknowledged[4].filter((item: { entityId: number; reason: string }) => item.entityId === project.id && item.reason === "project_revisit_reached")).toEqual([]);
+    db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, ancestor.id)).run();
+    expect(await read(other.id)).toEqual(otherAcknowledged);
+    expect(await read()).toEqual(unknownAcknowledged);
   });
 
   it("keeps actual deadlines and reconsideration, but not recurring occurrence boundaries or past plans", () => {
@@ -281,26 +290,66 @@ describe("effective deferral read projections", () => {
         return response.json().filter((item: { entityId: number; reason: string }) =>
           item.entityId === project.id && item.reason === "project_revisit_reached");
       };
+      const readWeek = async () => {
+        const response = await ctx.app.inject({ method: "GET", url: `/api/agenda/week?start=${today}&today=${today}&scope=all` });
+        expect(response.statusCode).toBe(200);
+        return response.json().days.flatMap((day: { items: { id: number }[] }) => day.items)
+          .filter((item: { id: number }) => item.id === project.id);
+      };
       expect(await readReview()).toHaveLength(1);
+      expect(await readWeek()).toContainEqual(expect.objectContaining({ placement: "revisit" }));
       const stale = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/review`, payload: { expectedRevision: project.revision + 1 } });
       expect(stale.statusCode).toBe(409);
       expect(await readReview()).toHaveLength(1);
+      expect(await readWeek()).toContainEqual(expect.objectContaining({ placement: "revisit" }));
       const acknowledged = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/review`, payload: { expectedRevision: project.revision } });
       expect(acknowledged.statusCode).toBe(200);
       expect(acknowledged.json()).toMatchObject({ status: "active", revisitAt: now, reviewedAt: now });
       expect(await readReview()).toEqual([]);
+      expect(await readWeek()).toEqual([]);
       expect(db.select().from(schema.workItems).where(eq(schema.workItems.id, parent.id)).get()?.status).toBe("backlog");
 
       const later = "2026-09-08T12:00:00.000Z";
+      const beforeRejectedPatch = ctx.handle.sqlite.serialize();
       const updated = await ctx.app.inject({ method: "PATCH", url: `/api/projects/${project.id}`, payload: { expectedRevision: acknowledged.json().revision, revisitAt: later } });
-      expect(updated.statusCode, updated.body).toBe(200);
-      expect(updated.json()).toMatchObject({ status: "active", revisitAt: later });
+      expect(updated.statusCode).toBe(409);
+      expect(updated.json()).toMatchObject({ error: { code: "project_transition_invalid" } });
+      expect(ctx.handle.sqlite.serialize()).toEqual(beforeRejectedPatch);
+
+      // Model a newer persisted legacy revisit; active projects cannot set one by PATCH.
+      db.update(schema.workItems).set({ revisitAt: later }).where(eq(schema.workItems.id, project.id)).run();
       expect(await readReview()).toEqual([]);
+      expect(await readWeek()).toContainEqual(expect.objectContaining({ placement: "revisit", attentionDate: "2026-09-08" }));
       vi.setSystemTime(new Date(later));
       expect(await readReview()).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("uses instant ordering for acknowledged project revisits and retains deadline placement", () => {
+    const db = ctx.handle.db;
+    const parent = db.insert(schema.workItems).values({ role: "story", title: "Parked", status: "backlog" }).returning().get();
+    const cases = [
+      { title: "Unreviewed", reviewedAt: null, placement: "revisit" },
+      { title: "Older review", reviewedAt: "2026-09-07T11:59:59.000Z", placement: "revisit" },
+      { title: "Same instant", reviewedAt: "2026-09-07T14:00:00.000+02:00", placement: null },
+      { title: "Later review", reviewedAt: "2026-09-07T12:01:00.000Z", placement: null },
+      { title: "Deadline", reviewedAt: now, dueDate: "2026-09-08", placement: "due" },
+    ] as const;
+    const projects = cases.map(({ title, reviewedAt, ...rest }) => ({
+      ...rest,
+      id: db.insert(schema.workItems).values({ role: "story", title, status: "active", parentId: parent.id, revisitAt: now, reviewedAt, dueDate: "dueDate" in rest ? rest.dueDate : null }).returning().get().id,
+    }));
+    const before = ctx.handle.sqlite.serialize();
+    const week = buildWeekAgenda(Graph.load(db, today, undefined, now), { start: today, today });
+    const items = week.days.flatMap((day) => day.items);
+    for (const project of projects) {
+      const matches = items.filter((item) => item.id === project.id);
+      if (project.placement === null) expect(matches).toEqual([]);
+      else expect(matches).toContainEqual(expect.objectContaining({ placement: project.placement }));
+    }
+    expect(ctx.handle.sqlite.serialize()).toEqual(before);
   });
 
   it("does not reveal hidden ancestor status through captured deadlines or project reconsideration", () => {
@@ -326,5 +375,14 @@ describe("effective deferral read projections", () => {
     db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, hidden.id)).run();
     expect(read(other.id)).toEqual(otherParked);
     expect(read()).toEqual(unknownParked);
+    db.update(schema.workItems).set({ status: "backlog" }).where(eq(schema.workItems.id, hidden.id)).run();
+    db.update(schema.workItems).set({ reviewedAt: now }).where(eq(schema.workItems.id, project.id)).run();
+    const otherAcknowledged = read(other.id);
+    const unknownAcknowledged = read();
+    expect(otherAcknowledged.week.days.flatMap((day) => day.items).map((item) => item.id)).not.toContain(project.id);
+    expect(otherAcknowledged.review.filter((item) => item.entityId === project.id && item.reason === "project_revisit_reached")).toEqual([]);
+    db.update(schema.workItems).set({ status: "active" }).where(eq(schema.workItems.id, hidden.id)).run();
+    expect(read(other.id)).toEqual(otherAcknowledged);
+    expect(read()).toEqual(unknownAcknowledged);
   });
 });

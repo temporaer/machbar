@@ -127,6 +127,12 @@ export function moveTask(
         }
       }
     }
+    const refilesCapturedInboxItem =
+      task.kind === "action" &&
+      task.status === "captured" &&
+      task.projectId === null &&
+      task.parentTaskId === null &&
+      (newParentTaskId !== null || newProjectId !== null);
     const sourceHadNextAction =
       task.projectId === null
         ? true
@@ -165,6 +171,9 @@ export function moveTask(
         parentId: newParentTaskId ?? newProjectId,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
+        ...(refilesCapturedInboxItem
+          ? { status: "active" as const, needsClarification: false }
+          : {}),
       })
       .where(eq(schema.workItems.id, taskId))
       .run();

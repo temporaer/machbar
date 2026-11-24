@@ -17,7 +17,7 @@ describe("working-system task eligibility", () => {
     await closeTestContext(ctx);
   });
 
-  it("activates committed backlog work while preserving planned, waiting, and captured eligibility", async () => {
+  it("gates backlog work until explicit activation while preserving inventory and eligibility", async () => {
     const member = (
       await ctx.app.inject({
         method: "POST",
@@ -48,10 +48,6 @@ describe("working-system task eligibility", () => {
       title: "Vorbereiteter nächster Schritt",
       status: "actionable",
       scheduledDate: today,
-      activationResolution: {
-        expectedProjects: [{ projectId: project.id, revision: project.revision }],
-        drivers: [{ projectId: project.id, ownerMemberId: member.id }],
-      },
     });
     const waiting = await createTask({
       title: "Vorbereitete Rückmeldung",
@@ -75,9 +71,16 @@ describe("working-system task eligibility", () => {
         url: `/api/agenda/today?scope=all&date=${today}`,
       })
     ).json();
-    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
-    expect(agendaBefore.planned.map((task: { id: number }) => task.id)).toContain(actionable.id);
-    expect(agendaBefore.revisit.map((task: { id: number }) => task.id)).toContain(waiting.id);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("backlog");
+    expect(agendaBefore.planned.map((task: { id: number }) => task.id)).not.toContain(actionable.id);
+    expect(agendaBefore.revisit).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: waiting.id, effectivelyDeferred: true, executable: false }),
+    ]));
+    const activated = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/activate`, payload: { expectedRevision: project.revision, ownerMemberId: member.id } });
+    expect(activated.statusCode, activated.body).toBe(200);
+    const agendaAfter = (await ctx.app.inject({ method: "GET", url: `/api/agenda/today?scope=all&date=${today}` })).json();
+    expect(agendaAfter.planned.map((task: { id: number }) => task.id)).toContain(actionable.id);
+    expect(agendaAfter.revisit.map((task: { id: number }) => task.id)).toContain(waiting.id);
 
     expect(
       (
