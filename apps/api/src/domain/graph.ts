@@ -48,7 +48,7 @@ import {
   type TaskBlockerAnalysis,
 } from "./blockers.js";
 import { evaluateProjectActivationReadiness } from "./projectReadiness.js";
-import { effectiveProjectStatuses } from "./workEligibility.js";
+import { projectAvailability } from "./workEligibility.js";
 
 function householdTimezone(db: Db): string {
   const row = db
@@ -596,30 +596,9 @@ export class Graph {
         row.id, projectStatusFromStored(row.status as StoredWorkItemStatus, row.archivedAt),
       ]),
     );
-    const workingStatuses = effectiveProjectStatuses(allWorkItemRows, allProjectStatuses);
-    const allItemsById = new Map(allWorkItemRows.map((row) => [row.id, row]));
     const visibleItemIds = new Set(workItemRows.map((row) => row.id));
-    const hasHiddenProjectAncestor = (parentId: number | null): boolean => {
-      const seen = new Set<number>();
-      while (parentId !== null && !seen.has(parentId)) {
-        seen.add(parentId);
-        const parent = allItemsById.get(parentId);
-        if (!parent) break;
-        if (parent.role === "story" && !visibleItemIds.has(parentId)) return true;
-        parentId = parent.parentId;
-      }
-      return false;
-    };
-    const conservativelyGatedProjectIds = new Set<number>();
-    for (const id of allProjectStatuses.keys()) {
-      if (!visibleItemIds.has(id)) conservativelyGatedProjectIds.add(id);
-    }
-    for (const project of rawProjects) {
-      if (project.status === "active" && hasHiddenProjectAncestor(project.parentId)) {
-        conservativelyGatedProjectIds.add(project.id);
-      }
-    }
-    for (const id of conservativelyGatedProjectIds) workingStatuses.set(id, "backlog");
+    const availability = projectAvailability(allWorkItemRows, allProjectStatuses, visibleItemIds);
+    const { workingStatuses, hasHiddenProjectAncestor } = availability;
     for (const [id, status] of workingStatuses) graph.workingProjectStatuses.set(id, status);
     const blockerInputs = new Map(
       rawTasks.map((task) => [
@@ -666,32 +645,10 @@ export class Graph {
       graph.blockerAnalysisByTask.set(taskId, analysis);
     }
     if (includeProjectAnalysis) {
-      const parents = new Map(allWorkItemRows.map((row) => [row.id, row.parentId]));
       for (const project of rawProjects) {
-        const seen = new Set<number>();
-        const toActivate: number[] = [];
-        let currentId: number | null = project.id;
-        while (currentId !== null && !seen.has(currentId)) {
-          seen.add(currentId);
-          const status = allProjectStatuses.get(currentId);
-          if ((currentId === project.id && status !== "active") || status === "backlog" ||
-            (status === "active" && !visibleItemIds.has(currentId))) {
-            toActivate.push(currentId);
-          }
-          currentId = parents.get(currentId) ?? null;
-        }
-        const unchanged = toActivate.length === 0;
-        let activationStatuses = workingStatuses;
-        if (!unchanged) {
-          const simulatedStatuses = new Map(allProjectStatuses);
-          for (const id of toActivate) simulatedStatuses.set(id, "active");
-          activationStatuses = effectiveProjectStatuses(allWorkItemRows, simulatedStatuses);
-          for (const id of conservativelyGatedProjectIds) {
-            if (!seen.has(id)) activationStatuses.set(id, "backlog");
-          }
-        }
+        const activationStatuses = availability.forActivation(project.id);
         const activationBlockers =
-          unchanged
+          activationStatuses === workingStatuses
             ? blockerAnalysis
             : analyzeTaskBlockers(
                 blockerInputs,
