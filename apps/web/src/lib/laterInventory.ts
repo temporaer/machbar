@@ -75,6 +75,52 @@ function hasVisibleLaterAncestor(
   return false;
 }
 
+function hasVisibleLaterTaskAncestor(
+  task: Task,
+  laterTaskIds: ReadonlySet<number>,
+  tasksById: ReadonlyMap<number, Task>,
+  scope: ProjectVisibilityScope,
+  currentMemberId: number | null,
+  foldedQuery: string,
+): boolean {
+  const visited = new Set<number>([task.id]);
+  let ancestorId = task.parentTaskId;
+  while (ancestorId !== null && !visited.has(ancestorId)) {
+    const ancestor = tasksById.get(ancestorId);
+    if (
+      !ancestor ||
+      !taskMatchesScope(ancestor, scope, currentMemberId) ||
+      !taskMatchesQuery(ancestor, foldedQuery)
+    ) {
+      return false;
+    }
+    if (laterTaskIds.has(ancestorId)) return true;
+    visited.add(ancestorId);
+    ancestorId = ancestor.parentTaskId;
+  }
+  return false;
+}
+
+function filterTaskTree(
+  task: Task,
+  scope: ProjectVisibilityScope,
+  currentMemberId: number | null,
+  foldedQuery: string,
+): Task {
+  return {
+    ...task,
+    children: task.children
+      .filter(
+        (child) =>
+          taskMatchesScope(child, scope, currentMemberId) &&
+          taskMatchesQuery(child, foldedQuery),
+      )
+      .map((child) =>
+        filterTaskTree(child, scope, currentMemberId, foldedQuery),
+      ),
+  };
+}
+
 export function selectLaterInventoryRoots(
   allProjects: readonly ProjectWithActions[],
   allTasks: readonly Task[],
@@ -107,7 +153,9 @@ export function selectLaterInventoryRoots(
         (task.status === "someday" || task.effectivelyDeferred === true) &&
         taskMatchesScope(task, scope, currentMemberId) &&
         taskMatchesQuery(task, foldedQuery) &&
-        (task.projectId === null || !visibleProjectIds.has(task.projectId)),
+        (foldedQuery !== "" ||
+          task.projectId === null ||
+          !visibleProjectIds.has(task.projectId)),
     )
     .sort(
       (a, b) =>
@@ -118,10 +166,9 @@ export function selectLaterInventoryRoots(
 
   const projectsById = new Map(allProjects.map((project) => [project.id, project]));
   const tasksById = new Map(allTasks.map((task) => [task.id, task]));
-  const laterIds = new Set([
-    ...laterProjects.map((project) => project.id),
-    ...laterTasks.map((task) => task.id),
-  ]);
+  const laterProjectIds = new Set(laterProjects.map((project) => project.id));
+  const laterTaskIds = new Set(laterTasks.map((task) => task.id));
+  const laterIds = new Set([...laterProjectIds, ...laterTaskIds]);
   return {
     projects: laterProjects.filter(
       (project) =>
@@ -129,7 +176,16 @@ export function selectLaterInventoryRoots(
     ),
     tasks: laterTasks.filter(
       (task) =>
-        !hasVisibleLaterAncestor(task.id, laterIds, projectsById, tasksById),
+        !hasVisibleLaterTaskAncestor(
+          task,
+          laterTaskIds,
+          tasksById,
+          scope,
+          currentMemberId,
+          foldedQuery,
+        ),
+    ).map((task) =>
+      filterTaskTree(task, scope, currentMemberId, foldedQuery),
     ),
   };
 }

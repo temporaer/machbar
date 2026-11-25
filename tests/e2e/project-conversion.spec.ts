@@ -102,3 +102,43 @@ test("groups deferred projects and standalone tasks in Later and removes a react
   await expect(row).toHaveCount(0);
   await expect(page.getByText(project.title)).toBeVisible();
 });
+
+test("keeps a deferred project nested beneath a deferred task reachable without counting it twice", async ({ page }) => {
+  const marker = randomUUID();
+  const rootResponse = await page.request.post("/api/tasks", {
+    data: { title: `Deferred root ${marker}`, status: "someday" },
+  });
+  expect(rootResponse.status()).toBe(201);
+  const root = await rootResponse.json();
+  const childResponse = await page.request.post(`/api/tasks/${root.id}/children`, {
+    data: { title: `Nested project ${marker}`, status: "actionable" },
+  });
+  expect(childResponse.status()).toBe(201);
+  const child = await childResponse.json();
+  const stepResponse = await page.request.post(`/api/tasks/${child.id}/children`, {
+    data: { title: "Nested project first step", status: "actionable" },
+  });
+  expect(stepResponse.status()).toBe(201);
+  const conversionResponse = await page.request.post(
+    `/api/tasks/${child.id}/convert-to-story`,
+    { data: { status: "backlog", expectedRevision: child.revision } },
+  );
+  expect(conversionResponse.status()).toBe(201);
+  const project = await conversionResponse.json();
+  expect(project.parentId).toBe(root.id);
+
+  await page.goto("/#/projects");
+  await page.getByLabel("Suchen").fill(marker);
+  await expect(page.getByRole("heading", { name: "Später (1)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projekte (1)" })).toHaveCount(0);
+  await expect(page.getByText(project.title)).toHaveCount(0);
+
+  const rootRow = page.locator(`[data-workitem-id="${root.id}"]`);
+  await rootRow.getByRole("button", { name: new RegExp(root.title) }).click();
+  const detail = page.getByRole("dialog", { name: "Details", exact: true });
+  const childProject = detail.getByRole("button", { name: new RegExp(project.title) });
+  await expect(childProject).toBeVisible();
+  await childProject.click();
+  await expect(page).toHaveURL(new RegExp(`#\\/projects\\/${project.id}$`));
+  await expect(page.getByRole("heading", { name: project.title })).toBeVisible();
+});

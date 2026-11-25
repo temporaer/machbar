@@ -127,6 +127,11 @@ function ProjectsPageContent() {
   });
   const laterProjects = laterInventory.projects;
   const laterTasks = laterInventory.tasks;
+  const laterTaskGroups = groupBy
+    ? groupItemsByTagKind(laterTasks, groupBy, locale)
+    : laterTasks.length
+      ? [{ tag: null, items: laterTasks }]
+      : [];
   // Keep workflow meaning ahead of tag grouping: actionable, review, and
   // stuck work stays in the foreground; healthy waiting and deferred work
   // share one quiet folded section, and terminal work remains folded below.
@@ -358,12 +363,30 @@ function ProjectsPageContent() {
                     <h3 id="later-tasks-heading" className="section-title">
                       {strings.laterTasksGroup(laterTasks.length)}
                     </h3>
-                    <TaskOutline
-                      tasks={laterTasks}
-                      emptyMessage={strings.noMatchingProjects}
-                      showSwipeHint={false}
-                      preserveRootOrder
-                    />
+                    {laterTaskGroups.map((group) =>
+                      groupBy ? (
+                        <CollapsibleGroup
+                          key={`later-task-${groupBy}-${group.tag?.id ?? "none"}`}
+                          title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+                          headingLevel={3}
+                        >
+                          <TaskOutline
+                            tasks={group.items}
+                            emptyMessage={strings.noMatchingProjects}
+                            showSwipeHint={false}
+                            preserveRootOrder
+                          />
+                        </CollapsibleGroup>
+                      ) : (
+                        <TaskOutline
+                          key="later-task-all"
+                          tasks={group.items}
+                          emptyMessage={strings.noMatchingProjects}
+                          showSwipeHint={false}
+                          preserveRootOrder
+                        />
+                      ),
+                    )}
                   </section>
                 ) : null}
               </details>

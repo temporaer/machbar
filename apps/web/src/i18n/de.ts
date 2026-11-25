@@ -490,6 +490,7 @@ const base = {
   actionable: "Machbar",
   someday: "Später",
   attentionDeferred: "Später",
+  deferredByHierarchy: "Durch Hierarchie zurückgestellt",
   attentionUnavailable: "Verfügbarkeit unklar",
   done: "Erledigt",
   cancelled: "Verworfen",

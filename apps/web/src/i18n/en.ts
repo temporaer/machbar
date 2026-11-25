@@ -57,6 +57,7 @@ const assessmentBandLabels: Record<AssessmentBand, string> = {
 
 const en = {
   attentionDeferred: "Later",
+  deferredByHierarchy: "Deferred by hierarchy",
   attentionUnavailable: "Availability unknown",
   createProjectAction: "Create project",
   projectCreated: "Project created",

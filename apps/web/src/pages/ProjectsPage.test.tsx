@@ -760,6 +760,95 @@ describe("ProjectsPage – workflow sections", () => {
     expect(screen.queryByText("Nested deferred plan")).not.toBeInTheDocument();
   });
 
+  it("shows inherited deferral without changing active status and groups deferred task roots", async () => {
+    const area = makeTag({ id: 82, name: "Later area", kind: "area" });
+    const inheritedProject = makeProject({
+      id: 82,
+      title: "Inherited deferred project",
+      status: "active",
+      effectivelyDeferred: true,
+      nextAction: makeTask({ id: 820, title: "Project next action" }),
+    });
+    const inheritedChild = makeTask({
+      id: 831,
+      title: "Inherited active child",
+      parentTaskId: 830,
+      status: "actionable",
+      effectivelyDeferred: true,
+    });
+    const deferredRoot = makeTask({
+      id: 830,
+      title: "Deferred task root",
+      status: "someday",
+      effectivelyDeferred: true,
+      effectiveTags: [area],
+      children: [inheritedChild],
+    });
+    mockedApi.getProjects.mockResolvedValue([inheritedProject]);
+    mockedApi.searchTasks.mockResolvedValue([deferredRoot, inheritedChild]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    const laterHeading = await screen.findByRole("heading", { name: "Später (2)" });
+    fireEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" })).getByRole("button", { name: "Bereich" }));
+    await userEvent.click(laterHeading);
+
+    const projectRow = rowFor(container, inheritedProject.title);
+    expect(projectRow.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
+    expect(within(projectRow).getByText("Durch Hierarchie zurückgestellt")).toBeInTheDocument();
+    expect(projectRow).toHaveClass("story-row-accent-backlog");
+    expect(within(projectRow).getByRole("button", { name: "Abschließen" })).toBeEnabled();
+
+    expect(screen.getByRole("heading", { name: "Einzelaufgaben (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: area.name })).toBeInTheDocument();
+    const childRow = container.querySelector<HTMLElement>('[data-workitem-id="831"]');
+    expect(childRow).toBeInTheDocument();
+    expect(childRow?.querySelector(".task-row-main")).toHaveAttribute(
+      "aria-label",
+      "Inherited active child — Später",
+    );
+    expect(screen.getByRole("heading", { name: "Später (2)" })).toBeInTheDocument();
+  });
+
+  it("does not render nested task descendants hidden by search or owner scope", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    const matchingChild = makeTask({ id: 841, title: "Needle child" });
+    const hiddenOwnerChild = makeTask({
+      id: 842,
+      title: "Needle other owner",
+      status: "someday",
+      effectiveOwnerId: 2,
+    });
+    const unmatchedChild = makeTask({
+      id: 843,
+      title: "Unmatched child",
+      status: "someday",
+    });
+    const root = makeTask({
+      id: 840,
+      title: "Needle deferred root",
+      status: "someday",
+      children: [matchingChild, hiddenOwnerChild, unmatchedChild],
+    });
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.searchTasks.mockResolvedValue([
+      root,
+      matchingChild,
+      hiddenOwnerChild,
+      unmatchedChild,
+    ]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "needle" } });
+    await screen.findByRole("heading", { name: "Später (1)" });
+
+    expect(screen.getByText("Needle child")).toBeVisible();
+    expect(screen.queryByText("Needle other owner")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unmatched child")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[data-workitem-id="840"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-workitem-id="841"]')).toHaveLength(1);
+  });
+
   it("removes a reactivated standalone task from Later after the canonical read refresh", async () => {
     const deferred = makeTask({
       id: 93,

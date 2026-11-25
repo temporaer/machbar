@@ -119,7 +119,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const statusLabel = strings.projectStatusLabels[story.status];
   const now = new Date();
   const classification = classifyProjectListItem(story, now);
-  const accent = statusAccentByClassification[classification];
+  const deferredByHierarchy =
+    story.status === "active" && story.effectivelyDeferred === true;
+  const accent = deferredByHierarchy
+    ? "backlog"
+    : statusAccentByClassification[classification];
   const isActiveWaiting = classification === "active-waiting";
   const waitingOn = story.waitingOn ?? [];
   const waitingDuration = story.waitingUntil
@@ -286,6 +290,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
             {story.discussionRequested ? <span className="workitem-discussion-indicator" aria-label={strings.discussionMarked} title={strings.discussionMarked}>◌</span> : null}
             <span className="sr-only">{strings.projectStatus}: </span>
             <span className={`story-row-status-badge story-row-status-badge--${accent}`}>{statusLabel}</span>
+            {deferredByHierarchy ? (
+              <span className="story-row-status-badge story-row-status-badge--backlog">
+                {strings.deferredByHierarchy}
+              </span>
+            ) : null}
             {story.stuckReason ? (
               <span
                 className={`badge ${
