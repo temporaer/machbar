@@ -15,6 +15,21 @@ Read `docs/architecture-rules.md` before behavioral changes; it is normative.
 Use `docs/workflow.md` for product semantics and `docs/architecture.md` for the
 data model and implementation rationale.
 
+### Product boundary
+
+Machbar owns shared work, not the external things that work is about. It turns
+commitments into clear next actions and owns responsibility, sequencing,
+waiting, follow-up, and the decision about what deserves attention now.
+
+Integrations may use authoritative state from systems such as calendars, Home
+Assistant, Paperless, email, or parcel services to make work actionable, impose
+deadlines, provide context, or create commitments. Those systems remain
+authoritative for their own state. Do not turn Machbar into a calendar,
+document store, messaging system, parcel tracker, family organizer, or generic
+workflow engine. When evaluating a feature, prefer changes that make work
+easier to capture, clarify, execute, wait on, or review; keep domain-specific
+state in the authoritative external system.
+
 ## Commands
 
 Use Node.js 22+ and npm 10+. Install with `npm ci`. For local development, copy
