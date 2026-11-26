@@ -771,6 +771,37 @@ describe("TaskRow – calm shared card presentation", () => {
     expect(container.querySelector(".task-row")).toHaveClass(`task-row-surface-${status}`);
   });
 
+  it("labels inherited deferral without changing the stored task status", async () => {
+    const task = makeTask({
+      id: 25,
+      title: "Geerbte Zurückstellung",
+      status: "captured",
+      effectivelyDeferred: true,
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+
+    expect(await screen.findByText("Durch Hierarchie zurückgestellt")).toBeVisible();
+    expect(container.querySelector(".task-row")).toHaveClass(
+      "task-row-surface-captured",
+    );
+    expect(screen.getByText("Erfasst")).toHaveClass("task-row-state");
+  });
+
+  it("does not confirm inherited deferral when task deferral is unknown", async () => {
+    const task = makeTask({
+      id: 26,
+      title: "Unbekannte Zurückstellung",
+      status: "actionable",
+      effectivelyDeferred: null,
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+
+    expect(await screen.findByText("Verfügbarkeit unklar")).toBeVisible();
+    expect(screen.queryByText("Durch Hierarchie zurückgestellt")).not.toBeInTheDocument();
+  });
+
   it("shows assigned owners as labeled lower-right avatars without owner text", async () => {
     window.localStorage.setItem(IDENTITY_STORAGE_KEY, "1");
     const tasks = [

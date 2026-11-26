@@ -194,4 +194,52 @@ describe("selectLaterInventoryRoots", () => {
 
     expect(inventory.tasks.map((item) => item.id)).toEqual([child.id]);
   });
+
+  it("keeps a deferred project visible beside a matching deferred task ancestor", () => {
+    const task = makeTask({
+      id: 60,
+      title: "Needle deferred task",
+      status: "someday",
+    });
+    const project = makeProject({
+      id: 61,
+      title: "Needle deferred project",
+      status: "backlog",
+      parentId: task.id,
+    });
+
+    const inventory = selectLaterInventoryRoots([project], [task], {
+      query: "needle",
+      scope: "all",
+      currentMemberId: null,
+    });
+
+    expect(inventory.projects.map((item) => item.id)).toEqual([project.id]);
+    expect(inventory.tasks.map((item) => item.id)).toEqual([task.id]);
+  });
+
+  it("keeps a visible deferred project when its task ancestor is outside the selected scope", () => {
+    const task = makeTask({
+      id: 70,
+      title: "Other owner's deferred task",
+      status: "someday",
+      effectiveOwnerId: 2,
+    });
+    const project = makeProject({
+      id: 71,
+      title: "Unassigned deferred project",
+      status: "backlog",
+      parentId: task.id,
+      ownerMemberId: null,
+    });
+
+    const inventory = selectLaterInventoryRoots([project], [task], {
+      query: "",
+      scope: "mine",
+      currentMemberId: 1,
+    });
+
+    expect(inventory.projects.map((item) => item.id)).toEqual([project.id]);
+    expect(inventory.tasks).toEqual([]);
+  });
 });

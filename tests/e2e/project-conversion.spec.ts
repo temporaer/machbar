@@ -103,7 +103,7 @@ test("groups deferred projects and standalone tasks in Later and removes a react
   await expect(page.getByText(project.title)).toBeVisible();
 });
 
-test("keeps a deferred project nested beneath a deferred task reachable without counting it twice", async ({ page }) => {
+test("lists a deferred project beneath a deferred task separately and preserves filtered access", async ({ page }) => {
   const marker = randomUUID();
   const rootResponse = await page.request.post("/api/tasks", {
     data: { title: `Deferred root ${marker}`, status: "someday" },
@@ -129,9 +129,15 @@ test("keeps a deferred project nested beneath a deferred task reachable without 
 
   await page.goto("/#/projects");
   await page.getByLabel("Suchen").fill(marker);
-  await expect(page.getByRole("heading", { name: "Später (1)" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Projekte (1)" })).toHaveCount(0);
-  await expect(page.getByText(project.title)).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Später (2)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projekte (1)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Einzelaufgaben (1)" })).toBeVisible();
+  await expect(page.getByText(project.title)).toBeVisible();
+  await expect(page.getByText(root.title)).toBeVisible();
+
+  await page.getByRole("button", { name: "Projekte aller Personen anzeigen" }).click();
+  await expect(page.getByText(project.title)).toBeVisible();
+  await expect(page.getByText(root.title)).toBeVisible();
 
   const rootRow = page.locator(`[data-workitem-id="${root.id}"]`);
   await rootRow.getByRole("button", { name: new RegExp(root.title) }).click();

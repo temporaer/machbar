@@ -48,29 +48,19 @@ function taskMatchesScope(
   return task.effectiveOwnerId === null || task.effectiveOwnerId === currentMemberId;
 }
 
-function parentId(
-  id: number,
+function hasVisibleLaterProjectAncestor(
+  projectId: number,
+  laterProjectIds: ReadonlySet<number>,
   projectsById: ReadonlyMap<number, ProjectWithActions>,
-  tasksById: ReadonlyMap<number, Task>,
-): number | null {
-  const project = projectsById.get(id);
-  if (project) return project.parentId;
-  const task = tasksById.get(id);
-  return task ? task.parentTaskId ?? task.projectId : null;
-}
-
-function hasVisibleLaterAncestor(
-  id: number,
-  laterIds: ReadonlySet<number>,
-  projectsById: ReadonlyMap<number, ProjectWithActions>,
-  tasksById: ReadonlyMap<number, Task>,
 ): boolean {
-  const visited = new Set<number>([id]);
-  let ancestorId = parentId(id, projectsById, tasksById);
+  const visited = new Set<number>([projectId]);
+  let ancestorId = projectsById.get(projectId)?.parentId ?? null;
   while (ancestorId !== null && !visited.has(ancestorId)) {
-    if (laterIds.has(ancestorId)) return true;
+    const ancestor = projectsById.get(ancestorId);
+    if (!ancestor) return false;
+    if (laterProjectIds.has(ancestorId)) return true;
     visited.add(ancestorId);
-    ancestorId = parentId(ancestorId, projectsById, tasksById);
+    ancestorId = ancestor.parentId;
   }
   return false;
 }
@@ -168,11 +158,14 @@ export function selectLaterInventoryRoots(
   const tasksById = new Map(allTasks.map((task) => [task.id, task]));
   const laterProjectIds = new Set(laterProjects.map((project) => project.id));
   const laterTaskIds = new Set(laterTasks.map((task) => task.id));
-  const laterIds = new Set([...laterProjectIds, ...laterTaskIds]);
   return {
     projects: laterProjects.filter(
       (project) =>
-        !hasVisibleLaterAncestor(project.id, laterIds, projectsById, tasksById),
+        !hasVisibleLaterProjectAncestor(
+          project.id,
+          laterProjectIds,
+          projectsById,
+        ),
     ),
     tasks: laterTasks.filter(
       (task) =>
