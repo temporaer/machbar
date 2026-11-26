@@ -370,11 +370,11 @@ describe("IntakeReviewPage", () => {
         expect.objectContaining({ existingProjectId: 11, existingProjectRevision: 8 }),
       ]) }) })), { timeout: 2_000 });
     fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
-    expect(screen.getAllByText("Bestehendes Projekt: Existing backlog · Später / noch nicht aktiv")).toHaveLength(2);
+    expect(screen.getAllByText("Bestehendes Projekt: Existing backlog · Später")).toHaveLength(2);
     editor = await openEditor(title);
     fireEvent.click(editor.getByRole("button", { name: "Kein bestehendes Projekt" }));
     fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
-    expect(screen.queryByText("Bestehendes Projekt: Existing backlog · Später / noch nicht aktiv")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bestehendes Projekt: Existing backlog · Später")).not.toBeInTheDocument();
     editor = await openEditor(title);
     fireEvent.click(editor.getByRole("button", { name: /Existing active/ }));
     fireEvent.change(editor.getByRole("combobox", { name: "Art" }), { target: { value: "project" } });

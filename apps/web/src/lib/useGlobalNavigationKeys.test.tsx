@@ -146,7 +146,7 @@ describe("useGlobalNavigationKeys (g-prefix)", () => {
     const hint = await screen.findByRole("status", { name: "g hint" });
     expect(hint).toHaveTextContent("g t:Heute");
     expect(hint).toHaveTextContent("g i:Eingang");
-    expect(hint).toHaveTextContent("g p:Projekte");
+    expect(hint).toHaveTextContent("g p:Vorhaben");
     expect(hint).toHaveTextContent("g w:Wartet");
     expect(hint).toHaveTextContent("g m:Mehr");
 

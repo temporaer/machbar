@@ -472,4 +472,98 @@ describe("effective deferral read projections", () => {
     expect(read(other.id)).toEqual(otherAcknowledged);
     expect(read()).toEqual(unknownAcknowledged);
   });
+
+  it("exposes canonical nullable deferral in viewer-scoped project and task inventory reads", async () => {
+    const db = ctx.handle.db;
+    const owner = db.insert(schema.members).values({ name: "Owner", color: "#123456" }).returning().get();
+    const viewer = db.insert(schema.members).values({ name: "Viewer", color: "#654321" }).returning().get();
+    const hidden = db.insert(schema.workItems).values({
+      role: "story",
+      title: "Hidden ancestor",
+      status: "backlog",
+      scope: "work",
+      ownerMemberId: owner.id,
+    }).returning().get();
+    const project = db.insert(schema.workItems).values({
+      role: "story",
+      title: "Visible descendant project",
+      status: "active",
+      parentId: hidden.id,
+      scope: "household",
+    }).returning().get();
+    const task = db.insert(schema.workItems).values({
+      role: "task",
+      title: "Visible descendant task",
+      status: "active",
+      parentId: project.id,
+      scope: "household",
+    }).returning().get();
+    const privateAncestor = db.insert(schema.workItems).values({
+      role: "story",
+      title: "Hidden private ancestor",
+      status: "backlog",
+      scope: "household",
+      privacyOwnerMemberId: owner.id,
+    }).returning().get();
+    const privateProject = db.insert(schema.workItems).values({
+      role: "story",
+      title: "Visible private descendant project",
+      status: "active",
+      parentId: privateAncestor.id,
+      scope: "household",
+    }).returning().get();
+    const privateTask = db.insert(schema.workItems).values({
+      role: "task",
+      title: "Visible private descendant task",
+      status: "active",
+      parentId: privateProject.id,
+      scope: "household",
+    }).returning().get();
+
+    const read = async (memberId?: number) => {
+      const headers = memberId === undefined
+        ? {}
+        : { [ACTIVITY_ACTOR_HEADER]: String(memberId) };
+      const [projects, tasks] = await Promise.all([
+        ctx.app.inject({ method: "GET", url: "/api/projects", headers }),
+        ctx.app.inject({ method: "GET", url: "/api/search?includeTerminal=true", headers }),
+      ]);
+      expect(projects.statusCode).toBe(200);
+      expect(tasks.statusCode).toBe(200);
+      return {
+        projects: projects.json() as Array<{ id: number; title: string; effectivelyDeferred?: boolean | null }>,
+        tasks: tasks.json() as Array<{ id: number; title: string; effectivelyDeferred?: boolean | null }>,
+      };
+    };
+
+    const visibleToOther = await read(viewer.id);
+    expect(visibleToOther.projects.find((item) => item.id === project.id))
+      .toMatchObject({ title: "Visible descendant project", effectivelyDeferred: null });
+    expect(visibleToOther.tasks.find((item) => item.id === task.id))
+      .toMatchObject({ title: "Visible descendant task", effectivelyDeferred: null });
+    expect(visibleToOther.projects.some((item) => item.id === privateProject.id)).toBe(false);
+    expect(visibleToOther.tasks.some((item) => item.id === privateTask.id)).toBe(false);
+    expect(JSON.stringify(visibleToOther)).not.toContain("Hidden ancestor");
+    expect(JSON.stringify(visibleToOther)).not.toContain("Hidden private ancestor");
+
+    const visibleToOwner = await read(owner.id);
+    expect(visibleToOwner.projects.find((item) => item.id === project.id))
+      .toMatchObject({ effectivelyDeferred: true });
+    expect(visibleToOwner.tasks.find((item) => item.id === task.id))
+      .toMatchObject({ effectivelyDeferred: true });
+    expect(visibleToOwner.projects.find((item) => item.id === privateProject.id))
+      .toMatchObject({ effectivelyDeferred: true });
+    expect(visibleToOwner.tasks.find((item) => item.id === privateTask.id))
+      .toMatchObject({ effectivelyDeferred: true });
+
+    const visibleToUnknown = await read();
+    expect(visibleToUnknown.projects.find((item) => item.id === project.id))
+      .toMatchObject({ effectivelyDeferred: null });
+    expect(visibleToUnknown.tasks.find((item) => item.id === task.id))
+      .toMatchObject({ effectivelyDeferred: null });
+    expect(visibleToUnknown.projects.some((item) => item.id === privateProject.id)).toBe(false);
+    expect(visibleToUnknown.tasks.some((item) => item.id === privateTask.id)).toBe(false);
+    expect(JSON.stringify(visibleToUnknown)).not.toContain("Hidden ancestor");
+    expect(JSON.stringify(visibleToUnknown)).not.toContain("Hidden private ancestor");
+  });
 });

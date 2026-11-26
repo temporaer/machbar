@@ -484,7 +484,11 @@ export function TaskRow({
                 <div className="task-row-meta">
                   {task.effectivelyDeferred === true || task.effectivelyDeferred === null ? (
                     <span className="task-row-meta-item">
-                      {task.effectivelyDeferred ? strings.attentionDeferred : strings.attentionUnavailable}
+                      {task.effectivelyDeferred
+                        ? task.status === "someday"
+                          ? strings.attentionDeferred
+                          : strings.deferredByHierarchy
+                        : strings.attentionUnavailable}
                     </span>
                   ) : null}
                   {isCompact ? null : nextActionBadge ? (

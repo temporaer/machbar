@@ -901,6 +901,7 @@ export class Graph {
       return {
         id: raw.id,
         revision: raw.revision,
+        effectivelyDeferred: graph.effectiveDeferralFor(raw.id),
         projectId: raw.projectId,
         parentTaskId: raw.parentTaskId,
         title: raw.title,
@@ -1369,6 +1370,7 @@ export class Graph {
     );
     return {
       ...project,
+      effectivelyDeferred: this.effectiveDeferralFor(projectId),
       effectiveTags,
       effectiveAreaTags,
       primaryAreaTag: selectPrimaryAreaTag(project.tags, effectiveTags, tasks),

@@ -251,7 +251,7 @@ test("ordinary intake reviews and changes an existing project destination in the
     } },
   })).status()).toBe(204);
   await page.goto(`/#/intake/${id}`);
-  await expect(page.getByText(`Bestehendes Projekt: ${first.title} · Später / noch nicht aktiv`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`Bestehendes Projekt: ${first.title} · Später`, { exact: true })).toBeVisible();
   const updated = await page.request.patch(`/api/projects/${first.id}`, {
     headers: actorHeaders, data: { notes: "Changed after intake review", expectedRevision: first.revision },
   });
@@ -298,7 +298,7 @@ test("ordinary intake reviews and changes an existing project destination in the
   await expect(guidance).toHaveCount(0);
   await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
   await expect(edit).toBeFocused();
-  await expect(page.getByText(`Bestehendes Projekt: ${first.title} · Später / noch nicht aktiv`, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(`Bestehendes Projekt: ${first.title} · Später`, { exact: true })).toHaveCount(0);
   await edit.click();
   dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: new RegExp(second.title) }).click();
@@ -575,7 +575,7 @@ test("project AI prompt keeps drafts on same-project Back until discard is confi
   expect(materialResponse.status()).toBe(201);
   const material = await materialResponse.json();
   await page.goto("/#/projects");
-  await page.locator('[data-project-section="backlog"] > summary').click();
+  await page.locator('[data-project-section="later"] > summary').click();
   await page.locator(`[data-workitem-id="${project.id}"] .story-row-main`).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
   await page.getByRole("button", { name: "Aufgaben hinzufügen", exact: true }).click();

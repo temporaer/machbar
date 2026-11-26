@@ -474,7 +474,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     ).toEqual(["Nachhaken", "Planen"]);
     expect(within(rail).queryByRole("button", { name: "Für Besprechung vormerken" })).not.toBeInTheDocument();
     expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
-    expect(within(rail).queryByRole("button", { name: "Irgendwann" })).not.toBeInTheDocument();
+    expect(within(rail).queryByRole("button", { name: "Später" })).not.toBeInTheDocument();
   });
 
   it("offers clarification, clarification deferral and structure for captured tasks", async () => {
@@ -758,7 +758,7 @@ describe("TaskRow – calm shared card presentation", () => {
   });
 
   it.each([
-    ["someday", "Irgendwann"],
+    ["someday", "Später"],
     ["done", "Erledigt"],
     ["cancelled", "Verworfen"],
   ] as const)("keeps the exceptional %s status as quiet metadata", async (status, label) => {
@@ -769,6 +769,37 @@ describe("TaskRow – calm shared card presentation", () => {
 
     expect(await screen.findByText(label)).toHaveClass("task-row-state");
     expect(container.querySelector(".task-row")).toHaveClass(`task-row-surface-${status}`);
+  });
+
+  it("labels inherited deferral without changing the stored task status", async () => {
+    const task = makeTask({
+      id: 25,
+      title: "Geerbte Zurückstellung",
+      status: "captured",
+      effectivelyDeferred: true,
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+
+    expect(await screen.findByText("Durch Hierarchie zurückgestellt")).toBeVisible();
+    expect(container.querySelector(".task-row")).toHaveClass(
+      "task-row-surface-captured",
+    );
+    expect(screen.getByText("Erfasst")).toHaveClass("task-row-state");
+  });
+
+  it("does not confirm inherited deferral when task deferral is unknown", async () => {
+    const task = makeTask({
+      id: 26,
+      title: "Unbekannte Zurückstellung",
+      status: "actionable",
+      effectivelyDeferred: null,
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+
+    expect(await screen.findByText("Verfügbarkeit unklar")).toBeVisible();
+    expect(screen.queryByText("Durch Hierarchie zurückgestellt")).not.toBeInTheDocument();
   });
 
   it("shows assigned owners as labeled lower-right avatars without owner text", async () => {

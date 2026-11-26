@@ -18,10 +18,13 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
     getProjects: vi.fn(),
+    searchTasks: vi.fn(),
     getTags: vi.fn().mockResolvedValue([]),
     createProject: vi.fn(),
     updateProject: vi.fn(),
+    updateTask: vi.fn(),
     activateProject: vi.fn(),
+    transitionTaskStatus: vi.fn(),
     returnProjectToBacklog: vi.fn(),
     completeProject: vi.fn(),
     acknowledgeProjectReview: vi.fn(),
@@ -52,6 +55,13 @@ function swipeRow(row: HTMLElement, deltaX: number) {
   fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
 }
 
+function swipeTaskRow(row: HTMLElement, deltaX: number) {
+  const content = row.querySelector(".task-row-content") as HTMLElement;
+  fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+  fireEvent.pointerMove(content, { clientX: deltaX, pointerId: 1 });
+  fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
+}
+
 function rowFor(container: HTMLElement, title: string): HTMLElement {
   const rows = [...container.querySelectorAll<HTMLElement>(".story-row")];
   const row = rows.find((r) => r.textContent?.includes(title));
@@ -75,6 +85,7 @@ function visibleListOptionLabels(container: HTMLElement): string[] {
 describe("ProjectsPage – Scrum workflow on every row", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedApi.searchTasks.mockResolvedValue([]);
     window.localStorage.clear();
     // The default "Meine & offen" scope only shows the selected member's own
     // stories plus unassigned ones (see the dedicated filtering describe
@@ -136,16 +147,16 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(screen.queryByRole("button", { name: /Hinweise zu dieser Seite/ })).not.toBeInTheDocument();
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
     const backlogSection = container.querySelector<HTMLDetailsElement>(
-      '[data-project-section="backlog"]',
+      '[data-project-section="later"]',
     );
     expect(backlogSection).not.toBeNull();
     expect(backlogSection).not.toHaveAttribute("open");
-    const backlogHeading = screen.getByRole("heading", { name: "Später / noch nicht aktiv" });
+    const backlogHeading = screen.getByRole("heading", { name: "Später (1)" });
     expect(backlogHeading).toBeInTheDocument();
     expect(screen.getByText("Backlog-Geschichte")).not.toBeVisible();
     await userEvent.click(backlogHeading);
     expect(screen.getByText("Backlog-Geschichte")).toBeVisible();
-    expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
+    expect(badges).toEqual(["Aktiv", "Später", "Abgeschlossen", "Archiviert"]);
   });
 
   it("offers the Aufräumrunde shortcut only when the Home Assistant AI Task is ready", async () => {
@@ -289,7 +300,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
     swipeRow(row, 100);
     const lifecycle = within(row).getByRole("group", { name: "Status" });
-    expect(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "Zurück zu Später" })).toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Projekt starten" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
@@ -439,6 +450,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 describe("ProjectsPage – search, visibility scope and sort", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedApi.searchTasks.mockResolvedValue([]);
     window.localStorage.clear();
     window.sessionStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Theo" })]);
@@ -688,9 +700,215 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
 describe("ProjectsPage – workflow sections", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedApi.searchTasks.mockResolvedValue([]);
     window.localStorage.clear();
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+  });
+
+  it("shows deferred project and standalone task roots together with a root-only count", async () => {
+    const laterProject = makeProject({
+      id: 80,
+      title: "Deferred plan",
+      status: "backlog",
+      effectivelyDeferred: true,
+    });
+    const nestedProject = makeProject({
+      id: 81,
+      title: "Nested deferred plan",
+      status: "active",
+      parentId: laterProject.id,
+      effectivelyDeferred: true,
+    });
+    const deferredChild = makeTask({
+      id: 91,
+      title: "Deferred child",
+      parentTaskId: 90,
+      status: "someday",
+      effectivelyDeferred: true,
+    });
+    const deferredTask = makeTask({
+      id: 90,
+      title: "Deferred standalone root",
+      status: "someday",
+      effectivelyDeferred: true,
+      children: [deferredChild],
+    });
+    const activeTask = makeTask({
+      id: 92,
+      title: "Available standalone task",
+      status: "actionable",
+      effectivelyDeferred: false,
+    });
+    mockedApi.getProjects.mockResolvedValue([laterProject, nestedProject]);
+    mockedApi.searchTasks.mockResolvedValue([deferredTask, deferredChild, activeTask]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    const laterHeading = await screen.findByRole("heading", { name: "Später (2)" });
+    const laterSection = container.querySelector<HTMLDetailsElement>(
+      '[data-project-section="later"]',
+    );
+
+    expect(laterSection).not.toHaveAttribute("open");
+    expect(screen.queryByText("Available standalone task")).not.toBeInTheDocument();
+    await userEvent.click(laterHeading);
+    expect(screen.getByRole("heading", { name: "Projekte (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Einzelaufgaben (1)" })).toBeInTheDocument();
+    expect(screen.getByText("Deferred plan")).toBeVisible();
+    expect(screen.getByText("Deferred standalone root")).toBeVisible();
+    expect(screen.getByText("Deferred child")).toBeVisible();
+    expect(screen.queryByText("Nested deferred plan")).not.toBeInTheDocument();
+  });
+
+  it("shows inherited deferral without changing active status and groups deferred task roots", async () => {
+    const area = makeTag({ id: 82, name: "Later area", kind: "area" });
+    const inheritedProject = makeProject({
+      id: 82,
+      title: "Inherited deferred project",
+      status: "active",
+      effectivelyDeferred: true,
+      nextAction: makeTask({ id: 820, title: "Project next action" }),
+    });
+    const inheritedChild = makeTask({
+      id: 831,
+      title: "Inherited active child",
+      parentTaskId: 830,
+      status: "actionable",
+      effectivelyDeferred: true,
+    });
+    const deferredRoot = makeTask({
+      id: 830,
+      title: "Deferred task root",
+      status: "someday",
+      effectivelyDeferred: true,
+      effectiveTags: [area],
+      children: [inheritedChild],
+    });
+    mockedApi.getProjects.mockResolvedValue([inheritedProject]);
+    mockedApi.searchTasks.mockResolvedValue([deferredRoot, inheritedChild]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    const laterHeading = await screen.findByRole("heading", { name: "Später (2)" });
+    fireEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" })).getByRole("button", { name: "Bereich" }));
+    await userEvent.click(laterHeading);
+
+    const projectRow = rowFor(container, inheritedProject.title);
+    expect(projectRow.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
+    expect(within(projectRow).getByText("Durch Hierarchie zurückgestellt")).toBeInTheDocument();
+    expect(projectRow).toHaveClass("story-row-accent-backlog");
+    expect(within(projectRow).getByRole("button", { name: "Abschließen" })).toBeEnabled();
+
+    expect(screen.getByRole("heading", { name: "Einzelaufgaben (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: area.name })).toBeInTheDocument();
+    const childRow = container.querySelector<HTMLElement>('[data-workitem-id="831"]');
+    expect(childRow).toBeInTheDocument();
+    expect(childRow?.querySelector(".task-row-main")).toHaveAttribute(
+      "aria-label",
+      "Inherited active child — Später",
+    );
+    expect(screen.getByRole("heading", { name: "Später (2)" })).toBeInTheDocument();
+  });
+
+  it("does not render nested task descendants hidden by search or owner scope", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    const matchingChild = makeTask({ id: 841, title: "Needle child" });
+    const hiddenOwnerChild = makeTask({
+      id: 842,
+      title: "Needle other owner",
+      status: "someday",
+      effectiveOwnerId: 2,
+    });
+    const unmatchedChild = makeTask({
+      id: 843,
+      title: "Unmatched child",
+      status: "someday",
+    });
+    const root = makeTask({
+      id: 840,
+      title: "Needle deferred root",
+      status: "someday",
+      children: [matchingChild, hiddenOwnerChild, unmatchedChild],
+    });
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.searchTasks.mockResolvedValue([
+      root,
+      matchingChild,
+      hiddenOwnerChild,
+      unmatchedChild,
+    ]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "needle" } });
+    await screen.findByRole("heading", { name: "Später (1)" });
+
+    expect(screen.getByText("Needle child")).toBeVisible();
+    expect(screen.queryByText("Needle other owner")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unmatched child")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[data-workitem-id="840"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-workitem-id="841"]')).toHaveLength(1);
+  });
+
+  it("removes a reactivated standalone task from Later after the canonical read refresh", async () => {
+    const deferred = makeTask({
+      id: 93,
+      title: "Reactivate this task",
+      status: "someday",
+      effectivelyDeferred: true,
+    });
+    const activated = { ...deferred, status: "actionable" as const, effectivelyDeferred: false };
+    let taskReads = 0;
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.searchTasks.mockImplementation(async () => {
+      taskReads += 1;
+      return taskReads === 1 ? [deferred] : [activated];
+    });
+    mockedApi.updateTask.mockResolvedValue(activated);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await userEvent.click(await screen.findByRole("heading", { name: "Später (1)" }));
+    const row = container.querySelector<HTMLElement>(
+      '[data-workitem-id="93"]',
+    )!;
+    swipeTaskRow(row, 140);
+    await userEvent.click(within(row).getByRole("button", { name: "Machbar" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(
+        deferred.id,
+        { status: "actionable", expectedRevision: deferred.revision },
+      ),
+    );
+    await waitFor(() => expect(taskReads).toBeGreaterThan(1));
+    expect(screen.queryByRole("heading", { name: "Später (1)" })).not.toBeInTheDocument();
+  });
+
+  it("keeps project actions available when the supplemental task inventory read fails and retries it", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({
+        id: 94,
+        title: "Available project despite task read failure",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 940, title: "Continue the project" }),
+      }),
+    ]);
+    mockedApi.searchTasks
+      .mockRejectedValueOnce(new Error("task inventory unavailable"))
+      .mockResolvedValueOnce([]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    const projectTitle = "Available project despite task read failure";
+    await screen.findByText(projectTitle);
+    const row = rowFor(container, projectTitle);
+    expect(within(row).getByRole("button", { name: "Abschließen" })).toBeEnabled();
+
+    const readError = screen.getByRole("alert");
+    expect(readError).toHaveTextContent("task inventory unavailable");
+    await userEvent.click(within(readError).getByRole("button", { name: "Erneut versuchen" }));
+    await waitFor(() => expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByText(projectTitle)).toBeVisible();
   });
 
   it("renders active/stuck, counted waiting, visible backlog, and terminal sections", async () => {
@@ -768,10 +986,10 @@ describe("ProjectsPage – workflow sections", () => {
     expect(
       [...container.querySelectorAll<HTMLElement>("[data-project-section]")]
         .map((section) => section.dataset.projectSection),
-    ).toEqual(["active", "quiet", "backlog", "terminal"]);
+    ).toEqual(["active", "quiet", "later", "terminal"]);
     expect(screen.getByRole("region", { name: "Aktiv & festgefahren" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Wartet / zurückgestellt (4)" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Wartet / geplant (4)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Später (1)" })).toBeInTheDocument();
     expect(rowFor(container, "Machbar").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
       "active",
@@ -801,7 +1019,7 @@ describe("ProjectsPage – workflow sections", () => {
     ).toBeInTheDocument();
   });
 
-  it("groups by tag separately inside active, quiet, backlog, and terminal sections", async () => {
+  it("groups by tag separately inside active, quiet, later, and terminal sections", async () => {
     const phone = makeTag({ id: 91, name: "Telefon", kind: "area" });
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
@@ -844,7 +1062,7 @@ describe("ProjectsPage – workflow sections", () => {
       .getByRole("button", { name: "Bereich" }));
 
     expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(4);
-    for (const sectionName of ["active", "quiet", "backlog", "terminal"]) {
+    for (const sectionName of ["active", "quiet", "later", "terminal"]) {
       const section = container.querySelector<HTMLElement>(
         `[data-project-section="${sectionName}"]`,
       );
@@ -895,12 +1113,12 @@ describe("ProjectsPage – workflow sections", () => {
     ]);
 
     const { container } = renderWithProviders(<ProjectsPage />);
-    await screen.findByRole("heading", { name: "Wartet / zurückgestellt (2)" });
+    await screen.findByRole("heading", { name: "Wartet / geplant (2)" });
     expect(container.querySelector('[data-project-section="quiet"]')).not.toHaveAttribute("open");
 
     fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "Freigabe" } });
 
-    expect(await screen.findByRole("heading", { name: "Wartet / zurückgestellt (1)" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Wartet / geplant (1)" })).toBeInTheDocument();
     expect(container.querySelector('[data-project-section="quiet"]')).toHaveAttribute("open");
     expect(screen.getByText("Wartet auf Freigabe")).toBeInTheDocument();
     expect(screen.queryByText("Wartet auf Angebot")).not.toBeInTheDocument();
@@ -918,6 +1136,7 @@ describe("ProjectsPage – workflow sections", () => {
 describe("ProjectsPage – completed/archived stories fold into one counted section", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedApi.searchTasks.mockResolvedValue([]);
     window.localStorage.clear();
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
@@ -942,7 +1161,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     // Active rows are not nested inside the terminal <details> fold.
     expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
     const backlogDetails = rowFor(container, "Backlog-Geschichte").closest("details");
-    expect(backlogDetails).toHaveAttribute("data-project-section", "backlog");
+    expect(backlogDetails).toHaveAttribute("data-project-section", "later");
     expect(backlogDetails).not.toHaveAttribute("open");
 
     const summary = screen.getByText("Abgeschlossen & archiviert (2)");
@@ -1097,7 +1316,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(1, {
       expectedRevision: 1,
     });
-    expect(screen.queryByRole("heading", { name: "Wartet / zurückgestellt (1)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Wartet / geplant (1)" })).not.toBeInTheDocument();
     expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
     expect(
       rowFor(container, "Wieder zu prüfende Geschichte").closest("[data-project-section]"),
